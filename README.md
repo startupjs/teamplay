@@ -14,6 +14,10 @@ Features:
 > __**__ concurrent changes to the same data are auto-merged using [OT](https://en.wikipedia.org/wiki/Operational_transformation)\
 > __***__ similar to Firebase but with your own MongoDB-compatible database
 
+## Installation
+
+For installation and documentation see [packages/teamplay](./packages/teamplay)
+
 ## License
 
 MIT
