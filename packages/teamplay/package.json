@@ -1,7 +1,7 @@
 {
   "name": "teamplay",
   "version": "0.0.1",
-  "description": "Deep signals ORM for React with real-time collaboration",
+  "description": "Full-stack signals ORM with multiplayer",
   "type": "module",
   "main": "index.js",
   "exports": {
