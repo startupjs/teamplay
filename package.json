@@ -6,6 +6,9 @@
   "workspaces": [
     "packages/*"
   ],
+  "scripts": {
+    "test": "cd packages/teamplay && yarn test"
+  },
   "devDependencies": {
     "@types/react": "~18.2.45",
     "eslint": "^8.56.0",
