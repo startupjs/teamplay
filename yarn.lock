@@ -4878,6 +4878,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"events@npm:^3.3.0":
+  version: 3.3.0
+  resolution: "events@npm:3.3.0"
+  checksum: 10c0/d6b6f2adbccbcda74ddbab52ed07db727ef52e31a61ed26db9feb7dc62af7fc8e060defa65e5f8af9449b86b52cc1a1f6a79f2eafcf4e62add2b7a1fa4a432f6
+  languageName: node
+  linkType: hard
+
 "eventsource@npm:^2.0.2":
   version: 2.0.2
   resolution: "eventsource@npm:2.0.2"
@@ -10774,6 +10781,7 @@ __metadata:
     "@teamplay/debug": "npm:^0.1.2"
     "@testing-library/react": "npm:^15.0.7"
     diff-match-patch: "npm:^1.0.5"
+    events: "npm:^3.3.0"
     jest: "npm:^29.7.0"
     jest-environment-jsdom: "npm:^29.7.0"
     json0-ot-diff: "npm:^1.1.2"
