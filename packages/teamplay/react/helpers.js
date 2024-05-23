@@ -1,6 +1,6 @@
 import { useMemo, useContext, createContext } from 'react'
-import { CACHE_ACTIVE, getDummyCache } from '@startupjs/cache'
-import useIsomorphicLayoutEffect from '@startupjs/utils/useIsomorphicLayoutEffect'
+import { CACHE_ACTIVE, getDummyCache } from '@teamplay/cache'
+import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
 
 export const ComponentMetaContext = createContext({})
 

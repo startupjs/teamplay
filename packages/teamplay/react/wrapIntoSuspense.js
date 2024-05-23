@@ -1,6 +1,6 @@
 import { useMemo, forwardRef as _forwardRef, memo, createElement as el, Suspense } from 'react'
-import { createCaches } from '@startupjs/cache'
-import { __increment, __decrement } from '@startupjs/debug'
+import { createCaches } from '@teamplay/cache'
+import { __increment, __decrement } from '@teamplay/debug'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext, useUnmount } from './helpers.js'
 
 export default function wrapIntoSuspense (
