@@ -41,6 +41,7 @@ server.on('upgrade', upgrade) // Node's 'http' server instance
 ## Usage
 
 TBD
+...
 
 ## Examples
 

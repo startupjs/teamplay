@@ -2,9 +2,6 @@
   "name": "@teamplay/cache",
   "version": "0.1.0",
   "type": "module",
-  "engines": {
-    "node": ">= 14"
-  },
   "description": "Helpers for doing auto-caching and memoization",
   "main": "index.js",
   "exports": {
@@ -14,8 +11,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "license": "MIT",
   "dependencies": {
     "@teamplay/debug": "^0.1.0"
-  }
+  },
+  "license": "MIT"
 }

@@ -6,7 +6,7 @@ BrowserChannel can be used to emulate WebSocket in environments where you don't 
 
 ## Usage
 
-For internal use only
+For internal use only.
 
 ## License
 
