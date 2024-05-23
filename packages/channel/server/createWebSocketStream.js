@@ -39,7 +39,7 @@ export class WebSocketClientStream extends Duplex {
 
     this.on('error', (error) => {
       // log stream type and error
-      console.warn(`[@startupjs/channel] ${this.constructor._type} client message stream error`, error)
+      console.warn(`[@teamplay/channel] ${this.constructor._type} client message stream error`, error)
       this._stopClient()
     })
 
@@ -56,7 +56,7 @@ export class WebSocketClientStream extends Duplex {
     // Silently drop messages after the session is closed
     if (this.client.readyState !== WebSocket.OPEN) return cb()
     this.client.send(JSON.stringify(chunk), (err) => {
-      if (err) console.error('[@startupjs/channel] send:', err)
+      if (err) console.error('[@teamplay/channel] send:', err)
     })
     cb()
   }

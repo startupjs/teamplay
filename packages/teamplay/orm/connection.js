@@ -20,7 +20,7 @@ const ERRORS = {
     You must set the initialized ShareDB connection before using subscriptions.
     You've probably forgotten to call connect() in your app:
 
-    import connect from '@startupjs/signals-orm/connect'
+    import connect from 'teamplay/connect'
     connect({ baseUrl: 'http://localhost:3000' })
   `
 }

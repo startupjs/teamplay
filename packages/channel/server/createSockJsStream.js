@@ -40,7 +40,7 @@ export class SockJsClientStream extends Duplex {
 
     this.on('error', err => {
       // log stream type and error
-      console.warn(`[@startupjs/channel] ${this.constructor._type} client message stream error`, err)
+      console.warn(`[@teamplay/channel] ${this.constructor._type} client message stream error`, err)
       this._stopClient()
     })
 
@@ -59,7 +59,7 @@ export class SockJsClientStream extends Duplex {
     try {
       this.client.write(JSON.stringify(chunk))
     } catch (err) {
-      console.error(`[@startupjs/channel] ${this.constructor._type} send:`, err)
+      console.error(`[@teamplay/channel] ${this.constructor._type} send:`, err)
     }
     cb()
   }

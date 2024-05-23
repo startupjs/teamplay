@@ -1,4 +1,4 @@
-import createChannel from '@startupjs/channel/server'
+import createChannel from '@teamplay/channel/server'
 import { connection, setConnection, setFetchOnly } from './orm/connection.js'
 
 export { default as ShareDB } from 'sharedb'

@@ -161,6 +161,6 @@ function getConnectionUrl (baseUrl, path) {
 // http://blog.johnryding.com/post/78544969349/how-to-reconnect-web-sockets-in-a-realtime-web-app
 
 const ERRORS = {
-  noBaseUrl: '[@startupjs/channel] No baseUrl provided to connect to the server',
-  noRoute: '[@startupjs/channel] Route must be a string. If you want to connect to the root, pass an empty string'
+  noBaseUrl: '[@teamplay/channel] No baseUrl provided to connect to the server',
+  noRoute: '[@teamplay/channel] Route must be a string. If you want to connect to the root, pass an empty string'
 }

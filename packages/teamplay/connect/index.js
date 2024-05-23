@@ -1,4 +1,4 @@
-import Socket from '@startupjs/channel'
+import Socket from '@teamplay/channel'
 import Connection from './sharedbConnection.cjs'
 import { connection, setConnection } from '../orm/connection.js'
 
