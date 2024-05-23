@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "test": "cd packages/teamplay && npm run test",
-    "release": "auto shipit --dry-run"
+    "release": "auto shipit"
   },
   "devDependencies": {
     "@auto-it/conventional-commits": "^11.1.6",
