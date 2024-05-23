@@ -1,3 +1,16 @@
+# v0.1.3 (Thu May 23 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix: add 'events' since sharedb client requires it to work correctly ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.2 (Thu May 23 2024)
 
 #### 🐛 Bug Fix
