@@ -13,6 +13,8 @@
 import { __increment, __decrement, setDebugVar } from '@teamplay/debug'
 import { enabled as cacheEnabled } from './enabled.js'
 
+export * from './enabled.js'
+
 // global setting to disable cache
 export const CACHE_ACTIVE = { value: cacheEnabled }
 
