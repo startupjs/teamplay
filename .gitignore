@@ -18,3 +18,6 @@ npm-debug.*
 # yarn
 yarn-error.log
 .yarn
+
+# GH_TOKEN and NPM_TOKEN in .env for 'auto' releases
+.env
