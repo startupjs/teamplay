@@ -1,6 +1,6 @@
 {
   "name": "teamplay",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Full-stack signals ORM with multiplayer",
   "type": "module",
   "main": "index.js",
@@ -22,9 +22,9 @@
   },
   "dependencies": {
     "@nx-js/observer-util": "^4.1.3",
-    "@teamplay/cache": "^0.1.1",
-    "@teamplay/channel": "^0.1.1",
-    "@teamplay/debug": "^0.1.1",
+    "@teamplay/cache": "^0.1.2",
+    "@teamplay/channel": "^0.1.2",
+    "@teamplay/debug": "^0.1.2",
     "diff-match-patch": "^1.0.5",
     "json0-ot-diff": "^1.1.2",
     "lodash": "^4.17.20",
