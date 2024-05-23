@@ -15,7 +15,7 @@
     "access": "public"
   },
   "scripts": {
-    "test": "npm run test-server && npm run test-client",
+    "test": "node --run test-server && node --run test-client",
     "test-server": "node --expose-gc -r ./test/_init.cjs --test",
     "test-server-only": "node --expose-gc -r ./test/_init.cjs --test --test-only",
     "test-client": "NODE_OPTIONS=\"$NODE_OPTIONS --experimental-vm-modules\" jest"
