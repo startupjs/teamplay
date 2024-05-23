@@ -1,3 +1,16 @@
+# v0.1.4 (Thu May 23 2024)
+
+#### 🐛 Bug Fix
+
+- `@teamplay/channel`, `teamplay`
+  - fix: rename old references to startupjs packages into teamplay packages ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.3 (Thu May 23 2024)
 
 #### 🐛 Bug Fix
