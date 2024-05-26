@@ -30,13 +30,36 @@ import connect from 'teamplay/connect'
 connect()
 ```
 
-And on the server, manually create a [ShareDB's backend](https://share.github.io/sharedb/api/backend) and create a connection handler for WebSockets:
+On the server you need to create the teamplay's backend and then create a connection handler for WebSockets:
 
 ```js
-import { initConnection } from 'teamplay/server'
-const { upgrade } = initConnection(backend) // ShareDB's Backend instance
+import { createBackend, initConnection } from 'teamplay/server'
+const backend = createBackend()
+const { upgrade } = initConnection(backend)
 server.on('upgrade', upgrade) // Node's 'http' server instance
 ```
+
+- for production use it's recommended to use MongoDB. It's gonna be automatically used if you set the env var `MONGO_URL`
+- when deploying to a cluster with multiple instances you also have to set the env var `REDIS_URL` (Redis)
+
+Without setting `MONGO_URL` the alternative `mingo` mock is used instead which persists data into an SQLite file `local.db` in the root of your project.
+
+> [!NOTE]
+> teamplay's `createBackend()` is a wrapper around creating a [ShareDB's backend](https://share.github.io/sharedb/api/backend).
+> You can instead manually create a ShareDB backend yourself and pass it to `initConnection()`.
+> `ShareDB` is re-exported from `teamplay/server`, you can get it as `import { ShareDB } from 'teamplay/server'`
+
+## `initConnection(backend, options)`
+
+**`backend`** - ShareDB backend instance
+
+**`options`**:
+
+### `fetchOnly` (default: `true`)
+
+By default all subscriptions on the server are not reactive. This is strongly recommended.
+
+If you need the subscriptions to reactively update data whenever it changes (the same way as they work on client-side), pass `{ fetchOnly: false }`.
 
 ## Usage
 
@@ -51,10 +74,10 @@ On the client we `connect()` to the server, and we have to wrap each React compo
 
 ```js
 // client.js
+import { createElement as el } from 'react'
+import { createRoot } from 'react-dom/client'
 import connect from 'teamplay/connect'
 import { observer, $, sub } from 'teamplay'
-import { createRoot } from 'react-dom/client'
-import { createElement as el } from 'react'
 
 connect()
 
@@ -77,20 +100,18 @@ On the server we create the ShareDB backend and initialize the WebSocket connect
 ```js
 // server.js
 import http from 'http'
-import { ShareDB, initConnection } from 'teamplay/server'
+import { createBackend, initConnection } from 'teamplay/server'
 
 const server = http.createServer() // you can pass expressApp here if needed
-const backend = new ShareDB()
+const backend = createBackend()
 const { upgrade } = initConnection(backend)
 
 server.on('upgrade', upgrade)
 
-server.listen(3000)
+server.listen(3000, () => {
+  console.log('Server started. Open http://localhost:3000 in your browser')
+})
 ```
-
-ShareDB is a re-export of [`sharedb`](https://github.com/share/sharedb) library, check its docs for more info.
-- for persistency and queries support pass [`sharedb-mongo`](https://github.com/share/sharedb-mongo) (which uses MongoDB) as `{ db }`
-- when deploying to a cluster with multiple instances you also have to provide `{ pubsub }` like [`sharedb-redis-pubsub`](https://github.com/share/sharedb-redis-pubsub) (which uses Redis)
 
 ## License
 

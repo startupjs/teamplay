@@ -4,9 +4,11 @@
     "node": ">=22"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "example"
   ],
   "scripts": {
+    "start": "cd example && npm run start",
     "test": "cd packages/teamplay && npm run test",
     "release": "auto shipit"
   },

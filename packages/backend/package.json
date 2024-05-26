@@ -1,0 +1,33 @@
+{
+  "name": "@teamplay/backend",
+  "version": "0.1.0",
+  "description": "Create new ShareDB backend instance",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@teamplay/schema": "^0.1.0",
+    "@teamplay/server-aggregate": "^0.1.0",
+    "@teamplay/sharedb-access": "^0.1.0",
+    "@teamplay/sharedb-schema": "^0.1.0",
+    "@teamplay/utils": "^0.1.0",
+    "@types/ioredis-mock": "^8.2.5",
+    "ioredis": "^5.3.2",
+    "ioredis-mock": "^8.9.0",
+    "mongodb": "^6.0.0",
+    "redlock": "^3.0.0",
+    "sharedb": "^5.0.0",
+    "sharedb-hooks": "~4.0.0",
+    "sharedb-mingo-memory": "^3.0.0",
+    "sharedb-mongo": "^4.1.2",
+    "sharedb-redis-pubsub": "^2.0.1",
+    "sqlite3": "^5.1.6",
+    "uuid": "^9.0.1"
+  }
+}

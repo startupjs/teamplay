@@ -16,9 +16,8 @@ export default $
 export { default as sub } from './react/universalSub.js'
 export { default as observer } from './react/observer.js'
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly } from './orm/connection.js'
-export * from './schema/associations.js'
-export { default as GUID_PATTERN } from './schema/GUID_PATTERN.js'
-export { default as pickFormFields } from './schema/pickFormFields.js'
+export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
+export { aggregation, aggregationHeader } from '@teamplay/utils/aggregation'
 
 export function getRootSignal (options) {
   return _getRootSignal({
