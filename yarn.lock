@@ -5485,9 +5485,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"example-3bb12e@workspace:example":
+"example@workspace:example":
   version: 0.0.0-use.local
-  resolution: "example-3bb12e@workspace:example"
+  resolution: "example@workspace:example"
   dependencies:
     esbuild: "npm:^0.21.4"
     react: "npm:^18.3.1"
