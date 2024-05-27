@@ -1,4 +1,3 @@
-import { createElement as el, Fragment } from 'react'
 import { createRoot } from 'react-dom/client'
 import connect from 'teamplay/connect'
 import { observer, $, sub } from 'teamplay'
@@ -11,13 +10,11 @@ const App = observer(({ userId }) => {
   const { $points } = $user
   const increment = () => $points.set($points.get() + 1)
   const reset = () => $points.set(0)
-  return el(Fragment, null,
-    el('button', { onClick: increment }, 'Points: ' + $points.get()),
-    el('button', { onClick: reset }, 'Reset')
-  )
+  return <>
+    <button onClick={increment}>Points: {$points.get()}</button>
+    <button onClick={reset}>Reset</button>
+  </>
 })
 
 const container = document.body.appendChild(document.createElement('div'))
-createRoot(container).render(
-  el(App, { userId: '_1' })
-)
+createRoot(container).render(<App userId='_1' />)

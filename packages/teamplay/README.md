@@ -74,7 +74,6 @@ On the client we `connect()` to the server, and we have to wrap each React compo
 
 ```js
 // client.js
-import { createElement as el } from 'react'
 import { createRoot } from 'react-dom/client'
 import connect from 'teamplay/connect'
 import { observer, $, sub } from 'teamplay'
@@ -85,14 +84,12 @@ const App = observer(({ userId }) => {
   const $user = sub($.users[userId])
   if (!$user.get()) throw $user.set({ points: 0 })
   const { $points } = $user
-  const onClick = () => $points.set($points.get() + 1)
-  return el('button', { onClick }, 'Points: ' + $points.get())
+  const increment = () => $points.set($points.get() + 1)
+  return <button onClick={increment}>Points: {$points.get()}</button>
 })
 
 const container = document.body.appendChild(document.createElement('div'))
-createRoot(container).render(
-  el(App, { userId: '_1' })
-)
+createRoot(container).render(<App userId='_1' />)
 ```
 
 On the server we create the ShareDB backend and initialize the WebSocket connections handler:
