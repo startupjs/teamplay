@@ -1,3 +1,25 @@
+# (Mon May 27 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/backend`, `@teamplay/schema`, `@teamplay/server-aggregate`, `@teamplay/sharedb-access`, `@teamplay/sharedb-schema`, `teamplay`, `@teamplay/utils`
+  - feat: move backend implementation from startupjs. Add an example app. ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- chore: add name to example app ([@cray0000](https://github.com/cray0000))
+- chore: add version to example app ([@cray0000](https://github.com/cray0000))
+- chore: add explicit release commands to publish patch and minor since 'auto' doesn't take 0-based version into account ([@cray0000](https://github.com/cray0000))
+- `teamplay`
+  - readme: add example readme ([@cray0000](https://github.com/cray0000))
+  - chore(example): add live reload support whenever client.js changes ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.4 (Thu May 23 2024)
 
 #### 🐛 Bug Fix

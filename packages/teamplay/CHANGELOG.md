@@ -1,3 +1,20 @@
+# v0.1.5 (Mon May 27 2024)
+
+#### 🚀 Enhancement
+
+- feat: move backend implementation from startupjs. Add an example app. ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- readme: add example readme ([@cray0000](https://github.com/cray0000))
+- chore(example): add live reload support whenever client.js changes ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.4 (Thu May 23 2024)
 
 #### 🐛 Bug Fix
