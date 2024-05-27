@@ -68,6 +68,8 @@ TBD
 
 ## Examples
 
+For a simple working react app see [/example](/example)
+
 ### Simplest example with server synchronization
 
 On the client we `connect()` to the server, and we have to wrap each React component into `observer()`:
