@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/cache",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "description": "Helpers for doing auto-caching and memoization",
   "main": "index.js",
@@ -12,7 +12,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@teamplay/debug": "^0.1.5"
+    "@teamplay/debug": "^0.1.6"
   },
   "license": "MIT"
 }
