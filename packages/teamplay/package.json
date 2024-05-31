@@ -34,7 +34,7 @@
     "json0-ot-diff": "^1.1.2",
     "lodash": "^4.17.20",
     "sharedb": "^5.0.0",
-    "uuid": "^9.0.1"
+    "uuid": "^3.4.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

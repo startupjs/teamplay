@@ -28,6 +28,6 @@
     "sharedb-mongo": "^4.1.2",
     "sharedb-redis-pubsub": "^2.0.1",
     "sqlite3": "^5.1.6",
-    "uuid": "^9.0.1"
+    "uuid": "^3.4.0"
   }
 }
