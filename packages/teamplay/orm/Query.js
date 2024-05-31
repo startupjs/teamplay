@@ -4,6 +4,7 @@ import { SEGMENTS } from './Signal.js'
 import getSignal from './getSignal.js'
 import { getConnection, fetchOnly } from './connection.js'
 import { docSubscriptions } from './Doc.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 export const PARAMS = Symbol('query params')

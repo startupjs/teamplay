@@ -1,5 +1,6 @@
 import { SEGMENTS } from './Signal.js'
 import { set as _set, del as _del } from './dataTree.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 
 export const LOCAL = '$local'
 

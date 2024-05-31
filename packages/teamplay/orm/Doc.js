@@ -2,6 +2,7 @@ import { isObservable, observable } from '@nx-js/observer-util'
 import { set as _set, del as _del } from './dataTree.js'
 import { SEGMENTS } from './Signal.js'
 import { getConnection, fetchOnly } from './connection.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 

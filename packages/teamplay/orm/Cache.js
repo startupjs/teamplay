@@ -1,3 +1,6 @@
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
+import WeakRef, { destroyMockWeakRef } from '../utils/MockWeakRef.js'
+
 export default class Cache {
   constructor () {
     this.cache = new Map()
@@ -20,6 +23,7 @@ export default class Cache {
   }
 
   delete (key) {
+    destroyMockWeakRef(this.cache.get(key)) // TODO: remove this when WeakRef is available in RN
     this.cache.delete(key)
   }
 

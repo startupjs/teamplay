@@ -2,6 +2,7 @@ import { observe, unobserve } from '@nx-js/observer-util'
 import { SEGMENTS } from './Signal.js'
 import { set as _set, del as _del } from './dataTree.js'
 import { LOCAL } from './Value.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 
 // this is `let` to be able to directly change it if needed in tests or in the app
 export let DELETION_DELAY = 0 // eslint-disable-line prefer-const
