@@ -1,3 +1,21 @@
+# v0.1.6 (Fri May 31 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): mock WeakRef and FinalizationRegistry to work in Expo ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- `@teamplay/backend`, `@teamplay/cache`, `@teamplay/channel`, `@teamplay/debug`, `@teamplay/schema`, `@teamplay/server-aggregate`, `@teamplay/sharedb-access`, `@teamplay/sharedb-schema`, `teamplay`, `@teamplay/utils`
+  - chore: add .npmignore to all packages with CHANGELOG.md ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # (Mon May 27 2024)
 
 #### 🚀 Enhancement
