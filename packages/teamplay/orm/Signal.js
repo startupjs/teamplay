@@ -44,6 +44,12 @@ export default class Signal extends Function {
     return _get(this[SEGMENTS])
   }
 
+  getId () {
+    if (this[SEGMENTS].length === 0) throw Error('Can\'t get the id of the root signal')
+    if (this[SEGMENTS].length === 1) throw Error('Can\'t get the id of a collection')
+    return this[SEGMENTS][this[SEGMENTS].length - 1]
+  }
+
   * [Symbol.iterator] () {
     if (this[IS_QUERY]) {
       const ids = _get([QUERIES, this[HASH], 'ids'])
