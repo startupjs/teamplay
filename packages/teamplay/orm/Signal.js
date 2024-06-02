@@ -86,6 +86,34 @@ export default class Signal extends Function {
     }
   }
 
+  // TODO: implement a json0 operation for push
+  async push (value) {
+    if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
+    if (this[SEGMENTS].length < 2) throw Error('Can\'t push to a collection or root signal')
+    if (this[IS_QUERY]) throw Error('Signal.push() can\'t be used on a query signal')
+    const array = this.get()
+    await this[array?.length || 0].set(value)
+  }
+
+  // TODO: implement a json0 operation for pop
+  async pop () {
+    if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
+    if (this[IS_QUERY]) throw Error('Signal.pop() can\'t be used on a query signal')
+    const array = this.get()
+    if (!Array.isArray(array) || array.length === 0) return
+    await this[array.length - 1].del()
+  }
+
+  // TODO: implement a json0 operation for unshift
+  async unshift (value) {
+    throw Error('Signal.unshift() is not implemented yet')
+  }
+
+  // TODO: implement a json0 operation for shift
+  async shift () {
+    throw Error('Signal.shift() is not implemented yet')
+  }
+
   // TODO: make it use an actual increment json0 operation on public collections
   async increment (value) {
     if (arguments.length > 1) throw Error('Signal.increment() expects a single argument')
