@@ -1,3 +1,16 @@
+# v0.1.11 (Sun Jun 02 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix: allow only working with public collections on the server since there is no user-separation for private collections ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.0 (Sun Jun 02 2024)
 
 #### 🚀 Enhancement
