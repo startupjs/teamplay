@@ -15,7 +15,7 @@ export const $ = _getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universa
 export default $
 export { default as sub } from './react/universalSub.js'
 export { default as observer } from './react/observer.js'
-export { connection, setConnection, getConnection, fetchOnly, setFetchOnly } from './orm/connection.js'
+export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader } from '@teamplay/utils/aggregation'
 

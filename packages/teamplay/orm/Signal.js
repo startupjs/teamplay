@@ -16,6 +16,7 @@ import { get as _get, set as _set, del as _del, setPublicDoc as _setPublicDoc } 
 import getSignal, { rawSignal } from './getSignal.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
+import { publicOnly } from './connection.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
 
@@ -82,6 +83,7 @@ export default class Signal extends Function {
     if (isPublicCollection(this[SEGMENTS][0])) {
       await _setPublicDoc(this[SEGMENTS], value)
     } else {
+      if (publicOnly) throw Error(ERRORS.publicOnly)
       _set(this[SEGMENTS], value)
     }
   }
@@ -98,6 +100,7 @@ export default class Signal extends Function {
   // TODO: implement a json0 operation for pop
   async pop () {
     if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
+    if (this[SEGMENTS].length < 2) throw Error('Can\'t pop from a collection or root signal')
     if (this[IS_QUERY]) throw Error('Signal.pop() can\'t be used on a query signal')
     const array = this.get()
     if (!Array.isArray(array) || array.length === 0) return
@@ -144,6 +147,7 @@ export default class Signal extends Function {
       if (this[SEGMENTS].length === 1) throw Error('Can\'t delete the whole collection')
       await _setPublicDoc(this[SEGMENTS], undefined, true)
     } else {
+      if (publicOnly) throw Error(ERRORS.publicOnly)
       _del(this[SEGMENTS])
     }
   }
@@ -241,5 +245,9 @@ const ERRORS = {
   noRootFunction: `
     Root signal does not have a root function set.
     You must use getRootSignal({ rootId, rootFunction }) to create a root signal.
+  `,
+  publicOnly: `
+    Can't modify private collections data when 'publicOnly' is enabled.
+    On the server you can only work with public collections.
   `
 }

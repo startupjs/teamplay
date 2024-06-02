@@ -1,5 +1,6 @@
 export let connection
 export let fetchOnly
+export let publicOnly
 
 export function setConnection (_connection) {
   connection = _connection
@@ -12,6 +13,10 @@ export function getConnection () {
 
 export function setFetchOnly (_fetchOnly) {
   fetchOnly = _fetchOnly
+}
+
+export function setPublicOnly (_publicOnly) {
+  publicOnly = _publicOnly
 }
 
 const ERRORS = {
