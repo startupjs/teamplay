@@ -1,3 +1,16 @@
+# v0.2.0 (Sun Jun 02 2024)
+
+#### 🚀 Enhancement
+
+- `teamplay`
+  - feat(teamplay/Signal): add simple implementations for .pop() and .push() ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.0 (Sat Jun 01 2024)
 
 #### 🚀 Enhancement
