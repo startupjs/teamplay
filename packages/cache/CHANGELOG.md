@@ -1,3 +1,15 @@
+# v0.1.12 (Wed Jun 05 2024)
+
+#### 🐛 Bug Fix
+
+- fix(teamplay): change observer() update logic to use useSyncExternalStore; hold reference to signals within react context to prevent GCing them while component is still alive; don't unsubscribe from docs which were indirectly fetched by a query ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.6 (Fri May 31 2024)
 
 #### ⚠️ Pushed to `master`
