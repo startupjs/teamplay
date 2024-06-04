@@ -57,18 +57,18 @@ export function createCaches (cacheNames) {
   }
   return {
     activate () {
-      if (!caches) return console.error(ERROR_CACHE_CLEARED)
+      if (!caches) return console.error('cache.activate()', ERROR_CACHE_CLEARED)
       unblockCache()
       for (const cacheName of cacheNames) activeCaches[cacheName] = caches[cacheName]
     },
     deactivate () {
-      if (!caches) return console.error(ERROR_CACHE_CLEARED)
+      if (!caches) return console.error('cache.deactivate()', ERROR_CACHE_CLEARED)
       for (const cacheName of cacheNames) {
         if (activeCaches[cacheName] === caches[cacheName]) activeCaches[cacheName] = undefined
       }
     },
     clear () {
-      if (!caches) return console.error(ERROR_CACHE_CLEARED)
+      if (!caches) return console.error('cache.clear()', ERROR_CACHE_CLEARED)
       for (const cacheName of cacheNames) {
         if (caches[cacheName].__isNested) {
           caches[cacheName].forEach(nestedMap => nestedMap instanceof Map && nestedMap.clear())

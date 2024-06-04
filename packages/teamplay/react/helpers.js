@@ -1,6 +1,4 @@
-import { useMemo, useContext, createContext } from 'react'
-import { CACHE_ACTIVE, getDummyCache } from '@teamplay/cache'
-import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
+import { useContext, createContext, useRef, useEffect } from 'react'
 
 export const ComponentMetaContext = createContext({})
 
@@ -24,12 +22,18 @@ export function pipeComponentMeta (SourceComponent, TargetComponent, suffix = ''
   return TargetComponent
 }
 
-export function useCache (active) {
-  if (!CACHE_ACTIVE.value || !active) return useMemo(getDummyCache, []) // eslint-disable-line react-hooks/rules-of-hooks
-  const { cache } = useContext(ComponentMetaContext) // eslint-disable-line react-hooks/rules-of-hooks
-  return cache
+export function useId () {
+  const { componentId } = useContext(ComponentMetaContext)
+  return componentId
 }
 
 export function useUnmount (fn) {
-  useIsomorphicLayoutEffect(() => fn, [])
+  const fnRef = useRef(fn)
+  fnRef.current = fn
+  useEffect(
+    () => () => {
+      fnRef.current()
+    },
+    []
+  )
 }

@@ -80,7 +80,9 @@ class Doc {
   }
 
   async unsubscribe () {
-    if (!this.subscribed) throw Error('trying to unsubscribe while not subscribed')
+    if (!this.subscribed) {
+      throw Error('trying to unsubscribe while not subscribed. Doc: ' + [this.collection, this.docId])
+    }
     this.subscribed = undefined
     // if we are still handling the subscription, just wait for it to finish and then unsubscribe
     if (this.subscribing) {
@@ -216,7 +218,8 @@ class DocSubscriptions {
     if (!doc) return
     this.subCount.delete(hash)
     this.initialized.delete(hash)
-    await doc.unsubscribe()
+    // If the document was initialized as part of query and wasn't directly subscribed to, we should not unsubscribe from it.
+    if (doc.subscribed) await doc.unsubscribe()
     if (doc.subscribed) return // if we subscribed again while waiting for unsubscribe, we don't delete the doc
     this.docs.delete(hash)
   }

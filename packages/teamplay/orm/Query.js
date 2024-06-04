@@ -87,7 +87,9 @@ class Query {
   }
 
   async unsubscribe () {
-    if (!this.subscribed) throw Error('trying to unsubscribe while not subscribed')
+    if (!this.subscribed) {
+      throw Error('trying to unsubscribe while not subscribed. Query: ' + [this.collection, this.params])
+    }
     this.subscribed = undefined
     // if we are still handling the subscription, just wait for it to finish and then unsubscribe
     if (this.subscribing) {
@@ -227,7 +229,7 @@ class QuerySubscriptions {
     let count = this.subCount.get(hash) || 0
     count -= 1
     if (count < 0) {
-      if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw ERRORS.notSubscribed($query)
+      if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw Error(ERRORS.notSubscribed($query))
       return
     }
     if (count > 0) {
@@ -275,5 +277,8 @@ export function getQuerySignal (segments, params, options) {
 }
 
 const ERRORS = {
-  notSubscribed: $doc => Error('trying to unsubscribe when not subscribed. Doc: ' + $doc.path())
+  notSubscribed: $query => `
+    trying to unsubscribe when not subscribed. Query:
+    ${[$query[SEGMENTS], $query[PARAMS]]}
+  `
 }

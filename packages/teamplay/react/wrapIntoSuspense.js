@@ -1,50 +1,29 @@
-import { useMemo, forwardRef as _forwardRef, memo, createElement as el, Suspense } from 'react'
-import { createCaches } from '@teamplay/cache'
-import { __increment, __decrement } from '@teamplay/debug'
-import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext, useUnmount } from './helpers.js'
+import { forwardRef as _forwardRef, memo, createElement as el, Suspense, useId, useRef } from 'react'
+import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.js'
 
-export default function wrapIntoSuspense (
-  ObservedComponent
-) {
-  const { forwardRef, suspenseProps } = ObservedComponent.__observerOptions
-  if (!(suspenseProps && suspenseProps.fallback)) {
-    throw Error(
-      '[observer()] You must pass at least ' +
-      'a fallback parameter to suspenseProps'
-    )
-  }
+export default function wrapIntoSuspense ({
+  Component,
+  forwardRef,
+  suspenseProps = DEFAULT_SUSPENSE_PROPS
+} = {}) {
+  if (!suspenseProps?.fallback) throw Error(ERRORS.noFallback)
 
   let SuspenseWrapper = (props, ref) => {
-    const cache = useMemo(() => {
-      __increment('ObserverWrapper.cache')
-      return createCaches(['styles', 'model'])
-    }, [])
-    // TODO: using useState instead of useMemo will keep this intact during Fast Refresh
-    //       Research if we can change it to use it.
-    // const [componentMeta] = React.useState({
-    //   componentId: $root.id(),
-    //   createdAt: Date.now(),
-    //   cache
-    // })
-    const componentMeta = useMemo(function () {
-      return {
-        // componentId: $root.id(), // TODO: implement creating a unique component guid here (if it's needed anymore)
-        createdAt: Date.now(),
-        cache
+    const componentId = useId()
+    const componentMetaRef = useRef()
+    if (!componentMetaRef.current) {
+      componentMetaRef.current = {
+        componentId,
+        createdAt: Date.now()
       }
-    }, [])
-
-    useUnmount(() => {
-      __decrement('ObserverWrapper.cache')
-      cache.clear()
-    })
+    }
 
     if (forwardRef) props = { ...props, ref }
 
     return (
-      el(ComponentMetaContext.Provider, { value: componentMeta },
+      el(ComponentMetaContext.Provider, { value: componentMetaRef.current },
         el(Suspense, suspenseProps,
-          el(ObservedComponent, props)
+          el(Component, props)
         )
       )
     )
@@ -52,12 +31,19 @@ export default function wrapIntoSuspense (
 
   // pipe only displayName because forwardRef render function
   // do not support propTypes or defaultProps
-  pipeComponentDisplayName(ObservedComponent, SuspenseWrapper, 'StartupjsObserverWrapper')
+  pipeComponentDisplayName(Component, SuspenseWrapper, 'StartupjsObserverWrapper')
 
   if (forwardRef) SuspenseWrapper = _forwardRef(SuspenseWrapper)
   SuspenseWrapper = memo(SuspenseWrapper)
 
-  pipeComponentMeta(ObservedComponent, SuspenseWrapper)
+  pipeComponentMeta(Component, SuspenseWrapper)
 
   return SuspenseWrapper
+}
+
+const DEFAULT_SUSPENSE_PROPS = { fallback: el(NullComponent, null, null) }
+function NullComponent () { return null }
+
+const ERRORS = {
+  noFallback: '[observer()] You must pass at least a fallback parameter to suspenseProps'
 }

@@ -7,13 +7,15 @@ connect()
 const App = observer(({ userId }) => {
   const $user = sub($.users[userId])
   if (!$user.get()) throw $user.set({ points: 0 })
+  const $counter = $(0)
   const { $points } = $user
   const increment = () => $points.set($points.get() + 1)
   const reset = () => $points.set(0)
-  return <>
+  return <div style={{ display: 'flex', gap: 10 }}>
     <button onClick={increment}>Points: {$points.get()}</button>
     <button onClick={reset}>Reset</button>
-  </>
+    <button onClick={() => $counter.increment()}>Local counter: {$counter.get()}</button>
+  </div>
 })
 
 const container = document.body.appendChild(document.createElement('div'))
