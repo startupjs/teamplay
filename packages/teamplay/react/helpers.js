@@ -28,8 +28,8 @@ export function useId () {
 }
 
 export function useUnmount (fn) {
-  const fnRef = useRef(fn)
-  fnRef.current = fn
+  const fnRef = useRef()
+  if (fnRef.current !== fn) fnRef.current = fn
   useEffect(
     () => () => {
       fnRef.current()
