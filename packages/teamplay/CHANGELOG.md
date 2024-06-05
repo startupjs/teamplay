@@ -1,3 +1,15 @@
+# v0.1.13 (Wed Jun 05 2024)
+
+#### 🐛 Bug Fix
+
+- fix(teamplay/react): update signal ref if it changes ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.12 (Wed Jun 05 2024)
 
 #### 🐛 Bug Fix
