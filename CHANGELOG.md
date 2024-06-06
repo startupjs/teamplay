@@ -1,3 +1,21 @@
+# v0.2.0 (Thu Jun 06 2024)
+
+#### 🚀 Enhancement
+
+- `teamplay`
+  - feat(teamplay): support passing array to sub() for multiple parallel subscriptions ([@cray0000](https://github.com/cray0000))
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): correctly handle array indexes; add more array methods - reduce, find; return id from .add ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.13 (Wed Jun 05 2024)
 
 #### 🐛 Bug Fix
