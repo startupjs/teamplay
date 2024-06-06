@@ -23,7 +23,7 @@ export function getRaw (segments) {
 
 export function set (segments, value, tree = dataTree) {
   let dataNode = tree
-  let dataNodeRaw = raw(dataTree)
+  let dataNodeRaw = raw(tree)
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
     if (dataNode[segment] == null) {

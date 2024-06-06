@@ -12,13 +12,15 @@
  *    in the raw data tree which have the same name as signal's methods
  */
 import uuid from '@teamplay/utils/uuid'
-import { get as _get, set as _set, del as _del, setPublicDoc as _setPublicDoc } from './dataTree.js'
+import { get as _get, set as _set, del as _del, setPublicDoc as _setPublicDoc, getRaw } from './dataTree.js'
 import getSignal, { rawSignal } from './getSignal.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
+export const ARRAY_METHOD = Symbol('run array method on the signal')
+export const GET = Symbol('get the value of the signal - either observed or raw')
 
 export default class Signal extends Function {
   constructor (segments) {
@@ -36,13 +38,23 @@ export default class Signal extends Function {
     return uuid()
   }
 
-  get () {
-    if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
+  [GET] (method) {
+    if (arguments.length > 1) throw Error('Signal[GET]() only accepts method as an argument')
     if (this[IS_QUERY]) {
       const hash = this[HASH]
-      return _get([QUERIES, hash, 'docs'])
+      return method([QUERIES, hash, 'docs'])
     }
-    return _get(this[SEGMENTS])
+    return method(this[SEGMENTS])
+  }
+
+  get () {
+    if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
+    return this[GET](_get)
+  }
+
+  peek () {
+    if (arguments.length > 0) throw Error('Signal.peek() does not accept any arguments')
+    return this[GET](getRaw)
   }
 
   getId () {
@@ -62,19 +74,32 @@ export default class Signal extends Function {
     }
   }
 
-  map (...args) {
+  [ARRAY_METHOD] (method, nonArrayReturnValue, ...args) {
     if (this[IS_QUERY]) {
       const collection = this[SEGMENTS][0]
       const hash = this[HASH]
       const ids = _get([QUERIES, hash, 'ids'])
-      return ids.map(id => getSignal(getRoot(this), [collection, id])).map(...args)
+      return ids.map(
+        id => getSignal(getRoot(this), [collection, id])
+      )[method](...args)
     }
     const items = _get(this[SEGMENTS])
-    if (!Array.isArray(items)) return []
-    return Array(items.length)
-      .fill()
-      .map((_, index) => getSignal(getRoot(this), [...this[SEGMENTS], index]))
-      .map(...args)
+    if (!Array.isArray(items)) return nonArrayReturnValue
+    return Array(items.length).fill().map(
+      (_, index) => getSignal(getRoot(this), [...this[SEGMENTS], index])
+    )[method](...args)
+  }
+
+  map (...args) {
+    return this[ARRAY_METHOD]('map', [], ...args)
+  }
+
+  reduce (...args) {
+    return this[ARRAY_METHOD]('reduce', undefined, ...args)
+  }
+
+  find (...args) {
+    return this[ARRAY_METHOD]('find', undefined, ...args)
   }
 
   async set (value) {
@@ -104,7 +129,9 @@ export default class Signal extends Function {
     if (this[IS_QUERY]) throw Error('Signal.pop() can\'t be used on a query signal')
     const array = this.get()
     if (!Array.isArray(array) || array.length === 0) return
+    const lastItem = array[array.length - 1]
     await this[array.length - 1].del()
+    return lastItem
   }
 
   // TODO: implement a json0 operation for unshift
@@ -138,6 +165,7 @@ export default class Signal extends Function {
     }
     id ??= uuid()
     await this[id].set(value)
+    return id
   }
 
   async del () {
@@ -178,7 +206,7 @@ export const regularBindings = {
   }
 }
 
-const QUERY_METHODS = ['map', 'get']
+const QUERY_METHODS = ['map', 'reduce', 'find', 'get']
 
 // dot syntax always returns a child signal even if such method or property exists.
 // The method is only called when the signal is explicitly called as a function,
@@ -201,12 +229,21 @@ export const extremelyLateBindings = {
     if (typeof key === 'symbol') return Reflect.get(signal, key, receiver)
     if (key === 'then') return undefined // handle checks for whether the symbol is a Promise
     key = transformAlias(signal[SEGMENTS], key)
+    key = maybeTransformToArrayIndex(key)
     if (signal[IS_QUERY]) {
       if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'ids'])
       if (QUERY_METHODS.includes(key)) return Reflect.get(signal, key, receiver)
     }
     return getSignal(getRoot(signal), [...signal[SEGMENTS], key])
   }
+}
+
+const REGEX_POSITIVE_INTEGER = /^(?:0|[1-9]\d*)$/
+// Transform the key to a number if it's a positive integer.
+// Otherwise the key must be a string.
+function maybeTransformToArrayIndex (key) {
+  if (typeof key === 'string' && REGEX_POSITIVE_INTEGER.test(key)) return +key
+  return key
 }
 
 const transformAlias = (({
