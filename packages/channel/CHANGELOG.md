@@ -1,3 +1,15 @@
+# v0.1.15 (Sat Jun 29 2024)
+
+#### 🚀 Enhancement
+
+- feat(channel): add 'authorize' option for server-side to authorize connection requests; add 'getConnectionUrl' option for client-side to modify the connection url ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.6 (Fri May 31 2024)
 
 #### ⚠️ Pushed to `master`

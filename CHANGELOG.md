@@ -1,3 +1,16 @@
+# v0.2.0 (Sat Jun 29 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/channel`, `teamplay`
+  - feat(channel): add 'authorize' option for server-side to authorize connection requests; add 'getConnectionUrl' option for client-side to modify the connection url ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.0 (Thu Jun 06 2024)
 
 #### 🚀 Enhancement
