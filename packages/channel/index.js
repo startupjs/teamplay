@@ -7,16 +7,18 @@ export default class Socket {
   constructor ({
     path = DEFAULT_PATH,
     baseUrl = guessBaseUrl(),
+    getConnectionUrl,
     reconnect = true,
     allowXhrFallback = false,
     forceXhrFallback = false,
     timeout = 10000,
     timeoutIncrement = 10000
   } = {}) {
+    getConnectionUrl ??= getDefaultConnectionUrl
     this._reconnect = reconnect
     this._timeout = timeout
     this._timeoutIncrement = timeoutIncrement
-    this._url = getConnectionUrl(baseUrl, path)
+    this._url = getConnectionUrl({ baseUrl, path, getDefaultConnectionUrl })
     this._allowXhrFallback = forceXhrFallback || allowXhrFallback
     this._useXhrFallback = forceXhrFallback
 
@@ -25,6 +27,13 @@ export default class Socket {
     this._attemptNum = 0
 
     this.open()
+
+    function getDefaultConnectionUrl () {
+      if (typeof path !== 'string') throw Error(ERRORS.noRoute)
+      if (typeof baseUrl !== 'string') throw Error(ERRORS.noBaseUrl)
+      baseUrl = baseUrl.replace(/\/$/, '')
+      return baseUrl + path
+    }
   }
 
   open () {
@@ -148,13 +157,6 @@ function guessBaseUrl () {
   if (typeof window !== 'undefined') baseUrl = window.location?.origin
   if (!baseUrl) throw Error(ERRORS.noBaseUrl)
   return baseUrl
-}
-
-function getConnectionUrl (baseUrl, path) {
-  if (typeof path !== 'string') throw Error(ERRORS.noRoute)
-  if (typeof baseUrl !== 'string') throw Error(ERRORS.noBaseUrl)
-  baseUrl = baseUrl.replace(/\/$/, '')
-  return baseUrl + path
 }
 
 // Maybe need to use reconnection timing algorithm from

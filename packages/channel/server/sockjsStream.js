@@ -1,17 +1,18 @@
-import WebSocket from 'ws'
 import { Duplex } from 'stream'
 
+const OPEN = 1 // WebSocket.OPEN
+
 /**
- * @param {EventEmitter} client is a websocket client session for each
+ * @param {EventEmitter} client is a SockJS client session for each
  *   browser window/tab which connects to the server
  * @param {ClientStream} ClientStream is a stream class that is used to create
  *   the stream. It is passed in as a parameter to allow for different stream implementations
  * @return {Duplex} stream
  */
-export default function createStream (client) {
-  const stream = new WebSocketClientStream(client)
+export default function createSockjsStream (client) {
+  const stream = new SockJsClientStream(client)
 
-  client.on('message', function onMessage (message) {
+  client.on('data', function onMessage (message) {
     let data
     try {
       data = JSON.parse(message)
@@ -30,16 +31,16 @@ export default function createStream (client) {
   return stream
 }
 
-export class WebSocketClientStream extends Duplex {
-  static _type = 'websocket'
+export class SockJsClientStream extends Duplex {
+  static _type = 'sockjs'
 
   constructor (client) {
     super({ objectMode: true })
     this.client = client
 
-    this.on('error', (error) => {
+    this.on('error', err => {
       // log stream type and error
-      console.warn(`[@teamplay/channel] ${this.constructor._type} client message stream error`, error)
+      console.warn(`[@teamplay/channel] ${this.constructor._type} client message stream error`, err)
       this._stopClient()
     })
 
@@ -54,10 +55,12 @@ export class WebSocketClientStream extends Duplex {
 
   _write (chunk, encoding, cb) {
     // Silently drop messages after the session is closed
-    if (this.client.readyState !== WebSocket.OPEN) return cb()
-    this.client.send(JSON.stringify(chunk), (err) => {
-      if (err) console.error('[@teamplay/channel] send:', err)
-    })
+    if (this.client.readyState !== OPEN) return cb()
+    try {
+      this.client.write(JSON.stringify(chunk))
+    } catch (err) {
+      console.error(`[@teamplay/channel] ${this.constructor._type} send:`, err)
+    }
     cb()
   }
 

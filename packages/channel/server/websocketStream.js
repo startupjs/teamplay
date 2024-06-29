@@ -1,18 +1,17 @@
+import WebSocket from 'ws'
 import { Duplex } from 'stream'
 
-const OPEN = 1 // WebSocket.OPEN
-
 /**
- * @param {EventEmitter} client is a SockJS client session for each
+ * @param {EventEmitter} client is a websocket client session for each
  *   browser window/tab which connects to the server
  * @param {ClientStream} ClientStream is a stream class that is used to create
  *   the stream. It is passed in as a parameter to allow for different stream implementations
  * @return {Duplex} stream
  */
-export default function createStream (client) {
-  const stream = new SockJsClientStream(client)
+export default function createWebsocketStream (client) {
+  const stream = new WebSocketClientStream(client)
 
-  client.on('data', function onMessage (message) {
+  client.on('message', function onMessage (message) {
     let data
     try {
       data = JSON.parse(message)
@@ -31,16 +30,16 @@ export default function createStream (client) {
   return stream
 }
 
-export class SockJsClientStream extends Duplex {
-  static _type = 'sockjs'
+export class WebSocketClientStream extends Duplex {
+  static _type = 'websocket'
 
   constructor (client) {
     super({ objectMode: true })
     this.client = client
 
-    this.on('error', err => {
+    this.on('error', (error) => {
       // log stream type and error
-      console.warn(`[@teamplay/channel] ${this.constructor._type} client message stream error`, err)
+      console.warn(`[@teamplay/channel] ${this.constructor._type} client message stream error`, error)
       this._stopClient()
     })
 
@@ -55,12 +54,10 @@ export class SockJsClientStream extends Duplex {
 
   _write (chunk, encoding, cb) {
     // Silently drop messages after the session is closed
-    if (this.client.readyState !== OPEN) return cb()
-    try {
-      this.client.write(JSON.stringify(chunk))
-    } catch (err) {
-      console.error(`[@teamplay/channel] ${this.constructor._type} send:`, err)
-    }
+    if (this.client.readyState !== WebSocket.OPEN) return cb()
+    this.client.send(JSON.stringify(chunk), (err) => {
+      if (err) console.error('[@teamplay/channel] send:', err)
+    })
     cb()
   }
 
