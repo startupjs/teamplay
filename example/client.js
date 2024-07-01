@@ -11,7 +11,7 @@ const App = observer(({ userId }) => {
   const { $points } = $user
   const increment = () => $points.set($points.get() + 1)
   const reset = () => $points.set(0)
-  return <div style={{ display: 'flex', gap: 10 }}>
+  return <div style={{ display: 'flex', gap: '10px' }}>
     <button onClick={increment}>Points: {$points.get()}</button>
     <button onClick={reset}>Reset</button>
     <button onClick={() => $counter.increment()}>Local counter: {$counter.get()}</button>
