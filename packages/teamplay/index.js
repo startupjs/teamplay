@@ -13,7 +13,8 @@ export { default as signal } from './orm/getSignal.js'
 export { GLOBAL_ROOT_ID } from './orm/Root.js'
 export const $ = _getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 export default $
-export { default as sub } from './react/universalSub.js'
+export { default as sub } from './orm/sub.js'
+export { default as useSub } from './react/useSub.js'
 export { default as observer } from './react/observer.js'
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
@@ -25,19 +26,3 @@ export function getRootSignal (options) {
     ...options
   })
 }
-
-// the following are react-specific hook alternatives to $() and sub() functions.
-// In future we might want to expose them, but at the current time they are not needed
-// and instead just the regular $() and sub() functions are used since they are universal
-//
-// export function use$ (value) {
-//   // TODO: maybe replace all non-letter/digit characters with underscores
-//   const id = useId() // eslint-disable-line react-hooks/rules-of-hooks
-//   return $(value, id)
-// }
-
-// export function useSub (...args) {
-//   const promiseOrSignal = sub(...args)
-//   if (promiseOrSignal.then) throw promiseOrSignal
-//   return promiseOrSignal
-// }

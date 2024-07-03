@@ -1,3 +1,7 @@
+// NOTE: this is not used currently since using an explicit useSub()
+//       hook is easier to understand in a React context.
+//       Having the same sub() function working with either await or without it
+//       is confusing. It's better to have a separate function for the hook.
 import { useRef } from 'react'
 import sub from '../orm/sub.js'
 import executionContextTracker from './executionContextTracker.js'
