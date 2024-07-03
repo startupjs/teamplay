@@ -1,3 +1,22 @@
+# v0.2.0 (Wed Jul 03 2024)
+
+#### 🚀 Enhancement
+
+- `teamplay`
+  - feat: expose an explicit 'useSub()' function to be used inside React components instead of sub() ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- minor(example): fix css unit ([@cray0000](https://github.com/cray0000))
+- `teamplay`
+  - readme: add Usage section with introduction and documentation ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.0 (Sat Jun 29 2024)
 
 #### 🚀 Enhancement

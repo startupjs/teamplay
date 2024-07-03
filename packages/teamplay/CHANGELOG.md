@@ -1,3 +1,19 @@
+# v0.1.16 (Wed Jul 03 2024)
+
+#### 🚀 Enhancement
+
+- feat: expose an explicit 'useSub()' function to be used inside React components instead of sub() ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- readme: add Usage section with introduction and documentation ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.15 (Sat Jun 29 2024)
 
 #### 🚀 Enhancement
