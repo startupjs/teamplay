@@ -1,0 +1,61 @@
+# Installation
+
+import { PackageManagerTabs } from '@theme'
+
+<PackageManagerTabs command="install teamplay" />
+
+TeamPlay can be used in two modes: client-only mode and with server synchronization. Choose the appropriate installation method based on your needs.
+
+## Client-only Mode
+
+If you just want a client-only mode without any data being synced to the server, you don't need to set up anything extra. You can jump directly to the [Usage](/guide/usage) section after installing the package.
+
+## Synchronization with Server
+
+To enable synchronization with the server, follow these steps:
+
+### Client Setup
+
+Enable the connection on the client somewhere early in your client app:
+
+```js
+import connect from 'teamplay/connect'
+connect()
+```
+
+### Server Setup
+
+On the server, you need to create the TeamPlay backend and then create a connection handler for WebSockets:
+
+```js
+import { createBackend, initConnection } from 'teamplay/server'
+
+const backend = createBackend()
+const { upgrade } = initConnection(backend)
+server.on('upgrade', upgrade) // Node's 'http' server instance
+```
+
+## Database Configuration
+
+- For production use, it's recommended to use MongoDB. It will be automatically used if you set the environment variable `MONGO_URL`.
+- When deploying to a cluster with multiple instances, you also have to set the environment variable `REDIS_URL` (Redis).
+
+If `MONGO_URL` is not set, the alternative `mingo` mock is used instead, which persists data into an SQLite file `local.db` in the root of your project.
+
+:::note
+TeamPlay's `createBackend()` is a wrapper around creating a [ShareDB's backend](https://share.github.io/sharedb/api/backend). You can instead manually create a ShareDB backend yourself and pass it to `initConnection()`. `ShareDB` is re-exported from `teamplay/server`, you can get it as `import { ShareDB } from 'teamplay/server'`.
+:::
+
+## `initConnection(backend, options)`
+
+The `initConnection` function accepts the following parameters:
+
+- `backend`: ShareDB backend instance
+- `options`:
+  - `fetchOnly` (default: `true`): By default, all subscriptions on the server are not reactive. This is strongly recommended. If you need the subscriptions to reactively update data whenever it changes (the same way as they work on client-side), pass `{ fetchOnly: false }`.
+
+```js
+const { upgrade } = initConnection(backend, { fetchOnly: false })
+```
+
+Now that you have TeamPlay installed and configured, you're ready to start using it in your application!

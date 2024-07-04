@@ -11,7 +11,10 @@
     "start": "cd example && npm run start",
     "test": "cd packages/teamplay && npm run test",
     "release-patch": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + minor + '.' + (parseInt(patch) + 1));\")",
-    "release-minor": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + (parseInt(minor) + 1) + '.' + 0);\")"
+    "release-minor": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + (parseInt(minor) + 1) + '.' + 0);\")",
+    "docs": "rspress dev --port 3010",
+    "docs-build": "rspress build",
+    "docs-preview": "rspress preview --port 3010"
   },
   "devDependencies": {
     "@auto-it/conventional-commits": "^11.1.6",
@@ -24,6 +27,8 @@
     "lint-staged": "^15.2.2",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "rspress": "^1.25.2",
+    "ts-node": "^10.9.2",
     "typescript": "^5.1.3"
   },
   "auto": {

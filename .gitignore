@@ -21,3 +21,6 @@ yarn-error.log
 
 # GH_TOKEN and NPM_TOKEN in .env for 'auto' releases
 .env
+
+# documentation
+doc_build

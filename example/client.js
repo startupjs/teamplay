@@ -1,11 +1,11 @@
 import { createRoot } from 'react-dom/client'
 import connect from 'teamplay/connect'
-import { observer, $, sub } from 'teamplay'
+import { observer, $, useSub } from 'teamplay'
 
 connect()
 
 const App = observer(({ userId }) => {
-  const $user = sub($.users[userId])
+  const $user = useSub($.users[userId])
   if (!$user.get()) throw $user.set({ points: 0 })
   const $counter = $(0)
   const { $points } = $user

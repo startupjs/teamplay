@@ -85,7 +85,7 @@ In teamplay, data is organized into collections. There are two types:
 
 1. **Public Collections**: These are shared across all users of your app. They typically start with a lowercase letter (e.g., `users`, `posts`).
 
-2. **Private Collections**: These are specific to each user or session. They start with an underscore or dollar sign (e.g., `_session`, `$page`).
+2. **Private Collections**: These are specific to each user or session. They start with an underscore (e.g., `_session`).
 
 ### Basic Operations on Signals
 
