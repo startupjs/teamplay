@@ -58,7 +58,7 @@ const UserProfile = observer(({ userId }) => {
   const $user = useSub($.users[userId])
 
   if (!$user.get()) {
-    throw $user.set({ name: 'New User', createdAt: new Date() })
+    throw $user.set({ name: 'New User', createdAt: Date.now() })
   }
 
   // Rest of your component code
@@ -86,7 +86,7 @@ const UserProfile = observer(({ userId }) => {
   const $editMode = $(false)
 
   if (!$user.get()) {
-    throw $user.set({ name: 'New User', bio: 'Tell us about yourself', createdAt: new Date() })
+    throw $user.set({ name: 'New User', bio: 'Tell us about yourself', createdAt: Date.now() })
   }
 
   const handleToggleEditMode = () => {
