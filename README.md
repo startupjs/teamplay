@@ -17,7 +17,7 @@ Features:
 
 ## Installation
 
-For installation and documentation see [packages/teamplay](./packages/teamplay)
+For installation and documentation see [teamplay.dev](https://teamplay.dev)
 
 ## License
 
