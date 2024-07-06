@@ -34,10 +34,41 @@ const $userName = $.users.userId.name
 const $sessionData = $._session
 ```
 
+## Simplifications
+
+### Private '_session' Collection
+
+For convenience, TeamPlay allows you to access the private '_session' collection without the underscore:
+
+```javascript
+// These are equivalent:
+const $sessionData1 = $._session
+const $sessionData2 = $.session
+```
+
+This simplification makes it easier to work with session data without constantly typing the underscore.
+
+### Destructuring Assignment Simplification
+
+When destructuring properties from a signal object, TeamPlay provides a convenient shorthand for properties starting with '$'. The '$' is automatically removed from the property name:
+
+```javascript
+const { $name, $age } = $({ name: 'John', age: 20 })
+
+// This is equivalent to:
+const { name: $name, age: $age } = $({ name: 'John', age: 20 })
+```
+
+This simplification allows for more concise and readable code when working with multiple signals from an object.
+
 ## Notes
 
 - Public collections typically start with a lowercase letter (e.g., `users`, `posts`).
-- Private collections start with an underscore (e.g., `_session`).
+- Private collections start with an underscore or dollar sign (e.g., `_session`, `$page`).
 - The root signal is available globally in your application after setting up TeamPlay.
-
-Remember that accessing a signal doesn't automatically fetch or subscribe to the data. To actually get the data you have to first subscribe to it with `sub()` function and then get it from the signal with `.get()`.
+- Remember that accessing a signal doesn't fetch or subscribe to the data. To actually retrieve or subscribe to the data, you need to use methods like `.get()` or the `sub()` function.
+- If you need to access an actual property named '$', use '$$' instead. For example:
+  ```javascript
+  const { $$specialProp } = $({ $specialProp: 'value' })
+  ```
+  This is a rare case and is only needed if your data actually contains properties starting with '$'.

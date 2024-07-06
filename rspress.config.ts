@@ -43,7 +43,13 @@ export default defineConfig({
           text: 'API',
           items: [
             { text: '$ (Root Signal)', link: '/api/root-signal' },
-            { text: '$() Function', link: '/api/dollar-function' }
+            { text: '$() Function', link: '/api/dollar-function' },
+            { text: 'sub() Function', link: '/api/sub-function' },
+            { text: 'observer() HOC', link: '/api/observer-hoc' },
+            { text: 'useSub() Hook', link: '/api/use-sub-hook' },
+            { text: 'Signal Methods', link: '/api/signal-methods' },
+            { text: 'Query Signals', link: '/api/query-signals' },
+            { text: 'Server-side API', link: '/api/server-side' }
           ]
         }
       ]

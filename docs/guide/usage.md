@@ -8,7 +8,14 @@ In TeamPlay, data is organized into collections. There are two types:
 
 1. **Public Collections**: These are shared across all users of your app. They typically start with a lowercase letter (e.g., `users`, `posts`).
 
+    - public collections are stored in the DB on the server.
+    - you must subscribe to any data from them before you can read or modify it.
+    - use them to persist data to the DB and to synchronize it between all users.
+
 2. **Private Collections**: These are specific to each user or session. They start with an underscore (e.g., `_session`).
+
+    - private collections are stored only on the client.
+    - use them to store any temporary data which you only need on the current page or in the current client session.
 
 ## Basic Operations on Signals
 
