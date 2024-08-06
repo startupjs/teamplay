@@ -18,7 +18,7 @@ export { default as useSub } from './react/useSub.js'
 export { default as observer } from './react/observer.js'
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
-export { aggregation, aggregationHeader } from '@teamplay/utils/aggregation'
+export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'
 
 export function getRootSignal (options) {
   return _getRootSignal({

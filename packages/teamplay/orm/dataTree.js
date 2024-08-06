@@ -2,6 +2,7 @@ import { observable, raw } from '@nx-js/observer-util'
 import jsonDiff from 'json0-ot-diff'
 import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.js'
+import setDiffDeep from '../utils/setDiffDeep.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 
@@ -62,8 +63,12 @@ export function set (segments, value, tree = dataTree) {
     }
     return
   }
-  // just set the new value
-  dataNode[key] = value
+  // instead of just setting the new value `dataNode[key] = value` we want
+  // to deeply update it to prevent unnecessary reactivity triggers.
+  const newValue = setDiffDeep(dataNode[key], value)
+  // handle case when the value couldn't be updated in place and is completely new
+  // (we just set it to this value)
+  if (dataNode[key] !== newValue) dataNode[key] = newValue
 }
 
 export function del (segments, tree = dataTree) {

@@ -1,28 +1,28 @@
 import { raw } from '@nx-js/observer-util'
 import { get as _get, set as _set, del as _del } from './dataTree.js'
-import { SEGMENTS } from './Signal.js'
 import getSignal from './getSignal.js'
 import { getConnection, fetchOnly } from './connection.js'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
+export const COLLECTION_NAME = Symbol('query collection name')
 export const PARAMS = Symbol('query params')
 export const HASH = Symbol('query hash')
 export const IS_QUERY = Symbol('is query signal')
 export const QUERIES = '$queries'
 
-class Query {
+export class Query {
   subscribing
   unsubscribing
   subscribed
   initialized
   shareQuery
 
-  constructor (collection, params) {
-    this.collection = collection
+  constructor (collectionName, params) {
+    this.collectionName = collectionName
     this.params = params
-    this.hash = hashQuery([this.collection], this.params)
+    this.hash = hashQuery(this.collectionName, this.params)
     this.docSignals = new Set()
   }
 
@@ -66,7 +66,7 @@ class Query {
         await this.subscribing
         this.init()
       } catch (err) {
-        console.log('subscription error', [this.collection, this.params], err)
+        console.log('subscription error', [this.collectionName, this.params], err)
         this.subscribed = undefined
         throw err
       } finally {
@@ -79,7 +79,7 @@ class Query {
   async _subscribe () {
     await new Promise((resolve, reject) => {
       const method = fetchOnly ? 'createFetchQuery' : 'createSubscribeQuery'
-      this.shareQuery = getConnection()[method](this.collection, this.params, {}, err => {
+      this.shareQuery = getConnection()[method](this.collectionName, this.params, {}, err => {
         if (err) return reject(err)
         resolve()
       })
@@ -88,7 +88,7 @@ class Query {
 
   async unsubscribe () {
     if (!this.subscribed) {
-      throw Error('trying to unsubscribe while not subscribed. Query: ' + [this.collection, this.params])
+      throw Error('trying to unsubscribe while not subscribed. Query: ' + [this.collectionName, this.params])
     }
     this.subscribed = undefined
     // if we are still handling the subscription, just wait for it to finish and then unsubscribe
@@ -120,7 +120,7 @@ class Query {
         this.initialized = undefined
         this._removeData()
       } catch (err) {
-        console.log('error unsubscribing', [this.collection, this.params], err)
+        console.log('error unsubscribing', [this.collectionName, this.params], err)
         this.subscribed = true
         throw err
       } finally {
@@ -148,7 +148,7 @@ class Query {
 
       const ids = this.shareQuery.results.map(doc => doc.id)
       for (const docId of ids) {
-        const $doc = getSignal(undefined, [this.collection, docId])
+        const $doc = getSignal(undefined, [this.collectionName, docId])
         docSubscriptions.init($doc)
         this.docSignals.add($doc)
       }
@@ -161,7 +161,7 @@ class Query {
 
       const ids = shareDocs.map(doc => doc.id)
       for (const docId of ids) {
-        const $doc = getSignal(undefined, [this.collection, docId])
+        const $doc = getSignal(undefined, [this.collectionName, docId])
         docSubscriptions.init($doc)
         this.docSignals.add($doc)
       }
@@ -182,7 +182,7 @@ class Query {
 
       const docIds = shareDocs.map(doc => doc.id)
       for (const docId of docIds) {
-        const $doc = getSignal(undefined, [this.collection, docId])
+        const $doc = getSignal(undefined, [this.collectionName, docId])
         this.docSignals.delete($doc)
       }
       const ids = _get([QUERIES, this.hash, 'ids'])
@@ -196,36 +196,35 @@ class Query {
   }
 }
 
-class QuerySubscriptions {
-  constructor () {
+export class QuerySubscriptions {
+  constructor (QueryClass = Query) {
+    this.QueryClass = QueryClass
     this.subCount = new Map()
     this.queries = new Map()
-    this.fr = new FinalizationRegistry(({ segments, params }) => this.destroy(segments, params))
+    this.fr = new FinalizationRegistry(({ collectionName, params }) => this.destroy(collectionName, params))
   }
 
   subscribe ($query) {
-    const segments = [...$query[SEGMENTS]]
+    const collectionName = $query[COLLECTION_NAME]
     const params = JSON.parse(JSON.stringify($query[PARAMS]))
-    const hash = hashQuery(segments, params)
+    const hash = $query[HASH]
     let count = this.subCount.get(hash) || 0
     count += 1
     this.subCount.set(hash, count)
     if (count > 1) return this.queries.get(hash).subscribing
 
-    this.fr.register($query, { segments, params }, $query)
+    this.fr.register($query, { collectionName, params }, $query)
 
     let query = this.queries.get(hash)
     if (!query) {
-      query = new Query(segments[0], params)
+      query = new this.QueryClass(collectionName, params)
       this.queries.set(hash, query)
     }
     return query.subscribe()
   }
 
   async unsubscribe ($query) {
-    const segments = [...$query[SEGMENTS]]
-    const params = JSON.parse(JSON.stringify($query[PARAMS]))
-    const hash = hashQuery(segments, params)
+    const hash = $query[HASH]
     let count = this.subCount.get(hash) || 0
     count -= 1
     if (count < 0) {
@@ -244,8 +243,8 @@ class QuerySubscriptions {
     this.queries.delete(hash)
   }
 
-  async destroy (segments, params) {
-    const hash = hashQuery(segments, params)
+  async destroy (collectionName, params) {
+    const hash = hashQuery(collectionName, params)
     const query = this.queries.get(hash)
     if (!query) return
     this.subCount.delete(hash)
@@ -257,20 +256,30 @@ class QuerySubscriptions {
 
 export const querySubscriptions = new QuerySubscriptions()
 
-export function hashQuery (segments, params) {
+export function hashQuery (collectionName, params) {
   // TODO: probably makes sense to use fast-stable-json-stringify for this because of the params
-  return JSON.stringify({ query: [segments[0], params] })
+  return JSON.stringify({ query: [collectionName, params] })
 }
 
-export function getQuerySignal (segments, params, options) {
-  params = JSON.parse(JSON.stringify(params))
-  const hash = hashQuery(segments, params)
+export function parseQueryHash (hash) {
+  try {
+    const { query: [collectionName, params] } = JSON.parse(hash)
+    return { collectionName, params }
+  } catch (err) {
+    return {}
+  }
+}
 
-  const $query = getSignal(undefined, segments, {
+export function getQuerySignal (collectionName, params, options) {
+  params = JSON.parse(JSON.stringify(params))
+  const hash = hashQuery(collectionName, params)
+
+  const $query = getSignal(undefined, [collectionName], {
     signalHash: hash,
     ...options
   })
   $query[IS_QUERY] ??= true
+  $query[COLLECTION_NAME] ??= collectionName
   $query[PARAMS] ??= params
   $query[HASH] ??= hash
   return $query
@@ -278,7 +287,8 @@ export function getQuerySignal (segments, params, options) {
 
 const ERRORS = {
   notSubscribed: $query => `
-    trying to unsubscribe when not subscribed. Query:
-    ${[$query[SEGMENTS], $query[PARAMS]]}
+    Trying to unsubscribe from Query when not subscribed.
+      Collection: ${$query[COLLECTION_NAME]}
+      Params: ${$query[PARAMS]}
   `
 }

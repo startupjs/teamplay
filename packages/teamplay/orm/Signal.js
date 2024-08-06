@@ -14,15 +14,21 @@
 import uuid from '@teamplay/utils/uuid'
 import { get as _get, set as _set, del as _del, setPublicDoc as _setPublicDoc, getRaw } from './dataTree.js'
 import getSignal, { rawSignal } from './getSignal.js'
+import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
+import { AGGREGATIONS, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
 export const ARRAY_METHOD = Symbol('run array method on the signal')
 export const GET = Symbol('get the value of the signal - either observed or raw')
+export const GETTERS = Symbol('get the list of this signal\'s getters')
+const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find']
 
 export default class Signal extends Function {
+  static [GETTERS] = DEFAULT_GETTERS
+
   constructor (segments) {
     if (!Array.isArray(segments)) throw Error('Signal constructor expects an array of segments')
     super()
@@ -218,11 +224,40 @@ export const extremelyLateBindings = {
       return signal[ROOT_FUNCTION].call(thisArg, signal, ...argumentsList)
     }
     const key = signal[SEGMENTS][signal[SEGMENTS].length - 1]
-    const $parent = getSignal(getRoot(signal), signal[SEGMENTS].slice(0, -1))
-    const rawParent = rawSignal($parent)
-    if (!(key in rawParent)) {
-      throw Error(`Method "${key}" does not exist on signal "${$parent[SEGMENTS].join('.')}"`)
+    const segments = signal[SEGMENTS].slice(0, -1)
+    if (segments[0] === AGGREGATIONS) {
+      const aggregationDocId = getAggregationDocId(segments)
+      if (aggregationDocId) {
+        if (segments.length === 3 && key === 'set') throw Error(ERRORS.setAggregationDoc(segments, key))
+        const collectionName = getAggregationCollectionName(segments)
+        const subDocSegments = segments.slice(3)
+        const $original = getSignal(getRoot(signal), [collectionName, aggregationDocId, ...subDocSegments])
+        const rawOriginal = rawSignal($original)
+        if (!(key in rawOriginal)) throw Error(ERRORS.noSignalKey($original, key))
+        const fn = rawOriginal[key]
+        const getters = rawOriginal.constructor[GETTERS]
+        // for getters run the method on the aggregation data itself
+        if (getters.includes(key)) {
+          const $parent = getSignal(getRoot(signal), segments)
+          return Reflect.apply(fn, $parent, argumentsList)
+        // for async methods (setters) subscribe to the original doc and run the method on its relative signal
+        } else {
+          const $doc = getSignal(getRoot(signal), [collectionName, aggregationDocId])
+          const promise = docSubscriptions.subscribe($doc)
+          if (!promise) return Reflect.apply(fn, $original, argumentsList)
+          return new Promise(resolve => {
+            promise.then(() => {
+              resolve(Reflect.apply(fn, $original, argumentsList))
+            })
+          })
+        }
+      } else if (!DEFAULT_GETTERS.includes(key)) {
+        throw Error(ERRORS.aggregationSetter(segments, key))
+      }
     }
+    const $parent = getSignal(getRoot(signal), segments)
+    const rawParent = rawSignal($parent)
+    if (!(key in rawParent)) throw Error(ERRORS.noSignalKey($parent, key))
     return Reflect.apply(rawParent[key], $parent, argumentsList)
   },
   get (signal, key, receiver) {
@@ -286,5 +321,25 @@ const ERRORS = {
   publicOnly: `
     Can't modify private collections data when 'publicOnly' is enabled.
     On the server you can only work with public collections.
+  `,
+  noSignalKey: ($signal, key) => `Method "${key}" does not exist on signal "${$signal[SEGMENTS].join('.')}"`,
+  aggregationSetter: (segments, key) => `
+    You can not use setters on aggregation signals.
+    It's only allowed when the aggregation result is an array of documents
+    with either '_id' or 'id' field present in them.
+
+    Path: ${segments}
+    Method: ${key}
+  `,
+  setAggregationDoc: (segments, key) => `
+    Changing a whole document using .set() from an aggregation signal is prohibited.
+    This is to prevent accidental overwriting of the whole document with incorrect aggregation results.
+    You can only change the particular fields within the document using the aggregation signal.
+
+    If you want to change the whole document, use the actual document signal explicitly
+    (and make sure to subscribe to it).
+
+    Path: ${segments}
+    Method: ${key}
   `
 }
