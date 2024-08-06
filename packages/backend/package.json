@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/backend",
-  "version": "0.1.16",
+  "version": "0.2.0",
   "description": "Create new ShareDB backend instance",
   "type": "module",
   "main": "index.js",
@@ -12,11 +12,11 @@
     ".": "./index.js"
   },
   "dependencies": {
-    "@teamplay/schema": "^0.1.16",
-    "@teamplay/server-aggregate": "^0.1.16",
-    "@teamplay/sharedb-access": "^0.1.16",
-    "@teamplay/sharedb-schema": "^0.1.16",
-    "@teamplay/utils": "^0.1.16",
+    "@teamplay/schema": "^0.2.0",
+    "@teamplay/server-aggregate": "^0.2.0",
+    "@teamplay/sharedb-access": "^0.2.0",
+    "@teamplay/sharedb-schema": "^0.2.0",
+    "@teamplay/utils": "^0.2.0",
     "@types/ioredis-mock": "^8.2.5",
     "ioredis": "^5.3.2",
     "ioredis-mock": "^8.9.0",
