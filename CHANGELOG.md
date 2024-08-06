@@ -1,3 +1,16 @@
+# v0.2.1 (Tue Aug 06 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): don't try to deep update non-plaid objects when doing setDiffDeep on local data ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.0 (Tue Aug 06 2024)
 
 #### 🚀 Enhancement
