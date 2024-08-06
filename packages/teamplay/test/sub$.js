@@ -200,7 +200,7 @@ describe('$sub() function. Queries', () => {
     const $activeGames = await sub($.games, { active: true })
     assert.equal($activeGames.get().length, 2)
     assert.deepEqual(_get(['$queries']), {
-      [hashQuery(['games'], { active: true })]: {
+      [hashQuery('games', { active: true })]: {
         docs: [
           { name: 'Game 1', active: true },
           { name: 'Game 2', active: true }

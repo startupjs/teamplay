@@ -4,6 +4,7 @@ import { findModel } from './addModel.js'
 import { LOCAL } from './$.js'
 import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
 import { QUERIES } from './Query.js'
+import { AGGREGATIONS } from './Aggregation.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -22,7 +23,7 @@ export default function getSignal ($root, segments = [], {
   if (!($root instanceof Signal)) {
     if (segments.length === 0 && !rootId) throw Error(ERRORS.rootIdRequired)
     if (segments.length >= 1 && isPrivateCollection(segments[0])) {
-      if (segments[0] === QUERIES) {
+      if (segments[0] === QUERIES || segments[0] === AGGREGATIONS) {
         // TODO: this is a hack to temporarily let the queries work.
         //       '$queries' collection is always added to the global (singleton) root signal.
         //       In future it should also be part of the particular root signal.

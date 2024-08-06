@@ -10,6 +10,7 @@
   "scripts": {
     "start": "cd example && npm run start",
     "test": "cd packages/teamplay && npm run test",
+    "test-client": "cd packages/teamplay && npm run test-client",
     "release-patch": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + minor + '.' + (parseInt(patch) + 1));\")",
     "release-minor": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + (parseInt(minor) + 1) + '.' + 0);\")",
     "docs": "rspress dev --port 3010",
