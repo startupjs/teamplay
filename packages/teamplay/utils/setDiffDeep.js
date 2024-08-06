@@ -1,3 +1,5 @@
+import isPlainObject from 'lodash/isPlainObject.js'
+
 export default function setDiffDeep (existing, updated) {
   // Handle primitive types, null, and type mismatches
   if (existing === null || updated === null ||
@@ -13,6 +15,12 @@ export default function setDiffDeep (existing, updated) {
       existing[i] = setDiffDeep(existing[i], updated[i])
     }
     return existing
+  }
+
+  // Handle non-plain objects - just return them as-is to fully overwrite
+  // and don't try to update an old object in-place
+  if (!isPlainObject(updated)) {
+    return updated
   }
 
   // Handle objects
