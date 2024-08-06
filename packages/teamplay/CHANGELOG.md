@@ -1,3 +1,22 @@
+# v0.2.0 (Tue Aug 06 2024)
+
+#### 🚀 Enhancement
+
+- feat: implement aggregations; fix query rerender; [#1](https://github.com/startupjs/teamplay/pull/1) ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- Update README.md ([@cray0000](https://github.com/cray0000))
+- docs: fix createdAt in examples -- has to be unixtime ([@cray0000](https://github.com/cray0000))
+- docs: add docs using rspress and deploy them to Github Pages ([@cray0000](https://github.com/cray0000))
+- readme: document react integration and awaiting setters ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.16 (Wed Jul 03 2024)
 
 #### 🚀 Enhancement
