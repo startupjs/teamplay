@@ -8,6 +8,10 @@ export default function setDiffDeep (existing, updated) {
     return updated
   }
 
+  // If the referenced value is the same it means that nothing has changed
+  // so we just return the original reference
+  if (existing === updated) return existing
+
   // Handle arrays
   if (Array.isArray(updated)) {
     existing.length = updated.length
@@ -19,9 +23,7 @@ export default function setDiffDeep (existing, updated) {
 
   // Handle non-plain objects - just return them as-is to fully overwrite
   // and don't try to update an old object in-place
-  if (!isPlainObject(updated)) {
-    return updated
-  }
+  if (!isPlainObject(updated)) return updated
 
   // Handle objects
   for (const key in existing) {
