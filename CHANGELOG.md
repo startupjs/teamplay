@@ -1,3 +1,16 @@
+# v0.2.2 (Thu Aug 08 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): optimize setDiffDeep -- return the original object if the reference to be updated is the same object (don't try to perform a deep comparison) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.1 (Tue Aug 06 2024)
 
 #### 🐛 Bug Fix
