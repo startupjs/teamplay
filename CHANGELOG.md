@@ -1,3 +1,16 @@
+# v0.2.3 (Tue Aug 13 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): don't try to call the destructor twice (might happen in strict mode, on background render, etc.) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.2 (Thu Aug 08 2024)
 
 #### 🐛 Bug Fix
