@@ -85,7 +85,7 @@ export default function convertToObserver (BaseComponent, {
 
     // clean up observer on unmount
     useUnmount(() => {
-      destroyRef.current('useUnmount()')
+      destroyRef.current?.('useUnmount()')
     })
 
     return reactionRef.current(...args)
