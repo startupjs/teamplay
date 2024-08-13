@@ -1,7 +1,7 @@
 {
   "name": "example",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "scripts": {
     "start": "node --watch server.js"
@@ -10,6 +10,6 @@
     "esbuild": "^0.21.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "teamplay": "^0.2.2"
+    "teamplay": "^0.2.3"
   }
 }
