@@ -1,3 +1,15 @@
+# v0.2.5 (Mon Aug 26 2024)
+
+#### 🐛 Bug Fix
+
+- fix(backend): fix accessControl, allow to pass a customValidator option for it ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.4 (Mon Aug 26 2024)
 
 #### 🚀 Enhancement
