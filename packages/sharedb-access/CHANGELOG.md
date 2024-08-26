@@ -1,3 +1,15 @@
+# v0.2.4 (Mon Aug 26 2024)
+
+#### 🚀 Enhancement
+
+- feat: add access control [#2](https://github.com/startupjs/teamplay/pull/2) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.1.6 (Fri May 31 2024)
 
 #### ⚠️ Pushed to `master`

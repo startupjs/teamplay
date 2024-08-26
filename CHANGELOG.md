@@ -1,3 +1,16 @@
+# v0.3.0 (Mon Aug 26 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/backend`, `@teamplay/sharedb-access`, `teamplay`, `@teamplay/utils`
+  - feat: add access control [#2](https://github.com/startupjs/teamplay/pull/2) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.3 (Tue Aug 13 2024)
 
 #### 🐛 Bug Fix
