@@ -44,15 +44,15 @@ export default function createBackend ({
   if (hooks) hooks(backend)
 
   if (accessControl) {
-    initAccessControl(backend, { models })
+    initAccessControl(backend, { models, ...(typeof accessControl === 'object' ? accessControl : {}) })
   }
 
   if (serverAggregate) {
-    initServerAggregate(backend, { customCheck: serverAggregate?.customCheck, models })
+    initServerAggregate(backend, { models, ...(typeof serverAggregate === 'object' ? serverAggregate : {}) })
   }
 
   if (validateSchema && process.env.NODE_ENV !== 'production') {
-    initValidateSchema(backend, { models })
+    initValidateSchema(backend, { models, ...(typeof validateSchema === 'object' ? validateSchema : {}) })
   }
 
   backend.on('client', (client, reject) => {

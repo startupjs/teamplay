@@ -17,6 +17,7 @@ export function accessControl (props) {
     if (!OPERATIONS.includes(key)) throw Error(ERRORS.unknownOperation(key))
   }
   props[isAccessControlSymbol] ??= true
+  return props
 }
 
 const ERRORS = {

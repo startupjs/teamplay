@@ -1,8 +1,8 @@
 import _serverAggregate from '@teamplay/server-aggregate'
 import { isAggregationFunction } from '@teamplay/utils/aggregation'
 
-export default function serverAggregate (backend, { customCheck, models = {} } = {}) {
-  _serverAggregate(backend, { customCheck })
+export default function serverAggregate (backend, { models = {}, ...options } = {}) {
+  _serverAggregate(backend, options)
 
   for (const modelPattern in models) {
     for (const aggregationName in models[modelPattern]) {

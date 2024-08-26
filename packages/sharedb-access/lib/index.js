@@ -1,5 +1,4 @@
 import cloneDeep from 'lodash/cloneDeep.js'
-import isFunction from 'lodash/isFunction.js'
 import debugModule from 'debug'
 import { patternToRegExp, lookup } from './util.js'
 import ShareDBAccessError from './error.js'
@@ -30,14 +29,7 @@ export function registerOrmRules (backend, pattern, access) {
     const fn = access[op.charAt(0).toLowerCase() + op.slice(1)]
     if (!fn) continue
     const collection = pattern.replace(/\.\*$/u, '')
-    backend['allow' + op](collection, (...params) => {
-      // TODO: rewrite to use $ here, or create a separate root $ for each user
-      // const [,, session] = params
-      // const userId = session.userId
-      // const model = global.__clients[userId].model
-      // TODO: first argument was model, it's not needed anymore, or we should pass separate $ for each user
-      return fn(undefined, collection, ...params)
-    })
+    backend['allow' + op](collection, fn)
   }
 }
 
@@ -77,9 +69,9 @@ export default function sharedbAccess (backend, options) {
 }
 
 export class ShareDBAccess {
-  constructor (backend, options) {
+  constructor (backend, options = {}) {
     this.backend = backend
-    this.options = options || {}
+    this.options = options
     this.allow = {}
     this.deny = {}
 
@@ -162,7 +154,7 @@ export class ShareDBAccess {
     const newDoc = shareRequest.snapshot.data
 
     const ops = opData.op
-    const ok = await this.check('Update', collection, [doc, { collection, docId, session, newDoc, ops }])
+    const ok = await this.check('Update', collection, { type: 'update', doc, collection, docId, session, newDoc, ops })
     debug('update', ok, collection, docId, doc, newDoc, ops, session)
 
     if (ok) return
@@ -195,9 +187,9 @@ export class ShareDBAccess {
 
     // ++++++++++++++++++++++++++++++++ CREATE ++++++++++++++++++++++++++++++++++
     if (opData.create) {
-      const doc = opData.create.data
-      const ok = await this.check('Create', collection, [doc, { collection, docId, session }])
-      debug('create', ok, collection, docId, doc)
+      const newDoc = opData.create.data
+      const ok = await this.check('Create', collection, { type: 'create', newDoc, collection, docId, session })
+      debug('create', ok, collection, docId, newDoc)
 
       if (ok) return
       return new ShareDBAccessError('ERR_ACCESS_DENY_CREATE', '403: Permission denied (create), collection: ' + collection + ', docId: ' + docId)
@@ -207,7 +199,7 @@ export class ShareDBAccess {
     if (opData.del) {
       const doc = snapshot.data
 
-      const ok = await this.check('Delete', collection, [doc, { collection, docId, session }])
+      const ok = await this.check('Delete', collection, { type: 'delete', doc, collection, docId, session })
       debug('delete', ok, collection, docId, doc)
       if (ok) return
       return new ShareDBAccessError('ERR_ACCESS_DENY_DELETE', '403: Permission denied (delete), collection: ' + collection + ', docId: ' + docId)
@@ -250,7 +242,7 @@ export class ShareDBAccess {
 
     const session = agent.connectSession || {}
 
-    const ok = await this.check('Read', collection, [docId, doc, session])
+    const ok = await this.check('Read', collection, { type: 'read', doc, collection, docId, session })
 
     debug('read', ok, collection, [docId, doc, session])
 
@@ -258,7 +250,7 @@ export class ShareDBAccess {
     return new ShareDBAccessError('ERR_ACCESS_DENY_READ', '403: Permission denied (read), collection: ' + collection + ', docId: ' + docId)
   }
 
-  async check (operation, collection, args) {
+  async check (operation, collection, props) {
     const allow = this.allow
     const deny = this.deny
 
@@ -282,13 +274,13 @@ export class ShareDBAccess {
 
       const regExp = patternToRegExp(pattern)
 
-      if (regExp.test(collection)) isAllowed = await apply(allowPatterns[i])
+      if (regExp.test(collection)) isAllowed = await this.applyValidator(allowPatterns[i], props)
 
       if (isAllowed) break
     }
 
     for (let i = 0; !isAllowed && i < allowValidators.length; i++) {
-      isAllowed = await apply(allowValidators[i])
+      isAllowed = await this.applyValidator(allowValidators[i], props)
       if (isAllowed) break
     }
 
@@ -299,23 +291,48 @@ export class ShareDBAccess {
 
       const regExp = patternToRegExp(pattern)
 
-      if (regExp.test(collection)) isDenied = await apply(denyPatterns[i])
+      if (regExp.test(collection)) isDenied = await this.applyValidator(denyPatterns[i], props)
 
       if (isDenied) break
     }
 
     for (let j = 0; !isDenied && j < denyValidators.length; j++) {
-      isDenied = await apply(denyValidators[j])
+      isDenied = await this.applyValidator(denyValidators[j], props)
       if (isDenied) break
     }
 
     return isAllowed && !isDenied
+  }
 
-    async function apply (validator) {
-      if (isFunction(validator)) return await validator.apply(this, args)
-      return await validator.fn.apply(this, args)
+  // you can override default validation logic by providing customValidator in options:
+  // customValidator: (validator, props, { defaultValidator }) => {
+  //   if (typeof validator === 'string') return checkPermission(validator, props)
+  //   else return defaultValidator(validator, props)
+  // }
+  async applyValidator (validator, props) {
+    if (this.options.customValidator) {
+      return await this.options.customValidator.call(undefined, validator, props, { defaultValidator })
+    } else {
+      return await defaultValidator(validator, props)
     }
   }
 }
 
+async function defaultValidator (validator, props) {
+  if (typeof validator === 'function') return await validator(props)
+  if (typeof validator === 'boolean') return validator
+  if (typeof validator?.fn === 'function') return await validator.fn(props)
+  throw Error(ERRORS.incorrectValidator(validator))
+}
+
 export { lookup }
+
+const ERRORS = {
+  incorrectValidator: validator => `
+    accessControl: Incorrect validator.
+    It must be either a function or a boolean value.
+    Received:
+      Type: ${typeof validator}
+      Value: ${validator.toString()}
+  `
+}

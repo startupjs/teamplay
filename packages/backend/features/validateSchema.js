@@ -1,8 +1,13 @@
 import sharedbSchema from '@teamplay/sharedb-schema'
 import { transformSchema } from '@teamplay/schema'
 
-export default function validateSchema (backend, { models = {} } = {}) {
-  const schemaPerCollection = { schemas: {}, formats: {}, validators: {} }
+export default function validateSchema (backend, { models = {}, ...options } = {}) {
+  options = {
+    schemas: {},
+    formats: {},
+    validators: {},
+    ...options
+  }
 
   for (const modelPattern in models) {
     let { schema, factory } = models[modelPattern]
@@ -16,18 +21,18 @@ export default function validateSchema (backend, { models = {} } = {}) {
       if (/\./.test(collectionName)) throw Error(ERRORS.onlyTopLevelCollections(modelPattern))
       // transform schema from simplified format to full format
       schema = transformSchema(schema, { collectionName })
-      schemaPerCollection.schemas[collectionName] = schema
+      options.schemas[collectionName] = schema
     }
 
     // allow any 'service' collection structure
     // since 'service' collection is used in our startupjs libraries
     // and we don't have a tool to collect scheme from all packages right now
-    schemaPerCollection.schemas.service = transformSchema({
+    options.schemas.service = transformSchema({
       type: 'object', properties: {}, additionalProperties: true
     })
   }
 
-  sharedbSchema(backend, schemaPerCollection)
+  sharedbSchema(backend, options)
   console.log('✓ Security: JSON-schema validation of DB collections on backend is enabled')
 }
 
