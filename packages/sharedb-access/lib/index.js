@@ -72,10 +72,12 @@ export function registerOrmRules (backend, pattern, access) {
 // dontUseOldDocs: false - if true don't save unupdated docs for update action
 // opCreatorUserIdPath - path to 'userId' for op's meta
 
-export default class ShareDBAccess {
-  constructor (backend, options) {
-    if (!(this instanceof ShareDBAccess)) return new ShareDBAccess(backend, options)
+export default function sharedbAccess (backend, options) {
+  return new ShareDBAccess(backend, options)
+}
 
+export class ShareDBAccess {
+  constructor (backend, options) {
     this.backend = backend
     this.options = options || {}
     this.allow = {}
@@ -156,12 +158,12 @@ export default class ShareDBAccess {
     const collection = shareRequest.index || shareRequest.collection
     const docId = shareRequest.id
 
-    const oldDoc = (shareRequest.originalSnapshot && shareRequest.originalSnapshot.data) || {}
+    const doc = (shareRequest.originalSnapshot && shareRequest.originalSnapshot.data) || {}
     const newDoc = shareRequest.snapshot.data
 
     const ops = opData.op
-    const ok = await this.check('Update', collection, [docId, oldDoc, session, ops, newDoc])
-    debug('update', ok, collection, docId, oldDoc, newDoc, ops, session)
+    const ok = await this.check('Update', collection, [doc, { collection, docId, session, newDoc, ops }])
+    debug('update', ok, collection, docId, doc, newDoc, ops, session)
 
     if (ok) return
     return new ShareDBAccessError('ERR_ACCESS_DENY_UPDATE', '403: Permission denied (update), collection: ' + collection + ', docId: ' + docId)
@@ -194,7 +196,7 @@ export default class ShareDBAccess {
     // ++++++++++++++++++++++++++++++++ CREATE ++++++++++++++++++++++++++++++++++
     if (opData.create) {
       const doc = opData.create.data
-      const ok = await this.check('Create', collection, [docId, doc, session])
+      const ok = await this.check('Create', collection, [doc, { collection, docId, session }])
       debug('create', ok, collection, docId, doc)
 
       if (ok) return
@@ -205,7 +207,7 @@ export default class ShareDBAccess {
     if (opData.del) {
       const doc = snapshot.data
 
-      const ok = await this.check('Delete', collection, [docId, doc, session])
+      const ok = await this.check('Delete', collection, [doc, { collection, docId, session }])
       debug('delete', ok, collection, docId, doc)
       if (ok) return
       return new ShareDBAccessError('ERR_ACCESS_DENY_DELETE', '403: Permission denied (delete), collection: ' + collection + ', docId: ' + docId)
