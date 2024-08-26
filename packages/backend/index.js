@@ -1,6 +1,3 @@
-import ShareDbAccess, {
-  registerOrmRules
-} from '@teamplay/sharedb-access'
 import ShareDB from 'sharedb'
 import shareDbHooks from 'sharedb-hooks'
 import { pubsub } from './redis/index.js'
@@ -8,12 +5,12 @@ import { db } from './db/index.js'
 import maybeFlushRedis from './redis/maybeFlushRedis.js'
 import initValidateSchema from './features/validateSchema.js'
 import initServerAggregate from './features/serverAggregate.js'
+import initAccessControl from './features/accessControl.js'
 
 export { redis, redlock, Redlock } from './redis/index.js'
 export { db, mongo, mongoClient, createMongoIndex, sqlite } from './db/index.js'
 
 const usersConnectionCounter = {}
-global.__clients = {}
 
 export default function createBackend ({
   secure = false,
@@ -46,31 +43,8 @@ export default function createBackend ({
 
   if (hooks) hooks(backend)
 
-  const ORM = global.STARTUP_JS_ORM || {}
-
-  // sharedb-access
   if (accessControl) {
-    // eslint-disable-next-line
-    new ShareDbAccess(backend, { dontUseOldDocs: true })
-
-    for (const path in ORM) {
-      const ormEntity = ORM[path].OrmEntity
-
-      const { access } = ormEntity
-      const isFactory = !!ormEntity.factory
-
-      // TODO:
-      //   - move registerOrmRulesFromFactory and registerOrmRules to this library
-      //   - rewrite factories check to not use model anymore
-      if (isFactory) {
-        throw Error('Sharedb-access does not support ORM factories yet')
-        // registerOrmRulesFromFactory(backend, path, ormEntity)
-      } else if (access) {
-        registerOrmRules(backend, path, access)
-      }
-    }
-
-    console.log('sharedb-access is working')
+    initAccessControl(backend, { models })
   }
 
   if (serverAggregate) {

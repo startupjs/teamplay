@@ -6,6 +6,7 @@
   "main": "index.js",
   "exports": {
     "./aggregation": "./aggregation.js",
+    "./accessControl": "./accessControl.js",
     "./uuid": "./uuid.cjs"
   },
   "dependencies": {
