@@ -2657,6 +2657,7 @@ __metadata:
   resolution: "@teamplay/schema@workspace:packages/schema"
   dependencies:
     ajv: "npm:^8.12.0"
+    ajv-errors: "npm:^3.0.0"
     lodash: "npm:^4.17.20"
   languageName: unknown
   linkType: soft
@@ -3459,6 +3460,15 @@ __metadata:
     clean-stack: "npm:^2.0.0"
     indent-string: "npm:^4.0.0"
   checksum: 10c0/a42f67faa79e3e6687a4923050e7c9807db3848a037076f791d10e092677d65c1d2d863b7848560699f40fc0502c19f40963fb1cd1fb3d338a7423df8e45e039
+  languageName: node
+  linkType: hard
+
+"ajv-errors@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "ajv-errors@npm:3.0.0"
+  peerDependencies:
+    ajv: ^8.0.1
+  checksum: 10c0/f3d864ebd4bc0b51ad622b5a889cc8903000295eaa058d59c2102f293fe126c3d901419da143eaa817b863cac2e92ae2ef6f55e6c31d07bf272099afe73961ae
   languageName: node
   linkType: hard
 
