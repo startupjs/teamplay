@@ -15,6 +15,7 @@ export default function transformSchema (schema, { additionalProperties = false 
         // (only if explicitly set to a boolean `true` to not interfere with object's 'required' array)
         key => schema[key] && schema[key].required === true
       ),
+      errorMessage: getErrorMessage(schema),
       additionalProperties
     }
   }
@@ -33,10 +34,31 @@ function stripExtraUiKeywords (schema) {
       const property = schema.properties[key]
       if (_isPlainObject(property)) {
         if (typeof property.required === 'boolean') delete property.required
+        if (property.errorMessage?.required) delete property.errorMessage.required
         stripExtraUiKeywords(property)
       }
     }
   } else if (schema.type === 'array') {
     stripExtraUiKeywords(schema.items)
   }
+}
+
+function getErrorMessage (schema) {
+  if (schema.errorMessage && !_isPlainObject(schema.errorMessage)) {
+    return schema.errorMessage
+  }
+
+  const requiredErrorMessage = {}
+
+  for (const [key, property] of Object.entries(schema)) {
+    if (!_isPlainObject(property.errorMessage)) continue
+    if (!property.errorMessage.required) continue
+    requiredErrorMessage[key] = property.errorMessage.required
+  }
+
+  return Object.assign(
+    {},
+    schema.errorMessage,
+    { required: requiredErrorMessage }
+  )
 }
