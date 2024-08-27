@@ -1,3 +1,16 @@
+# v0.2.6 (Tue Aug 27 2024)
+
+#### 🐛 Bug Fix
+
+- `@teamplay/schema`
+  - feat(@teamplay/schema): add 'ajv-errors' for custom error message [#3](https://github.com/startupjs/teamplay/pull/3) ([@pvturchik](https://github.com/pvturchik))
+
+#### Authors: 1
+
+- Pavel Turchik ([@pvturchik](https://github.com/pvturchik))
+
+---
+
 # v0.2.5 (Mon Aug 26 2024)
 
 #### 🐛 Bug Fix
