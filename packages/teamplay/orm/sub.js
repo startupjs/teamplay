@@ -12,6 +12,7 @@ export default function sub ($signal, params) {
   //   if (res.some($s => $s.then)) return Promise.all(res)
   //   return res
   // }
+  if (Array.isArray($signal)) throw Error('sub() does not support multiple subscriptions yet')
   if (isPublicDocumentSignal($signal)) {
     if (arguments.length > 1) throw Error(ERRORS.subDocArguments(...arguments))
     return doc$($signal)

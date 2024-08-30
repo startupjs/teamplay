@@ -158,7 +158,7 @@ export class ShareDBAccess {
     debug('update', ok, collection, docId, doc, newDoc, ops, session)
 
     if (ok) return
-    return new ShareDBAccessError('ERR_ACCESS_DENY_UPDATE', '403: Permission denied (update), collection: ' + collection + ', docId: ' + docId)
+    return new ShareDBAccessError('ERR_ACCESS_DENY_UPDATE', ERRORS.updateDenied({ collection, docId, session }))
   }
 
   applyHandler (shareRequest, done) {
@@ -192,7 +192,7 @@ export class ShareDBAccess {
       debug('create', ok, collection, docId, newDoc)
 
       if (ok) return
-      return new ShareDBAccessError('ERR_ACCESS_DENY_CREATE', '403: Permission denied (create), collection: ' + collection + ', docId: ' + docId)
+      return new ShareDBAccessError('ERR_ACCESS_DENY_CREATE', ERRORS.createDenied({ collection, docId, session }))
     }
 
     // ++++++++++++++++++++++++++++++++ DELETE ++++++++++++++++++++++++++++++++++
@@ -202,7 +202,7 @@ export class ShareDBAccess {
       const ok = await this.check('Delete', collection, { type: 'delete', doc, collection, docId, session })
       debug('delete', ok, collection, docId, doc)
       if (ok) return
-      return new ShareDBAccessError('ERR_ACCESS_DENY_DELETE', '403: Permission denied (delete), collection: ' + collection + ', docId: ' + docId)
+      return new ShareDBAccessError('ERR_ACCESS_DENY_DELETE', ERRORS.deleteDenied({ collection, docId, session }))
     }
 
     // For Update
@@ -247,7 +247,7 @@ export class ShareDBAccess {
     debug('read', ok, collection, [docId, doc, session])
 
     if (ok) return
-    return new ShareDBAccessError('ERR_ACCESS_DENY_READ', '403: Permission denied (read), collection: ' + collection + ', docId: ' + docId)
+    return new ShareDBAccessError('ERR_ACCESS_DENY_READ', ERRORS.readDenied({ collection, docId, session }))
   }
 
   async check (operation, collection, props) {
@@ -334,5 +334,29 @@ const ERRORS = {
     Received:
       Type: ${typeof validator}
       Value: ${validator.toString()}
+  `,
+  readDenied: ({ collection, docId, session }) => `
+    403: Permission denied (read)
+         - collection: ${collection}
+         - docId: ${docId}
+         - userId: ${session?.userId}
+  `,
+  createDenied: ({ collection, docId, session }) => `
+    403: Permission denied (create)
+         - collection: ${collection}
+         - docId: ${docId}
+         - userId: ${session?.userId}
+  `,
+  deleteDenied: ({ collection, docId, session }) => `
+    403: Permission denied (delete)
+         - collection: ${collection}
+         - docId: ${docId}
+         - userId: ${session?.userId}
+  `,
+  updateDenied: ({ collection, docId, session }) => `
+    403: Permission denied (update)
+         - collection: ${collection}
+         - docId: ${docId}
+         - userId: ${session?.userId}
   `
 }
