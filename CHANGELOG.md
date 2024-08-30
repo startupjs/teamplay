@@ -1,3 +1,16 @@
+# v0.4.0 (Fri Aug 30 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/sharedb-access`, `teamplay`
+  - feat(access): add userId to the permission denied log ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.7 (Fri Aug 30 2024)
 
 #### 🐛 Bug Fix
