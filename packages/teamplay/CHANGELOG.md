@@ -1,3 +1,15 @@
+# v0.3.0 (Fri Aug 30 2024)
+
+#### 🐛 Bug Fix
+
+- fix: implement a classical useSub() and move update logic into observer component [#4](https://github.com/startupjs/teamplay/pull/4) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.2.4 (Mon Aug 26 2024)
 
 #### 🚀 Enhancement
