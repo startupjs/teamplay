@@ -352,17 +352,17 @@ describe('useSub() for subscribing to queries', () => {
     expect(container.textContent).toBe('John,Jane')
 
     fireEvent.click(container.querySelector('#active'))
-    expect(renders).toBe(4)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('John,Jane')
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('John,Jane')
     await throttledWait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(4)
     expect(container.textContent).toBe('John')
 
     await wait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(4)
     resetTestThrottling()
 
     // fireEvent.click(container.querySelector('#inactive'))

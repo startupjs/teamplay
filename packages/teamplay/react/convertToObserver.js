@@ -1,13 +1,10 @@
-// TODO: rewrite to use useSyncExternalStore like in mobx. This will also help with handling Suspense abandonment better
-//       to cleanup the observer() reaction when the component is unmounted or was abandoned and unmounts will never trigger.
-//       ref: https://github.com/mobxjs/mobx/blob/94bc4997c14152ff5aefcaac64d982d5c21ba51a/packages/mobx-react-lite/src/useObserver.ts
-import { forwardRef as _forwardRef, useRef, useSyncExternalStore } from 'react'
+import { forwardRef as _forwardRef, useRef } from 'react'
 import { observe, unobserve } from '@nx-js/observer-util'
 import _throttle from 'lodash/throttle.js'
 import { createCaches, getDummyCache } from '@teamplay/cache'
 import { __increment, __decrement } from '@teamplay/debug'
 import executionContextTracker from './executionContextTracker.js'
-import { pipeComponentMeta, useUnmount, useId } from './helpers.js'
+import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helpers.js'
 import trapRender from './trapRender.js'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
@@ -28,30 +25,7 @@ export default function convertToObserver (BaseComponent, {
   let Component = (...args) => {
     const [cache, destroyCache] = useCreateCacheRef(enableCache)
     const componentId = useId()
-
-    const admRef = useRef()
-    if (!admRef.current) {
-      const adm = {
-        stateVersion: Symbol(), // eslint-disable-line symbol-description
-        onStoreChange: undefined,
-        subscribe (onStoreChange) {
-          adm.onStoreChange = () => {
-            adm.stateVersion = Symbol() // eslint-disable-line symbol-description
-            onStoreChange()
-          }
-          return () => {
-            adm.onStoreChange = undefined
-          }
-        },
-        getSnapshot () {
-          return adm.stateVersion
-        }
-      }
-      admRef.current = adm
-    }
-    const adm = admRef.current
-
-    useSyncExternalStore(adm.subscribe, adm.getSnapshot, adm.getSnapshot)
+    const triggerUpdate = useTriggerUpdate()
 
     // wrap the BaseComponent into an observe decorator once.
     // This way it will track any observable changes and will trigger rerender
@@ -61,7 +35,7 @@ export default function convertToObserver (BaseComponent, {
       let update = () => {
         // It's important to block updates caused by rendering itself
         // (when the sync rendering is in progress).
-        if (!executionContextTracker.isActive()) adm.onStoreChange?.()
+        if (!executionContextTracker.isActive()) triggerUpdate()
       }
       if (throttle) update = _throttle(update, throttle)
       destroyRef.current = (where) => {
