@@ -1,4 +1,6 @@
-import { forwardRef as _forwardRef, memo, createElement as el, Suspense, useId, useRef } from 'react'
+// useSyncExternalStore is used to trigger an update same as in MobX
+// ref: https://github.com/mobxjs/mobx/blob/94bc4997c14152ff5aefcaac64d982d5c21ba51a/packages/mobx-react-lite/src/useObserver.ts
+import { useSyncExternalStore, forwardRef as _forwardRef, memo, createElement as el, Suspense, useId, useRef } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.js'
 
 export default function wrapIntoSuspense ({
@@ -11,10 +13,49 @@ export default function wrapIntoSuspense ({
   let SuspenseWrapper = (props, ref) => {
     const componentId = useId()
     const componentMetaRef = useRef()
+    const admRef = useRef()
+    if (!admRef.current) {
+      const adm = {
+        stateVersion: Symbol(), // eslint-disable-line symbol-description
+        onStoreChange: undefined,
+        scheduledUpdatePromise: undefined,
+        subscribe (onStoreChange) {
+          adm.onStoreChange = () => {
+            adm.stateVersion = Symbol() // eslint-disable-line symbol-description
+            onStoreChange()
+          }
+          adm.scheduleUpdate = promise => {
+            if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
+            if (adm.scheduledUpdatePromise === promise) return
+            adm.scheduledUpdatePromise = promise
+            promise.then(() => {
+              if (adm.scheduledUpdatePromise !== promise) return
+              adm.scheduledUpdatePromise = undefined
+              adm.onStoreChange?.()
+            })
+          }
+          return () => {
+            adm.onStoreChange = undefined
+            adm.scheduledUpdatePromise = undefined
+            adm.scheduleUpdate = undefined
+          }
+        },
+        getSnapshot () {
+          return adm.stateVersion
+        }
+      }
+      admRef.current = adm
+    }
+    const adm = admRef.current
+
+    useSyncExternalStore(adm.subscribe, adm.getSnapshot, adm.getSnapshot)
+
     if (!componentMetaRef.current) {
       componentMetaRef.current = {
         componentId,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        triggerUpdate: () => adm.onStoreChange?.(),
+        scheduleUpdate: promise => adm.scheduleUpdate?.(promise)
       }
     }
 

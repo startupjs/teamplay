@@ -23,8 +23,21 @@ export function pipeComponentMeta (SourceComponent, TargetComponent, suffix = ''
 }
 
 export function useId () {
-  const { componentId } = useContext(ComponentMetaContext)
-  return componentId
+  const context = useContext(ComponentMetaContext)
+  if (!context) throw Error(ERRORS.useId)
+  return context.componentId
+}
+
+export function useTriggerUpdate () {
+  const context = useContext(ComponentMetaContext)
+  if (!context) throw Error(ERRORS.useTriggerUpdate)
+  return context.triggerUpdate
+}
+
+export function useScheduleUpdate () {
+  const context = useContext(ComponentMetaContext)
+  if (!context) throw Error(ERRORS.useScheduleUpdate)
+  return context.scheduleUpdate
 }
 
 export function useUnmount (fn) {
@@ -36,4 +49,19 @@ export function useUnmount (fn) {
     },
     []
   )
+}
+
+const ERRORS = {
+  useTriggerUpdate: `
+    useTriggerUpdate() can only be used inside a component wrapped with observer().
+    You have probably forgot to wrap your component with observer().
+  `,
+  useScheduleUpdate: `
+    useScheduleUpdate() can only be used inside a component wrapped with observer().
+    You have probably forgot to wrap your component with observer().
+  `,
+  useId: `
+    useId() can only be used inside a component wrapped with observer().
+    You have probably forgot to wrap your component with observer().
+  `
 }
