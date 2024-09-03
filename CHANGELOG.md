@@ -1,5 +1,23 @@
 # v0.3.2 (Tue Sep 03 2024)
 
+#### 🐛 Bug Fix
+
+- `@teamplay/backend`, `teamplay`, `@teamplay/utils`
+  - fix: fix aggregations support. Add unit tests for them [#5](https://github.com/startupjs/teamplay/pull/5) ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- `@teamplay/backend`, `teamplay`, `@teamplay/utils`
+  - Merge branch 'master' of github.com:startupjs/teamplay ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
+# v0.3.2 (Tue Sep 03 2024)
+
 
 
 ---
