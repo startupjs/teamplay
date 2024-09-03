@@ -54,7 +54,7 @@ export function getAggregationDocId (segments) {
   if (!(segments.length >= 3)) return
   if (!(segments[0] === AGGREGATIONS)) return
   if (!(typeof segments[2] === 'number')) return
-  const doc = getRaw(segments)
+  const doc = getRaw(segments.slice(0, 3))
   const docId = doc?._id || doc?.id
   return docId
 }

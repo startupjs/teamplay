@@ -16,7 +16,7 @@ import { get as _get, set as _set, del as _del, setPublicDoc as _setPublicDoc, g
 import getSignal, { rawSignal } from './getSignal.js'
 import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
-import { AGGREGATIONS, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
+import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
 
@@ -24,7 +24,7 @@ export const SEGMENTS = Symbol('path segments targeting the particular node in t
 export const ARRAY_METHOD = Symbol('run array method on the signal')
 export const GET = Symbol('get the value of the signal - either observed or raw')
 export const GETTERS = Symbol('get the list of this signal\'s getters')
-const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find']
+const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds']
 
 export default class Signal extends Function {
   static [GETTERS] = DEFAULT_GETTERS
@@ -56,6 +56,19 @@ export default class Signal extends Function {
   get () {
     if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
     return this[GET](_get)
+  }
+
+  getIds () {
+    if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
+    if (this[IS_QUERY]) {
+      return _get([QUERIES, this[HASH], 'ids'])
+    } else if (this[IS_AGGREGATION]) {
+      const docs = _get(this[SEGMENTS])
+      if (!Array.isArray(docs)) return []
+      return docs.map(doc => doc._id || doc.id)
+    } else {
+      throw Error('Signal.getIds() can only be used on query signals or aggregation signals')
+    }
   }
 
   peek () {
@@ -212,7 +225,7 @@ export const regularBindings = {
   }
 }
 
-const QUERY_METHODS = ['map', 'reduce', 'find', 'get']
+const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds']
 
 // dot syntax always returns a child signal even if such method or property exists.
 // The method is only called when the signal is explicitly called as a function,

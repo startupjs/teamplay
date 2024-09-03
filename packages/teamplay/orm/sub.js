@@ -1,4 +1,4 @@
-import { isAggregationHeader, isAggregationFunction } from '@teamplay/utils/aggregation'
+import { isAggregationHeader, isAggregationFunction, isClientAggregationFunction } from '@teamplay/utils/aggregation'
 import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } from './Signal.js'
 import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
@@ -19,8 +19,10 @@ export default function sub ($signal, params) {
   } else if (isPublicCollectionSignal($signal)) {
     if (arguments.length !== 2) throw Error(ERRORS.subQueryArguments(...arguments))
     return query$($signal[SEGMENTS][0], params)
-  } else if (typeof $signal === 'function' && !($signal instanceof Signal)) {
-    return api$($signal, params)
+  } else if (isClientAggregationFunction($signal)) {
+    params = $signal(sanitizeAggregationParams(params))
+    if (Array.isArray(params)) params = { $aggregate: params }
+    return aggregation$($signal.collection, params)
   } else if (isAggregationHeader($signal)) {
     params = {
       $aggregationName: $signal.name,
@@ -29,6 +31,8 @@ export default function sub ($signal, params) {
     return aggregation$($signal.collection, params)
   } else if (isAggregationFunction($signal)) {
     throw Error(ERRORS.gotAggregationFunction($signal))
+  } else if (typeof $signal === 'function' && !($signal instanceof Signal)) {
+    return api$($signal, params)
   } else {
     throw Error('Invalid args passed for sub()')
   }

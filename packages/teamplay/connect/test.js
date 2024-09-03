@@ -7,6 +7,18 @@ import { connection, setConnection } from '../orm/connection.js'
 
 export default function connect () {
   if (connection) return
+  patchSharedbMingoAggregations()
   const backend = new ShareBackend({ db: new ShareDbMingo() })
   setConnection(backend.connect())
+}
+
+let patched
+function patchSharedbMingoAggregations () {
+  if (patched) return
+  patched = true
+  const oldCanPollDoc = ShareDbMingo.prototype.canPollDoc
+  ShareDbMingo.prototype.canPollDoc = function (collection, query) {
+    if (query.hasOwnProperty('$aggregate')) return false // eslint-disable-line no-prototype-builtins
+    return oldCanPollDoc.call(this, collection, query)
+  }
 }
