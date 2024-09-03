@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before } from 'node:test'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub } from '../index.js'
+import { $, sub, aggregation } from '../index.js'
 import { get as _get } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import { hashQuery } from '../orm/Query.js'
@@ -210,6 +210,7 @@ describe('$sub() function. Queries', () => {
     })
     assert.equal($activeGames._1.name.get(), 'Game 1', 'can access document with dot')
     assert.deepEqual($activeGames.ids.get(), ['_1', '_2'], 'special ids signal is available')
+    assert.deepEqual($activeGames.getIds(), ['_1', '_2'], '.getIds() is available on the query signal')
     $activeGames._1.players.set(1)
     assert.equal($game1.players.get(), 1, 'modifying the document through the query signal')
     assert.deepEqual($activeGames.get(), [
@@ -234,6 +235,67 @@ describe('$sub() function. Queries', () => {
   })
 })
 
+describe('$sub() function. Aggregations', () => {
+  // TODO: test garbage collecting sharedb queries, sharedb docs, query signals
+  let $game1, $game2, $game3
+  const gamesCollection = 'gamesAggregations'
+
+  before(async () => {
+    $game1 = $[gamesCollection]._1
+    $game2 = $[gamesCollection]._2
+    $game3 = $[gamesCollection]._3
+    await $game1.set({ name: 'Game 1', active: true })
+    await $game2.set({ name: 'Game 2', active: true })
+    await $game3.set({ name: 'Game 3', active: false })
+  })
+
+  afterEachTestGc()
+
+  it('subscribe to aggregation, modify it', async () => {
+    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+      return [{ $match: { active } }]
+    })
+    const $activeGames = await sub($$activeGames, { active: true })
+    assert.equal($activeGames.get().length, 2)
+    assert.deepEqual(
+      sanitizeAggregations(_get(['$aggregations'])),
+      {
+        [hashQuery(gamesCollection, { $aggregate: [{ $match: { active: true } }] })]: [
+          { _id: '_1', name: 'Game 1', active: true },
+          { _id: '_2', name: 'Game 2', active: true }
+        ]
+      }
+    )
+    assert.equal($activeGames[0].name.get(), 'Game 1', 'can access document with dot')
+    // TODO: test that the .getIds() is gonna be reactive when the aggregation is updated
+    //       Also need to somehow put it into a signal of its own
+    //       since right now it creates a new array each time
+    assert.deepEqual($activeGames.getIds(), ['_1', '_2'], '.getIds() is available on aggregation signal')
+    await $activeGames[0].players.set(1)
+    assert.equal($game1.players.get(), 1, 'modifying the document through the aggregation signal')
+    assert.deepEqual(sanitizeAggregationResult($activeGames.get()), [
+      { _id: '_1', name: 'Game 1', active: true, players: 1 },
+      { _id: '_2', name: 'Game 2', active: true }
+    ], 'query signal has updated data')
+  })
+
+  it('aggregation should be iterable', async () => {
+    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+      return [{ $match: { active } }]
+    })
+    const $activeGames = await sub($$activeGames, { active: true })
+    assert.equal([...$activeGames].length, 2)
+  })
+
+  it('aggregation should support .map()', async () => {
+    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+      return [{ $match: { active } }]
+    })
+    const $activeGames = await sub($$activeGames, { active: true })
+    assert.deepEqual($activeGames.map($game => $game.name.get()).sort(), ['Game 1', 'Game 2'])
+  })
+})
+
 describe.skip('$sub() function. Async api functions', () => {
   it('async function', async () => {
     const $value = await sub(async () => {
@@ -245,3 +307,18 @@ describe.skip('$sub() function. Async api functions', () => {
     assert.equal($value.get(), 42)
   })
 })
+
+function dropSharedbMetaFields (doc) {
+  return Object.fromEntries(Object.entries(doc).filter(([key]) => key === '_id' || !key.startsWith('_')))
+}
+
+function sanitizeAggregations (aggregations) {
+  return Object.fromEntries(Object.entries(aggregations).map(([key, value]) => {
+    return [key, sanitizeAggregationResult(value)]
+  }))
+}
+
+function sanitizeAggregationResult (results) {
+  if (Array.isArray(results)) return results.map(dropSharedbMetaFields)
+  return dropSharedbMetaFields(results)
+}

@@ -1,7 +1,7 @@
-import ShareDbMingoMemory from 'sharedb-mingo-memory'
 import { resolve } from 'path'
 import sqlite3 from 'sqlite3'
 import uuid from '@teamplay/utils/uuid'
+import ShareDbMingoMemory from './sharedbMingo.js'
 import { loadSqliteDbToMingo, getExistingSqliteDb } from './utils.js'
 
 const DEFAULT_DB_PATH = './local.db'
