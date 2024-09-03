@@ -29,7 +29,7 @@ function getMongoDb ({ url, optsString, sslKeyPath, sslCertPath, sslCaPath }) {
   return {
     db: ShareDbMongo({
       mongo: callback => callback(null, mongoClient),
-      allowAllQueries: true
+      allowAggregateQueries: true
     }),
     mongo,
     mongoClient,

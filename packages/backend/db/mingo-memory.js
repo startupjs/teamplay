@@ -1,4 +1,4 @@
-import ShareDbMingoMemory from 'sharedb-mingo-memory'
+import ShareDbMingoMemory from './sharedbMingo.js'
 import { getExistingSqliteDb, loadSqliteDbToMingo } from './utils.js'
 
 export const db = await getMingoDb({
