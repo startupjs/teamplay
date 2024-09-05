@@ -279,6 +279,15 @@ describe('$sub() function. Aggregations', () => {
     ], 'query signal has updated data')
   })
 
+  it('.getId() on a signal from aggregation should return the id of the document', async () => {
+    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+      return [{ $match: { active } }]
+    })
+    const $activeGames = await sub($$activeGames, { active: true })
+    assert.equal($activeGames[0].getId(), '_1')
+    assert.equal($activeGames[1].getId(), '_2')
+  })
+
   it('aggregation should be iterable', async () => {
     const $$activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]

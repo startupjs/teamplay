@@ -50,12 +50,11 @@ export function isAggregationSignal ($signal) {
 
 // example: ['$aggregations', '{"active":true}', 42]
 //          AND only if it also has either '_id' or 'id' field inside
-export function getAggregationDocId (segments) {
+export function getAggregationDocId (segments, method = getRaw) {
   if (!(segments.length >= 3)) return
   if (!(segments[0] === AGGREGATIONS)) return
   if (!(typeof segments[2] === 'number')) return
-  const doc = getRaw(segments.slice(0, 3))
-  const docId = doc?._id || doc?.id
+  const docId = method([...segments.slice(0, 3), '_id']) || method([...segments.slice(0, 3), 'id'])
   return docId
 }
 

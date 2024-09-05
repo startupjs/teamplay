@@ -79,6 +79,11 @@ export default class Signal extends Function {
   getId () {
     if (this[SEGMENTS].length === 0) throw Error('Can\'t get the id of the root signal')
     if (this[SEGMENTS].length === 1) throw Error('Can\'t get the id of a collection')
+    if (this[SEGMENTS][0] === AGGREGATIONS && this[SEGMENTS].length === 3) {
+      // use get() instead of the default getRaw() to trigger observability on changes
+      // This is required since within aggregation array results docs can change their position
+      return getAggregationDocId(this[SEGMENTS], _get)
+    }
     return this[SEGMENTS][this[SEGMENTS].length - 1]
   }
 
