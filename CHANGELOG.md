@@ -1,3 +1,16 @@
+# v0.3.4 (Thu Sep 05 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): fix .getId() for doc signals in aggregation results ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.2 (Tue Sep 03 2024)
 
 #### 🐛 Bug Fix
