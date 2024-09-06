@@ -30,7 +30,7 @@ export default (backend, { customCheck } = {}) => {
     }
 
     const { $aggregationName: queryName, $params: queryParams = {} } = query
-    if (!queryName && !queryParams) return
+    if (!queryName) return
 
     const queryFunction = QUERIES[collection + '.' + queryName]
 
