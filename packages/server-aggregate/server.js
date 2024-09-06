@@ -17,19 +17,20 @@ export default (backend, { customCheck } = {}) => {
   const handleQuery = async (shareRequest) => {
     const { query, collection } = shareRequest
 
-    const queryName = query.$aggregationName
-    let queryParams = query.$params
-
     if (query.$aggregate) {
+      const { stream } = shareRequest.agent
+      // allow any aggregations initiated from the server code
+      if (stream?.isServer && !stream?.checkServerAccess) return
+      // deny any direct aggregations made from the client
       throw new ShareDBAccessError(ERR_ACCESS_ONLY_SERVER_AGGREATE, `
-        access denied - only server-queries for $aggregate are allowed
+        access denied - only server-queries for $aggregate are allowed from the client
         collection: '${collection}',
         query: \n${JSON.stringify(query, null, 2)}
       `)
     }
-    if (!queryName && !queryParams) return
 
-    queryParams = queryParams || {}
+    const { $aggregationName: queryName, $params: queryParams = {} } = query
+    if (!queryName && !queryParams) return
 
     const queryFunction = QUERIES[collection + '.' + queryName]
 

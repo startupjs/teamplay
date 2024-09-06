@@ -15,10 +15,10 @@ export default function serverAggregate (backend, { models = {}, ...options } = 
         collection,
         aggregationName,
         (queryParams, shareRequest) => {
-          const session = shareRequest.agent.connectSession
-          // TODO: rewrite to use $ here, or create a separate root $ for each user
-          // const model = global.__clients[userId].model
-          const context = { session, collection }
+          const session = shareRequest.agent.connectSession || {}
+          const isServer = shareRequest.agent.stream?.isServer
+          // should match the context in teamplay/orm/sub.js
+          const context = { session, collection, isServer }
           return aggregation(queryParams, context)
         }
       )
