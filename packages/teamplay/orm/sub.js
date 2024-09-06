@@ -3,6 +3,7 @@ import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } fr
 import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
+import isServer from '../utils/isServer.js'
 
 export default function sub ($signal, params) {
   // TODO: temporarily disable support for multiple subscriptions
@@ -20,9 +21,7 @@ export default function sub ($signal, params) {
     if (arguments.length !== 2) throw Error(ERRORS.subQueryArguments(...arguments))
     return query$($signal[SEGMENTS][0], params)
   } else if (isClientAggregationFunction($signal)) {
-    params = $signal(sanitizeAggregationParams(params))
-    if (Array.isArray(params)) params = { $aggregate: params }
-    return aggregation$($signal.collection, params)
+    return getAggregationFromFunction($signal, $signal.collection, params)
   } else if (isAggregationHeader($signal)) {
     params = {
       $aggregationName: $signal.name,
@@ -30,12 +29,35 @@ export default function sub ($signal, params) {
     }
     return aggregation$($signal.collection, params)
   } else if (isAggregationFunction($signal)) {
-    throw Error(ERRORS.gotAggregationFunction($signal))
+    if (isServer) {
+      if (!params?.$collection) throw Error(ERRORS.subServerAggregationCollection($signal, params))
+      params = { ...params }
+      const collection = params.$collection
+      delete params.$collection
+      return getAggregationFromFunction($signal, collection, params)
+    } else {
+      throw Error(ERRORS.gotAggregationFunction($signal))
+    }
   } else if (typeof $signal === 'function' && !($signal instanceof Signal)) {
     return api$($signal, params)
   } else {
     throw Error('Invalid args passed for sub()')
   }
+}
+
+function getAggregationFromFunction (fn, collection, params) {
+  params = sanitizeAggregationParams(params) // clones it, so mutation becomes safe
+  let session
+  if (params.$session) {
+    session = params.$session
+    delete params.$session
+  }
+  session ??= {}
+  // should match the context in @teamplay/backend/features/serverAggregate.js
+  const context = { collection, session, isServer }
+  params = fn(params, context)
+  if (Array.isArray(params)) params = { $aggregate: params }
+  return aggregation$(collection, params)
 }
 
 function doc$ ($doc) {
@@ -104,5 +126,16 @@ const ERRORS = {
 
       Got:
         ${aggregationFn.toString()}
+  `,
+  subServerAggregationCollection: ($signal, params) => `
+    sub($$aggregation, params):
+      Server-side aggregation function must receive the collection name from the params.
+      Make sure you pass the collection name as $collection in the params object
+      when running aggregation from the server code:
+      sub($$aggregation, { $collection: 'collectionName', ...actualParams })
+
+      Got:
+        Aggregation: ${$signal}
+        Params: ${params}
   `
 }

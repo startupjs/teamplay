@@ -252,10 +252,10 @@ describe('$sub() function. Aggregations', () => {
   afterEachTestGc()
 
   it('subscribe to aggregation, modify it', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const $$activeGames = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub($$activeGames, { $collection: gamesCollection, active: true })
     assert.equal($activeGames.get().length, 2)
     assert.deepEqual(
       sanitizeAggregations(_get(['$aggregations'])),
