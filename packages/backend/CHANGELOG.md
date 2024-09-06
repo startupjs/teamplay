@@ -1,3 +1,15 @@
+# v0.3.5 (Fri Sep 06 2024)
+
+#### 🚀 Enhancement
+
+- feat: allow running aggregations on server side [#6](https://github.com/startupjs/teamplay/pull/6) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.3 (Tue Sep 03 2024)
 
 #### 🐛 Bug Fix
