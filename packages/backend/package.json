@@ -12,6 +12,7 @@
     ".": "./index.js"
   },
   "dependencies": {
+    "@startupjs/sharedb-mingo-memory": "^4.0.0-1",
     "@teamplay/schema": "^0.3.6",
     "@teamplay/server-aggregate": "^0.3.6",
     "@teamplay/sharedb-access": "^0.3.6",
@@ -24,7 +25,6 @@
     "redlock": "^3.0.0",
     "sharedb": "^5.0.0",
     "sharedb-hooks": "~4.0.0",
-    "sharedb-mingo-memory": "^3.0.0",
     "sharedb-mongo": "^4.1.2",
     "sharedb-redis-pubsub": "^2.0.1",
     "sqlite3": "^5.1.6"
