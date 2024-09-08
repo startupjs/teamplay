@@ -1,3 +1,15 @@
+# v0.3.7 (Sun Sep 08 2024)
+
+#### 🚀 Enhancement
+
+- feat: use patched sharedb-mingo-memory which fully supports $aggregate with $lookup ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.5 (Fri Sep 06 2024)
 
 #### 🚀 Enhancement

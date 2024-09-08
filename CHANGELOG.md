@@ -1,3 +1,16 @@
+# v0.4.0 (Sun Sep 08 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/backend`, `teamplay`
+  - feat: use patched sharedb-mingo-memory which fully supports $aggregate with $lookup ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.6 (Fri Sep 06 2024)
 
 #### 🐛 Bug Fix
