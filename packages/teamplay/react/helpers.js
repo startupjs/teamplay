@@ -22,6 +22,12 @@ export function pipeComponentMeta (SourceComponent, TargetComponent, suffix = ''
   return TargetComponent
 }
 
+export function useNow () {
+  const context = useContext(ComponentMetaContext)
+  if (!context) throw Error(ERRORS.useNow)
+  return context.createdAt
+}
+
 export function useId () {
   const context = useContext(ComponentMetaContext)
   if (!context) throw Error(ERRORS.useId)
@@ -62,6 +68,10 @@ const ERRORS = {
   `,
   useId: `
     useId() can only be used inside a component wrapped with observer().
+    You have probably forgot to wrap your component with observer().
+  `,
+  useNow: `
+    useNow() can only be used inside a component wrapped with observer().
     You have probably forgot to wrap your component with observer().
   `
 }
