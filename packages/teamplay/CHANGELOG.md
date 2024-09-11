@@ -1,3 +1,15 @@
+# v0.3.9 (Wed Sep 11 2024)
+
+#### 🚀 Enhancement
+
+- feat: implement useAsyncSub(). It returns undefined if there is no data yet. ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.8 (Wed Sep 11 2024)
 
 #### 🚀 Enhancement

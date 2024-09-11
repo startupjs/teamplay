@@ -3,6 +3,19 @@
 #### 🚀 Enhancement
 
 - `teamplay`
+  - feat: implement useAsyncSub(). It returns undefined if there is no data yet. ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
+# v0.4.0 (Wed Sep 11 2024)
+
+#### 🚀 Enhancement
+
+- `teamplay`
   - feat: add useNow() to get current timestamp consistent between Suspense rerenders. Export useNow, useId, useTriggerUpdate, useScheduleUpdate ([@cray0000](https://github.com/cray0000))
   - feat: implement FinalizationRegistry mock through WeakRef ([@cray0000](https://github.com/cray0000))
 
