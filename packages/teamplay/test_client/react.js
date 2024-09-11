@@ -363,18 +363,17 @@ describe('useSub() for subscribing to queries', () => {
 
     await wait()
     expect(renders).toBe(4)
+
+    fireEvent.click(container.querySelector('#inactive'))
+    expect(renders).toBe(5)
+    expect(container.textContent).toBe('John')
+    await throttledWait()
+    expect(renders).toBe(6)
+    expect(container.textContent).toBe('Jane')
+
+    await throttledWait()
+    expect(renders).toBe(6)
     resetTestThrottling()
-
-    // fireEvent.click(container.querySelector('#inactive'))
-    // expect(renders).toBe(5)
-    // expect(container.textContent).toBe('John')
-    // await throttledWait()
-    // expect(renders).toBe(6)
-    // expect(container.textContent).toBe('Jane')
-
-    // await throttledWait()
-    // expect(renders).toBe(6)
-    // resetTestThrottling()
   })
 })
 
@@ -422,6 +421,16 @@ describe('useAsyncSub()', () => {
 
     await wait()
     expect(renders).toBe(4)
+
+    fireEvent.click(container.querySelector('#inactive'))
+    expect(renders).toBe(5)
+    expect(container.textContent).toBe('John')
+    await throttledWait()
+    expect(renders).toBe(6)
+    expect(container.textContent).toBe('Jane')
+
+    await throttledWait()
+    expect(renders).toBe(6)
     resetTestThrottling()
   })
 })
