@@ -14,7 +14,7 @@ export { GLOBAL_ROOT_ID } from './orm/Root.js'
 export const $ = _getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 export default $
 export { default as sub } from './orm/sub.js'
-export { default as useSub, setUseDeferredValue as __setUseDeferredValue } from './react/useSub.js'
+export { default as useSub, useAsyncSub, setUseDeferredValue as __setUseDeferredValue } from './react/useSub.js'
 export { default as observer } from './react/observer.js'
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.js'

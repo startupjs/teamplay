@@ -19,20 +19,20 @@ export default function wrapIntoSuspense ({
         stateVersion: Symbol(), // eslint-disable-line symbol-description
         onStoreChange: undefined,
         scheduledUpdatePromise: undefined,
+        scheduleUpdate: promise => {
+          if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
+          if (adm.scheduledUpdatePromise === promise) return
+          adm.scheduledUpdatePromise = promise
+          promise.then(() => {
+            if (adm.scheduledUpdatePromise !== promise) return
+            adm.scheduledUpdatePromise = undefined
+            adm.onStoreChange?.()
+          })
+        },
         subscribe (onStoreChange) {
           adm.onStoreChange = () => {
             adm.stateVersion = Symbol() // eslint-disable-line symbol-description
             onStoreChange()
-          }
-          adm.scheduleUpdate = promise => {
-            if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
-            if (adm.scheduledUpdatePromise === promise) return
-            adm.scheduledUpdatePromise = promise
-            promise.then(() => {
-              if (adm.scheduledUpdatePromise !== promise) return
-              adm.scheduledUpdatePromise = undefined
-              adm.onStoreChange?.()
-            })
           }
           return () => {
             adm.onStoreChange = undefined

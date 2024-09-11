@@ -1,7 +1,7 @@
 import { createElement as el, Fragment } from 'react'
 import { describe, it, afterEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { $, useSub, observer, sub } from '../index.js'
+import { $, useSub, useAsyncSub, observer, sub } from '../index.js'
 import { setTestThrottling, resetTestThrottling } from '../react/useSub.js'
 import connect from '../connect/test.js'
 
@@ -375,6 +375,54 @@ describe('useSub() for subscribing to queries', () => {
     // await throttledWait()
     // expect(renders).toBe(6)
     // resetTestThrottling()
+  })
+})
+
+describe('useAsyncSub()', () => {
+  it('initially returns undefined, handles query parameter changes, should NOT show Suspense', async () => {
+    // TODO: without sub() doing $jane.set({}) and then again $jane.set({}) will not work and should throw an error
+    //       (right now it tries to execute const newDoc = JSON.parse(JSON.stringify(oldDoc)) and fails)
+    const $users = $.usersAsync
+    const $john = await sub($users._1)
+    const $jane = await sub($users._2)
+    $john.set({ name: 'John', status: 'active', createdAt: 1 })
+    $jane.set({ name: 'Jane', status: 'inactive', createdAt: 2 })
+    await wait()
+    setTestThrottling(100)
+    const throttledWait = () => wait(130)
+    let renders = 0
+    const Component = observer(() => {
+      renders++
+      const $status = $()
+      const $activeUsers = useAsyncSub($users, { status: $status.get(), $sort: { createdAt: 1 } })
+      if (!$activeUsers) return el('span', {}, 'Waiting for users to load...')
+      return fr(
+        el('span', {}, $activeUsers.map($user => $user.name.get()).join(',')),
+        el('button', { id: 'active', onClick: () => $status.set('active') }),
+        el('button', { id: 'inactive', onClick: () => $status.set('inactive') })
+      )
+    }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
+    const { container } = render(el(Component))
+    expect(renders).toBe(1)
+    expect(container.textContent).toBe('Waiting for users to load...')
+
+    await throttledWait()
+    expect(renders).toBe(2)
+    expect(container.textContent).toBe('John,Jane')
+
+    fireEvent.click(container.querySelector('#active'))
+    expect(renders).toBe(3)
+    expect(container.textContent).toBe('John,Jane')
+    await wait()
+    expect(renders).toBe(3)
+    expect(container.textContent).toBe('John,Jane')
+    await throttledWait()
+    expect(renders).toBe(4)
+    expect(container.textContent).toBe('John')
+
+    await wait()
+    expect(renders).toBe(4)
+    resetTestThrottling()
   })
 })
 

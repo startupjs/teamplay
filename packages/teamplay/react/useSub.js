@@ -8,70 +8,79 @@ let TEST_THROTTLING = false
 // Currently it does lead to issues with extra rerenders and requires further investigation
 let USE_DEFERRED_VALUE = false
 
-export default function useSub (signal, params) {
+export function useAsyncSub (signal, params, options) {
+  return useSub(signal, params, { ...options, async: true })
+}
+
+export default function useSub (signal, params, options) {
   if (USE_DEFERRED_VALUE) {
-    return useSubDeferred(signal, params) // eslint-disable-line react-hooks/rules-of-hooks
+    return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
   } else {
-    return useSubClassic(signal, params) // eslint-disable-line react-hooks/rules-of-hooks
+    return useSubClassic(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
   }
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
-export function useSubDeferred (signal, params) {
+export function useSubDeferred (signal, params, { async = false } = {}) {
+  const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
+  const scheduleUpdate = useScheduleUpdate()
   signal = useDeferredValue(signal)
   params = useDeferredValue(params ? JSON.stringify(params) : undefined)
   params = params != null ? JSON.parse(params) : undefined
   const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
-    if (TEST_THROTTLING) {
-      // simulate slow network
-      throw new Promise((resolve, reject) => {
-        setTimeout(() => {
-          promiseOrSignal.then(resolve, reject)
-        }, TEST_THROTTLING)
-      })
+    const promise = maybeThrottle(promiseOrSignal)
+    if (async) {
+      scheduleUpdate(promise)
+      return
     }
-    throw promiseOrSignal
-  }
+    throw promise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
-  const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
-  if ($signalRef.current !== promiseOrSignal) $signalRef.current = promiseOrSignal
-  return promiseOrSignal
+  } else {
+    const $signal = promiseOrSignal
+    if ($signalRef.current !== $signal) $signalRef.current = $signal
+    return $signal
+  }
 }
 
 // classic version which initially throws promise for Suspense
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (signal, params) {
+export function useSubClassic (signal, params, { async = false } = {}) {
   const $signalRef = useRef()
   const activePromiseRef = useRef()
   const scheduleUpdate = useScheduleUpdate()
   const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
-    let promise
-    if (TEST_THROTTLING) {
-      // simulate slow network
-      promise = new Promise((resolve, reject) => {
-        setTimeout(() => {
-          promiseOrSignal.then(resolve, reject)
-        }, TEST_THROTTLING)
-      })
-    } else {
-      promise = promiseOrSignal
-    }
+    const promise = maybeThrottle(promiseOrSignal)
     // first time we just throw the promise to be caught by Suspense
-    if (!$signalRef.current) throw promise
+    if (!$signalRef.current) {
+      // if we are in async mode, we just return nothing and let the user
+      // handle appearance of signal on their own.
+      // We manually schedule an update when promise resolves since we can't
+      // rely on Suspense in this case to automatically trigger component's re-render
+      if (async) {
+        scheduleUpdate(promise)
+        return
+      }
+      // in regular mode we throw the promise to be caught by Suspense
+      // this way we guarantee that the signal with all the data
+      // will always be there when component is rendered
+      throw promise
+    }
     // if we already have a previous signal, we return it and wait for new promise to resolve
     scheduleUpdate(promise)
     return $signalRef.current
-  }
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
-  if ($signalRef.current !== promiseOrSignal) {
-    activePromiseRef.current = undefined
-    $signalRef.current = promiseOrSignal
+  } else {
+    const $signal = promiseOrSignal
+    if ($signalRef.current !== $signal) {
+      activePromiseRef.current = undefined
+      $signalRef.current = $signal
+    }
+    return $signal
   }
-  return promiseOrSignal
 }
 
 export function setTestThrottling (ms) {
@@ -85,4 +94,14 @@ export function resetTestThrottling () {
 }
 export function setUseDeferredValue (value) {
   USE_DEFERRED_VALUE = value
+}
+
+// throttle to simulate slow network
+function maybeThrottle (promise) {
+  if (!TEST_THROTTLING) return promise
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      promise.then(resolve, reject)
+    }, TEST_THROTTLING)
+  })
 }
