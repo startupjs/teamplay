@@ -13,4 +13,13 @@ export function destroyMockWeakRef (weakRef) {
   weakRef.value = undefined
 }
 
-export default (typeof WeakRef !== 'undefined' ? WeakRef : MockWeakRef)
+let ExportedWeakRef
+
+if (typeof WeakRef !== 'undefined') {
+  ExportedWeakRef = WeakRef
+} else {
+  console.warn('WeakRef is not available in this environment. Using a mock implementation: MockWeakRef')
+  ExportedWeakRef = MockWeakRef
+}
+
+export default ExportedWeakRef

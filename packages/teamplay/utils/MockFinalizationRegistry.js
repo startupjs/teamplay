@@ -1,17 +1,10 @@
-export const REGISTRY_FINALIZE_AFTER = 10_000
 export const REGISTRY_SWEEP_INTERVAL = 10_000
+const PERMANENT = false
 
-// This is a mock implementation of FinalizationRegistry that uses setTimeout to
-// schedule the sweep of outdated objects.
-// It is used in environments where FinalizationRegistry is not available.
-// For now we permanently keep the values in the registry until they are
-// manually unregistered since we don't have a way to know when the object is
-// no longer needed. In the future we might add the control logic to properly
-// invalidate the objects.
-export let PERMANENT = true
-export function setPermanent (permanent) { PERMANENT = permanent }
-
-export class TimerBasedFinalizationRegistry {
+// This is a mock implementation of FinalizationRegistry which doesn't actually
+// finalize anything. It's used in environments where FinalizationRegistry is not
+// available and it can not be simulated using WeakRef (e.g. React Native <0.75 or Old Architecture).
+export class PermanentFinalizationRegistry {
   registrations = new Map()
   sweepTimeout
 
@@ -25,7 +18,31 @@ export class TimerBasedFinalizationRegistry {
       value,
       registeredAt: Date.now()
     })
-    if (!PERMANENT) this.scheduleSweep()
+  }
+
+  unregister (token) {
+    this.registrations.delete(token)
+  }
+}
+
+// This is a mock implementation of FinalizationRegistry which uses WeakRef to
+// track the target objects. It's used in environments where FinalizationRegistry
+// is not available but WeakRef is (e.g. React Native >=0.75 on New Architecture).
+export class WeakRefBasedFinalizationRegistry {
+  registrations = new Map()
+  sweepTimeout
+
+  constructor (finalize) {
+    this.finalize = finalize
+  }
+
+  // Token is actually required with this impl
+  register (target, value, token) {
+    this.registrations.set(token, {
+      targetRef: new WeakRef(target),
+      value
+    })
+    this.scheduleSweep()
   }
 
   unregister (token) {
@@ -33,34 +50,37 @@ export class TimerBasedFinalizationRegistry {
   }
 
   // Bound so it can be used directly as setTimeout callback.
-  sweep = (maxAge = REGISTRY_FINALIZE_AFTER) => {
-    // cancel timeout so we can force sweep anytime
+  sweep = () => {
     clearTimeout(this.sweepTimeout)
     this.sweepTimeout = undefined
 
-    const now = Date.now()
     this.registrations.forEach((registration, token) => {
-      if (now - registration.registeredAt >= maxAge) {
-        this.finalize(registration.value)
-        this.registrations.delete(token)
-      }
+      if (registration.targetRef.deref() !== undefined) return
+      this.finalize(registration.value)
+      this.registrations.delete(token)
     })
 
-    if (this.registrations.size > 0) {
-      this.scheduleSweep()
-    }
-  }
-
-  // Bound so it can be exported directly as clearTimers test utility.
-  finalizeAllImmediately = () => {
-    this.sweep(0)
+    if (this.registrations.size > 0) this.scheduleSweep()
   }
 
   scheduleSweep () {
-    if (this.sweepTimeout === undefined) {
-      this.sweepTimeout = setTimeout(this.sweep, REGISTRY_SWEEP_INTERVAL)
-    }
+    if (this.sweepTimeout) return
+    this.sweepTimeout = setTimeout(this.sweep, REGISTRY_SWEEP_INTERVAL)
   }
 }
 
-export default (typeof FinalizationRegistry !== 'undefined' ? FinalizationRegistry : TimerBasedFinalizationRegistry)
+let ExportedFinalizationRegistry
+
+if (typeof FinalizationRegistry !== 'undefined') {
+  ExportedFinalizationRegistry = FinalizationRegistry
+} else if (typeof WeakRef !== 'undefined' && !PERMANENT) {
+  console.warn('FinalizationRegistry is not available in this environment. ' +
+      'Using a mock implementation: WeakRefBasedFinalizationRegistry')
+  ExportedFinalizationRegistry = WeakRefBasedFinalizationRegistry
+} else {
+  console.warn('FinalizationRegistry is not available in this environment. ' +
+      'Using a mock implementation: PermanentFinalizationRegistry')
+  ExportedFinalizationRegistry = PermanentFinalizationRegistry
+}
+
+export default ExportedFinalizationRegistry
