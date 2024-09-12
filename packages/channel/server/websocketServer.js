@@ -45,12 +45,16 @@ export default function createWebsocketServer ({ backend, path, ping, pingInterv
 
   async function websocketUpgrade (req, socket, upgradeHead) {
     if (!new RegExp('^' + path + '(/|\\?|$)').test(req.url)) {
-      return socket.close(1008, 'Can\'t handle that URL')
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n')
+      socket.destroy()
+      return
     }
     try {
       await authorize(req, { type: 'websocket' })
     } catch (err) {
-      return socket.close(1008, 'Unauthorized channel connection')
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+      socket.destroy()
+      return
     }
     try {
       // copy upgradeHead to avoid retention of large slab buffers used in node core
@@ -61,7 +65,8 @@ export default function createWebsocketServer ({ backend, path, ping, pingInterv
         websocketServer.emit('connection', client)
       })
     } catch (err) {
-      socket.close(1008, 'Error initializing channel connection')
+      socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n')
+      socket.destroy()
     }
   }
 
