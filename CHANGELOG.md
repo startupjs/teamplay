@@ -1,3 +1,21 @@
+# v0.3.10 (Thu Sep 12 2024)
+
+#### 🐛 Bug Fix
+
+- `@teamplay/channel`
+  - fix(channel): properly handle the websocket connection rejection ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- `teamplay`
+  - test: improve useSub and useAsyncSub tests ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.4.0 (Wed Sep 11 2024)
 
 #### 🚀 Enhancement

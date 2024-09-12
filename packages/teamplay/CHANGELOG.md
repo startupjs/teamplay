@@ -1,3 +1,15 @@
+# v0.3.10 (Thu Sep 12 2024)
+
+#### ⚠️ Pushed to `master`
+
+- test: improve useSub and useAsyncSub tests ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.9 (Wed Sep 11 2024)
 
 #### 🚀 Enhancement
