@@ -67,7 +67,12 @@ export default class Signal extends Function {
       if (!Array.isArray(docs)) return []
       return docs.map(doc => doc._id || doc.id)
     } else {
-      throw Error('Signal.getIds() can only be used on query signals or aggregation signals')
+      // TODO: this should throw an error in the future
+      console.error(
+        'Signal.getIds() can only be used on query signals or aggregation signals. ' +
+        'Received a regular signal: ' + JSON.stringify(this[SEGMENTS])
+      )
+      return []
     }
   }
 
