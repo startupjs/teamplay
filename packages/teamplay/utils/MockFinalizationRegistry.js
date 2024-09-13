@@ -1,4 +1,5 @@
 export const REGISTRY_SWEEP_INTERVAL = 10_000
+export const MOCK_FINALIZATION_TIMEOUT = 10_000
 const PERMANENT = false
 
 // This is a mock implementation of FinalizationRegistry which doesn't actually
@@ -29,6 +30,7 @@ export class PermanentFinalizationRegistry {
 // track the target objects. It's used in environments where FinalizationRegistry
 // is not available but WeakRef is (e.g. React Native >=0.75 on New Architecture).
 export class WeakRefBasedFinalizationRegistry {
+  counter = 0
   registrations = new Map()
   sweepTimeout
 
@@ -38,15 +40,20 @@ export class WeakRefBasedFinalizationRegistry {
 
   // Token is actually required with this impl
   register (target, value, token) {
-    this.registrations.set(token, {
+    this.registrations.set(this.counter, {
       targetRef: new WeakRef(target),
+      tokenRef: token && new WeakRef(token),
       value
     })
+    this.counter++
     this.scheduleSweep()
   }
 
   unregister (token) {
-    this.registrations.delete(token)
+    this.registrations.forEach((registration, key) => {
+      if (registration?.tokenRef.deref() !== token) return
+      this.registrations.delete(key)
+    })
   }
 
   // Bound so it can be used directly as setTimeout callback.
@@ -54,10 +61,11 @@ export class WeakRefBasedFinalizationRegistry {
     clearTimeout(this.sweepTimeout)
     this.sweepTimeout = undefined
 
-    this.registrations.forEach((registration, token) => {
+    this.registrations.forEach((registration, key) => {
       if (registration.targetRef.deref() !== undefined) return
-      this.finalize(registration.value)
-      this.registrations.delete(token)
+      const value = registration.value
+      this.registrations.delete(key)
+      setTimeout(() => this.finalize(value), MOCK_FINALIZATION_TIMEOUT)
     })
 
     if (this.registrations.size > 0) this.scheduleSweep()
