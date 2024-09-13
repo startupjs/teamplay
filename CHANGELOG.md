@@ -1,3 +1,16 @@
+# v0.3.12 (Fri Sep 13 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix: don't throw on incorrect getIds() ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.11 (Fri Sep 13 2024)
 
 #### ⚠️ Pushed to `master`
