@@ -55,13 +55,29 @@ export default class Signal extends Function {
 
   get () {
     if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
+    if (this[SEGMENTS].length === 3 && this[SEGMENTS][0] === QUERIES && this[SEGMENTS][2] === 'ids') {
+      // TODO: This should never happen, but in reality it happens sometimes
+      // Patch getting query ids because sometimes for some reason we are not getting them
+      const ids = this[GET](_get)
+      if (!Array.isArray(ids)) {
+        console.warn('Signal.get() on Query didn\'t find ids', this[SEGMENTS])
+        return []
+      }
+      return ids
+    }
     return this[GET](_get)
   }
 
   getIds () {
     if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
     if (this[IS_QUERY]) {
-      return _get([QUERIES, this[HASH], 'ids'])
+      const ids = _get([QUERIES, this[HASH], 'ids'])
+      if (!Array.isArray(ids)) {
+        // TODO: This should never happen, but in reality it happens sometimes
+        console.warn('Signal.getIds() on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
+        return []
+      }
+      return ids
     } else if (this[IS_AGGREGATION]) {
       const docs = _get(this[SEGMENTS])
       if (!Array.isArray(docs)) return []
@@ -95,6 +111,11 @@ export default class Signal extends Function {
   * [Symbol.iterator] () {
     if (this[IS_QUERY]) {
       const ids = _get([QUERIES, this[HASH], 'ids'])
+      if (!Array.isArray(ids)) {
+        // TODO: This should never happen, but in reality it happens sometimes
+        console.warn('Signal iterator on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
+        return
+      }
       for (const id of ids) yield getSignal(getRoot(this), [this[SEGMENTS][0], id])
     } else {
       const items = _get(this[SEGMENTS])
@@ -108,6 +129,11 @@ export default class Signal extends Function {
       const collection = this[SEGMENTS][0]
       const hash = this[HASH]
       const ids = _get([QUERIES, hash, 'ids'])
+      if (!Array.isArray(ids)) {
+        // TODO: This should never happen, but in reality it happens sometimes
+        console.warn('Signal array method on Query didn\'t find ids', [QUERIES, hash, 'ids'], method)
+        return nonArrayReturnValue
+      }
       return ids.map(
         id => getSignal(getRoot(this), [collection, id])
       )[method](...args)
