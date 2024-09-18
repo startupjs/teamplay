@@ -1,3 +1,15 @@
+# v0.3.13 (Wed Sep 18 2024)
+
+#### 🐛 Bug Fix
+
+- fix: fallback to empty array when the query ids are not there for some reason ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.12 (Fri Sep 13 2024)
 
 #### 🐛 Bug Fix
