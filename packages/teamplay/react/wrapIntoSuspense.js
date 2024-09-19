@@ -3,6 +3,17 @@
 import { useSyncExternalStore, forwardRef as _forwardRef, memo, createElement as el, Suspense, useId, useRef } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.js'
 
+// TODO: probably add FinalizationRegistry to handle destruction of observer() before it ever mounted.
+//       In such case we might have a memory leak because subscribe() would never fire and would never
+//       clean up the cache
+function destroyAdm (adm) {
+  adm.onStoreChange = undefined
+  adm.scheduledUpdatePromise = undefined
+  adm.scheduleUpdate = undefined
+  adm.cache.clear()
+  adm.cache = undefined
+}
+
 export default function wrapIntoSuspense ({
   Component,
   forwardRef,
@@ -19,6 +30,7 @@ export default function wrapIntoSuspense ({
         stateVersion: Symbol(), // eslint-disable-line symbol-description
         onStoreChange: undefined,
         scheduledUpdatePromise: undefined,
+        cache: new Map(),
         scheduleUpdate: promise => {
           if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
           if (adm.scheduledUpdatePromise === promise) return
@@ -34,11 +46,7 @@ export default function wrapIntoSuspense ({
             adm.stateVersion = Symbol() // eslint-disable-line symbol-description
             onStoreChange()
           }
-          return () => {
-            adm.onStoreChange = undefined
-            adm.scheduledUpdatePromise = undefined
-            adm.scheduleUpdate = undefined
-          }
+          return () => destroyAdm(adm)
         },
         getSnapshot () {
           return adm.stateVersion
@@ -55,7 +63,12 @@ export default function wrapIntoSuspense ({
         componentId,
         createdAt: Date.now(),
         triggerUpdate: () => adm.onStoreChange?.(),
-        scheduleUpdate: promise => adm.scheduleUpdate?.(promise)
+        scheduleUpdate: promise => adm.scheduleUpdate?.(promise),
+        cache: {
+          get: key => adm.cache?.get(key),
+          set: (key, value) => adm.cache?.set(key, value),
+          has: key => adm.cache?.has(key)
+        }
       }
     }
 

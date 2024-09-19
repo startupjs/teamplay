@@ -21,13 +21,15 @@ import { __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
 //       const $fullName = $(() => $firstName.get() + ' ' + $lastName.get())
 const DELAY = 5
 const GC_ITERATIONS = 4
-export async function runGc () {
+export async function runGc (iterations = GC_ITERATIONS) {
   await delay()
-  for (let i = 0; i < GC_ITERATIONS; i++) {
+  for (let i = 0; i < iterations; i++) {
     global.gc()
     await delay()
   }
 }
+
+export { signalsCache as cache }
 
 async function delay () {
   await new Promise(resolve => setTimeout(resolve, DELAY))

@@ -1,16 +1,24 @@
 import { createElement as el, Fragment } from 'react'
-import { describe, it, afterEach, expect, beforeAll as before } from '@jest/globals'
+import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { $, useSub, useAsyncSub, observer, sub } from '../index.js'
 import { setTestThrottling, resetTestThrottling } from '../react/useSub.js'
+import { runGc, cache } from '../test/_helpers.js'
 import connect from '../connect/test.js'
 
 before(connect)
+beforeEach(() => {
+  expect(cache.size).toBe(1)
+})
 afterEach(cleanup)
+afterEach(runGc)
 
 describe('observer', () => {
   it('react to signal changes', async () => {
     const { $name } = $.session._1
+    expect(cache.size).toBe(4)
+    await runGc()
+    expect(cache.size).toBe(2)
     let renders = 0
     const Component = observer(() => {
       renders++
@@ -25,10 +33,13 @@ describe('observer', () => {
     expect(renders).toBe(2)
 
     await wait()
+    await runGc()
     expect(renders).toBe(2)
+    expect(cache.size).toBe(2)
   })
 
-  it('does not react to signal changes when not wrapped in observer', () => {
+  it('does not react to signal changes when not wrapped in observer', async () => {
+    expect(cache.size).toBe(1)
     const { $name } = $.session._2
     let renders = 0
     const Component = () => {
@@ -42,6 +53,8 @@ describe('observer', () => {
     act(() => { $name.set('John') })
     expect(container.textContent).toBe('anonymous')
     expect(renders).toBe(1)
+    await runGc()
+    expect(cache.size).toBe(2)
   })
 
   it('batches multiple updates into one render', async () => {
@@ -82,7 +95,22 @@ describe('$() function for creating values', () => {
         el('button', { onClick: () => $name.set('Jane') })
       )
     })
+    expect(cache.size).toBe(1)
     const { container } = render(el(Component))
+    {
+      expect(cache.size).toBe(3)
+      const keys = cache._getKeys()
+      expect(keys[0]).toMatch(/private.*\$local.*get/) // .get() method
+      expect(keys[1]).toMatch(/private.*\$local/) // $name and $('John') are the same signal
+      expect(keys[2]).toMatch(/root/) // $ root signal
+    }
+    await runGc()
+    {
+      expect(cache.size).toBe(2) // only root and $name are left
+      const keys = cache._getKeys()
+      expect(keys[0]).toMatch(/private.*\$local/) // $name
+      expect(keys[1]).toMatch(/root/) // $ root signal
+    }
     expect(container.textContent).toBe('John')
     expect(renders).toBe(1)
 

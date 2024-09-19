@@ -40,9 +40,9 @@ export default function convertToObserver (BaseComponent, {
       if (throttle) update = _throttle(update, throttle)
       destroyRef.current = (where) => {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
+        destroyRef.current = undefined
         unobserve(reactionRef.current)
         reactionRef.current = undefined
-        destroyRef.current = undefined
         destroyCache(where)
       }
       const trappedRender = trapRender({

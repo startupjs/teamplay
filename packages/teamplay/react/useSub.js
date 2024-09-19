@@ -1,6 +1,7 @@
 import { useRef, useDeferredValue } from 'react'
 import sub from '../orm/sub.js'
-import { useScheduleUpdate } from './helpers.js'
+import { useScheduleUpdate, useCache } from './helpers.js'
+import executionContextTracker from './executionContextTracker.js'
 
 let TEST_THROTTLING = false
 
@@ -47,7 +48,8 @@ export function useSubDeferred (signal, params, { async = false } = {}) {
 // classic version which initially throws promise for Suspense
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
 export function useSubClassic (signal, params, { async = false } = {}) {
-  const $signalRef = useRef()
+  const id = executionContextTracker.newHookId()
+  const cache = useCache()
   const activePromiseRef = useRef()
   const scheduleUpdate = useScheduleUpdate()
   const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
@@ -55,7 +57,7 @@ export function useSubClassic (signal, params, { async = false } = {}) {
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
     // first time we just throw the promise to be caught by Suspense
-    if (!$signalRef.current) {
+    if (!cache.has(id)) {
       // if we are in async mode, we just return nothing and let the user
       // handle appearance of signal on their own.
       // We manually schedule an update when promise resolves since we can't
@@ -71,13 +73,13 @@ export function useSubClassic (signal, params, { async = false } = {}) {
     }
     // if we already have a previous signal, we return it and wait for new promise to resolve
     scheduleUpdate(promise)
-    return $signalRef.current
+    return cache.get(id)
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
-    if ($signalRef.current !== $signal) {
+    if (cache.get(id) !== $signal) {
       activePromiseRef.current = undefined
-      $signalRef.current = $signal
+      cache.set(id, $signal)
     }
     return $signal
   }

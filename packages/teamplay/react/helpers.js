@@ -46,6 +46,12 @@ export function useScheduleUpdate () {
   return context.scheduleUpdate
 }
 
+export function useCache (key) {
+  const context = useContext(ComponentMetaContext)
+  if (!context) throw Error(ERRORS.useCache)
+  return context.cache
+}
+
 export function useUnmount (fn) {
   const fnRef = useRef()
   if (fnRef.current !== fn) fnRef.current = fn
@@ -72,6 +78,10 @@ const ERRORS = {
   `,
   useNow: `
     useNow() can only be used inside a component wrapped with observer().
+    You have probably forgot to wrap your component with observer().
+  `,
+  useCache: `
+    useCache() can only be used inside a component wrapped with observer().
     You have probably forgot to wrap your component with observer().
   `
 }
