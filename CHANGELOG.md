@@ -1,3 +1,16 @@
+# v0.3.15 (Thu Sep 19 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): adm destructor might run twice during hot reloading ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.14 (Thu Sep 19 2024)
 
 #### 🐛 Bug Fix
