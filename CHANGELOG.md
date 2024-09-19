@@ -1,3 +1,16 @@
+# v0.3.14 (Thu Sep 19 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay): for React's useSub() and cache signals on the observer() level intead of using useRef() ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.13 (Wed Sep 18 2024)
 
 #### 🐛 Bug Fix
