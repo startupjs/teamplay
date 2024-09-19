@@ -10,7 +10,7 @@ function destroyAdm (adm) {
   adm.onStoreChange = undefined
   adm.scheduledUpdatePromise = undefined
   adm.scheduleUpdate = undefined
-  adm.cache.clear()
+  adm.cache?.clear()
   adm.cache = undefined
 }
 
