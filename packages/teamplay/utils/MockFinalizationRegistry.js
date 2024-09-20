@@ -1,6 +1,4 @@
-export const REGISTRY_SWEEP_INTERVAL = 10_000
-export const MOCK_FINALIZATION_TIMEOUT = 10_000
-const PERMANENT = false
+export const REGISTRY_SWEEP_INTERVAL = 10000
 
 // This is a mock implementation of FinalizationRegistry which doesn't actually
 // finalize anything. It's used in environments where FinalizationRegistry is not
@@ -65,7 +63,7 @@ export class WeakRefBasedFinalizationRegistry {
       if (registration.targetRef.deref() !== undefined) return
       const value = registration.value
       this.registrations.delete(key)
-      setTimeout(() => this.finalize(value), MOCK_FINALIZATION_TIMEOUT)
+      this.finalize(value)
     })
 
     if (this.registrations.size > 0) this.scheduleSweep()
@@ -81,12 +79,12 @@ let ExportedFinalizationRegistry
 
 if (typeof FinalizationRegistry !== 'undefined') {
   ExportedFinalizationRegistry = FinalizationRegistry
-} else if (typeof WeakRef !== 'undefined' && !PERMANENT) {
+} else if (typeof WeakRef !== 'undefined') {
   console.warn('FinalizationRegistry is not available in this environment. ' +
       'Using a mock implementation: WeakRefBasedFinalizationRegistry')
   ExportedFinalizationRegistry = WeakRefBasedFinalizationRegistry
 } else {
-  console.warn('FinalizationRegistry is not available in this environment. ' +
+  console.warn('Neither FinalizationRegistry nor WeakRef are available in this environment. ' +
       'Using a mock implementation: PermanentFinalizationRegistry')
   ExportedFinalizationRegistry = PermanentFinalizationRegistry
 }
