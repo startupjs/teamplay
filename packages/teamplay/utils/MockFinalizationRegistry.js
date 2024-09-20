@@ -40,7 +40,7 @@ export class WeakRefBasedFinalizationRegistry {
   register (target, value, token) {
     this.registrations.set(this.counter, {
       targetRef: new WeakRef(target),
-      tokenRef: token && new WeakRef(token),
+      tokenRef: token != null ? new WeakRef(token) : undefined,
       value
     })
     this.counter++
@@ -48,9 +48,11 @@ export class WeakRefBasedFinalizationRegistry {
   }
 
   unregister (token) {
+    if (token == null) return
     this.registrations.forEach((registration, key) => {
-      if (registration?.tokenRef.deref() !== token) return
-      this.registrations.delete(key)
+      if (registration.tokenRef?.deref() === token) {
+        this.registrations.delete(key)
+      }
     })
   }
 
