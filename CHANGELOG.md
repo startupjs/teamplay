@@ -1,3 +1,18 @@
+# v0.3.16 (Mon Sep 23 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix(teamplay/Doc): potential fix for the race condition during subscribe/unsubscribe ([@cray0000](https://github.com/cray0000))
+  - fix(teamplay): fix FinalizationRegistry mock unregister method ([@cray0000](https://github.com/cray0000))
+  - fix(teamplay): simplify FinalizationRegistry WeakRef mock ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.15 (Thu Sep 19 2024)
 
 #### 🐛 Bug Fix
