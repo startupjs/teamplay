@@ -162,24 +162,22 @@ class DocSubscriptions {
   constructor () {
     this.subCount = new Map()
     this.docs = new Map()
-    this.initialized = new Map()
     this.fr = new FinalizationRegistry(segments => this.destroy(segments))
   }
 
   init ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
-    if (this.initialized.has(hash)) return
-    this.initialized.set(hash, true)
-
-    this.fr.register($doc, segments, $doc)
-
     let doc = this.docs.get(hash)
-    if (!doc) {
+    if (doc) {
+      if (doc.initialized) return
+      doc.init()
+    } else {
       doc = new Doc(...segments)
       this.docs.set(hash, doc)
+      this.fr.register($doc, segments, $doc)
+      doc.init()
     }
-    doc.init()
   }
 
   subscribe ($doc) {
@@ -216,11 +214,10 @@ class DocSubscriptions {
     const hash = hashDoc(segments)
     const doc = this.docs.get(hash)
     if (!doc) return
-    this.subCount.delete(hash)
-    this.initialized.delete(hash)
-    // If the document was initialized as part of query and wasn't directly subscribed to, we should not unsubscribe from it.
+    // Wait until after unsubscribe to delete subCount and docs
     if (doc.subscribed) await doc.unsubscribe()
-    if (doc.subscribed) return // if we subscribed again while waiting for unsubscribe, we don't delete the doc
+    if (doc.subscribed) return // Subscribed again while unsubscribing
+    this.subCount.delete(hash)
     this.docs.delete(hash)
   }
 }
