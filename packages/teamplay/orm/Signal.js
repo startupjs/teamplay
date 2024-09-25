@@ -24,7 +24,7 @@ export const SEGMENTS = Symbol('path segments targeting the particular node in t
 export const ARRAY_METHOD = Symbol('run array method on the signal')
 export const GET = Symbol('get the value of the signal - either observed or raw')
 export const GETTERS = Symbol('get the list of this signal\'s getters')
-const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds']
+const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds', 'getCollection']
 
 export default class Signal extends Function {
   static [GETTERS] = DEFAULT_GETTERS
@@ -106,6 +106,14 @@ export default class Signal extends Function {
       return getAggregationDocId(this[SEGMENTS], _get)
     }
     return this[SEGMENTS][this[SEGMENTS].length - 1]
+  }
+
+  getCollection () {
+    if (this[SEGMENTS].length === 0) throw Error('Can\'t get the id of the root signal')
+    if (this[SEGMENTS][0] === AGGREGATIONS) {
+      return getAggregationCollectionName(this[SEGMENTS])
+    }
+    return this[SEGMENTS][0]
   }
 
   * [Symbol.iterator] () {
