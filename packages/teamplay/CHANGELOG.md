@@ -1,3 +1,15 @@
+# v0.3.17 (Thu Sep 26 2024)
+
+#### 🚀 Enhancement
+
+- feat(orm): implement getCollection method [#8](https://github.com/startupjs/teamplay/pull/8) ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+#### Authors: 1
+
+- Pavel Khazov ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+---
+
 # v0.3.16 (Mon Sep 23 2024)
 
 #### 🐛 Bug Fix
