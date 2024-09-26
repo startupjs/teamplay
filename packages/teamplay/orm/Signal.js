@@ -109,7 +109,7 @@ export default class Signal extends Function {
   }
 
   getCollection () {
-    if (this[SEGMENTS].length === 0) throw Error('Can\'t get the id of the root signal')
+    if (this[SEGMENTS].length === 0) throw Error('Can\'t get the collection of the root signal')
     if (this[SEGMENTS][0] === AGGREGATIONS) {
       return getAggregationCollectionName(this[SEGMENTS])
     }
