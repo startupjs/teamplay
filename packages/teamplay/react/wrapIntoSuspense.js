@@ -17,6 +17,7 @@ function destroyAdm (adm) {
 export default function wrapIntoSuspense ({
   Component,
   forwardRef,
+  defer,
   suspenseProps = DEFAULT_SUSPENSE_PROPS
 } = {}) {
   if (!suspenseProps?.fallback) throw Error(ERRORS.noFallback)
@@ -62,6 +63,7 @@ export default function wrapIntoSuspense ({
       componentMetaRef.current = {
         componentId,
         createdAt: Date.now(),
+        defer,
         triggerUpdate: () => adm.onStoreChange?.(),
         scheduleUpdate: promise => adm.scheduleUpdate?.(promise),
         cache: {

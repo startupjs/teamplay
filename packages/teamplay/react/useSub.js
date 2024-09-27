@@ -1,13 +1,15 @@
 import { useRef, useDeferredValue } from 'react'
 import sub from '../orm/sub.js'
-import { useScheduleUpdate, useCache } from './helpers.js'
+import { useScheduleUpdate, useCache, useDefer } from './helpers.js'
 import executionContextTracker from './executionContextTracker.js'
 
 let TEST_THROTTLING = false
 
 // experimental feature to leverage useDeferredValue() to handle re-subscriptions.
 // Currently it does lead to issues with extra rerenders and requires further investigation
-let USE_DEFERRED_VALUE = false
+let USE_DEFERRED_VALUE = true
+// by default we want to defer stuff if possible instead of throwing promises
+let DEFAULT_DEFER = true
 
 export function useAsyncSub (signal, params, options) {
   return useSub(signal, params, { ...options, async: true })
@@ -22,12 +24,16 @@ export default function useSub (signal, params, options) {
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
-export function useSubDeferred (signal, params, { async = false } = {}) {
+export function useSubDeferred (signal, params, { async = false, defer } = {}) {
   const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
   const scheduleUpdate = useScheduleUpdate()
-  signal = useDeferredValue(signal)
-  params = useDeferredValue(params ? JSON.stringify(params) : undefined)
-  params = params != null ? JSON.parse(params) : undefined
+  const observerDefer = useDefer()
+  defer ??= observerDefer ?? DEFAULT_DEFER
+  if (defer) {
+    signal = useDeferredValue(signal) // eslint-disable-line react-hooks/rules-of-hooks
+    params = useDeferredValue(params ? JSON.stringify(params) : undefined) // eslint-disable-line react-hooks/rules-of-hooks
+    params = params != null ? JSON.parse(params) : undefined
+  }
   const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
@@ -96,6 +102,9 @@ export function resetTestThrottling () {
 }
 export function setUseDeferredValue (value) {
   USE_DEFERRED_VALUE = value
+}
+export function setDefaultDefer (value) {
+  DEFAULT_DEFER = value
 }
 
 // throttle to simulate slow network

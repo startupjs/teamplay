@@ -46,6 +46,12 @@ export function useScheduleUpdate () {
   return context.scheduleUpdate
 }
 
+export function useDefer () {
+  const context = useContext(ComponentMetaContext)
+  if (!context) throw Error(ERRORS.useScheduleUpdate)
+  return context.defer
+}
+
 export function useCache (key) {
   const context = useContext(ComponentMetaContext)
   if (!context) throw Error(ERRORS.useCache)
