@@ -1,3 +1,18 @@
+# v0.3.18 (Fri Sep 27 2024)
+
+#### 🐛 Bug Fix
+
+- `teamplay`
+  - fix: swich to using useDeferredValue by default. Add { defer: false } support to useSub() and to observer() (effective for any useSub inside) options to not use it. ([@cray0000](https://github.com/cray0000))
+  - fix(orm): typo in getCollection method's error message ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+#### Authors: 2
+
+- Pavel Khazov ([@fcbvirus0k](https://github.com/fcbvirus0k))
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.4.0 (Thu Sep 26 2024)
 
 #### 🚀 Enhancement
