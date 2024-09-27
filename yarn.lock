@@ -2618,16 +2618,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@teamplay/backend@npm:^0.3.17, @teamplay/backend@workspace:packages/backend":
+"@teamplay/backend@npm:^0.3.18, @teamplay/backend@workspace:packages/backend":
   version: 0.0.0-use.local
   resolution: "@teamplay/backend@workspace:packages/backend"
   dependencies:
     "@startupjs/sharedb-mingo-memory": "npm:^4.0.0-1"
-    "@teamplay/schema": "npm:^0.3.17"
-    "@teamplay/server-aggregate": "npm:^0.3.17"
-    "@teamplay/sharedb-access": "npm:^0.3.17"
-    "@teamplay/sharedb-schema": "npm:^0.3.17"
-    "@teamplay/utils": "npm:^0.3.17"
+    "@teamplay/schema": "npm:^0.3.18"
+    "@teamplay/server-aggregate": "npm:^0.3.18"
+    "@teamplay/sharedb-access": "npm:^0.3.18"
+    "@teamplay/sharedb-schema": "npm:^0.3.18"
+    "@teamplay/utils": "npm:^0.3.18"
     "@types/ioredis-mock": "npm:^8.2.5"
     ioredis: "npm:^5.3.2"
     ioredis-mock: "npm:^8.9.0"
@@ -2641,15 +2641,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@teamplay/cache@npm:^0.3.17, @teamplay/cache@workspace:packages/cache":
+"@teamplay/cache@npm:^0.3.18, @teamplay/cache@workspace:packages/cache":
   version: 0.0.0-use.local
   resolution: "@teamplay/cache@workspace:packages/cache"
   dependencies:
-    "@teamplay/debug": "npm:^0.3.17"
+    "@teamplay/debug": "npm:^0.3.18"
   languageName: unknown
   linkType: soft
 
-"@teamplay/channel@npm:^0.3.17, @teamplay/channel@workspace:packages/channel":
+"@teamplay/channel@npm:^0.3.18, @teamplay/channel@workspace:packages/channel":
   version: 0.0.0-use.local
   resolution: "@teamplay/channel@workspace:packages/channel"
   dependencies:
@@ -2659,13 +2659,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@teamplay/debug@npm:^0.3.17, @teamplay/debug@workspace:packages/debug":
+"@teamplay/debug@npm:^0.3.18, @teamplay/debug@workspace:packages/debug":
   version: 0.0.0-use.local
   resolution: "@teamplay/debug@workspace:packages/debug"
   languageName: unknown
   linkType: soft
 
-"@teamplay/schema@npm:^0.3.17, @teamplay/schema@workspace:packages/schema":
+"@teamplay/schema@npm:^0.3.18, @teamplay/schema@workspace:packages/schema":
   version: 0.0.0-use.local
   resolution: "@teamplay/schema@workspace:packages/schema"
   dependencies:
@@ -2675,13 +2675,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@teamplay/server-aggregate@npm:^0.3.17, @teamplay/server-aggregate@workspace:packages/server-aggregate":
+"@teamplay/server-aggregate@npm:^0.3.18, @teamplay/server-aggregate@workspace:packages/server-aggregate":
   version: 0.0.0-use.local
   resolution: "@teamplay/server-aggregate@workspace:packages/server-aggregate"
   languageName: unknown
   linkType: soft
 
-"@teamplay/sharedb-access@npm:^0.3.17, @teamplay/sharedb-access@workspace:packages/sharedb-access":
+"@teamplay/sharedb-access@npm:^0.3.18, @teamplay/sharedb-access@workspace:packages/sharedb-access":
   version: 0.0.0-use.local
   resolution: "@teamplay/sharedb-access@workspace:packages/sharedb-access"
   dependencies:
@@ -2693,7 +2693,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@teamplay/sharedb-schema@npm:^0.3.17, @teamplay/sharedb-schema@workspace:packages/sharedb-schema":
+"@teamplay/sharedb-schema@npm:^0.3.18, @teamplay/sharedb-schema@workspace:packages/sharedb-schema":
   version: 0.0.0-use.local
   resolution: "@teamplay/sharedb-schema@workspace:packages/sharedb-schema"
   dependencies:
@@ -2704,7 +2704,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@teamplay/utils@npm:^0.3.17, @teamplay/utils@workspace:packages/utils":
+"@teamplay/utils@npm:^0.3.18, @teamplay/utils@workspace:packages/utils":
   version: 0.0.0-use.local
   resolution: "@teamplay/utils@workspace:packages/utils"
   dependencies:
@@ -6587,7 +6587,7 @@ __metadata:
     esbuild: "npm:^0.21.4"
     react: "npm:^18.3.1"
     react-dom: "npm:^18.3.1"
-    teamplay: "npm:^0.3.17"
+    teamplay: "npm:^0.3.18"
   languageName: unknown
   linkType: soft
 
@@ -15073,19 +15073,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"teamplay@npm:^0.3.17, teamplay@workspace:packages/teamplay":
+"teamplay@npm:^0.3.18, teamplay@workspace:packages/teamplay":
   version: 0.0.0-use.local
   resolution: "teamplay@workspace:packages/teamplay"
   dependencies:
     "@jest/globals": "npm:^29.7.0"
     "@nx-js/observer-util": "npm:^4.1.3"
     "@startupjs/sharedb-mingo-memory": "npm:^4.0.0-1"
-    "@teamplay/backend": "npm:^0.3.17"
-    "@teamplay/cache": "npm:^0.3.17"
-    "@teamplay/channel": "npm:^0.3.17"
-    "@teamplay/debug": "npm:^0.3.17"
-    "@teamplay/schema": "npm:^0.3.17"
-    "@teamplay/utils": "npm:^0.3.17"
+    "@teamplay/backend": "npm:^0.3.18"
+    "@teamplay/cache": "npm:^0.3.18"
+    "@teamplay/channel": "npm:^0.3.18"
+    "@teamplay/debug": "npm:^0.3.18"
+    "@teamplay/schema": "npm:^0.3.18"
+    "@teamplay/utils": "npm:^0.3.18"
     "@testing-library/react": "npm:^15.0.7"
     diff-match-patch: "npm:^1.0.5"
     events: "npm:^3.3.0"
