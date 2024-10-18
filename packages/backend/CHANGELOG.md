@@ -1,3 +1,15 @@
+# v0.3.19 (Fri Oct 18 2024)
+
+#### 🚀 Enhancement
+
+- feat(backend/mongo): add support for TLS/SSL connection ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.7 (Sun Sep 08 2024)
 
 #### 🚀 Enhancement

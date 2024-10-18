@@ -1,3 +1,16 @@
+# v0.4.0 (Fri Oct 18 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/backend`
+  - feat(backend/mongo): add support for TLS/SSL connection ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.18 (Fri Sep 27 2024)
 
 #### 🐛 Bug Fix
