@@ -1,3 +1,16 @@
+# v0.4.0 (Tue Nov 05 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/backend`
+  - feat(backend): implement ability to pass additional options to redis [#10](https://github.com/startupjs/teamplay/pull/10) ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+#### Authors: 1
+
+- Pavel Khazov ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+---
+
 # v0.3.20 (Tue Nov 05 2024)
 
 #### 🐛 Bug Fix
