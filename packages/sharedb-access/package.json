@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/sharedb-access",
-  "version": "0.3.20",
+  "version": "0.3.21",
   "description": "ShareDB access-control middleware",
   "publishConfig": {
     "access": "public"
