@@ -5,9 +5,9 @@ import { getRedis, Redis, RedisMock } from './getRedis.js'
 const enableRedis = !process.env.NO_REDIS
 
 const getRedisOptions = {
-  enableRedis,
-  redisOpts: process.env.REDIS_OPTS,
-  redisUrl: process.env.REDIS_URL,
+  enable: enableRedis,
+  opts: process.env.REDIS_OPTS,
+  url: process.env.REDIS_URL,
   keyPrefix: generatePrefix({
     mongoUrl: process.env.MONGO_URL,
     baseUrl: process.env.BASE_URL
