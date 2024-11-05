@@ -1,3 +1,15 @@
+# v0.3.20 (Tue Nov 05 2024)
+
+#### 🐛 Bug Fix
+
+- refactor(backend, server): move 'getUniversalRedis' to helper and export it, export Redis [#9](https://github.com/startupjs/teamplay/pull/9) ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+#### Authors: 1
+
+- Pavel Khazov ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+---
+
 # v0.3.19 (Fri Oct 18 2024)
 
 #### 🚀 Enhancement
