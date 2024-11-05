@@ -1,21 +1,24 @@
-import { readFileSync } from 'fs'
-import Redis from 'ioredis'
-import RedisMock from 'ioredis-mock'
 import Redlock from 'redlock'
 import redisPubSub from 'sharedb-redis-pubsub'
+import { getRedis, Redis, RedisMock } from './getRedis.js'
 
-export const {
-  redis,
-  redisObserver
-} = getUniversalRedis({
-  disableRedis: process.env.NO_REDIS,
+const enableRedis = !process.env.NO_REDIS
+
+const getRedisOptions = {
+  enableRedis,
   redisOpts: process.env.REDIS_OPTS,
   redisUrl: process.env.REDIS_URL,
   keyPrefix: generatePrefix({
     mongoUrl: process.env.MONGO_URL,
     baseUrl: process.env.BASE_URL
   })
-})
+}
+
+const RedisClient = enableRedis ? Redis : RedisMock
+export { RedisClient as Redis }
+export { getRedis }
+export const redis = getRedis(getRedisOptions)
+export const redisObserver = getRedis(getRedisOptions)
 
 export const pubsub = redisPubSub({
   client: redis,
@@ -25,47 +28,6 @@ export const pubsub = redisPubSub({
 export const redlock = getRedlock(redis)
 
 export { Redlock }
-
-function getUniversalRedis ({ disableRedis, redisOpts, redisUrl, keyPrefix }) {
-  if (!disableRedis) {
-    if (typeof redisOpts === 'string') {
-      redisOpts = JSON.parse(redisOpts)
-      let tls = {}
-
-      if (redisOpts.key) {
-        tls = {
-          key: readFileSync(redisOpts.key),
-          cert: readFileSync(redisOpts.cert),
-          ca: readFileSync(redisOpts.ca)
-        }
-      }
-
-      const options = {
-        sentinels: redisOpts.sentinels,
-        sslPort: redisOpts.ssl_port || '6380',
-        tls,
-        name: 'mymaster',
-        db: redisOpts.db || 0,
-        password: redisOpts.password,
-        keyPrefix
-      }
-
-      return {
-        redis: new Redis(options),
-        redisObserver: new Redis(options)
-      }
-    } else if (redisUrl) {
-      return {
-        redis: new Redis(redisUrl, { keyPrefix }),
-        redisObserver: new Redis(redisUrl, { keyPrefix })
-      }
-    }
-  }
-  return {
-    redis: new RedisMock({ keyPrefix }),
-    redisObserver: new RedisMock({ keyPrefix })
-  }
-}
 
 function getRedlock (redis) {
   return new Redlock([redis], {
