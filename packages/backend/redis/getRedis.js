@@ -4,41 +4,42 @@ import RedisMock from 'ioredis-mock'
 
 export { Redis, RedisMock }
 
-export function getRedis ({ enableRedis = true, redisOpts, redisUrl, keyPrefix }) {
-  if (enableRedis) {
-    if (typeof redisOpts === 'string') {
-      redisOpts = JSON.parse(redisOpts)
+export function getRedis ({ enable = true, opts, url, keyPrefix, ...additionalOptions }) {
+  if (enable) {
+    if (typeof opts === 'string') {
+      opts = JSON.parse(opts)
       let tls = {}
 
-      if (redisOpts.key) {
+      if (opts.key) {
         tls = {
-          key: readFileSync(redisOpts.key),
-          cert: readFileSync(redisOpts.cert),
-          ca: readFileSync(redisOpts.ca)
+          key: readFileSync(opts.key),
+          cert: readFileSync(opts.cert),
+          ca: readFileSync(opts.ca)
         }
       }
 
       const options = {
-        sentinels: redisOpts.sentinels,
-        sslPort: redisOpts.ssl_port || '6380',
+        sentinels: opts.sentinels,
+        sslPort: opts.ssl_port || '6380',
         tls,
         name: 'mymaster',
-        db: redisOpts.db || 0,
-        password: redisOpts.password
+        db: opts.db || 0,
+        password: opts.password,
+        ...additionalOptions
       }
 
       _maybeAddKeyPrefixToOptions(options, keyPrefix)
 
       return new Redis(options)
-    } else if (redisUrl) {
-      const options = {}
+    } else if (url) {
+      const options = { ...additionalOptions }
       _maybeAddKeyPrefixToOptions(options, keyPrefix)
 
-      return new Redis(redisUrl, options)
+      return new Redis(url, options)
     }
   }
 
-  const options = {}
+  const options = { ...additionalOptions }
   _maybeAddKeyPrefixToOptions(options, keyPrefix)
 
   return new RedisMock(options)
