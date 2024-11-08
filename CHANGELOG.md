@@ -1,3 +1,16 @@
+# v0.3.24 (Fri Nov 08 2024)
+
+#### ⚠️ Pushed to `master`
+
+- `@teamplay/backend`
+  - fix(backend -> redis): fix var usage before initialization ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+#### Authors: 1
+
+- Pavel Khazov ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+---
+
 # v0.3.23 (Fri Nov 08 2024)
 
 #### ⚠️ Pushed to `master`
