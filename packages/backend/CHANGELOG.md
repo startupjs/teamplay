@@ -1,3 +1,15 @@
+# v0.3.23 (Fri Nov 08 2024)
+
+#### ⚠️ Pushed to `master`
+
+- fix(backend -> redis): typo ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+#### Authors: 1
+
+- Pavel Khazov ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+---
+
 # v0.3.22 (Fri Nov 08 2024)
 
 #### 🚀 Enhancement
