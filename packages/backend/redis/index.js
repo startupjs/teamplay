@@ -6,12 +6,12 @@ const ENABLE_REDIS = !process.env.NO_REDIS
 
 const RedisClient = ENABLE_REDIS ? Redis : RedisMock
 export { RedisClient as Redis, getRedis, getRedisOptions, generatePrefix }
-export const redis = getRedis(getRedisOptions())
-export const redisObserver = getRedis(getRedisOptions())
 export const prefix = generatePrefix({
   mongoUrl: process.env.MONGO_URL,
   baseUrl: process.env.BASE_URL
 })
+export const redis = getRedis(getRedisOptions())
+export const redisObserver = getRedis(getRedisOptions())
 
 export const pubsub = redisPubSub({
   client: redis,
