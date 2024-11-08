@@ -2,23 +2,16 @@ import Redlock from 'redlock'
 import redisPubSub from 'sharedb-redis-pubsub'
 import { getRedis, Redis, RedisMock } from './getRedis.js'
 
-const enableRedis = !process.env.NO_REDIS
+const ENABLE_REDIS = !process.env.NO_REDIS
 
-const getRedisOptions = {
-  enable: enableRedis,
-  opts: process.env.REDIS_OPTS,
-  url: process.env.REDIS_URL,
-  keyPrefix: generatePrefix({
-    mongoUrl: process.env.MONGO_URL,
-    baseUrl: process.env.BASE_URL
-  })
-}
-
-const RedisClient = enableRedis ? Redis : RedisMock
-export { RedisClient as Redis }
-export { getRedis }
-export const redis = getRedis(getRedisOptions)
-export const redisObserver = getRedis(getRedisOptions)
+const RedisClient = ENABLE_REDIS ? Redis : RedisMock
+export { RedisClient as Redis, getRedis, getRedisOptions, generatePrefix }
+export const redis = getRedis(getRedisOptions())
+export const redisObserver = getRedis(getRedisOptions())
+export const prefix = generatePrefix({
+  mongoUrl: process.env.MONGO_URL,
+  baseUrl: process.env.BASE_URL
+})
 
 export const pubsub = redisPubSub({
   client: redis,
@@ -28,6 +21,18 @@ export const pubsub = redisPubSub({
 export const redlock = getRedlock(redis)
 
 export { Redlock }
+
+function getRedisOptions ({ addPrefix = true }) {
+  const options = {
+    enable: ENABLE_REDIS,
+    opts: process.env.REDIS_OPTS,
+    url: process.env.REDIS_URL
+  }
+
+  if (addPrefix) options.keyPrefix = prefix
+
+  return options
+}
 
 function getRedlock (redis) {
   return new Redlock([redis], {
