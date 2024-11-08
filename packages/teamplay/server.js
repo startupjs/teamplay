@@ -4,7 +4,17 @@ import { connection, setConnection, setFetchOnly, setPublicOnly } from './orm/co
 export { default as ShareDB } from 'sharedb'
 export {
   default as createBackend,
-  mongo, mongoClient, createMongoIndex, redis, redlock, sqlite, getRedis, Redis
+  mongo,
+  mongoClient,
+  createMongoIndex,
+  redis,
+  redlock,
+  sqlite,
+  getRedis,
+  Redis,
+  getRedisOptions,
+  redisPrefix,
+  generateRedisPrefix
 } from '@teamplay/backend'
 
 export function initConnection (backend, {

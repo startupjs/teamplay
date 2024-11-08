@@ -7,7 +7,16 @@ import initValidateSchema from './features/validateSchema.js'
 import initServerAggregate from './features/serverAggregate.js'
 import initAccessControl from './features/accessControl.js'
 
-export { redis, redlock, Redlock, getRedis, Redis } from './redis/index.js'
+export {
+  prefix as redisPrefix,
+  generatePrefix as generateRedisPrefix,
+  getRedisOptions,
+  redis,
+  redlock,
+  Redlock,
+  getRedis,
+  Redis
+} from './redis/index.js'
 export { db, mongo, mongoClient, createMongoIndex, sqlite } from './db/index.js'
 
 const usersConnectionCounter = {}
