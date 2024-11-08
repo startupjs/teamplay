@@ -1,7 +1,7 @@
 {
   "name": "@teamplay/channel",
   "type": "module",
-  "version": "0.3.23",
+  "version": "0.3.24",
   "description": "WebSocket/SockJS 2-way communication channel",
   "main": "index.js",
   "exports": {
