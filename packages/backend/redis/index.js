@@ -22,7 +22,7 @@ export const redlock = getRedlock(redis)
 
 export { Redlock }
 
-function getRedisOptions ({ addPrefix = true }) {
+function getRedisOptions ({ addPrefix = true } = {}) {
   const options = {
     enable: ENABLE_REDIS,
     opts: process.env.REDIS_OPTS,
