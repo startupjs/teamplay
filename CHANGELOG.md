@@ -1,3 +1,16 @@
+# v0.4.0 (Fri Nov 08 2024)
+
+#### 🚀 Enhancement
+
+- `@teamplay/backend`, `teamplay`
+  - feat(backend): export 'redisPrefix', 'generateRedisPrefix', 'getRedisOptions' [#11](https://github.com/startupjs/teamplay/pull/11) ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+#### Authors: 1
+
+- Pavel Khazov ([@fcbvirus0k](https://github.com/fcbvirus0k))
+
+---
+
 # v0.4.0 (Tue Nov 05 2024)
 
 #### 🚀 Enhancement
