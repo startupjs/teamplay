@@ -124,11 +124,27 @@ export default class Signal extends Function {
         console.warn('Signal iterator on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
         return
       }
-      for (const id of ids) yield getSignal(getRoot(this), [this[SEGMENTS][0], id])
+      for (const id of ids) {
+        const docSegments = [this[SEGMENTS][0], id]
+        // filter out 'undefined' values which sometimes can be present in the query results for unknown reasons
+        // TODO: figure out why sometimes there are 'undefined' values in the query results.
+        //       NOTE: it was only observed with aggregation queries so it might not be a problem with regular queries
+        if (_get(docSegments) == null) continue
+        yield getSignal(getRoot(this), docSegments)
+      }
     } else {
       const items = _get(this[SEGMENTS])
       if (!Array.isArray(items)) return
-      for (let i = 0; i < items.length; i++) yield getSignal(getRoot(this), [...this[SEGMENTS], i])
+      for (let i = 0; i < items.length; i++) {
+        const itemSegments = [...this[SEGMENTS], i]
+        if (this[IS_AGGREGATION]) {
+          // Aggregations might sometimes return undefined values for some reason when the doc is expected.
+          // Filter them out to prevent errors down the line in the end-user code.
+          // TODO: figure out why sometimes there are 'undefined' values in the aggregation results
+          if (_get(itemSegments) == null) continue
+        }
+        yield getSignal(getRoot(this), itemSegments)
+      }
     }
   }
 
@@ -142,15 +158,38 @@ export default class Signal extends Function {
         console.warn('Signal array method on Query didn\'t find ids', [QUERIES, hash, 'ids'], method)
         return nonArrayReturnValue
       }
-      return ids.map(
-        id => getSignal(getRoot(this), [collection, id])
-      )[method](...args)
+      const signals = []
+      for (const id of ids) {
+        const docSegments = [collection, id]
+        // filter out 'undefined' values which sometimes can be present in the query results for unknown reasons
+        // TODO: figure out why sometimes there are 'undefined' values in the query results.
+        //       NOTE: it was only observed with aggregation queries so it might not be a problem with regular queries
+        if (_get(docSegments) == null) continue
+        signals.push(getSignal(getRoot(this), docSegments))
+      }
+      return signals[method](...args)
+    } else if (this[IS_AGGREGATION]) {
+      const items = _get(this[SEGMENTS])
+      if (!Array.isArray(items)) return nonArrayReturnValue
+      const signals = []
+      for (let i = 0; i < items.length; i++) {
+        const itemSegments = [...this[SEGMENTS], i]
+        // Aggregations might sometimes return undefined values for some reason when the doc is expected.
+        // Filter them out to prevent errors down the line in the end-user code.
+        // TODO: figure out why sometimes there are 'undefined' values in the aggregation results
+        if (_get(itemSegments) == null) continue
+        signals.push(getSignal(getRoot(this), itemSegments))
+      }
+      return signals[method](...args)
+    } else {
+      const items = _get(this[SEGMENTS])
+      if (!Array.isArray(items)) return nonArrayReturnValue
+      const signals = []
+      for (let i = 0; i < items.length; i++) {
+        signals.push(getSignal(getRoot(this), [...this[SEGMENTS], i]))
+      }
+      return signals[method](...args)
     }
-    const items = _get(this[SEGMENTS])
-    if (!Array.isArray(items)) return nonArrayReturnValue
-    return Array(items.length).fill().map(
-      (_, index) => getSignal(getRoot(this), [...this[SEGMENTS], index])
-    )[method](...args)
   }
 
   map (...args) {
@@ -174,6 +213,25 @@ export default class Signal extends Function {
       if (publicOnly) throw Error(ERRORS.publicOnly)
       _set(this[SEGMENTS], value)
     }
+  }
+
+  async assign (value) {
+    if (arguments.length > 1) throw Error('Signal.assign() expects a single argument')
+    if (this[SEGMENTS].length === 0) throw Error('Can\'t assign to the root signal data')
+    if (!value) return
+    if (typeof value !== 'object') throw Error('Signal.assign() expects an object argument, got: ' + typeof value)
+    const promises = []
+    // use Object.keys() to avoid setting inherited properties
+    for (const key of Object.keys(value)) {
+      let promise
+      if (value[key] != null) {
+        promise = this[key].set(value[key])
+      } else {
+        promise = this[key].del()
+      }
+      promises.push(promise)
+    }
+    await Promise.all(promises)
   }
 
   // TODO: implement a json0 operation for push
@@ -244,11 +302,6 @@ export default class Signal extends Function {
   }
 
   // clone () {}
-  // async assign () {}
-  // async push () {}
-  // async pop () {}
-  // async unshift () {}
-  // async shift () {}
   // async splice () {}
   // async move () {}
   // async del () {}

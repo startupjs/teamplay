@@ -139,6 +139,30 @@ describe('$() function for creating values', () => {
     rerender(el(Component))
     expect(container.textContent).toBe('defined')
   })
+
+  it('reacts to changes inside array when iterator is used', () => {
+    let $array
+    let renders = 0
+    const Component = observer(() => {
+      renders++
+      $array = $([1, 2, 3])
+      return fr(
+        el('span', {}, $array.map($item => $item.get()).join(',')),
+        el('button', { onClick: () => $array.push(4) })
+      )
+    })
+    const { container } = render(el(Component))
+    expect(container.textContent).toBe('1,2,3')
+    expect(renders).toBe(1)
+
+    act(() => { $array[1].set(5) })
+    expect(container.textContent).toBe('1,5,3')
+    expect(renders).toBe(2)
+
+    fireEvent.click(container.querySelector('button'))
+    expect(container.textContent).toBe('1,5,3,4')
+    expect(renders).toBe(3)
+  })
 })
 
 describe('$() function for creating reactions', () => {
@@ -460,6 +484,113 @@ describe('useAsyncSub()', () => {
     await throttledWait()
     expect(renders).toBe(8)
     resetTestThrottling()
+  })
+})
+
+describe('nested components work with signals', () => {
+  it('optimizes rerenders between parent and child components with local signals', () => {
+    const $games = $([
+      { title: 'Chess', players: 0 },
+      { title: 'Poker', players: 0 }
+    ])
+    let gamesListRenders = 0
+    const gameRenders = [0, 0]
+
+    const Game = observer(({ $game, index }) => {
+      gameRenders[index]++
+      return el('div', { className: 'game' },
+        el('span', {}, $game.title.get()),
+        el('span', {}, ' - Players: ' + $game.players.get()),
+        el('button', { onClick: () => $game.players.set($game.players.get() + 1) }, 'Join')
+      )
+    })
+
+    const GamesList = observer(() => {
+      gamesListRenders++
+      return el('div', {},
+        $games.map(($game, index) => el(Game, { key: index, $game, index }))
+      )
+    })
+
+    const { container } = render(el(GamesList))
+    expect(container.textContent).toBe('Chess - Players: 0JoinPoker - Players: 0Join')
+    expect(gamesListRenders).toBe(1)
+    expect(gameRenders[0]).toBe(1)
+    expect(gameRenders[1]).toBe(1)
+
+    // Update first game's players directly through signal
+    act(() => { $games[0].players.set(1) })
+    expect(container.textContent).toBe('Chess - Players: 1JoinPoker - Players: 0Join')
+    expect(gamesListRenders).toBe(1, 'GamesList should not rerender')
+    expect(gameRenders[0]).toBe(2, 'First game should rerender')
+    expect(gameRenders[1]).toBe(1, 'Second game should not rerender')
+
+    // Update second game's players through button click
+    act(() => { fireEvent.click(container.querySelectorAll('button')[1]) })
+    expect(container.textContent).toBe('Chess - Players: 1JoinPoker - Players: 1Join')
+    expect(gamesListRenders).toBe(1, 'GamesList should still not rerender')
+    expect(gameRenders[0]).toBe(2, 'First game should not rerender')
+    expect(gameRenders[1]).toBe(2, 'Second game should rerender')
+
+    expect(gamesListRenders).toBe(1)
+    expect(gameRenders[0]).toBe(2)
+    expect(gameRenders[1]).toBe(2)
+  })
+
+  it('optimizes rerenders between parent and child components with subscribed signals', async () => {
+    // Setup initial games data
+    const $game1 = await sub($.games._1)
+    const $game2 = await sub($.games._2)
+    $game1.set({ title: 'Chess', players: 0, active: true })
+    $game2.set({ title: 'Poker', players: 0, active: true })
+    await wait()
+
+    let gamesListRenders = 0
+    const gameRenders = [0, 0]
+
+    const Game = observer(({ $game, index }) => {
+      gameRenders[index]++
+      return el('div', { className: 'game' },
+        el('span', {}, $game.title.get()),
+        el('span', {}, ' - Players: ' + $game.players.get()),
+        el('button', { onClick: () => $game.players.set($game.players.get() + 1) }, 'Join')
+      )
+    })
+
+    const GamesList = observer(() => {
+      gamesListRenders++
+      const $activeGames = useSub($.games, { active: true, $sort: { title: 1 } })
+      return el('div', {},
+        $activeGames.map(($game, index) => el(Game, { key: index, $game, index }))
+      )
+    }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
+
+    const { container } = render(el(GamesList))
+    expect(container.textContent).toBe('Loading...')
+    await wait()
+    expect(container.textContent).toBe('Chess - Players: 0JoinPoker - Players: 0Join')
+    expect(gamesListRenders).toBe(2) // Initial render + after subscription loaded
+    expect(gameRenders[0]).toBe(1)
+    expect(gameRenders[1]).toBe(1)
+
+    // Update first game's players directly through signal
+    act(() => { $.games._1.players.set(1) })
+    expect(container.textContent).toBe('Chess - Players: 1JoinPoker - Players: 0Join')
+    expect(gamesListRenders).toBe(2, 'GamesList should not rerender')
+    expect(gameRenders[0]).toBe(2, 'First game should rerender')
+    expect(gameRenders[1]).toBe(1, 'Second game should not rerender')
+
+    // Update second game's players through button click
+    act(() => { fireEvent.click(container.querySelectorAll('button')[1]) })
+    expect(container.textContent).toBe('Chess - Players: 1JoinPoker - Players: 1Join')
+    expect(gamesListRenders).toBe(2, 'GamesList should still not rerender')
+    expect(gameRenders[0]).toBe(2, 'First game should not rerender')
+    expect(gameRenders[1]).toBe(2, 'Second game should rerender')
+
+    await wait()
+    expect(gamesListRenders).toBe(2)
+    expect(gameRenders[0]).toBe(2)
+    expect(gameRenders[1]).toBe(2)
   })
 })
 
