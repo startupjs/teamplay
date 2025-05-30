@@ -13,17 +13,30 @@ export const IS_QUERY = Symbol('is query signal')
 export const QUERIES = '$queries'
 
 export class Query {
-  subscribing
-  unsubscribing
-  subscribed
+  // subscribing // Replaced by _currentSubscribingPromise and operation chain
+  // unsubscribing // Replaced by _currentUnsubscribingPromise and operation chain
+  subscribed = false // Changed initialization
   initialized
   shareQuery
+
+  // New properties
+  operation = Promise.resolve()
+  intendedState = 'UNSUBSCRIBED'
+  _currentSubscribingPromise = undefined
+  _currentUnsubscribingPromise = undefined
 
   constructor (collectionName, params) {
     this.collectionName = collectionName
     this.params = params
     this.hash = hashQuery(this.collectionName, this.params)
     this.docSignals = new Set()
+
+    this.operation = Promise.resolve()
+    this.intendedState = 'UNSUBSCRIBED'
+    this.subscribed = false
+    this._currentSubscribingPromise = undefined
+    this._currentUnsubscribingPromise = undefined
+    // init() is called after successful subscription in the new logic
   }
 
   init () {
@@ -32,48 +45,40 @@ export class Query {
     this._initData()
   }
 
-  async subscribe () {
-    if (this.subscribed) throw Error('trying to subscribe while already subscribed')
-    this.subscribed = true
-    // if we are in the middle of unsubscribing, just wait for it to finish and then resubscribe
-    if (this.unsubscribing) {
-      try {
-        await this.unsubscribing
-      } catch (err) {
-        // if error happened during unsubscribing, it means that we are still subscribed
-        // so we don't need to do anything
-        return
-      }
-    }
-    if (this.subscribing) {
-      try {
-        await this.subscribing
-        // if we are already subscribing from the previous time, delegate logic to that
-        // and if it finished successfully, we are done.
-        return
-      } catch (err) {
-        // if error happened during subscribing, we'll just try subscribing again
-        // so we just ignore the error and proceed with subscribing
-        this.subscribed = true
-      }
-    }
+  subscribe () { // Removed async as it returns the operation promise
+    this.intendedState = 'SUBSCRIBED';
+    this.operation = this.operation.then(async () => {
+        if (this.intendedState !== 'SUBSCRIBED') return; // Superseded by a later call
+        if (this.subscribed) return; // Already in the desired actual state
 
-    if (!this.subscribed) return // cancel if we initiated unsubscribe while waiting
+        if (this._currentUnsubscribingPromise) {
+            try { await this._currentUnsubscribingPromise; } catch (e) { /* Previous op failed, proceed with current intent */ }
+        }
+        if (this.intendedState !== 'SUBSCRIBED') return; // Re-check after await
+        if (this.subscribed) return; // Re-check after await
 
-    this.subscribing = (async () => {
-      try {
-        this.subscribing = this._subscribe()
-        await this.subscribing
-        this.init()
-      } catch (err) {
-        console.log('subscription error', [this.collectionName, this.params], err)
-        this.subscribed = undefined
-        throw err
-      } finally {
-        this.subscribing = undefined
-      }
-    })()
-    await this.subscribing
+        const subscribePromise = this._subscribe();
+        this._currentSubscribingPromise = subscribePromise;
+        try {
+            await subscribePromise;
+            this.subscribed = true;
+            this.init(); // Called after successful subscription
+        } catch (err) {
+            this.subscribed = false;
+            if (this.intendedState === 'SUBSCRIBED') {
+                console.error('Subscription error:', [this.collectionName, this.params], err);
+                throw err;
+            }
+        } finally {
+            this._currentSubscribingPromise = undefined;
+        }
+    }).catch(err => {
+        if (this.intendedState === 'SUBSCRIBED') {
+             // console.error('Chained subscription error:', [this.collectionName, this.params], err);
+             throw err;
+        }
+    });
+    return this.operation;
   }
 
   async _subscribe () {
@@ -86,48 +91,41 @@ export class Query {
     })
   }
 
-  async unsubscribe () {
-    if (!this.subscribed) {
-      throw Error('trying to unsubscribe while not subscribed. Query: ' + [this.collectionName, this.params])
-    }
-    this.subscribed = undefined
-    // if we are still handling the subscription, just wait for it to finish and then unsubscribe
-    if (this.subscribing) {
-      try {
-        await this.subscribing
-      } catch (err) {
-        // if error happened during subscribing, it means that we are still unsubscribed
-        // so we don't need to do anything
-        return
-      }
-    }
-    // if we are already unsubscribing from the previous time, delegate logic to that
-    if (this.unsubscribing) {
-      try {
-        await this.unsubscribing
-        return
-      } catch (err) {
-        // if error happened during unsubscribing, we'll just try unsubscribing again
-        this.subscribed = undefined
-      }
-    }
+  unsubscribe () { // Removed async as it returns the operation promise
+    this.intendedState = 'UNSUBSCRIBED';
+    this.operation = this.operation.then(async () => {
+        if (this.intendedState !== 'UNSUBSCRIBED') return; // Superseded by a later call
+        if (!this.subscribed) return; // Already in the desired actual state
 
-    if (this.subscribed) return // cancel if we initiated subscribe while waiting
+        if (this._currentSubscribingPromise) {
+            try { await this._currentSubscribingPromise; } catch (e) { /* Previous op failed, proceed with current intent */ }
+        }
+        if (this.intendedState !== 'UNSUBSCRIBED') return; // Re-check after await
+        if (!this.subscribed) return; // Re-check after await
 
-    this.unsubscribing = (async () => {
-      try {
-        await this._unsubscribe()
-        this.initialized = undefined
-        this._removeData()
-      } catch (err) {
-        console.log('error unsubscribing', [this.collectionName, this.params], err)
-        this.subscribed = true
-        throw err
-      } finally {
-        this.unsubscribing = undefined
-      }
-    })()
-    await this.unsubscribing
+        const unsubscribePromise = this._unsubscribe();
+        this._currentUnsubscribingPromise = unsubscribePromise;
+        try {
+            await unsubscribePromise;
+            this.subscribed = false;
+            if (this.initialized) this.initialized = undefined; // Kept from original logic
+            if (this._removeData) this._removeData(); // Kept from original logic
+        } catch (err) {
+            this.subscribed = true; // Revert state on error
+            if (this.intendedState === 'UNSUBSCRIBED') {
+                console.error('Unsubscription error:', [this.collectionName, this.params], err);
+                throw err;
+            }
+        } finally {
+            this._currentUnsubscribingPromise = undefined;
+        }
+    }).catch(err => {
+        if (this.intendedState === 'UNSUBSCRIBED') {
+            // console.error('Chained unsubscription error:', [this.collectionName, this.params], err);
+            throw err;
+        }
+    });
+    return this.operation;
   }
 
   async _unsubscribe () {
