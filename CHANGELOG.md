@@ -1,3 +1,22 @@
+# v0.4.0 (Thu Oct 09 2025)
+
+#### 🚀 Enhancement
+
+- `teamplay`
+  - feat: Add `.extra` to Query to support $count [#17](https://github.com/startupjs/teamplay/pull/17) ([@zag2art](https://github.com/zag2art) [@az-001-zkdm](https://github.com/az-001-zkdm))
+
+#### ⚠️ Pushed to `master`
+
+- chore: remove legacy signals implementation (which was used as a reference) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 3
+
+- [@az-001-zkdm](https://github.com/az-001-zkdm)
+- [@zag2art](https://github.com/zag2art)
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.24 (Fri Nov 08 2024)
 
 #### ⚠️ Pushed to `master`
