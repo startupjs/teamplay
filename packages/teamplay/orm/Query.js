@@ -154,8 +154,10 @@ export class Query {
       }
       _set([QUERIES, this.hash, 'ids'], ids)
 
-      const extra = raw(this.shareQuery.extra)
-      _set([QUERIES, this.hash, 'extra'], extra)
+      if (this.shareQuery.extra !== undefined) {
+        const extra = raw(this.shareQuery.extra)
+        _set([QUERIES, this.hash, 'extra'], extra)
+      }
     }
 
     this.shareQuery.on('insert', (shareDocs, index) => {
