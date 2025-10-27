@@ -62,8 +62,39 @@ Adds a new item to a collection signal, automatically generating a unique ID.
 const newId = await $signal.add({ name: 'New Item' })
 ```
 
+## assign(object)
+
+Assigns multiple properties to a signal at once. This method iterates through the object's own properties and sets or deletes them on the signal.
+
+```javascript
+// Set multiple properties at once (adds new properties if they don't exist)
+await $user.assign({
+  firstName: 'John',
+  lastName: 'Smith',
+  age: 30
+})
+
+// Update existing properties and add new ones, others remain unchanged
+await $user.assign({
+  age: 31,              // updates existing property
+  email: 'john@example.com'  // adds new property
+})
+
+// Delete properties by assigning null or undefined
+await $user.assign({
+  middleName: null,     // deletes middleName
+  nickname: undefined   // deletes nickname
+})
+```
+
+**Behavior:**
+- For non-null/undefined values: calls `.set(value)` on the child signal (adds property if it doesn't exist)
+- For null/undefined values: calls `.del()` on the child signal
+- Only assigns own properties (not inherited ones)
+- Returns a Promise that resolves when all operations complete
+
 ## Notes
 
-- All methods that modify data (`set()`, `del()`, `push()`, `pop()`, `increment()`, `add()`) are asynchronous and return Promises. This ensures data consistency with the server.
+- All methods that modify data (`set()`, `del()`, `push()`, `pop()`, `increment()`, `add()`, `assign()`) are asynchronous and return Promises. This ensures data consistency with the server.
 - The `get()` method is synchronous and returns the current local value of the signal.
 - These methods can be chained on nested signals, e.g., `$.users[userId].name.set('New Name')`.
