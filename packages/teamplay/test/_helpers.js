@@ -1,4 +1,4 @@
-import { before, beforeEach, afterEach } from 'node:test'
+import { before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
 

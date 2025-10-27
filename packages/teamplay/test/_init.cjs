@@ -1,3 +1,4 @@
+// This is not used atm. Might be needed in future for simulating some client tests on server
 init(false)
 
 function init (enabled = true) {

@@ -17,8 +17,8 @@
   },
   "scripts": {
     "test": "npm run test-server && npm run test-client",
-    "test-server": "node --expose-gc -r ./test/_init.cjs --test",
-    "test-server-only": "node --expose-gc -r ./test/_init.cjs --test --test-only",
+    "test-server": "NODE_OPTIONS=\"--expose-gc\" mocha 'test/[!_]*.js'",
+    "test-server-only": "NODE_OPTIONS=\"--expose-gc\" mocha --grep '@only' 'test/[!_]*.js'",
     "test-client": "NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest"
   },
   "dependencies": {
@@ -41,6 +41,7 @@
     "@testing-library/react": "^15.0.7",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
+    "mocha": "^11.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
