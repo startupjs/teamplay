@@ -1,3 +1,24 @@
+# (Mon Oct 27 2025)
+
+#### 🚀 Enhancement
+
+- `teamplay`
+  - feat(teamplay): add .assign() method to update specified keys in object ([@cray0000](https://github.com/cray0000))
+
+#### ⚠️ Pushed to `master`
+
+- docs(teamplay): document Signal.assign() method ([@cray0000](https://github.com/cray0000))
+- chore: update lock file ([@cray0000](https://github.com/cray0000))
+- chore: add github workflow to run tests ([@cray0000](https://github.com/cray0000))
+- `teamplay`
+  - chore(teamplay): migrate tests to mocha since the built-in node tested doesn't expose GC correctly ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.4.0 (Thu Oct 09 2025)
 
 #### 🚀 Enhancement
