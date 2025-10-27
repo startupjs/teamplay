@@ -65,6 +65,9 @@ export default class Signal extends Function {
       }
       return ids
     }
+    if (this[SEGMENTS].length === 3 && this[SEGMENTS][0] === QUERIES && this[SEGMENTS][2] === 'extra') {
+      return this[GET](_get)
+    }
     return this[GET](_get)
   }
 
@@ -377,6 +380,7 @@ export const extremelyLateBindings = {
     key = maybeTransformToArrayIndex(key)
     if (signal[IS_QUERY]) {
       if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'ids'])
+      if (key === 'extra') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'extra'])
       if (QUERY_METHODS.includes(key)) return Reflect.get(signal, key, receiver)
     }
     return getSignal(getRoot(signal), [...signal[SEGMENTS], key])

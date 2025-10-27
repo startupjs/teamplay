@@ -153,6 +153,11 @@ export class Query {
         this.docSignals.add($doc)
       }
       _set([QUERIES, this.hash, 'ids'], ids)
+
+      if (this.shareQuery.extra !== undefined) {
+        const extra = raw(this.shareQuery.extra)
+        _set([QUERIES, this.hash, 'extra'], extra)
+      }
     }
 
     this.shareQuery.on('insert', (shareDocs, index) => {
@@ -187,6 +192,10 @@ export class Query {
       }
       const ids = _get([QUERIES, this.hash, 'ids'])
       ids.splice(index, docIds.length)
+    })
+    this.shareQuery.on('extra', extra => {
+      extra = raw(extra)
+      _set([QUERIES, this.hash, 'extra'], extra)
     })
   }
 

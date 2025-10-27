@@ -1,3 +1,16 @@
+# v0.3.25 (Thu Oct 09 2025)
+
+#### 🚀 Enhancement
+
+- feat: Add `.extra` to Query to support $count [#17](https://github.com/startupjs/teamplay/pull/17) ([@zag2art](https://github.com/zag2art) [@az-001-zkdm](https://github.com/az-001-zkdm))
+
+#### Authors: 2
+
+- [@az-001-zkdm](https://github.com/az-001-zkdm)
+- [@zag2art](https://github.com/zag2art)
+
+---
+
 # v0.3.22 (Fri Nov 08 2024)
 
 #### 🚀 Enhancement
