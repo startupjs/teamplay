@@ -161,3 +161,216 @@ describe('set, get, del on local collections', () => {
     assert.deepEqual($arr.get(), [2])
   })
 })
+
+describe('Signal.assign() function', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('assign simple values to empty object', async () => {
+    const $user = $()
+    await $user.assign({ firstName: 'John', lastName: 'Smith', age: 30 })
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith', age: 30 })
+  })
+
+  it('assign values with different types', async () => {
+    const $data = $()
+    await $data.assign({
+      string: 'hello',
+      number: 42,
+      boolean: true,
+      array: [1, 2, 3],
+      object: { a: 1, b: 2 }
+    })
+    const result = $data.get()
+    assert.equal(result.string, 'hello')
+    assert.equal(result.number, 42)
+    assert.equal(result.boolean, true)
+    assert.deepEqual(result.array, [1, 2, 3])
+    assert.deepEqual(result.object, { a: 1, b: 2 })
+  })
+
+  it('assign partial properties (other properties remain unchanged)', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith', age: 30 })
+    await $user.assign({ age: 31 })
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith', age: 31 })
+  })
+
+  it('update existing properties with new values', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith', age: 30 })
+    await $user.assign({ firstName: 'Jane', age: 25 })
+    assert.deepEqual($user.get(), { firstName: 'Jane', lastName: 'Smith', age: 25 })
+  })
+
+  it('assign mix of new and existing properties', async () => {
+    const $user = $({ firstName: 'John', age: 30 })
+    await $user.assign({ lastName: 'Smith', age: 31, email: 'john@example.com' })
+    assert.deepEqual($user.get(), {
+      firstName: 'John',
+      lastName: 'Smith',
+      age: 31,
+      email: 'john@example.com'
+    })
+  })
+
+  it('delete properties using null values', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith', age: 30 })
+    await $user.assign({ age: null })
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith' })
+  })
+
+  it('delete properties using undefined values', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith', age: 30 })
+    await $user.assign({ age: undefined })
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith' })
+  })
+
+  it('assign mix of values and null/undefined for deletion', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith', age: 30, email: 'john@example.com' })
+    await $user.assign({ lastName: 'Doe', age: null, email: undefined })
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Doe' })
+  })
+
+  it('assign nested object values', async () => {
+    const $data = $()
+    await $data.assign({
+      user: { name: 'John', age: 30 },
+      settings: { theme: 'dark', language: 'en' }
+    })
+    const result = $data.get()
+    assert.deepEqual(result.user, { name: 'John', age: 30 })
+    assert.deepEqual(result.settings, { theme: 'dark', language: 'en' })
+  })
+
+  it('verify child signals are created correctly after assign', async () => {
+    const $user = $()
+    await $user.assign({ firstName: 'John', lastName: 'Smith' })
+    assert.equal($user.firstName.get(), 'John')
+    assert.equal($user.lastName.get(), 'Smith')
+  })
+
+  it('throw error when assigning to root signal', async () => {
+    await assert.rejects(
+      async () => await $.assign({ test: 'value' }),
+      { message: "Can't assign to the root signal data" }
+    )
+  })
+
+  it('throw error when assigning non-object value (string)', async () => {
+    const $data = $()
+    await assert.rejects(
+      async () => await $data.assign('not an object'),
+      { message: 'Signal.assign() expects an object argument, got: string' }
+    )
+  })
+
+  it('throw error when assigning non-object value (number)', async () => {
+    const $data = $()
+    await assert.rejects(
+      async () => await $data.assign(42),
+      { message: 'Signal.assign() expects an object argument, got: number' }
+    )
+  })
+
+  it('assign array assigns numeric indices', async () => {
+    const $data = $()
+    // Arrays are objects, so assign() will iterate through numeric keys
+    await $data.assign([1, 2, 3])
+    const result = $data.get()
+    assert.equal(result[0], 1)
+    assert.equal(result[1], 2)
+    assert.equal(result[2], 3)
+  })
+
+  it('throw error with too many arguments', async () => {
+    const $data = $()
+    await assert.rejects(
+      async () => await $data.assign({ a: 1 }, { b: 2 }),
+      { message: 'Signal.assign() expects a single argument' }
+    )
+  })
+
+  it('no-op when assigning null', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith' })
+    await $user.assign(null)
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith' })
+  })
+
+  it('no-op when assigning undefined', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith' })
+    await $user.assign(undefined)
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith' })
+  })
+
+  it('return Promise that resolves after all operations', async () => {
+    const $user = $()
+    const promise = $user.assign({ firstName: 'John', lastName: 'Smith', age: 30 })
+    assert.ok(promise instanceof Promise, 'assign should return a Promise')
+    await promise
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith', age: 30 })
+  })
+
+  it('handle multiple concurrent assigns', async () => {
+    const $data = $()
+    await Promise.all([
+      $data.assign({ a: 1, b: 2 }),
+      $data.assign({ c: 3, d: 4 }),
+      $data.assign({ e: 5, f: 6 })
+    ])
+    const result = $data.get()
+    assert.ok(result.a !== undefined || result.c !== undefined || result.e !== undefined,
+      'at least some properties should be set')
+  })
+
+  it('verify underlying data tree after assign', async () => {
+    const $user = $()
+    await $user.assign({ firstName: 'John', lastName: 'Smith' })
+    const localData = _get([LOCAL])
+    assert.ok(localData, 'local data should exist')
+    // Find the user data in the local tree
+    const userKey = Object.keys(localData).find(key => {
+      const value = localData[key]
+      return value && typeof value === 'object' && value.firstName === 'John' && value.lastName === 'Smith'
+    })
+    assert.ok(userKey, 'user data should exist in data tree')
+    assert.deepEqual(localData[userKey], { firstName: 'John', lastName: 'Smith' })
+  })
+
+  it('assign empty object does nothing', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith' })
+    await $user.assign({})
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith' })
+  })
+
+  it('assign does not copy inherited properties', async () => {
+    const proto = { inherited: 'value' }
+    const obj = Object.create(proto)
+    obj.own = 'property'
+    const $data = $()
+    await $data.assign(obj)
+    const result = $data.get()
+    assert.equal(result.own, 'property')
+    assert.equal(result.inherited, undefined, 'inherited property should not be copied')
+  })
+
+  it('assign overwrites entire nested object', async () => {
+    const $data = $({ settings: { a: 1, b: 2, c: 3 } })
+    await $data.assign({ settings: { x: 10, y: 20 } })
+    assert.deepEqual($data.settings.get(), { x: 10, y: 20 })
+  })
+
+  it('verify del() is called for null values', async () => {
+    const $user = $({ firstName: 'John', lastName: 'Smith', age: 30 })
+    assert.equal($user.age.get(), 30)
+    await $user.assign({ age: null })
+    assert.equal($user.age.get(), undefined, 'age should be deleted')
+    assert.deepEqual($user.get(), { firstName: 'John', lastName: 'Smith' })
+  })
+
+  it('verify set() is called for non-null values', async () => {
+    const $user = $({ firstName: 'John' })
+    await $user.assign({ lastName: 'Smith', age: 30 })
+    assert.equal($user.firstName.get(), 'John')
+    assert.equal($user.lastName.get(), 'Smith')
+    assert.equal($user.age.get(), 30)
+  })
+})

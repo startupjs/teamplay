@@ -179,6 +179,25 @@ export default class Signal extends Function {
     }
   }
 
+  async assign (value) {
+    if (arguments.length > 1) throw Error('Signal.assign() expects a single argument')
+    if (this[SEGMENTS].length === 0) throw Error('Can\'t assign to the root signal data')
+    if (!value) return
+    if (typeof value !== 'object') throw Error('Signal.assign() expects an object argument, got: ' + typeof value)
+    const promises = []
+    // use Object.keys() to avoid setting inherited properties
+    for (const key of Object.keys(value)) {
+      let promise
+      if (value[key] != null) {
+        promise = this[key].set(value[key])
+      } else {
+        promise = this[key].del()
+      }
+      promises.push(promise)
+    }
+    await Promise.all(promises)
+  }
+
   // TODO: implement a json0 operation for push
   async push (value) {
     if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
