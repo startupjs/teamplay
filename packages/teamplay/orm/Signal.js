@@ -268,6 +268,17 @@ export const regularBindings = {
   },
   get (signal, key, receiver) {
     if (key in signal) return Reflect.get(signal, key, receiver)
+
+    if (signal[IS_QUERY] && typeof (key = maybeTransformToArrayIndex(key)) === 'number') {
+      const collectionName = signal[SEGMENTS][0]
+      const ids = _get([QUERIES, signal[HASH], 'ids'])
+      if (!Array.isArray(ids) || key >= ids.length) {
+        return getSignal(getRoot(signal), [collectionName, undefined])
+      }
+      const docId = ids[key]
+      return getSignal(getRoot(signal), [collectionName, docId])
+    }
+
     return Reflect.apply(extremelyLateBindings.get, this, arguments)
   }
 }
@@ -329,6 +340,16 @@ export const extremelyLateBindings = {
       if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'ids'])
       if (key === 'extra') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'extra'])
       if (QUERY_METHODS.includes(key)) return Reflect.get(signal, key, receiver)
+
+      if (typeof key === 'number') {
+        const collectionName = signal[SEGMENTS][0]
+        const ids = _get([QUERIES, signal[HASH], 'ids'])
+        if (!Array.isArray(ids) || key >= ids.length) {
+          return getSignal(getRoot(signal), [collectionName, undefined])
+        }
+        const docId = ids[key]
+        return getSignal(getRoot(signal), [collectionName, docId])
+      }
     }
     return getSignal(getRoot(signal), [...signal[SEGMENTS], key])
   }
