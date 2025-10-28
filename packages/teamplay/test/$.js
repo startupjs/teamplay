@@ -160,6 +160,41 @@ describe('set, get, del on local collections', () => {
     $arr[0].del()
     assert.deepEqual($arr.get(), [2])
   })
+
+  it('del deletes the element in array. Single element', () => {
+    const $arr = $(['foo'])
+    assert.deepEqual($arr.get(), ['foo'])
+    $arr[0].del()
+    assert.deepEqual($arr.get(), [])
+  })
+
+  it('del deletes the element in array. Deleting non-existent element', () => {
+    const $arr = $(['foo'])
+    assert.deepEqual($arr.get(), ['foo'])
+    $arr[1].del()
+    assert.deepEqual($arr.get(), ['foo'])
+    $arr[2].del()
+    assert.deepEqual($arr.get(), ['foo'])
+    $arr[0].del()
+    assert.deepEqual($arr.get(), [])
+    $arr[0].del()
+    assert.deepEqual($arr.get(), [])
+    $arr[1].del()
+    assert.deepEqual($arr.get(), [])
+  })
+
+  it('del deletes the element in array. Complex case', () => {
+    const $settings = $({
+      queryParams: {
+        sort: [
+          { key: 'name', dataType: 'string', sortNormalized: false, value: 1 }
+        ]
+      }
+    })
+    assert.deepEqual($settings.queryParams.sort.get(), [{ key: 'name', dataType: 'string', sortNormalized: false, value: 1 }])
+    $settings.queryParams.sort[0].del()
+    assert.deepEqual($settings.queryParams.sort.get(), [])
+  })
 })
 
 describe('Signal.assign() function', () => {
