@@ -1,4 +1,4 @@
-import { createElement as el, Fragment, useEffect } from 'react'
+import { createElement as el, Fragment, useEffect, useLayoutEffect } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { $, useSub, useAsyncSub, observer, sub } from '../index.js'
@@ -83,8 +83,14 @@ describe('observer', () => {
     expect(renders).toBe(2)
   })
 
-  // TODO: Implement a fix for this test
-  it.skip('react to signal changes from useEffect', async () => {
+  // Fixed: Signal changes in useEffect and useLayoutEffect now work correctly!
+  //
+  // The issue was that useSyncExternalStore's subscribe() is called AFTER
+  // the first render, but useEffect runs right after that first render.
+  //
+  // Solution: We queue pending updates if onStoreChange is not yet initialized,
+  // and execute them as soon as subscribe() is called.
+  it('react to signal changes from useEffect', async () => {
     let renders = 0
     let $name
     const Component = observer(() => {
@@ -100,6 +106,50 @@ describe('observer', () => {
     expect(renders).toBe(1)
 
     await wait()
+    expect(container.textContent).toBe('Jane')
+    expect(renders).toBe(2)
+  })
+
+  it('react to signal changes from useLayoutEffect', async () => {
+    let renders = 0
+    let $name
+    const Component = observer(() => {
+      renders++
+      $name = $('John')
+      useLayoutEffect(() => {
+        $name.set('Jane')
+      }, [])
+      return el('span', {}, $name.get())
+    })
+    const { container } = render(el(Component))
+    expect(container.textContent).toBe('John')
+    expect(renders).toBe(1)
+
+    await wait()
+    expect(container.textContent).toBe('Jane')
+    expect(renders).toBe(2)
+  })
+
+  it('react to signal changes from setTimeout inside useEffect', async () => {
+    let renders = 0
+    let $name
+    const Component = observer(() => {
+      renders++
+      $name = $('John')
+      useEffect(() => {
+        // Test async changes with setTimeout
+        setTimeout(() => {
+          $name.set('Jane')
+        }, 10)
+      }, [])
+      return el('span', {}, $name.get())
+    })
+    const { container } = render(el(Component))
+    expect(container.textContent).toBe('John')
+    expect(renders).toBe(1)
+
+    // Wait for setTimeout to execute
+    await wait(50)
     expect(container.textContent).toBe('Jane')
     expect(renders).toBe(2)
   })

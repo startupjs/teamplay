@@ -31,6 +31,7 @@ export default function wrapIntoSuspense ({
         stateVersion: Symbol(), // eslint-disable-line symbol-description
         onStoreChange: undefined,
         scheduledUpdatePromise: undefined,
+        hasPendingUpdate: false,
         cache: new Map(),
         scheduleUpdate: promise => {
           if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
@@ -46,6 +47,12 @@ export default function wrapIntoSuspense ({
           adm.onStoreChange = () => {
             adm.stateVersion = Symbol() // eslint-disable-line symbol-description
             onStoreChange()
+          }
+          // If there was a pending update before subscribe was called, trigger it asynchronously
+          // to avoid updating during the subscribe/render phase
+          if (adm.hasPendingUpdate) {
+            adm.hasPendingUpdate = false
+            queueMicrotask(() => adm.onStoreChange())
           }
           return () => destroyAdm(adm)
         },
@@ -64,7 +71,14 @@ export default function wrapIntoSuspense ({
         componentId,
         createdAt: Date.now(),
         defer,
-        triggerUpdate: () => adm.onStoreChange?.(),
+        triggerUpdate: () => {
+          if (adm.onStoreChange) {
+            adm.onStoreChange()
+          } else {
+            // Save pending update - subscribe not called yet (e.g., from useEffect/useLayoutEffect)
+            adm.hasPendingUpdate = true
+          }
+        },
         scheduleUpdate: promise => adm.scheduleUpdate?.(promise),
         cache: {
           get: key => adm.cache?.get(key),
