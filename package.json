@@ -14,7 +14,7 @@
     "test-server": "cd packages/teamplay && npm run test-server",
     "test-server-only": "cd packages/teamplay && npm run test-server-only",
     "release-patch": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + minor + '.' + (parseInt(patch) + 1));\")",
-    "release-minor": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + (parseInt(minor) + 1) + '.' + 0);\")",
+    "release-breaking-minor": "auto shipit --use-version $(node -e \"const [major, minor, patch] = require('./lerna.json').version.split('.'); console.log('' + major + '.' + (parseInt(minor) + 1) + '.' + 0);\")",
     "docs": "rspress dev --port 3010",
     "docs-build": "rspress build",
     "docs-preview": "rspress preview --port 3010"
