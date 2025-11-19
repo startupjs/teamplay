@@ -1,3 +1,22 @@
+# v0.3.27 (Wed Nov 19 2025)
+
+#### 🐛 Bug Fix
+
+- fix useEffect [#20](https://github.com/startupjs/teamplay/pull/20) ([@zag2art](https://github.com/zag2art) [@az-001-zkdm](https://github.com/az-001-zkdm))
+- useEffect test failing [#19](https://github.com/startupjs/teamplay/pull/19) ([@zag2art](https://github.com/zag2art) [@az-001-zkdm](https://github.com/az-001-zkdm))
+
+#### ⚠️ Pushed to `master`
+
+- test(teamplay): add more tests for deleting array items, skip the useEffect test for now (needs to be fixed in future) ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 3
+
+- [@az-001-zkdm](https://github.com/az-001-zkdm)
+- [@zag2art](https://github.com/zag2art)
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.26 (Mon Oct 27 2025)
 
 #### 🚀 Enhancement
