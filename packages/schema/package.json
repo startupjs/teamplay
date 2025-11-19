@@ -1,7 +1,7 @@
 {
   "name": "@teamplay/schema",
   "type": "module",
-  "version": "0.3.26",
+  "version": "0.3.27",
   "description": "Utils to work with json-schema",
   "main": "index.js",
   "exports": {
