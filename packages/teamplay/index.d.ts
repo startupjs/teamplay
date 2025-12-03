@@ -1,5 +1,5 @@
 // teamplay/index.d.ts
-import type React from 'react'
+import type * as React from 'react'
 
 export interface ObserverOptions {
   /** Wrap the resulting component with forwardRef */
@@ -19,10 +19,12 @@ export interface ObserverOptions {
  * Props are passed through unchanged; the returned component
  * preserves the original type so consumers keep full typings.
  */
-export function observer<P, C extends React.ComponentType<P>> (
-  component: C,
+export function observer<
+  P extends Record<string, unknown> = Record<string, unknown>
+> (
+  component: React.ComponentType<P>,
   options?: ObserverOptions
-): C
+): React.ComponentType<P>
 
 // Keep existing public surface available even if typed loosely for now.
 export const $: any
