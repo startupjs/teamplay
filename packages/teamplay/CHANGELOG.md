@@ -1,3 +1,15 @@
+# v0.3.29 (Wed Dec 03 2025)
+
+#### ⚠️ Pushed to `master`
+
+- chore: improve TS types ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.28 (Wed Dec 03 2025)
 
 #### 🚀 Enhancement
