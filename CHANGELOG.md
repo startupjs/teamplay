@@ -1,3 +1,16 @@
+# v0.4.0 (Wed Dec 03 2025)
+
+#### 🚀 Enhancement
+
+- `teamplay`
+  - feat: add basic TS types ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # (Wed Nov 19 2025)
 
 #### 🐛 Bug Fix

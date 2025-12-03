@@ -1,3 +1,15 @@
+# v0.3.28 (Wed Dec 03 2025)
+
+#### 🚀 Enhancement
+
+- feat: add basic TS types ([@cray0000](https://github.com/cray0000))
+
+#### Authors: 1
+
+- Pavel Zhukov ([@cray0000](https://github.com/cray0000))
+
+---
+
 # v0.3.27 (Wed Nov 19 2025)
 
 #### 🐛 Bug Fix
