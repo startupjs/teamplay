@@ -1,8 +1,16 @@
 import { createRoot } from 'react-dom/client'
 import connect from 'teamplay/connect'
+import connectOffline from 'teamplay/connect-offline'
 import { observer, $, useSub } from 'teamplay'
 
-connect()
+// test online/offline mode
+const ONLINE = false
+
+if (ONLINE) {
+  await connect()
+} else {
+  await connectOffline()
+}
 
 const App = observer(({ userId }) => {
   const $user = useSub($.users[userId])

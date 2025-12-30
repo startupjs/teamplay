@@ -12,7 +12,7 @@
     ".": "./index.js"
   },
   "dependencies": {
-    "@startupjs/sharedb-mingo-memory": "^4.0.0-1",
+    "@startupjs/sharedb-mingo-memory": "^4.0.0-2",
     "@teamplay/schema": "^0.3.29",
     "@teamplay/server-aggregate": "^0.3.29",
     "@teamplay/sharedb-access": "^0.3.29",
