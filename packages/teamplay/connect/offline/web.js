@@ -101,7 +101,9 @@ function buildOpsArray (lastOp) {
   if (!lastOp) return []
   const version = lastOp.v
   if (Number.isFinite(version) && version > 0) {
-    return [...new Array(version), lastOp]
+    const ops = new Array(version + 1)
+    ops[version] = lastOp
+    return ops
   }
   return [lastOp]
 }
