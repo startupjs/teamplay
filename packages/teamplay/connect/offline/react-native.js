@@ -1,7 +1,7 @@
 import createConnectWithPersistence from './index.js'
 
-export default createConnectWithPersistence(initPersistence)
+export default createConnectWithPersistence(init)
 
-async function initPersistence (db) {
+async function init (db) {
   throw new Error('Not implemented')
 }

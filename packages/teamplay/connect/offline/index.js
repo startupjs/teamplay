@@ -4,12 +4,14 @@ import ShareDbMingo from '@startupjs/sharedb-mingo-memory'
 import ShareBackend from 'sharedb'
 import { connection, setConnection } from '../../orm/connection.js'
 
-export default function createConnectWithPersistence (initPersistence) {
+export default function createConnectWithPersistence (init) {
   return async function connect () {
     if (connection) return
     const db = new ShareDbMingo()
-    await initPersistence(db)
-    const backend = new ShareBackend({ db })
+    const options = { db }
+    const { pubsub } = (await init(db)) || {}
+    if (pubsub) options.pubsub = pubsub
+    const backend = new ShareBackend(options)
     setConnection(backend.connect())
   }
 }

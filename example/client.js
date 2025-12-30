@@ -14,8 +14,8 @@ if (ONLINE) {
 
 const App = observer(({ userId }) => {
   const $user = useSub($.users[userId])
-  if (!$user.get()) throw $user.set({ points: 0 })
   const $counter = $(0)
+  if (!$user.get()) return <button onClick={() => $user.set({ points: 0 })}>Create User</button>
   const { $points } = $user
   const increment = () => $points.set($points.get() + 1)
   const reset = () => $points.set(0)
