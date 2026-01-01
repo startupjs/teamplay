@@ -1,0 +1,21 @@
+# Offline Mode
+
+import { PackageManagerTabs } from '@theme'
+
+TeamPlay can run entirely on the client with a local persistent database. To enable this, import the offline connector instead of the default one.
+
+```js
+import connect from 'teamplay/connect-offline'
+
+await connect()
+```
+
+This uses a local persistent store in the browser and does not require a server connection.
+
+## React Native
+
+React Native requires an extra dependency for persistent storage:
+
+<PackageManagerTabs command="install @react-native-async-storage/async-storage" />
+
+After installing it, the same `teamplay/connect-offline` import works in React Native.
