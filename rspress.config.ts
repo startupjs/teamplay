@@ -30,7 +30,8 @@ export default defineConfig({
             { text: 'Installation', link: '/guide/installation' },
             { text: 'Usage', link: '/guide/usage' },
             { text: 'React Integration', link: '/guide/react-integration' },
-            { text: 'Async Setters', link: '/guide/async-setters' }
+            { text: 'Async Setters', link: '/guide/async-setters' },
+            { text: 'Offline Mode', link: '/guide/offline-mode' }
           ]
         },
         {

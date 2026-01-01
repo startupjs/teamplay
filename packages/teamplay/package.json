@@ -52,7 +52,17 @@
     "react-dom": "^18.3.1"
   },
   "peerDependencies": {
-    "react": "*"
+    "@react-native-async-storage/async-storage": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
   },
   "jest": {
     "transform": {},

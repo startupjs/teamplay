@@ -15345,7 +15345,14 @@ __metadata:
     sharedb: "npm:^5.0.0"
     stream: "npm:readable-stream@^4.7.0"
   peerDependencies:
+    "@react-native-async-storage/async-storage": "*"
     react: "*"
+    react-native: "*"
+  peerDependenciesMeta:
+    "@react-native-async-storage/async-storage":
+      optional: true
+    react-native:
+      optional: true
   languageName: unknown
   linkType: soft
 
