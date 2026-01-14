@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/server-aggregate",
-  "version": "0.3.33",
+  "version": "0.3.34",
   "description": "ShareDB middleware to allow defining aggregations only on the server",
   "publishConfig": {
     "access": "public"
