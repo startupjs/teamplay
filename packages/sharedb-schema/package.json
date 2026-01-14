@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/sharedb-schema",
-  "version": "0.3.29",
+  "version": "0.3.32",
   "description": "ShareDB schema validation middleware",
   "type": "module",
   "main": "lib/index.js",

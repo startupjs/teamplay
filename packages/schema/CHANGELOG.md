@@ -1,3 +1,16 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.3.32](https://github.com/startupjs/teamplay/compare/v0.3.31...v0.3.32) (2026-01-14)
+
+**Note:** Version bump only for package @teamplay/schema
+
+
+
+
+
 # v0.2.6 (Tue Aug 27 2024)
 
 #### 🐛 Bug Fix
