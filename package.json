@@ -21,6 +21,7 @@
     "docs-preview": "rspress preview --port 3010"
   },
   "devDependencies": {
+    "@rspress/core": "^2.0.0",
     "@types/react": "~18.2.45",
     "dotenv-cli": "^11.0.0",
     "eslint": "^8.56.0",
@@ -30,7 +31,6 @@
     "lint-staged": "^15.2.2",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "rspress": "^1.25.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.1.3"
   },

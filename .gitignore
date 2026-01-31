@@ -24,3 +24,6 @@ yarn-error.log
 
 # documentation
 doc_build
+
+# ai
+.claude

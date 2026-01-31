@@ -1,4 +1,5 @@
-import { defineConfig } from 'rspress/config'
+import { defineConfig } from '@rspress/core'
+import { join } from 'path'
 
 export default defineConfig({
   root: 'docs',
@@ -12,6 +13,7 @@ export default defineConfig({
   route: {
     cleanUrls: true
   },
+  themeDir: join(__dirname, 'docs-theme'),
   themeConfig: {
     enableContentAnimation: true,
     socialLinks: [
@@ -35,12 +37,6 @@ export default defineConfig({
           ]
         },
         {
-          text: 'Examples',
-          items: [
-            { text: 'Full-stack', link: '/examples/index' }
-          ]
-        },
-        {
           text: 'API',
           items: [
             { text: '$ (Root Signal)', link: '/api/root-signal' },
@@ -52,11 +48,18 @@ export default defineConfig({
             { text: 'Query Signals', link: '/api/query-signals' },
             { text: 'Server-side API', link: '/api/server-side' }
           ]
+        },
+        {
+          text: 'Examples',
+          items: [
+            { text: 'Full-stack', link: '/examples/index' }
+          ]
         }
       ]
     },
     nav: [
-      { text: 'Docs', link: '/guide/index', activeMatch: '/.+' }
+      { text: 'Docs', link: '/guide/index', activeMatch: '/guide/.*' },
+      { text: 'API', link: '/api/root-signal', activeMatch: '/api/.*' }
     ]
   }
 })
