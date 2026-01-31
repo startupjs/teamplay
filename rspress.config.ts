@@ -20,7 +20,7 @@ export default defineConfig({
       { icon: 'github', mode: 'link', content: 'https://github.com/startupjs/teamplay' }
     ],
     footer: {
-      message: '© 2024 StartupJS. All Rights Reserved.'
+      message: '© 2026 StartupJS. All Rights Reserved.'
     },
     hideNavbar: 'auto',
     sidebar: {
