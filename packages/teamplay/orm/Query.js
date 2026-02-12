@@ -4,6 +4,7 @@ import getSignal from './getSignal.js'
 import { getConnection, fetchOnly } from './connection.js'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
+import SubscriptionState from './SubscriptionState.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 export const COLLECTION_NAME = Symbol('query collection name')
@@ -13,9 +14,6 @@ export const IS_QUERY = Symbol('is query signal')
 export const QUERIES = '$queries'
 
 export class Query {
-  subscribing
-  unsubscribing
-  subscribed
   initialized
   shareQuery
 
@@ -24,6 +22,14 @@ export class Query {
     this.params = params
     this.hash = hashQuery(this.collectionName, this.params)
     this.docSignals = new Set()
+    this.lifecycle = new SubscriptionState({
+      onSubscribe: () => this._subscribe(),
+      onUnsubscribe: () => this._unsubscribe()
+    })
+  }
+
+  get subscribed () {
+    return this.lifecycle.subscribed
   }
 
   init () {
@@ -33,47 +39,16 @@ export class Query {
   }
 
   async subscribe () {
-    if (this.subscribed) throw Error('trying to subscribe while already subscribed')
-    this.subscribed = true
-    // if we are in the middle of unsubscribing, just wait for it to finish and then resubscribe
-    if (this.unsubscribing) {
-      try {
-        await this.unsubscribing
-      } catch (err) {
-        // if error happened during unsubscribing, it means that we are still subscribed
-        // so we don't need to do anything
-        return
-      }
-    }
-    if (this.subscribing) {
-      try {
-        await this.subscribing
-        // if we are already subscribing from the previous time, delegate logic to that
-        // and if it finished successfully, we are done.
-        return
-      } catch (err) {
-        // if error happened during subscribing, we'll just try subscribing again
-        // so we just ignore the error and proceed with subscribing
-        this.subscribed = true
-      }
-    }
+    await this.lifecycle.subscribe()
+    this.init()
+  }
 
-    if (!this.subscribed) return // cancel if we initiated unsubscribe while waiting
-
-    this.subscribing = (async () => {
-      try {
-        this.subscribing = this._subscribe()
-        await this.subscribing
-        this.init()
-      } catch (err) {
-        console.log('subscription error', [this.collectionName, this.params], err)
-        this.subscribed = undefined
-        throw err
-      } finally {
-        this.subscribing = undefined
-      }
-    })()
-    await this.subscribing
+  async unsubscribe () {
+    await this.lifecycle.unsubscribe()
+    if (!this.subscribed) {
+      this.initialized = undefined
+      this._removeData()
+    }
   }
 
   async _subscribe () {
@@ -84,50 +59,6 @@ export class Query {
         resolve()
       })
     })
-  }
-
-  async unsubscribe () {
-    if (!this.subscribed) {
-      throw Error('trying to unsubscribe while not subscribed. Query: ' + [this.collectionName, this.params])
-    }
-    this.subscribed = undefined
-    // if we are still handling the subscription, just wait for it to finish and then unsubscribe
-    if (this.subscribing) {
-      try {
-        await this.subscribing
-      } catch (err) {
-        // if error happened during subscribing, it means that we are still unsubscribed
-        // so we don't need to do anything
-        return
-      }
-    }
-    // if we are already unsubscribing from the previous time, delegate logic to that
-    if (this.unsubscribing) {
-      try {
-        await this.unsubscribing
-        return
-      } catch (err) {
-        // if error happened during unsubscribing, we'll just try unsubscribing again
-        this.subscribed = undefined
-      }
-    }
-
-    if (this.subscribed) return // cancel if we initiated subscribe while waiting
-
-    this.unsubscribing = (async () => {
-      try {
-        await this._unsubscribe()
-        this.initialized = undefined
-        this._removeData()
-      } catch (err) {
-        console.log('error unsubscribing', [this.collectionName, this.params], err)
-        this.subscribed = true
-        throw err
-      } finally {
-        this.unsubscribing = undefined
-      }
-    })()
-    await this.unsubscribing
   }
 
   async _unsubscribe () {
@@ -220,7 +151,7 @@ export class QuerySubscriptions {
     let count = this.subCount.get(hash) || 0
     count += 1
     this.subCount.set(hash, count)
-    if (count > 1) return this.queries.get(hash).subscribing
+    if (count > 1) return this.queries.get(hash)._subscribing
 
     this.fr.register($query, { collectionName, params }, $query)
 
@@ -229,7 +160,8 @@ export class QuerySubscriptions {
       query = new this.QueryClass(collectionName, params)
       this.queries.set(hash, query)
     }
-    return query.subscribe()
+    query._subscribing = query.subscribe().then(() => { query._subscribing = undefined })
+    return query._subscribing
   }
 
   async unsubscribe ($query) {
