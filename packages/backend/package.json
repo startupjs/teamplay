@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/backend",
-  "version": "0.3.34",
+  "version": "0.3.35",
   "description": "Create new ShareDB backend instance",
   "type": "module",
   "main": "index.js",
