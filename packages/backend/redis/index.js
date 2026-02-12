@@ -15,7 +15,8 @@ export const redisObserver = getRedis(getRedisOptions())
 
 export const pubsub = redisPubSub({
   client: redis,
-  observer: redisObserver
+  observer: redisObserver,
+  prefix
 })
 
 export const redlock = getRedlock(redis)
