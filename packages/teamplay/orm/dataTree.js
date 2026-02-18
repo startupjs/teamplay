@@ -71,6 +71,22 @@ export function set (segments, value, tree = dataTree) {
   if (dataNode[key] !== newValue) dataNode[key] = newValue
 }
 
+// Like set(), but always assigns the value without equality checks or delete-on-null behavior
+export function setReplace (segments, value, tree = dataTree) {
+  let dataNode = tree
+  for (let i = 0; i < segments.length - 1; i++) {
+    const segment = segments[i]
+    if (dataNode[segment] == null) {
+      // if next segment is a number, it means that we are in the array
+      if (typeof segments[i + 1] === 'number') dataNode[segment] = []
+      else dataNode[segment] = {}
+    }
+    dataNode = dataNode[segment]
+  }
+  const key = segments[segments.length - 1]
+  dataNode[key] = value
+}
+
 export function del (segments, tree = dataTree) {
   let dataNode = tree
   for (let i = 0; i < segments.length - 1; i++) {
@@ -153,6 +169,307 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
       doc.submitOp(diff, err => err ? reject(err) : resolve())
     })
   }
+}
+
+export async function setPublicDocReplace (segments, value) {
+  if (segments.length === 0) throw Error(ERRORS.publicDoc(segments))
+  if (segments.length === 1) {
+    // set multiple documents at the same time
+    if (typeof value !== 'object') throw Error(ERRORS.notObjectCollection(segments, value))
+    for (const docId in value) {
+      await setPublicDocReplace([segments[0], docId], value[docId])
+    }
+  }
+  const [collection, docId] = segments
+  if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
+  if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
+  if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  // make sure that the value is not observable to not trigger extra reads. And clone it
+  value = raw(value)
+  if (value != null) value = JSON.parse(JSON.stringify(value))
+
+  if (!doc.data) {
+    if (segments.length === 2) {
+      // > create a new doc. Full doc data is provided
+      if (typeof value !== 'object') throw Error(ERRORS.notObject(segments, value))
+      const newDoc = value
+      return new Promise((resolve, reject) => {
+        doc.create(newDoc, err => err ? reject(err) : resolve())
+      })
+    }
+    // >> create a new doc. Partial doc data is provided (subpath)
+    // NOTE: We throw an error when trying to set a subpath on a non-existing doc
+    //       to prevent potential mistakes. In future we might allow it though.
+    if (!ALLOW_PARTIAL_DOC_CREATION) throw Error(ERRORS.partialDocCreation(segments, value))
+    const newDoc = {}
+    setReplace(segments.slice(2), value, newDoc)
+    return new Promise((resolve, reject) => {
+      doc.create(newDoc, err => err ? reject(err) : resolve())
+    })
+  }
+
+  const relativePath = segments.slice(2)
+  const previous = getRaw(segments)
+  const normalizedPrevious = normalizeUndefined(previous)
+  const normalizedValue = normalizeUndefined(value)
+  let op
+  if (relativePath.length === 0) {
+    op = [{ p: [], od: normalizedPrevious, oi: normalizedValue }]
+  } else if (typeof relativePath[relativePath.length - 1] === 'number') {
+    op = [{ p: relativePath, ld: normalizedPrevious, li: normalizedValue }]
+  } else {
+    op = [{ p: relativePath, od: normalizedPrevious, oi: normalizedValue }]
+  }
+  return new Promise((resolve, reject) => {
+    doc.submitOp(op, err => err ? reject(err) : resolve())
+  })
+}
+
+function normalizeUndefined (value) {
+  return value === undefined ? null : value
+}
+
+function normalizeValueForOp (value) {
+  let result = raw(value)
+  if (result != null && typeof result === 'object') result = JSON.parse(JSON.stringify(result))
+  return result
+}
+
+function getArrayNode (segments, tree = dataTree, create = true) {
+  let dataNode = tree
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]
+    if (dataNode[segment] == null) {
+      if (!create) return
+      const next = segments[i + 1]
+      dataNode[segment] = typeof next === 'number' ? [] : {}
+    }
+    dataNode = dataNode[segment]
+  }
+  if (dataNode == null) return
+  if (!Array.isArray(dataNode)) {
+    throw Error(`Expected array at ${segments.join('.')}`)
+  }
+  return dataNode
+}
+
+export function arrayPush (segments, value, tree = dataTree) {
+  const arr = getArrayNode(segments, tree, true)
+  return arr.push(value)
+}
+
+export function arrayUnshift (segments, value, tree = dataTree) {
+  const arr = getArrayNode(segments, tree, true)
+  return arr.unshift(value)
+}
+
+export function arrayInsert (segments, index, values, tree = dataTree) {
+  const arr = getArrayNode(segments, tree, true)
+  const inserted = Array.isArray(values) ? values : [values]
+  arr.splice(index, 0, ...inserted)
+  return arr.length
+}
+
+export function arrayPop (segments, tree = dataTree) {
+  const arr = getArrayNode(segments, tree, true)
+  if (!arr.length) return
+  return arr.pop()
+}
+
+export function arrayShift (segments, tree = dataTree) {
+  const arr = getArrayNode(segments, tree, true)
+  if (!arr.length) return
+  return arr.shift()
+}
+
+export function arrayRemove (segments, index, howMany = 1, tree = dataTree) {
+  const arr = getArrayNode(segments, tree, true)
+  return arr.splice(index, howMany)
+}
+
+export function arrayMove (segments, from, to, howMany = 1, tree = dataTree) {
+  const arr = getArrayNode(segments, tree, true)
+  const len = arr.length
+  if (from < 0) from += len
+  if (to < 0) to += len
+  const moved = arr.splice(from, howMany)
+  arr.splice(to, 0, ...moved)
+  return moved
+}
+
+export async function incrementPublic (segments, byNumber) {
+  if (segments.length === 0) throw Error(ERRORS.publicDoc(segments))
+  const [collection, docId] = segments
+  if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
+  if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
+  if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  const relativePath = segments.slice(2)
+  const op = [{ p: relativePath, na: byNumber }]
+  return new Promise((resolve, reject) => {
+    doc.submitOp(op, err => err ? reject(err) : resolve())
+  })
+}
+
+export async function arrayPushPublic (segments, value) {
+  const arr = getRaw(segments) || []
+  const index = arr.length
+  return arrayInsertPublic(segments, index, [value])
+}
+
+export async function arrayUnshiftPublic (segments, value) {
+  return arrayInsertPublic(segments, 0, [value])
+}
+
+export async function arrayInsertPublic (segments, index, values) {
+  if (segments.length === 0) throw Error(ERRORS.publicDoc(segments))
+  const [collection, docId] = segments
+  if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
+  if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
+  if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  const inserted = Array.isArray(values) ? values : [values]
+  const baseLength = (getRaw(segments) || []).length
+  const relativePath = segments.slice(2)
+  let i = index
+  const op = inserted.map(value => ({
+    p: relativePath.concat(i++),
+    li: normalizeUndefined(normalizeValueForOp(value))
+  }))
+  return new Promise((resolve, reject) => {
+    doc.submitOp(op, err => err ? reject(err) : resolve(baseLength + inserted.length))
+  })
+}
+
+export async function arrayPopPublic (segments) {
+  const arr = getRaw(segments) || []
+  if (!arr.length) return
+  const index = arr.length - 1
+  const value = arr[index]
+  await arrayRemovePublic(segments, index, 1)
+  return value
+}
+
+export async function arrayShiftPublic (segments) {
+  const arr = getRaw(segments) || []
+  if (!arr.length) return
+  const value = arr[0]
+  await arrayRemovePublic(segments, 0, 1)
+  return value
+}
+
+export async function arrayRemovePublic (segments, index, howMany = 1) {
+  if (segments.length === 0) throw Error(ERRORS.publicDoc(segments))
+  const [collection, docId] = segments
+  if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
+  if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
+  if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  const arr = getRaw(segments) || []
+  const removed = arr.slice(index, index + howMany)
+  const op = removed.map(value => ({ p: segments.slice(2).concat(index), ld: normalizeUndefined(value) }))
+  return new Promise((resolve, reject) => {
+    doc.submitOp(op, err => err ? reject(err) : resolve(removed))
+  })
+}
+
+export async function arrayMovePublic (segments, from, to, howMany = 1) {
+  if (segments.length === 0) throw Error(ERRORS.publicDoc(segments))
+  const [collection, docId] = segments
+  if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
+  if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
+  if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  const arr = getRaw(segments) || []
+  const len = arr.length
+  if (from < 0) from += len
+  if (to < 0) to += len
+  const moved = arr.slice(from, from + howMany)
+  const op = []
+  for (let i = 0; i < howMany; i++) {
+    op.push({ p: segments.slice(2).concat(from < to ? from : from + howMany - 1), lm: from < to ? to + howMany - 1 : to })
+  }
+  return new Promise((resolve, reject) => {
+    doc.submitOp(op, err => err ? reject(err) : resolve(moved))
+  })
+}
+
+export function stringInsertLocal (segments, index, text, tree = dataTree) {
+  let dataNode = tree
+  for (let i = 0; i < segments.length - 1; i++) {
+    const segment = segments[i]
+    if (dataNode[segment] == null) {
+      dataNode[segment] = typeof segments[i + 1] === 'number' ? [] : {}
+    }
+    dataNode = dataNode[segment]
+  }
+  const key = segments[segments.length - 1]
+  const previous = dataNode[key]
+  if (previous == null) {
+    dataNode[key] = text
+    return previous
+  }
+  if (typeof previous !== 'string') {
+    throw Error(`Expected string at ${segments.join('.')}`)
+  }
+  dataNode[key] = previous.slice(0, index) + text + previous.slice(index)
+  return previous
+}
+
+export function stringRemoveLocal (segments, index, howMany, tree = dataTree) {
+  let dataNode = tree
+  for (let i = 0; i < segments.length - 1; i++) {
+    const segment = segments[i]
+    if (dataNode[segment] == null) return
+    dataNode = dataNode[segment]
+  }
+  const key = segments[segments.length - 1]
+  const previous = dataNode[key]
+  if (previous == null) return previous
+  if (typeof previous !== 'string') {
+    throw Error(`Expected string at ${segments.join('.')}`)
+  }
+  dataNode[key] = previous.slice(0, index) + previous.slice(index + howMany)
+  return previous
+}
+
+export async function stringInsertPublic (segments, index, text) {
+  if (segments.length === 0) throw Error(ERRORS.publicDoc(segments))
+  const [collection, docId] = segments
+  if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
+  if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
+  if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  const relativePath = segments.slice(2)
+  const previous = getRaw(segments)
+  if (previous == null) {
+    await setPublicDocReplace(segments, text)
+    return previous
+  }
+  if (typeof previous !== 'string') throw Error(`Expected string at ${segments.join('.')}`)
+  const op = [{ p: relativePath.concat(index), si: text }]
+  return new Promise((resolve, reject) => {
+    doc.submitOp(op, err => err ? reject(err) : resolve(previous))
+  })
+}
+
+export async function stringRemovePublic (segments, index, howMany) {
+  if (segments.length === 0) throw Error(ERRORS.publicDoc(segments))
+  const [collection, docId] = segments
+  if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
+  if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
+  if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  const relativePath = segments.slice(2)
+  const previous = getRaw(segments)
+  if (previous == null) return previous
+  if (typeof previous !== 'string') throw Error(`Expected string at ${segments.join('.')}`)
+  const removed = previous.slice(index, index + howMany)
+  const op = [{ p: relativePath.concat(index), sd: removed }]
+  return new Promise((resolve, reject) => {
+    doc.submitOp(op, err => err ? reject(err) : resolve(previous))
+  })
 }
 
 export default dataTree
