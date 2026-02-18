@@ -40,6 +40,32 @@ export class Signal extends Function {
     return this[SEGMENTS].join('.')
   }
 
+  leaf () {
+    if (arguments.length > 0) throw Error('Signal.leaf() does not accept any arguments')
+    const segments = this[SEGMENTS]
+    if (segments.length === 0) return ''
+    return String(segments[segments.length - 1])
+  }
+
+  parent (levels = 1) {
+    if (arguments.length > 1) throw Error('Signal.parent() expects a single argument')
+    if (arguments.length === 0) levels = 1
+    if (typeof levels !== 'number' || !Number.isFinite(levels) || !Number.isInteger(levels)) {
+      throw Error('Signal.parent() expects an integer argument')
+    }
+    if (levels < 1) throw Error('Signal.parent() expects a positive integer')
+    const $root = getRoot(this) || this
+    const segments = this[SEGMENTS]
+    if (segments.length === 0) return $root
+    const targetLength = Math.max(0, segments.length - levels)
+    if (targetLength === 0) return $root
+    let $cursor = $root
+    for (let i = 0; i < targetLength; i++) {
+      $cursor = $cursor[segments[i]]
+    }
+    return $cursor
+  }
+
   id () {
     return uuid()
   }
