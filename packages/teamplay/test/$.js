@@ -121,6 +121,45 @@ describe('$() function. Reactions', () => {
   })
 })
 
+describe('Signal array mutators (local)', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('supports array mutators and increment on local signals', async () => {
+    const $list = $([1, 2, 3])
+    const len1 = await $list.push(4)
+    assert.equal(len1, 4)
+    const len2 = await $list.unshift(0)
+    assert.equal(len2, 5)
+    const len3 = await $list.insert(2, ['a', 'b'])
+    assert.equal(len3, 7)
+    const popped = await $list.pop()
+    assert.equal(popped, 4)
+    const shifted = await $list.shift()
+    assert.equal(shifted, 0)
+    const removed = await $list.remove(1, 2)
+    assert.deepEqual(removed, ['a', 'b'])
+    const moved = await $list.move(1, 0)
+    assert.deepEqual(moved, [2])
+    assert.deepEqual($list.get(), [2, 1, 3])
+
+    const $count = $(0)
+    const inc = await $count.increment(2)
+    assert.equal(inc, 2)
+    assert.equal($count.get(), 2)
+  })
+
+  it('supports stringInsert/stringRemove on local signals', async () => {
+    const $text = $('abc')
+    const prev1 = await $text.stringInsert(0, 'X')
+    assert.equal(prev1, 'abc')
+    assert.equal($text.get(), 'Xabc')
+    const prev2 = await $text.stringRemove(1, 2)
+    assert.equal(prev2, 'Xabc')
+    assert.equal($text.get(), 'Xc')
+  })
+})
+
 describe('set, get, del on local collections', () => {
   afterEachTestGc()
   afterEachTestGcLocal()

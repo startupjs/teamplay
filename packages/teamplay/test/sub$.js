@@ -179,6 +179,49 @@ describe('$sub() function. Modifying documents', () => {
       await $game.name.set('Game 10')
     }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
   })
+
+  it('supports array mutators and increment on public docs', async () => {
+    const gameId = '_compat_base_1'
+    const $game = await sub($.games[gameId])
+    await $game.set({ count: 0, list: [1, 2, 3] })
+
+    const inc = await $game.count.increment(2)
+    assert.equal(inc, 2)
+    assert.equal($game.count.get(), 2)
+
+    const len1 = await $game.list.push(4)
+    assert.equal(len1, 4)
+    const len2 = await $game.list.unshift(0)
+    assert.equal(len2, 5)
+    const len3 = await $game.list.insert(2, ['a', 'b'])
+    assert.equal(len3, 7)
+    const popped = await $game.list.pop()
+    assert.equal(popped, 4)
+    const shifted = await $game.list.shift()
+    assert.equal(shifted, 0)
+    const removed = await $game.list.remove(1, 2)
+    assert.deepEqual(removed, ['a', 'b'])
+    const moved = await $game.list.move(1, 0)
+    assert.deepEqual(moved, [2])
+    assert.deepEqual($game.list.get(), [2, 1, 3])
+
+    await $game.del()
+  })
+
+  it('supports stringInsert/stringRemove on public docs', async () => {
+    const gameId = '_compat_base_2'
+    const $game = await sub($.games[gameId])
+    await $game.set({ text: 'abc' })
+
+    const prev1 = await $game.text.stringInsert(0, 'X')
+    assert.equal(prev1, 'abc')
+    assert.equal($game.text.get(), 'Xabc')
+    const prev2 = await $game.text.stringRemove(1, 2)
+    assert.equal(prev2, 'Xabc')
+    assert.equal($game.text.get(), 'Xc')
+
+    await $game.del()
+  })
 })
 
 describe('$sub() function. Queries', () => {

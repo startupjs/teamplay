@@ -12,7 +12,33 @@
  *    in the raw data tree which have the same name as signal's methods
  */
 import uuid from '@teamplay/utils/uuid'
-import { get as _get, set as _set, del as _del, setPublicDoc as _setPublicDoc, getRaw } from './dataTree.js'
+import {
+  get as _get,
+  set as _set,
+  setReplace as _setReplace,
+  del as _del,
+  setPublicDoc as _setPublicDoc,
+  getRaw,
+  incrementPublic as _incrementPublic,
+  arrayPush as _arrayPush,
+  arrayUnshift as _arrayUnshift,
+  arrayInsert as _arrayInsert,
+  arrayPop as _arrayPop,
+  arrayShift as _arrayShift,
+  arrayRemove as _arrayRemove,
+  arrayMove as _arrayMove,
+  arrayPushPublic as _arrayPushPublic,
+  arrayUnshiftPublic as _arrayUnshiftPublic,
+  arrayInsertPublic as _arrayInsertPublic,
+  arrayPopPublic as _arrayPopPublic,
+  arrayShiftPublic as _arrayShiftPublic,
+  arrayRemovePublic as _arrayRemovePublic,
+  arrayMovePublic as _arrayMovePublic,
+  stringInsertLocal as _stringInsertLocal,
+  stringRemoveLocal as _stringRemoveLocal,
+  stringInsertPublic as _stringInsertPublic,
+  stringRemovePublic as _stringRemovePublic
+} from './dataTree.js'
 import getSignal, { rawSignal } from './getSignal.js'
 import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
@@ -224,38 +250,98 @@ export class Signal extends Function {
     await Promise.all(promises)
   }
 
-  // TODO: implement a json0 operation for push
   async push (value) {
     if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
-    if (this[SEGMENTS].length < 2) throw Error('Can\'t push to a collection or root signal')
-    if (this[IS_QUERY]) throw Error('Signal.push() can\'t be used on a query signal')
-    const array = this.get()
-    await this[array?.length || 0].set(value)
+    const segments = ensureArrayTarget(this)
+    if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _arrayPush(segments, value)
   }
 
-  // TODO: implement a json0 operation for pop
   async pop () {
     if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
-    if (this[SEGMENTS].length < 2) throw Error('Can\'t pop from a collection or root signal')
-    if (this[IS_QUERY]) throw Error('Signal.pop() can\'t be used on a query signal')
-    const array = this.get()
-    if (!Array.isArray(array) || array.length === 0) return
-    const lastItem = array[array.length - 1]
-    await this[array.length - 1].del()
-    return lastItem
+    const segments = ensureArrayTarget(this)
+    if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _arrayPop(segments)
   }
 
-  // TODO: implement a json0 operation for unshift
   async unshift (value) {
-    throw Error('Signal.unshift() is not implemented yet')
+    if (arguments.length > 1) throw Error('Signal.unshift() expects a single argument')
+    const segments = ensureArrayTarget(this)
+    if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _arrayUnshift(segments, value)
   }
 
-  // TODO: implement a json0 operation for shift
   async shift () {
-    throw Error('Signal.shift() is not implemented yet')
+    if (arguments.length > 0) throw Error('Signal.shift() does not accept any arguments')
+    const segments = ensureArrayTarget(this)
+    if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _arrayShift(segments)
   }
 
-  // TODO: make it use an actual increment json0 operation on public collections
+  async insert (index, values) {
+    if (arguments.length < 2) throw Error('Not enough arguments for insert')
+    if (arguments.length > 2) throw Error('Signal.insert() expects two arguments')
+    if (typeof index !== 'number' || !Number.isFinite(index)) {
+      throw Error('Signal.insert() expects a numeric index')
+    }
+    const segments = ensureArrayTarget(this)
+    if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _arrayInsert(segments, index, values)
+  }
+
+  async remove (index, howMany = 1) {
+    if (arguments.length < 1) throw Error('Not enough arguments for remove')
+    if (arguments.length > 2) throw Error('Signal.remove() expects one or two arguments')
+    if (typeof index !== 'number' || !Number.isFinite(index)) {
+      throw Error('Signal.remove() expects a numeric index')
+    }
+    const segments = ensureArrayTarget(this)
+    if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _arrayRemove(segments, index, howMany)
+  }
+
+  async move (from, to, howMany = 1) {
+    if (arguments.length < 2) throw Error('Not enough arguments for move')
+    if (arguments.length > 3) throw Error('Signal.move() expects two or three arguments')
+    if (typeof from !== 'number' || !Number.isFinite(from) || typeof to !== 'number' || !Number.isFinite(to)) {
+      throw Error('Signal.move() expects numeric from/to')
+    }
+    const segments = ensureArrayTarget(this)
+    if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _arrayMove(segments, from, to, howMany)
+  }
+
+  async stringInsert (index, text) {
+    if (arguments.length < 2) throw Error('Not enough arguments for stringInsert')
+    if (arguments.length > 2) throw Error('Signal.stringInsert() expects two arguments')
+    if (typeof index !== 'number' || !Number.isFinite(index)) {
+      throw Error('Signal.stringInsert() expects a numeric index')
+    }
+    const segments = ensureValueTarget(this)
+    if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _stringInsertLocal(segments, index, text)
+  }
+
+  async stringRemove (index, howMany = 1) {
+    if (arguments.length < 2) throw Error('Not enough arguments for stringRemove')
+    if (arguments.length > 2) throw Error('Signal.stringRemove() expects two arguments')
+    if (typeof index !== 'number' || !Number.isFinite(index)) {
+      throw Error('Signal.stringRemove() expects a numeric index')
+    }
+    const segments = ensureValueTarget(this)
+    if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    return _stringRemoveLocal(segments, index, howMany)
+  }
+
   async increment (value) {
     if (arguments.length > 1) throw Error('Signal.increment() expects a single argument')
     if (value === undefined) value = 1
@@ -263,7 +349,15 @@ export class Signal extends Function {
     let currentValue = this.get()
     if (currentValue === undefined) currentValue = 0
     if (typeof currentValue !== 'number') throw Error('Signal.increment() tried to increment a non-number value')
-    await this.set(currentValue + value)
+    const segments = this[SEGMENTS]
+    if (segments.length === 0) throw Error('Can\'t increment the root signal data')
+    if (isPublicCollection(segments[0])) {
+      await _incrementPublic(segments, value)
+      return currentValue + value
+    }
+    if (publicOnly) throw Error(ERRORS.publicOnly)
+    _setReplace(segments, currentValue + value)
+    return currentValue + value
   }
 
   async add (value) {
@@ -293,13 +387,19 @@ export class Signal extends Function {
 
   // clone () {}
   // async assign () {}
-  // async push () {}
-  // async pop () {}
-  // async unshift () {}
-  // async shift () {}
   // async splice () {}
-  // async move () {}
-  // async del () {}
+}
+
+function ensureArrayTarget ($signal) {
+  if ($signal[SEGMENTS].length < 2) throw Error('Can\'t mutate array on a collection or root signal')
+  if ($signal[IS_QUERY]) throw Error('Array mutators can\'t be used on a query signal')
+  return $signal[SEGMENTS]
+}
+
+function ensureValueTarget ($signal) {
+  if ($signal[SEGMENTS].length < 2) throw Error('Can\'t mutate on a collection or root signal')
+  if ($signal[IS_QUERY]) throw Error('Mutators can\'t be used on a query signal')
+  return $signal[SEGMENTS]
 }
 
 // dot syntax returns a child signal only if no such method or property exists
