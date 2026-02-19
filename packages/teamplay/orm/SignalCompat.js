@@ -450,7 +450,35 @@ function deepCopy (value) {
       return globalThis.structuredClone(rawValue)
     } catch {}
   }
-  return JSON.parse(JSON.stringify(rawValue))
+  return racerDeepCopy(rawValue)
+}
+
+// Racer-style deep copy:
+// - Preserves prototypes by instantiating via `new value.constructor()`
+// - Copies own enumerable props recursively
+// - Keeps functions as-is (no cloning)
+// - Handles Date by creating a new Date
+// Limitations: does not handle cyclic refs, Map/Set/RegExp/TypedArray, non-enumerables.
+function racerDeepCopy (value) {
+  if (value instanceof Date) return new Date(value)
+  if (typeof value === 'object') {
+    if (value === null) return null
+    if (Array.isArray(value)) {
+      const array = []
+      for (let i = value.length; i--;) {
+        array[i] = racerDeepCopy(value[i])
+      }
+      return array
+    }
+    const object = new value.constructor()
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        object[key] = racerDeepCopy(value[key])
+      }
+    }
+    return object
+  }
+  return value
 }
 
 const ERRORS = {
