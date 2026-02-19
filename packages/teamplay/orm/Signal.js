@@ -18,4 +18,4 @@ export {
 
 export { SignalCompat }
 
-export default globalThis?.teamplayCompartabilityMode ? SignalCompat : Signal
+export default globalThis?.teamplayCompatibilityMode ? SignalCompat : Signal
