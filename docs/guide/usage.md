@@ -24,6 +24,13 @@ Every signal in TeamPlay comes with a set of useful methods:
 - `.get()`: Retrieves the current value of the signal.
 - `.set(value)`: Updates the value of the signal.
 - `.del()`: Deletes the value (or removes an item from an array).
+- `.push(value)`, `.pop()`, `.unshift(value)`, `.shift()`, `.insert(index, values)`, `.remove(index, howMany)`, `.move(from, to, howMany)`: Array mutators.
+- `.stringInsert(index, text)`, `.stringRemove(index, howMany)`: String mutators.
+- `.increment(value)`: Increments a numeric value.
+- `.add(value)`: Adds a new document to a collection and returns its id.
+- `.getId()`: Returns the id for a document or aggregation entry.
+- `.getIds()`: Returns ids for query or aggregation signals.
+- `.getCollection()`: Returns the collection name.
 
 Example:
 
@@ -39,6 +46,10 @@ $.users[userId].name.set('Alice')
 // Delete a user's profile picture
 $.users[userId].profilePicture.del()
 ```
+
+### `_id` in Public Documents
+
+For public documents, the `_id` field is available in `get()` results and matches the document id. Attempts to set or modify `_id` are ignored.
 
 ## The `$()` Function: Creating Local Signals
 

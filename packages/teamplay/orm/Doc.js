@@ -4,6 +4,7 @@ import { SEGMENTS } from './Signal.js'
 import { getConnection, fetchOnly } from './connection.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
+import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 
@@ -82,8 +83,10 @@ class Doc {
 
   _refData () {
     const doc = getConnection().get(this.collection, this.docId)
-    if (isObservable(doc.data)) return
     if (doc.data == null) return
+    const idFields = getIdFieldsForSegments([this.collection, this.docId])
+    if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, this.docId)
+    if (isObservable(doc.data)) return
     _set([this.collection, this.docId], doc.data)
     doc.data = observable(doc.data)
   }

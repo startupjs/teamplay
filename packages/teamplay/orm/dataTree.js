@@ -3,6 +3,7 @@ import jsonDiff from 'json0-ot-diff'
 import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.js'
 import setDiffDeep from '../utils/setDiffDeep.js'
+import { getIdFieldsForSegments, stripIdFields } from './idFields.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 
@@ -116,6 +117,8 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const idFields = getIdFieldsForSegments([collection, docId])
+  if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
   if (!doc.data && deleteValue) throw Error(ERRORS.deleteNonExistentDoc(segments))
   // make sure that the value is not observable to not trigger extra reads. And clone it
@@ -124,6 +127,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
     value = undefined
   } else {
     value = JSON.parse(JSON.stringify(value))
+    value = stripIdFields(value, idFields)
   }
   if (segments.length === 2 && !doc.data) {
     // > create a new doc. Full doc data is provided
@@ -150,7 +154,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   } else if (segments.length === 2) {
     // > modify existing doc. Full doc modification
     if (typeof value !== 'object') throw Error(ERRORS.notObject(segments, value))
-    const oldDoc = getRaw([collection, docId])
+    const oldDoc = stripIdFields(getRaw([collection, docId]), idFields)
     const diff = jsonDiff(oldDoc, value, diffMatchPatch)
     return new Promise((resolve, reject) => {
       doc.submitOp(diff, err => err ? reject(err) : resolve())
@@ -184,10 +188,15 @@ export async function setPublicDocReplace (segments, value) {
   if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const idFields = getIdFieldsForSegments([collection, docId])
+  if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
-  if (value != null) value = JSON.parse(JSON.stringify(value))
+  if (value != null) {
+    value = JSON.parse(JSON.stringify(value))
+    value = stripIdFields(value, idFields)
+  }
 
   if (!doc.data) {
     if (segments.length === 2) {
@@ -211,7 +220,7 @@ export async function setPublicDocReplace (segments, value) {
 
   const relativePath = segments.slice(2)
   const previous = getRaw(segments)
-  const normalizedPrevious = normalizeUndefined(previous)
+  const normalizedPrevious = normalizeUndefined(stripIdFields(previous, idFields))
   const normalizedValue = normalizeUndefined(value)
   let op
   if (relativePath.length === 0) {

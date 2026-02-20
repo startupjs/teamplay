@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw } from '@nx-js/observer-util'
-import { $, sub, addModel } from '../index.js'
+import { $, sub, addModel, aggregation } from '../index.js'
 import { get as _get, del as _del } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import connect from '../connect/test.js'
@@ -511,5 +511,59 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.text.get(), 'XabcY')
     await $game.stringRemove('text', 1, 10)
     assert.equal($game.text.get(), 'X')
+  })
+
+  it('injects _id/id into compat docs and ignores id changes', async () => {
+    const gameId = '_compat_public_ids'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'Compat' })
+
+    const data = $game.get()
+    assert.equal(data._id, gameId)
+    assert.equal(data.id, gameId)
+
+    await $game.id.set('other')
+    await $game._id.set('other2')
+    assert.equal($game.id.get(), gameId)
+    assert.equal($game._id.get(), gameId)
+  })
+
+  it('injects _id/id in compat queries', async () => {
+    const id1 = '_compat_query_1'
+    const id2 = '_compat_query_2'
+    const $game1 = await sub($.compatGames[id1])
+    const $game2 = await sub($.compatGames[id2])
+    await $game1.set({ name: 'Query One', active: true })
+    await $game2.set({ name: 'Query Two', active: true })
+
+    const $query = await sub($.compatGames, { active: true })
+    const results = $query.get()
+    assert.equal(results.length, 2)
+    assert.ok(results.every(doc => doc._id && doc.id))
+    assert.deepEqual($query.getIds().slice().sort(), [id1, id2])
+  })
+
+  it('compat aggregations expose _id/id by default', async () => {
+    const id1 = '_compat_agg_1'
+    const id2 = '_compat_agg_2'
+    const $game1 = await sub($.compatGames[id1])
+    const $game2 = await sub($.compatGames[id2])
+    await $game1.set({ name: 'Agg One', active: true })
+    await $game2.set({ name: 'Agg Two', active: true })
+
+    const $$agg = aggregation(({ active }) => [{ $match: { active } }])
+    const $agg = await sub($$agg, { $collection: 'compatGames', active: true })
+    const results = $agg.get()
+    assert.ok(results.length >= 2)
+    assert.ok(results.every(doc => doc._id))
+    assert.ok(results.every(doc => doc.id))
+  })
+
+  it('compat add normalizes id and _id', async () => {
+    const id = await $.compatGames.add({ id: 'custom', _id: 'other', name: 'Compat Add' })
+    const $doc = await sub($.compatGames[id])
+    const data = $doc.get()
+    assert.equal(data._id, id)
+    assert.equal(data.id, id)
   })
 })

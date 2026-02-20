@@ -3,6 +3,7 @@ import { set as _set, del as _del, getRaw } from './dataTree.js'
 import getSignal from './getSignal.js'
 import { QuerySubscriptions, hashQuery, Query, HASH, PARAMS, COLLECTION_NAME, parseQueryHash } from './Query.js'
 import Signal, { SEGMENTS } from './Signal.js'
+import { getIdFieldsForSegments, isPlainObject } from './idFields.js'
 
 export const IS_AGGREGATION = Symbol('is aggregation signal')
 export const AGGREGATIONS = '$aggregations'
@@ -11,11 +12,13 @@ class Aggregation extends Query {
   _initData () {
     {
       const extra = raw(this.shareQuery.extra)
+      injectAggregationIds(extra, this.collectionName)
       _set([AGGREGATIONS, this.hash], extra)
     }
 
     this.shareQuery.on('extra', extra => {
       extra = raw(extra)
+      injectAggregationIds(extra, this.collectionName)
       _set([AGGREGATIONS, this.hash], extra)
     })
   }
@@ -26,6 +29,18 @@ class Aggregation extends Query {
 }
 
 export const aggregationSubscriptions = new QuerySubscriptions(Aggregation)
+
+function injectAggregationIds (extra, collectionName) {
+  if (!Array.isArray(extra)) return
+  const idFields = getIdFieldsForSegments([collectionName, ''])
+  for (const doc of extra) {
+    if (!isPlainObject(doc)) continue
+    const docId = doc._id ?? doc.id
+    if (docId == null) continue
+    if (idFields.includes('_id') && doc._id !== docId) doc._id = docId
+    if (idFields.includes('id') && doc.id !== docId) doc.id = docId
+  }
+}
 
 export function getAggregationSignal (collectionName, params, options) {
   params = JSON.parse(JSON.stringify(params))
