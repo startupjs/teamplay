@@ -5,6 +5,7 @@ import { getConnection, fetchOnly } from './connection.js'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
+import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 export const COLLECTION_NAME = Symbol('query collection name')
@@ -74,7 +75,11 @@ export class Query {
 
   _initData () {
     { // reference the fetched docs
-      const docs = this.shareQuery.results.map(doc => raw(doc.data))
+      const docs = this.shareQuery.results.map(doc => {
+        const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
+        if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
+        return raw(doc.data)
+      })
       _set([QUERIES, this.hash, 'docs'], docs)
 
       const ids = this.shareQuery.results.map(doc => doc.id)
@@ -92,7 +97,11 @@ export class Query {
     }
 
     this.shareQuery.on('insert', (shareDocs, index) => {
-      const newDocs = shareDocs.map(doc => raw(doc.data))
+      const newDocs = shareDocs.map(doc => {
+        const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
+        if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
+        return raw(doc.data)
+      })
       _get([QUERIES, this.hash, 'docs']).splice(index, 0, ...newDocs)
 
       const ids = shareDocs.map(doc => doc.id)
@@ -106,7 +115,11 @@ export class Query {
     this.shareQuery.on('move', (shareDocs, from, to) => {
       const docs = _get([QUERIES, this.hash, 'docs'])
       docs.splice(from, shareDocs.length)
-      docs.splice(to, 0, ...shareDocs.map(doc => raw(doc.data)))
+      docs.splice(to, 0, ...shareDocs.map(doc => {
+        const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
+        if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
+        return raw(doc.data)
+      }))
 
       const ids = _get([QUERIES, this.hash, 'ids'])
       ids.splice(from, shareDocs.length)

@@ -38,14 +38,14 @@ describe('$sub() function', () => {
     assert.equal($game.name.get(), 'Game 1', 'signal has name')
     assert.equal($game.players.get(), 0, 'signal has 0 players')
     assert.deepEqual(
-      _get(['games']), { _1: { name: 'Game 1', players: 0 } },
+      _get(['games']), { _1: { _id: '_1', name: 'Game 1', players: 0 } },
       'signal data tree has one game in the games collection'
     )
     const promise = cbPromise(cb => doc.submitOp([{ p: ['players'], na: 1 }], cb))
     assert.equal($game.players.get(), 1, 'signal has 1 player. Updated synchronously')
     await promise
     assert.equal($game.players.get(), 1, 'signal still has 1 player. (after submitOp finished on the server)')
-    assert.deepEqual($game.get(), { name: 'Game 1', players: 1 }, 'signal has all data')
+    assert.deepEqual($game.get(), { _id: '_1', name: 'Game 1', players: 1 }, 'signal has all data')
     await cbPromise(cb => doc.del(cb))
     assert.equal($game.get(), undefined, 'signal has undefined data after doc is deleted')
   })
@@ -112,14 +112,14 @@ describe('$sub() function. Modifying documents', () => {
     await $game.set({ name: 'Game 5', players: 0 })
     assert.equal($game.name.get(), 'Game 5')
     assert.equal(doc.data.name, 'Game 5')
-    assert.deepEqual($game.get(), { name: 'Game 5', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 5', players: 0 })
-    assert.deepEqual($.games.get(), { _5: { name: 'Game 5', players: 0 } })
+    assert.deepEqual($game.get(), { _id: '_5', name: 'Game 5', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_5', name: 'Game 5', players: 0 })
+    assert.deepEqual($.games.get(), { _5: { _id: '_5', name: 'Game 5', players: 0 } })
     await $game.name.set('Game 5 Magic')
     assert.equal($game.name.get(), 'Game 5 Magic')
     assert.equal(doc.data.name, 'Game 5 Magic')
-    assert.deepEqual($game.get(), { name: 'Game 5 Magic', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 5 Magic', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_5', name: 'Game 5 Magic', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_5', name: 'Game 5 Magic', players: 0 })
   })
 
   it('.set() to deep modify document', async () => {
@@ -127,13 +127,13 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 6 Alt', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 6 Alt', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 6 Alt', players: 0 })
-    assert.deepEqual($.games.get(), { _6: { name: 'Game 6 Alt', players: 0 } })
+    assert.deepEqual($game.get(), { _id: '_6', name: 'Game 6 Alt', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_6', name: 'Game 6 Alt', players: 0 })
+    assert.deepEqual($.games.get(), { _6: { _id: '_6', name: 'Game 6 Alt', players: 0 } })
     await $game.set({ title: 'My Game', players: 5 })
-    assert.deepEqual($game.get(), { title: 'My Game', players: 5 })
-    assert.deepEqual(doc.data, { title: 'My Game', players: 5 })
-    assert.deepEqual($.games.get(), { _6: { title: 'My Game', players: 5 } })
+    assert.deepEqual($game.get(), { _id: '_6', title: 'My Game', players: 5 })
+    assert.deepEqual(doc.data, { _id: '_6', title: 'My Game', players: 5 })
+    assert.deepEqual($.games.get(), { _6: { _id: '_6', title: 'My Game', players: 5 } })
   })
 
   it('.del() to delete document', async () => {
@@ -141,8 +141,8 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 7', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 7', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 7', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_7', name: 'Game 7', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_7', name: 'Game 7', players: 0 })
     await $game.del()
     assert.equal($game.get(), undefined)
     assert.equal(doc.data, undefined)
@@ -153,8 +153,8 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 8', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 8', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 8', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_8', name: 'Game 8', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_8', name: 'Game 8', players: 0 })
     await $game.set(undefined)
     assert.equal($game.get(), undefined)
     assert.equal(doc.data, undefined)
@@ -165,11 +165,11 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 9', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 9', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 9', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_9', name: 'Game 9', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_9', name: 'Game 9', players: 0 })
     await $game.name.del()
-    assert.deepEqual($game.get(), { players: 0 })
-    assert.deepEqual(doc.data, { players: 0 })
+    assert.deepEqual($game.get(), { _id: '_9', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_9', players: 0 })
   })
 
   it('.set() on subpath on non-existing document should throw an error', async () => {
@@ -245,8 +245,8 @@ describe('$sub() function. Queries', () => {
     assert.deepEqual(_get(['$queries']), {
       [hashQuery('games', { active: true })]: {
         docs: [
-          { name: 'Game 1', active: true },
-          { name: 'Game 2', active: true }
+          { _id: '_1', name: 'Game 1', active: true },
+          { _id: '_2', name: 'Game 2', active: true }
         ],
         ids: ['_1', '_2']
       }
@@ -257,8 +257,8 @@ describe('$sub() function. Queries', () => {
     $activeGames._1.players.set(1)
     assert.equal($game1.players.get(), 1, 'modifying the document through the query signal')
     assert.deepEqual($activeGames.get(), [
-      { name: 'Game 1', active: true, players: 1 },
-      { name: 'Game 2', active: true }
+      { _id: '_1', name: 'Game 1', active: true, players: 1 },
+      { _id: '_2', name: 'Game 2', active: true }
     ], 'query signal has updated data')
   })
 

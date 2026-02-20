@@ -3,6 +3,7 @@ import { Signal, GETTERS, DEFAULT_GETTERS, SEGMENTS, isPublicCollection } from '
 import { getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
 import { IS_QUERY } from './Query.js'
+import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from './idFields.js'
 import {
   setReplace as _setReplace,
   setPublicDocReplace as _setPublicDocReplace,
@@ -28,6 +29,7 @@ import {
 } from './dataTree.js'
 
 class SignalCompat extends Signal {
+  static ID_FIELDS = ['_id', 'id']
   static [GETTERS] = [...DEFAULT_GETTERS, 'getCopy', 'getDeepCopy']
 
   at (subpath) {
@@ -334,6 +336,11 @@ function getSignalValueAt ($signal, segments) {
 async function setReplaceOnSignal ($signal, value) {
   const segments = $signal[SEGMENTS]
   if (segments.length === 0) throw Error('Can\'t set the root signal data')
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
+  if (segments.length === 2) {
+    value = normalizeIdFields(value, idFields, segments[1])
+  }
   if (isPublicCollection(segments[0])) {
     return _setPublicDocReplace(segments, value)
   }
@@ -344,6 +351,8 @@ async function setReplaceOnSignal ($signal, value) {
 async function incrementOnSignal ($signal, byNumber) {
   const segments = $signal[SEGMENTS]
   if (segments.length === 0) throw Error('Can\'t increment the root signal data')
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return $signal.get()
   if (byNumber == null) byNumber = 1
   if (typeof byNumber !== 'number') throw Error('Signal.increment() expects a number argument')
   let currentValue = $signal.get()
@@ -374,6 +383,8 @@ function ensureValueTarget ($signal) {
 
 async function arrayPushOnSignal ($signal, value) {
   const segments = ensureArrayTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _arrayPush(segments, value)
@@ -381,6 +392,8 @@ async function arrayPushOnSignal ($signal, value) {
 
 async function arrayUnshiftOnSignal ($signal, value) {
   const segments = ensureArrayTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _arrayUnshift(segments, value)
@@ -388,6 +401,8 @@ async function arrayUnshiftOnSignal ($signal, value) {
 
 async function arrayInsertOnSignal ($signal, index, values) {
   const segments = ensureArrayTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _arrayInsert(segments, index, values)
@@ -395,6 +410,8 @@ async function arrayInsertOnSignal ($signal, index, values) {
 
 async function arrayPopOnSignal ($signal) {
   const segments = ensureArrayTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _arrayPop(segments)
@@ -402,6 +419,8 @@ async function arrayPopOnSignal ($signal) {
 
 async function arrayShiftOnSignal ($signal) {
   const segments = ensureArrayTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _arrayShift(segments)
@@ -409,6 +428,8 @@ async function arrayShiftOnSignal ($signal) {
 
 async function arrayRemoveOnSignal ($signal, index, howMany) {
   const segments = ensureArrayTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _arrayRemove(segments, index, howMany)
@@ -416,6 +437,8 @@ async function arrayRemoveOnSignal ($signal, index, howMany) {
 
 async function arrayMoveOnSignal ($signal, from, to, howMany) {
   const segments = ensureArrayTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _arrayMove(segments, from, to, howMany)
@@ -423,6 +446,8 @@ async function arrayMoveOnSignal ($signal, from, to, howMany) {
 
 async function stringInsertOnSignal ($signal, index, text) {
   const segments = ensureValueTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _stringInsertLocal(segments, index, text)
@@ -430,6 +455,8 @@ async function stringInsertOnSignal ($signal, index, text) {
 
 async function stringRemoveOnSignal ($signal, index, howMany) {
   const segments = ensureValueTarget($signal)
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _stringRemoveLocal(segments, index, howMany)

@@ -45,6 +45,7 @@ import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
+import { DEFAULT_ID_FIELDS, getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from './idFields.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
 export const ARRAY_METHOD = Symbol('run array method on the signal')
@@ -53,6 +54,7 @@ export const GETTERS = Symbol('get the list of this signal\'s getters')
 export const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds', 'getCollection']
 
 export class Signal extends Function {
+  static ID_FIELDS = DEFAULT_ID_FIELDS
   static [GETTERS] = DEFAULT_GETTERS
 
   constructor (segments) {
@@ -223,6 +225,11 @@ export class Signal extends Function {
   async set (value) {
     if (arguments.length > 1) throw Error('Signal.set() expects a single argument')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
+    const idFields = getIdFieldsForSegments(this[SEGMENTS])
+    if (isIdFieldPath(this[SEGMENTS], idFields)) return
+    if (this[SEGMENTS].length === 2) {
+      value = normalizeIdFields(value, idFields, this[SEGMENTS][1])
+    }
     if (isPublicCollection(this[SEGMENTS][0])) {
       await _setPublicDoc(this[SEGMENTS], value)
     } else {
@@ -253,6 +260,8 @@ export class Signal extends Function {
   async push (value) {
     if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
     const segments = ensureArrayTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _arrayPush(segments, value)
@@ -261,6 +270,8 @@ export class Signal extends Function {
   async pop () {
     if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
     const segments = ensureArrayTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _arrayPop(segments)
@@ -269,6 +280,8 @@ export class Signal extends Function {
   async unshift (value) {
     if (arguments.length > 1) throw Error('Signal.unshift() expects a single argument')
     const segments = ensureArrayTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _arrayUnshift(segments, value)
@@ -277,6 +290,8 @@ export class Signal extends Function {
   async shift () {
     if (arguments.length > 0) throw Error('Signal.shift() does not accept any arguments')
     const segments = ensureArrayTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _arrayShift(segments)
@@ -289,6 +304,8 @@ export class Signal extends Function {
       throw Error('Signal.insert() expects a numeric index')
     }
     const segments = ensureArrayTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _arrayInsert(segments, index, values)
@@ -301,6 +318,8 @@ export class Signal extends Function {
       throw Error('Signal.remove() expects a numeric index')
     }
     const segments = ensureArrayTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _arrayRemove(segments, index, howMany)
@@ -313,6 +332,8 @@ export class Signal extends Function {
       throw Error('Signal.move() expects numeric from/to')
     }
     const segments = ensureArrayTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _arrayMove(segments, from, to, howMany)
@@ -325,6 +346,8 @@ export class Signal extends Function {
       throw Error('Signal.stringInsert() expects a numeric index')
     }
     const segments = ensureValueTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _stringInsertLocal(segments, index, text)
@@ -337,6 +360,8 @@ export class Signal extends Function {
       throw Error('Signal.stringRemove() expects a numeric index')
     }
     const segments = ensureValueTarget(this)
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
     return _stringRemoveLocal(segments, index, howMany)
@@ -351,6 +376,8 @@ export class Signal extends Function {
     if (typeof currentValue !== 'number') throw Error('Signal.increment() tried to increment a non-number value')
     const segments = this[SEGMENTS]
     if (segments.length === 0) throw Error('Can\'t increment the root signal data')
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return currentValue
     if (isPublicCollection(segments[0])) {
       await _incrementPublic(segments, value)
       return currentValue + value
@@ -362,13 +389,16 @@ export class Signal extends Function {
 
   async add (value) {
     if (arguments.length > 1) throw Error('Signal.add() expects a single argument')
-    let id
-    if (value.id) {
-      value = JSON.parse(JSON.stringify(value))
-      id = value.id
+    if (!value || typeof value !== 'object') throw Error('Signal.add() expects an object argument')
+    let id = value._id ?? value.id
+    id ??= uuid()
+    const idFields = getIdFieldsForSegments([this[SEGMENTS][0], id])
+    if (idFields.includes('_id')) value._id = id
+    if (idFields.includes('id')) {
+      value.id = id
+    } else if (value.id === id) {
       delete value.id
     }
-    id ??= uuid()
     await this[id].set(value)
     return id
   }
@@ -376,6 +406,8 @@ export class Signal extends Function {
   async del () {
     if (arguments.length > 0) throw Error('Signal.del() does not accept any arguments')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t delete the root signal data')
+    const idFields = getIdFieldsForSegments(this[SEGMENTS])
+    if (isIdFieldPath(this[SEGMENTS], idFields)) return
     if (isPublicCollection(this[SEGMENTS][0])) {
       if (this[SEGMENTS].length === 1) throw Error('Can\'t delete the whole collection')
       await _setPublicDoc(this[SEGMENTS], undefined, true)
