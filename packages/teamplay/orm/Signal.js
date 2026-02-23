@@ -1,5 +1,5 @@
 import { Signal } from './SignalBase.js'
-import SignalCompat from './SignalCompat.js'
+import SignalCompat from './Compat/SignalCompat.js'
 
 export {
   Signal,
