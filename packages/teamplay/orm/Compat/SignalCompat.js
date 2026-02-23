@@ -1,9 +1,9 @@
 import { raw } from '@nx-js/observer-util'
-import { Signal, GETTERS, DEFAULT_GETTERS, SEGMENTS, isPublicCollection } from './SignalBase.js'
-import { getRoot } from './Root.js'
-import { publicOnly } from './connection.js'
-import { IS_QUERY } from './Query.js'
-import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from './idFields.js'
+import { Signal, GETTERS, DEFAULT_GETTERS, SEGMENTS, isPublicCollection } from '../SignalBase.js'
+import { getRoot } from '../Root.js'
+import { publicOnly } from '../connection.js'
+import { IS_QUERY } from '../Query.js'
+import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from '../idFields.js'
 import {
   setReplace as _setReplace,
   setPublicDocReplace as _setPublicDocReplace,
@@ -26,11 +26,19 @@ import {
   stringRemoveLocal as _stringRemoveLocal,
   stringInsertPublic as _stringInsertPublic,
   stringRemovePublic as _stringRemovePublic
-} from './dataTree.js'
+} from '../dataTree.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
   static [GETTERS] = [...DEFAULT_GETTERS, 'getCopy', 'getDeepCopy']
+
+  path (subpath) {
+    if (arguments.length > 1) throw Error('Signal.path() expects a single argument')
+    if (arguments.length === 0) return super.path()
+    const segments = parseAtSubpath(subpath, arguments.length, 'Signal.path()')
+    if (segments.length === 0) return super.path()
+    return [...this[SEGMENTS], ...segments].join('.')
+  }
 
   at (subpath) {
     if (arguments.length > 1) throw Error('Signal.at() expects a single argument')

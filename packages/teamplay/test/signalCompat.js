@@ -5,7 +5,7 @@ import { $, sub, addModel, aggregation } from '../index.js'
 import { get as _get, del as _del } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import connect from '../connect/test.js'
-import SignalCompat from '../orm/SignalCompat.js'
+import SignalCompat from '../orm/Compat/SignalCompat.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
 
 const REGEX_POSITIVE_INTEGER = /^(?:0|[1-9]\d*)$/
@@ -105,6 +105,51 @@ describe('SignalCompat.at()', () => {
   it('returns current signal when called without arguments', () => {
     setup('optional')
     assert.equal($base.at(), $base)
+  })
+})
+
+describe('SignalCompat.path(subpath)', () => {
+  let basePath
+  let cleanupSegments
+  let $root
+  let $base
+
+  function setup (suffix) {
+    basePath = `_compatPath_${suffix}`
+    cleanupSegments = [[basePath]]
+    $root = createCompatRoot()
+    $base = $root[basePath]
+  }
+
+  afterEach(() => {
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+  })
+
+  it('returns nested path string without creating a signal', () => {
+    setup('nested')
+    assert.equal($base.path('a.b'), `${basePath}.a.b`)
+    assert.equal($base.a.path('b'), `${basePath}.a.b`)
+  })
+
+  it('supports numeric subpath segment', () => {
+    setup('array')
+    assert.equal($base.path(0), `${basePath}.0`)
+    assert.equal($base.items.path(3), `${basePath}.items.3`)
+  })
+
+  it('returns base path for empty subpath', () => {
+    setup('empty')
+    assert.equal($base.path(''), basePath)
+    assert.equal($base.path('.'), basePath)
+    assert.equal($base.path('...'), basePath)
+  })
+
+  it('throws on invalid arguments', () => {
+    setup('args')
+    assert.throws(() => $base.path('a', 'b'), /expects a single argument/)
+    assert.throws(() => $base.path(1.5), /expects a string or integer argument/)
+    assert.throws(() => $base.path(null), /expects a string or integer argument/)
   })
 })
 
