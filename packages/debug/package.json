@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/debug",
-  "version": "0.4.0-alpha.0",
+  "version": "0.4.0-alpha.1",
   "type": "module",
   "description": "Debugging helpers",
   "main": "index.js",
