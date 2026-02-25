@@ -67,6 +67,8 @@ This draft **only covers**:
 - Signal-level aliasing (one signal proxies another).
 - No `refList`, `refExtra`, `refMap`.
 - No automatic path-patching for list inserts/moves.
+- Reads (`get`/`peek`) are forwarded to the target while ref is active.
+- `removeRef` snapshots the current target value into the alias.
 
 It should be enough for current LMS usages.
 
@@ -94,9 +96,7 @@ const toReaction = observe(() => {
   const value = $to.get()
   trackDeep(value)
   setDiffDeepBypassRef($from, deepCopy(value))
-}, { lazy: true })
-
-toReaction()
+})
 ```
 
 Why deep copy?
@@ -156,10 +156,7 @@ function createRefLink ($from, $to) {
     const value = $to.get()
     trackDeep(value)
     setDiffDeepBypassRef($from, deepCopy(value))
-  }, { lazy: true })
-
-  // Prime sync and start tracking.
-  toReaction()
+  })
   return () => {
     unobserve(toReaction)
   }

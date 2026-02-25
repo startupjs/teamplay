@@ -1,8 +1,18 @@
-import { raw } from '@nx-js/observer-util'
-import { Signal, GETTERS, DEFAULT_GETTERS, SEGMENTS, isPublicCollection } from '../SignalBase.js'
+import { raw, observe, unobserve } from '@nx-js/observer-util'
+import {
+  Signal,
+  GETTERS,
+  DEFAULT_GETTERS,
+  SEGMENTS,
+  isPublicCollection,
+  isPublicCollectionSignal,
+  isPublicDocumentSignal
+} from '../SignalBase.js'
 import { getRoot } from '../Root.js'
-import { publicOnly } from '../connection.js'
-import { IS_QUERY } from '../Query.js'
+import { publicOnly, fetchOnly, setFetchOnly } from '../connection.js'
+import { docSubscriptions } from '../Doc.js'
+import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
+import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
 import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from '../idFields.js'
 import {
   setReplace as _setReplace,
@@ -27,6 +37,9 @@ import {
   stringInsertPublic as _stringInsertPublic,
   stringRemovePublic as _stringRemovePublic
 } from '../dataTree.js'
+import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
+import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
+import { setRefLink, removeRefLink } from './refRegistry.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -65,7 +78,60 @@ class SignalCompat extends Signal {
     return deepCopy(value)
   }
 
+  query (collection, params, options) {
+    if (arguments.length < 1 || arguments.length > 3) throw Error('Signal.query() expects one to three arguments')
+    if (typeof collection !== 'string') throw Error('Signal.query() expects collection to be a string')
+    const normalized = normalizeQueryParams(collection, params)
+    if (isAggregationParams(normalized)) {
+      return getAggregationSignal(collection, normalized, options)
+    }
+    return getQuerySignal(collection, normalized, options)
+  }
+
+  subscribe (...items) {
+    if (items.length > 0) return subscribeMany(items, 'subscribe')
+    return subscribeSelf(this)
+  }
+
+  unsubscribe (...items) {
+    if (items.length > 0) return subscribeMany(items, 'unsubscribe')
+    return unsubscribeSelf(this)
+  }
+
+  fetch (...items) {
+    return withFetchOnly(() => {
+      if (items.length > 0) return subscribeMany(items, 'subscribe')
+      return subscribeSelf(this)
+    })
+  }
+
+  unfetch (...items) {
+    if (items.length > 0) return subscribeMany(items, 'unsubscribe')
+    return unsubscribeSelf(this)
+  }
+
+  getExtra () {
+    if (arguments.length > 0) throw Error('Signal.getExtra() does not accept any arguments')
+    if (this[IS_AGGREGATION]) return this.get()
+    if (this[IS_QUERY]) return this.extra.get()
+    return undefined
+  }
+
+  get () {
+    const $target = resolveRefSignal(this)
+    if ($target !== this) return Signal.prototype.get.apply($target, arguments)
+    return Signal.prototype.get.apply(this, arguments)
+  }
+
+  peek () {
+    const $target = resolveRefSignal(this)
+    if ($target !== this) return Signal.prototype.peek.apply($target, arguments)
+    return Signal.prototype.peek.apply(this, arguments)
+  }
+
   async set (path, value) {
+    const forwarded = forwardRef(this, 'set', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.set() expects one or two arguments')
     let segments = []
     if (arguments.length === 2) {
@@ -74,10 +140,12 @@ class SignalCompat extends Signal {
       value = path
     }
     const $target = resolveSignal(this, segments)
-    return setReplaceOnSignal($target, value)
+    return Signal.prototype.set.call($target, value)
   }
 
   async setNull (path, value) {
+    const forwarded = forwardRef(this, 'setNull', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.setNull() expects one or two arguments')
     let segments = []
     if (arguments.length === 2) {
@@ -91,6 +159,8 @@ class SignalCompat extends Signal {
   }
 
   async setDiffDeep (path, value) {
+    const forwarded = forwardRef(this, 'setDiffDeep', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.setDiffDeep() expects one or two arguments')
     let segments = []
     if (arguments.length === 2) {
@@ -102,7 +172,19 @@ class SignalCompat extends Signal {
     return Signal.prototype.set.call($target, value)
   }
 
+  async setDiff (path, value) {
+    const forwarded = forwardRef(this, 'setDiff', arguments)
+    if (forwarded) return forwarded
+    if (arguments.length > 2) throw Error('Signal.setDiff() expects one or two arguments')
+    if (arguments.length === 1) {
+      return Signal.prototype.set.call(this, path)
+    }
+    return this.set(path, value)
+  }
+
   async setEach (path, object) {
+    const forwarded = forwardRef(this, 'setEach', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.setEach() expects one or two arguments')
     let segments = []
     if (arguments.length === 2) {
@@ -115,6 +197,8 @@ class SignalCompat extends Signal {
   }
 
   async del (path) {
+    const forwarded = forwardRef(this, 'del', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 1) throw Error('Signal.del() expects a single argument')
     const segments = parseAtSubpath(path, arguments.length, 'Signal.del()')
     const $target = resolveSignal(this, segments)
@@ -122,6 +206,8 @@ class SignalCompat extends Signal {
   }
 
   async increment (path, byNumber) {
+    const forwarded = forwardRef(this, 'increment', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.increment() expects one or two arguments')
     let segments = []
     if (arguments.length === 2) {
@@ -138,6 +224,8 @@ class SignalCompat extends Signal {
   }
 
   async push (path, value) {
+    const forwarded = forwardRef(this, 'push', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.push() expects one or two arguments')
     let segments = []
     if (arguments.length === 2) {
@@ -150,6 +238,8 @@ class SignalCompat extends Signal {
   }
 
   async unshift (path, value) {
+    const forwarded = forwardRef(this, 'unshift', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.unshift() expects one or two arguments')
     let segments = []
     if (arguments.length === 2) {
@@ -162,6 +252,8 @@ class SignalCompat extends Signal {
   }
 
   async insert (path, index, values) {
+    const forwarded = forwardRef(this, 'insert', arguments)
+    if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for insert')
     if (arguments.length > 3) throw Error('Signal.insert() expects two or three arguments')
     let segments = []
@@ -181,6 +273,8 @@ class SignalCompat extends Signal {
   }
 
   async pop (path) {
+    const forwarded = forwardRef(this, 'pop', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 1) throw Error('Signal.pop() expects a single argument')
     const segments = parseAtSubpath(path, arguments.length, 'Signal.pop()')
     const $target = resolveSignal(this, segments)
@@ -188,6 +282,8 @@ class SignalCompat extends Signal {
   }
 
   async shift (path) {
+    const forwarded = forwardRef(this, 'shift', arguments)
+    if (forwarded) return forwarded
     if (arguments.length > 1) throw Error('Signal.shift() expects a single argument')
     const segments = parseAtSubpath(path, arguments.length, 'Signal.shift()')
     const $target = resolveSignal(this, segments)
@@ -195,6 +291,8 @@ class SignalCompat extends Signal {
   }
 
   async remove (path, index, howMany) {
+    const forwarded = forwardRef(this, 'remove', arguments)
+    if (forwarded) return forwarded
     if (arguments.length === 0) {
       const segments = this[SEGMENTS].slice()
       if (!segments.length || typeof segments[segments.length - 1] !== 'number') {
@@ -238,6 +336,8 @@ class SignalCompat extends Signal {
   }
 
   async move (path, from, to, howMany) {
+    const forwarded = forwardRef(this, 'move', arguments)
+    if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for move')
     if (arguments.length > 4) throw Error('Signal.move() expects two to four arguments')
     let segments = []
@@ -268,6 +368,8 @@ class SignalCompat extends Signal {
   }
 
   async stringInsert (path, index, text) {
+    const forwarded = forwardRef(this, 'stringInsert', arguments)
+    if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for stringInsert')
     if (arguments.length > 3) throw Error('Signal.stringInsert() expects two or three arguments')
     let segments = []
@@ -287,6 +389,8 @@ class SignalCompat extends Signal {
   }
 
   async stringRemove (path, index, howMany) {
+    const forwarded = forwardRef(this, 'stringRemove', arguments)
+    if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for stringRemove')
     if (arguments.length > 3) throw Error('Signal.stringRemove() expects two or three arguments')
     let segments = []
@@ -306,6 +410,90 @@ class SignalCompat extends Signal {
     return stringRemoveOnSignal($target, index, howMany)
   }
 
+  async assign (value) {
+    const forwarded = forwardRef(this, 'assign', arguments)
+    if (forwarded) return forwarded
+    if (arguments.length > 1) throw Error('Signal.assign() expects a single argument')
+    return Signal.prototype.assign.call(this, value)
+  }
+
+  on (eventName, pattern, handler) {
+    if (arguments.length < 2) throw Error('Signal.on() expects at least two arguments')
+    if (eventName === 'change' || eventName === 'all') {
+      if (typeof pattern === 'function') {
+        return onCustomEvent(eventName, pattern)
+      }
+      if (typeof handler !== 'function') throw Error('Signal.on() expects a handler function')
+      const normalized = normalizePattern(pattern, 'Signal.on()')
+      return onModelEvent(eventName, normalized, handler)
+    }
+    if (typeof pattern !== 'function') throw Error('Signal.on() expects a handler function')
+    return onCustomEvent(eventName, pattern)
+  }
+
+  removeListener (eventName, handler) {
+    if (arguments.length !== 2) throw Error('Signal.removeListener() expects two arguments')
+    if (eventName === 'change' || eventName === 'all') {
+      return removeModelListener(eventName, handler)
+    }
+    return removeCustomEventListener(eventName, handler)
+  }
+
+  ref (path, target, options) {
+    if (arguments.length > 3) throw Error('Signal.ref() expects one to three arguments')
+    let $from = this
+    let $to
+    if (arguments.length === 1) {
+      $to = resolveRefTarget(this, path, 'Signal.ref()')
+    } else if (arguments.length === 2) {
+      if (isSignalLike(target) || typeof target === 'string') {
+        const segments = parseAtSubpath(path, 1, 'Signal.ref()')
+        $from = resolveSignal(this, segments)
+        $to = resolveRefTarget(this, target, 'Signal.ref()')
+      } else {
+        $to = resolveRefTarget(this, path, 'Signal.ref()')
+        options = target
+      }
+    } else {
+      const segments = parseAtSubpath(path, 1, 'Signal.ref()')
+      $from = resolveSignal(this, segments)
+      $to = resolveRefTarget(this, target, 'Signal.ref()')
+    }
+    if (!$to) throw Error('Signal.ref() expects a target path or signal')
+    if ($from === $to) return $from
+    const store = getRefStore($from)
+    const fromPath = $from.path()
+    const existing = store.get(fromPath)
+    if (existing) existing.stop()
+    const stop = createRefLink($from, $to, options)
+    store.set(fromPath, { stop })
+    $from[REF_TARGET] = $to
+    setRefLink(fromPath, $to.path())
+    return $from
+  }
+
+  removeRef (path) {
+    if (arguments.length > 1) throw Error('Signal.removeRef() expects a single argument')
+    let $from = this
+    if (arguments.length === 1) {
+      const segments = parseAtSubpath(path, 1, 'Signal.removeRef()')
+      $from = resolveSignal(this, segments)
+    }
+    const store = getRefStore($from)
+    const fromPath = $from.path()
+    const existing = store.get(fromPath)
+    if (existing) {
+      existing.stop()
+      store.delete(fromPath)
+    }
+    removeRefLink(fromPath)
+    const $target = resolveRefSignal($from)
+    if ($target !== $from) {
+      setDiffDeepBypassRef($from, deepCopy($target.get()))
+    }
+    if ($from[REF_TARGET]) delete $from[REF_TARGET]
+  }
+
   scope (path) {
     if (arguments.length > 1) throw Error('Signal.scope() expects a single argument')
     const $root = getRoot(this) || this
@@ -319,6 +507,76 @@ class SignalCompat extends Signal {
     }
     return $cursor
   }
+}
+
+const REFS = Symbol('compat refs')
+const REF_TARGET = Symbol('compat ref target')
+
+function getRefStore ($signal) {
+  const $root = getRoot($signal) || $signal
+  $root[REFS] ??= new Map()
+  return $root[REFS]
+}
+
+function createRefLink ($from, $to) {
+  const toReaction = observe(() => {
+    const value = $to.get()
+    trackDeep(value)
+    setDiffDeepBypassRef($from, deepCopy(value))
+  })
+  return () => {
+    unobserve(toReaction)
+  }
+}
+
+function trackDeep (value, seen = new Set()) {
+  if (!value || typeof value !== 'object') return
+  if (seen.has(value)) return
+  seen.add(value)
+  if (Array.isArray(value)) {
+    for (const item of value) trackDeep(item, seen)
+  } else {
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        trackDeep(value[key], seen)
+      }
+    }
+  }
+}
+
+function resolveRefSignal ($signal) {
+  let current = $signal
+  const seen = new Set()
+  while (current && current[REF_TARGET]) {
+    if (seen.has(current)) break
+    seen.add(current)
+    current = current[REF_TARGET]
+  }
+  return current
+}
+
+function forwardRef ($signal, methodName, args) {
+  const $target = resolveRefSignal($signal)
+  if ($target === $signal) return null
+  return SignalCompat.prototype[methodName].apply($target, args)
+}
+
+function setDiffDeepBypassRef ($signal, value) {
+  return Signal.prototype.set.call($signal, value)
+}
+
+function isSignalLike (value) {
+  return value && typeof value.path === 'function' && typeof value.get === 'function'
+}
+
+function resolveRefTarget ($signal, target, methodName) {
+  if (isSignalLike(target)) return target
+  if (typeof target === 'string') {
+    const segments = parseAtSubpath(target, 1, methodName)
+    const $root = getRoot($signal) || $signal
+    return resolveSignal($root, segments)
+  }
+  return undefined
 }
 
 function parseAtSubpath (subpath, argsLength, methodName) {
@@ -486,6 +744,96 @@ function deepCopy (value) {
     } catch {}
   }
   return racerDeepCopy(rawValue)
+}
+
+function normalizeQueryParams (collection, params) {
+  if (params == null) {
+    console.warn(`
+      [Signal.query] Query is undefined. Got:
+        ${collection}, ${params}
+      Falling back to {_id: '__NON_EXISTENT__'} query to prevent critical crash.
+      You should prevent situations when the \`query\` is undefined.
+    `)
+    return { _id: '__NON_EXISTENT__' }
+  }
+  if (Array.isArray(params)) {
+    return { _id: { $in: params.slice() } }
+  }
+  if (typeof params === 'string' || typeof params === 'number') {
+    return { _id: params }
+  }
+  if (typeof params !== 'object') {
+    throw Error(`Signal.query() expects params to be an object, array, or id. Got: ${params}`)
+  }
+  return params
+}
+
+function isAggregationParams (params) {
+  return Boolean(params?.$aggregate || params?.$aggregationName)
+}
+
+function withFetchOnly (fn) {
+  const prevFetchOnly = fetchOnly
+  setFetchOnly(true)
+  try {
+    return fn()
+  } finally {
+    setFetchOnly(prevFetchOnly)
+  }
+}
+
+function subscribeMany (items, action) {
+  const targets = flattenItems(items)
+  const promises = []
+  for (const target of targets) {
+    if (!target) continue
+    if (!(target instanceof Signal)) {
+      throw Error(`Signal.${action}() accepts only Signal instances. Got: ${target}`)
+    }
+    const result = action === 'subscribe'
+      ? subscribeSelf(target)
+      : unsubscribeSelf(target)
+    if (result?.then) promises.push(result)
+  }
+  if (promises.length) return Promise.all(promises)
+}
+
+function flattenItems (items, result = []) {
+  for (const item of items) {
+    if (!item) continue
+    if (Array.isArray(item)) {
+      flattenItems(item, result)
+    } else {
+      result.push(item)
+    }
+  }
+  return result
+}
+
+function subscribeSelf ($signal) {
+  if ($signal[IS_QUERY]) return querySubscriptions.subscribe($signal)
+  if ($signal[IS_AGGREGATION]) return aggregationSubscriptions.subscribe($signal)
+  if (isPublicDocumentSignal($signal)) return docSubscriptions.subscribe($signal)
+  if (isPublicCollectionSignal($signal)) {
+    throw Error('Signal.subscribe() expects a query signal. Use .query() for collections.')
+  }
+  if ($signal[SEGMENTS].length === 0) {
+    throw Error('Signal.subscribe() cannot be called on the root signal')
+  }
+  throw Error('Signal.subscribe() expects a document or query signal')
+}
+
+function unsubscribeSelf ($signal) {
+  if ($signal[IS_QUERY]) return querySubscriptions.unsubscribe($signal)
+  if ($signal[IS_AGGREGATION]) return aggregationSubscriptions.unsubscribe($signal)
+  if (isPublicDocumentSignal($signal)) return docSubscriptions.unsubscribe($signal)
+  if (isPublicCollectionSignal($signal)) {
+    throw Error('Signal.unsubscribe() expects a query signal. Use .query() for collections.')
+  }
+  if ($signal[SEGMENTS].length === 0) {
+    throw Error('Signal.unsubscribe() cannot be called on the root signal')
+  }
+  throw Error('Signal.unsubscribe() expects a document or query signal')
 }
 
 // Racer-style deep copy:

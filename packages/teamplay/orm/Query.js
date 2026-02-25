@@ -2,6 +2,7 @@ import { raw } from '@nx-js/observer-util'
 import { get as _get, set as _set, del as _del } from './dataTree.js'
 import getSignal from './getSignal.js'
 import { getConnection, fetchOnly } from './connection.js'
+import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
@@ -111,9 +112,27 @@ export class Query {
         this.docSignals.add($doc)
       }
       _get([QUERIES, this.hash, 'ids']).splice(index, 0, ...ids)
+
+      if (isModelEventsEnabled()) {
+        const docsPath = [QUERIES, this.hash, 'docs']
+        const idsPath = [QUERIES, this.hash, 'ids']
+        for (let i = 0; i < newDocs.length; i++) {
+          emitModelChange(docsPath.concat(index + i), newDocs[i], undefined, {
+            op: 'queryInsert',
+            index: index + i
+          })
+        }
+        for (let i = 0; i < ids.length; i++) {
+          emitModelChange(idsPath.concat(index + i), ids[i], undefined, {
+            op: 'queryInsert',
+            index: index + i
+          })
+        }
+      }
     })
     this.shareQuery.on('move', (shareDocs, from, to) => {
       const docs = _get([QUERIES, this.hash, 'docs'])
+      const prevDocs = isModelEventsEnabled() ? docs.slice() : undefined
       docs.splice(from, shareDocs.length)
       docs.splice(to, 0, ...shareDocs.map(doc => {
         const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
@@ -122,11 +141,28 @@ export class Query {
       }))
 
       const ids = _get([QUERIES, this.hash, 'ids'])
+      const prevIds = isModelEventsEnabled() ? ids.slice() : undefined
       ids.splice(from, shareDocs.length)
       ids.splice(to, 0, ...shareDocs.map(doc => doc.id))
+
+      if (isModelEventsEnabled()) {
+        emitModelChange([QUERIES, this.hash, 'docs'], docs, prevDocs, {
+          op: 'queryMove',
+          from,
+          to,
+          howMany: shareDocs.length
+        })
+        emitModelChange([QUERIES, this.hash, 'ids'], ids, prevIds, {
+          op: 'queryMove',
+          from,
+          to,
+          howMany: shareDocs.length
+        })
+      }
     })
     this.shareQuery.on('remove', (shareDocs, index) => {
       const docs = _get([QUERIES, this.hash, 'docs'])
+      const removedDocs = isModelEventsEnabled() ? docs.slice(index, index + shareDocs.length) : undefined
       docs.splice(index, shareDocs.length)
 
       const docIds = shareDocs.map(doc => doc.id)
@@ -135,7 +171,25 @@ export class Query {
         this.docSignals.delete($doc)
       }
       const ids = _get([QUERIES, this.hash, 'ids'])
+      const removedIds = isModelEventsEnabled() ? ids.slice(index, index + docIds.length) : undefined
       ids.splice(index, docIds.length)
+
+      if (isModelEventsEnabled()) {
+        const docsPath = [QUERIES, this.hash, 'docs']
+        const idsPath = [QUERIES, this.hash, 'ids']
+        for (let i = 0; i < removedDocs.length; i++) {
+          emitModelChange(docsPath.concat(index + i), undefined, removedDocs[i], {
+            op: 'queryRemove',
+            index: index + i
+          })
+        }
+        for (let i = 0; i < removedIds.length; i++) {
+          emitModelChange(idsPath.concat(index + i), undefined, removedIds[i], {
+            op: 'queryRemove',
+            index: index + i
+          })
+        }
+      }
     })
     this.shareQuery.on('extra', extra => {
       extra = raw(extra)

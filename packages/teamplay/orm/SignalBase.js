@@ -51,7 +51,7 @@ export const SEGMENTS = Symbol('path segments targeting the particular node in t
 export const ARRAY_METHOD = Symbol('run array method on the signal')
 export const GET = Symbol('get the value of the signal - either observed or raw')
 export const GETTERS = Symbol('get the list of this signal\'s getters')
-export const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds', 'getCollection']
+export const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds', 'getExtra', 'getCollection']
 
 export class Signal extends Function {
   static ID_FIELDS = DEFAULT_ID_FIELDS
@@ -96,6 +96,13 @@ export class Signal extends Function {
 
   id () {
     return uuid()
+  }
+
+  batch (fn) {
+    if (arguments.length > 1) throw Error('Signal.batch() expects a single argument')
+    if (fn == null) return
+    if (typeof fn !== 'function') throw Error('Signal.batch() expects a function argument')
+    return fn()
   }
 
   [GET] (method) {
@@ -449,7 +456,7 @@ export const regularBindings = {
   }
 }
 
-const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds']
+const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds', 'getExtra', 'subscribe', 'unsubscribe', 'fetch', 'unfetch']
 
 // dot syntax always returns a child signal even if such method or property exists.
 // The method is only called when the signal is explicitly called as a function,

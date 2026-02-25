@@ -1,4 +1,11 @@
 import { useLayoutEffect } from 'react'
+import {
+  isModelEventsEnabled,
+  normalizePattern,
+  onModelEvent,
+  removeModelListener,
+  __resetModelEventsForTests
+} from './modelEvents.js'
 
 const listeners = new Map()
 
@@ -24,13 +31,33 @@ export function removeListener (eventName, handler) {
   if (!subs.size) listeners.delete(eventName)
 }
 
-export function useOn (eventName, handler, deps) {
+export function useOn (eventName, patternOrHandler, handler, deps) {
+  const isModelEvent = eventName === 'change' || eventName === 'all'
+  const isCustom = !isModelEvent || typeof patternOrHandler === 'function'
+  if (isCustom) {
+    if (typeof patternOrHandler !== 'function') throw Error('useOn() expects a handler function')
+  } else {
+    if (typeof handler !== 'function') throw Error('useOn() expects a handler function')
+  }
+  const normalizedPattern = isCustom ? null : normalizePatternMaybe(patternOrHandler)
+
   useLayoutEffect(() => {
-    const listener = on(eventName, handler)
-    return () => {
-      removeListener(eventName, listener)
+    if (isCustom) {
+      const listener = on(eventName, patternOrHandler)
+      return () => {
+        removeListener(eventName, listener)
+      }
     }
-  }, [eventName, handler, deps])
+    if (normalizedPattern == null) {
+      handler(patternOrHandler)
+      return
+    }
+    if (!isModelEventsEnabled()) return
+    const listener = onModelEvent(eventName, normalizedPattern, handler)
+    return () => {
+      removeModelListener(eventName, listener)
+    }
+  }, [eventName, patternOrHandler, handler, deps, normalizedPattern, isCustom])
 }
 
 export function useEmit () {
@@ -39,4 +66,13 @@ export function useEmit () {
 
 export function __resetEventsForTests () {
   listeners.clear()
+  __resetModelEventsForTests()
+}
+
+function normalizePatternMaybe (pattern) {
+  try {
+    return normalizePattern(pattern)
+  } catch {
+    return null
+  }
 }

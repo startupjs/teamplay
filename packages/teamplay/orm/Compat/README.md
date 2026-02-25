@@ -108,6 +108,126 @@ Resolve a path from root, ignoring the current signal path.
 $.users.user1.scope('users.user2')
 ```
 
+### ref(target) / ref(subpath, target)
+
+Creates a lightweight alias between signals (minimal Racer-style ref).
+Mutations on the alias are forwarded to the target. The alias mirrors target updates.
+Reads (`get`/`peek`) are forwarded to the target while the ref is active.
+
+```js
+const $local = $.local.value
+const $user = $.users.user1
+$local.ref($user)
+
+const $session = $.session
+$session.ref('tutoringSession', $user)
+```
+
+### removeRef(path?)
+
+Stops syncing and forwarding for a ref.
+
+```js
+$local.removeRef()
+$session.removeRef('tutoringSession')
+```
+
+### ref() example (what equals / what doesn’t)
+
+```js
+const $user = $.users.u1
+const $alias = $.session.userAlias
+
+await $user.set({ name: 'Ann', role: 'student' })
+
+// Without ref
+$alias.get()                       // undefined
+$alias.get() === $user.get()       // false
+
+// With ref
+$alias.ref($user)
+$alias.get()                       // { name: 'Ann', role: 'student' }
+$alias.get() === $user.get()       // true (by value)
+$alias === $user                   // false (different signals)
+$alias.path() === $user.path()     // false
+
+// Writes via alias update target
+await $alias.set({ name: 'Bob' })
+$user.get()                        // { name: 'Bob' }
+$alias.get()                       // { name: 'Bob' }
+
+// removeRef freezes alias with last value
+$alias.removeRef()
+await $user.set({ name: 'Kate' })
+$user.get()                        // { name: 'Kate' }
+$alias.get()                       // { name: 'Bob' }
+$alias.get() === $user.get()       // false
+```
+
+**Limitations vs Racer**
+- No `refList`, `refExtra`, `refMap`.
+- No automatic list index patching on insert/remove/move.
+- No support for query/aggregation refs.
+- No event emissions specific to refs.
+- No support for racer-style ref meta/options beyond the basic signature.
+
+### query(collection, query, options?)
+
+Creates a query signal **without** subscribing. Supports shorthand params:
+- array of ids → `{ _id: { $in: ids } }`
+- single id → `{ _id: id }`
+
+If `query` is `undefined`, a safe non-existent query is used.
+If `query` contains `$aggregate` or `$aggregationName`, an aggregation signal is returned.
+
+```js
+const $$active = $.query('users', { active: true })
+const $$byIds = $.query('users', ['u1', 'u2'])
+const $$single = $.query('users', 'u1')
+const $$agg = $.query('stores', { $aggregate: [{ $match: { active: true } }] })
+```
+
+### subscribe(...signals) / unsubscribe(...signals)
+
+Subscribes or unsubscribes doc/query/aggregation signals.
+- If called on a signal with **no args**, it subscribes/unsubscribes **that** signal.
+- If passed arguments, it treats them as a list (arrays are flattened, falsy values ignored).
+
+```js
+const $$active = $.query('users', { active: true })
+await $$active.subscribe()
+
+const $user = $.users.user1
+await $.subscribe($user, $$active)
+$.unsubscribe($user, $$active)
+```
+
+### fetch(...signals) / unfetch(...signals)
+
+Fetch-only variants of `subscribe` / `unsubscribe`. They load data once without a live subscription.
+
+```js
+const $$active = $.query('users', { active: true })
+await $$active.fetch()
+$$active.unfetch()
+```
+
+### getExtra()
+
+Returns the query/aggregation `extra` payload:
+- Query signals → `extra` (e.g. `$count`, server `extra`)
+- Aggregation signals → the aggregated array (same as `.get()`)
+
+```js
+const $$count = $.query('users', { active: true, $count: true })
+await $$count.subscribe()
+const count = $$count.getExtra()
+
+const $$agg = $.query('stores', { $aggregate: [{ $match: { active: true } }] })
+await $$agg.subscribe()
+const rows = $$agg.getExtra()
+```
+
 ### get()
 
 Returns the current value and tracks reactivity.
@@ -208,6 +328,14 @@ Applies a diff-deep update (uses base `Signal.set` internally).
 
 ```js
 $.users.user1.setDiffDeep({ profile: { name: 'Alice' } })
+```
+
+### setDiff(path?, value)
+
+Alias for `set()` in compat. Accepts the same arguments and semantics.
+
+```js
+$.users.user1.setDiff({ profile: { name: 'Alice' } })
 ```
 
 ### setEach(path?, object)
@@ -350,18 +478,26 @@ General notes:
 - Async hooks (`useAsyncDoc`, `useAsyncQuery`) never throw; they return `undefined` until ready.
 - Batch hooks are **aliases**, no batching is implemented.
 
-### Events (Custom Only)
+### Events
 
-#### `emit`
+Compatibility mode supports **two layers** of events:
+
+- **Custom events** (manual `emit`)
+- **Model events** (`change` / `all` with path patterns)
+
+Model events are **only active in compatibility mode**.
+
+#### Custom Events
+
+##### `emit`
 
 ```js
 emit('Voting.agree', payload)
 ```
 
-Emits a custom event. This simplified compat version only supports custom events
-(no `change`/`all` model events yet).
+Emits a custom event.
 
-#### `useOn`
+##### `useOn` (custom)
 
 ```js
 useOn('Voting.agree', () => {
@@ -371,7 +507,7 @@ useOn('Voting.agree', () => {
 
 Subscribes to a custom event and cleans up on unmount.
 
-#### `useEmit`
+##### `useEmit`
 
 ```js
 const emit = useEmit()
@@ -379,6 +515,63 @@ emit('url', '/home')
 ```
 
 Returns a stable `emit` function.
+
+#### Model Events (compat only)
+
+Model events mirror Racer-style subscriptions and are emitted on any data mutation.
+Supported event names:
+
+- `change` — basic change event
+- `all` — same as `change`, but includes event name
+
+```js
+useOn('change', 'tenants.${id}.features.*', (featureKey, value, prevValue, meta) => {
+  // featureKey = 'someFeature'
+})
+
+useOn('all', 'stages.*', (stageId, eventName, value, prevValue, meta) => {
+  // eventName = 'change'
+})
+```
+
+Pattern rules:
+- `*` matches **one segment** and is passed to the handler.
+- `**` matches **any suffix** and is passed as a dot-string.
+
+```js
+useOn('all', 'docs.**', (path, eventName, value) => {
+  // path = '123.title' (suffix after "docs")
+})
+```
+
+When there are no wildcards in the pattern, the handler signature is:
+
+```
+(value, prevValue, meta)
+```
+
+When wildcards exist, their captures are **prepended**:
+
+```
+(* captures..., value, prevValue, meta)
+```
+
+For `all`, `eventName` is inserted after captures:
+
+```
+(* captures..., eventName, value, prevValue, meta)
+```
+
+Model events can also be subscribed using `SignalCompat` directly:
+
+```js
+$root.on('change', 'docs.*.status', (docId, value) => {})
+$root.removeListener('change', handler)
+```
+
+Limitations vs Racer:
+- Only `change`/`all` events are supported (no `insert`/`remove`/`move` event names).
+- `eventName` for `all` is always `'change'` in this compat layer.
 
 ### Model Hook
 

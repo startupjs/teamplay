@@ -4,11 +4,22 @@ import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.js'
 import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, stripIdFields } from './idFields.js'
+import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 
 export const dataTreeRaw = {}
 const dataTree = observable(dataTreeRaw)
+
+function shouldEmitModelEvents (tree) {
+  return tree === dataTree && isModelEventsEnabled()
+}
+
+function emitModelEvent (segments, prevValue, meta, tree = dataTree) {
+  if (!shouldEmitModelEvents(tree)) return
+  const value = getRaw(segments)
+  emitModelChange(segments, value, prevValue, meta)
+}
 
 export function get (segments, tree = dataTree) {
   let dataNode = tree
@@ -24,6 +35,8 @@ export function getRaw (segments) {
 }
 
 export function set (segments, value, tree = dataTree) {
+  const shouldEmit = shouldEmitModelEvents(tree)
+  const prevValue = shouldEmit ? getRaw(segments) : undefined
   let dataNode = tree
   let dataNodeRaw = raw(tree)
   for (let i = 0; i < segments.length - 1; i++) {
@@ -62,6 +75,7 @@ export function set (segments, value, tree = dataTree) {
       // since JSON does not have `undefined` values and replaces them with `null`.
       delete dataNode[key]
     }
+    emitModelEvent(segments, prevValue, { op: 'set' }, tree)
     return
   }
   // instead of just setting the new value `dataNode[key] = value` we want
@@ -70,10 +84,13 @@ export function set (segments, value, tree = dataTree) {
   // handle case when the value couldn't be updated in place and is completely new
   // (we just set it to this value)
   if (dataNode[key] !== newValue) dataNode[key] = newValue
+  emitModelEvent(segments, prevValue, { op: 'set' }, tree)
 }
 
 // Like set(), but always assigns the value without equality checks or delete-on-null behavior
 export function setReplace (segments, value, tree = dataTree) {
+  const shouldEmit = shouldEmitModelEvents(tree)
+  const prevValue = shouldEmit ? getRaw(segments) : undefined
   let dataNode = tree
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
@@ -86,9 +103,12 @@ export function setReplace (segments, value, tree = dataTree) {
   }
   const key = segments[segments.length - 1]
   dataNode[key] = value
+  emitModelEvent(segments, prevValue, { op: 'setReplace' }, tree)
 }
 
 export function del (segments, tree = dataTree) {
+  const shouldEmit = shouldEmitModelEvents(tree)
+  const prevValue = shouldEmit ? getRaw(segments) : undefined
   let dataNode = tree
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
@@ -97,11 +117,16 @@ export function del (segments, tree = dataTree) {
   }
   if (Array.isArray(dataNode)) {
     // remove the element from the array
-    dataNode.splice(segments[segments.length - 1], 1)
+    const index = segments[segments.length - 1]
+    if (index >= dataNode.length) return
+    dataNode.splice(index, 1)
   } else {
     // remove the property from the object
-    delete dataNode[segments[segments.length - 1]]
+    const key = segments[segments.length - 1]
+    if (!Object.prototype.hasOwnProperty.call(dataNode, key)) return
+    delete dataNode[key]
   }
+  emitModelEvent(segments, prevValue, { op: 'del' }, tree)
 }
 
 export async function setPublicDoc (segments, value, deleteValue = false) {
@@ -265,45 +290,64 @@ function getArrayNode (segments, tree = dataTree, create = true) {
 
 export function arrayPush (segments, value, tree = dataTree) {
   const arr = getArrayNode(segments, tree, true)
-  return arr.push(value)
+  const index = arr.length
+  const result = arr.push(value)
+  emitModelEvent(segments.concat(index), undefined, { op: 'arrayPush', index }, tree)
+  return result
 }
 
 export function arrayUnshift (segments, value, tree = dataTree) {
   const arr = getArrayNode(segments, tree, true)
-  return arr.unshift(value)
+  const result = arr.unshift(value)
+  emitModelEvent(segments.concat(0), undefined, { op: 'arrayUnshift', index: 0 }, tree)
+  return result
 }
 
 export function arrayInsert (segments, index, values, tree = dataTree) {
   const arr = getArrayNode(segments, tree, true)
   const inserted = Array.isArray(values) ? values : [values]
   arr.splice(index, 0, ...inserted)
+  for (let i = 0; i < inserted.length; i++) {
+    emitModelEvent(segments.concat(index + i), undefined, { op: 'arrayInsert', index: index + i }, tree)
+  }
   return arr.length
 }
 
 export function arrayPop (segments, tree = dataTree) {
   const arr = getArrayNode(segments, tree, true)
   if (!arr.length) return
-  return arr.pop()
+  const index = arr.length - 1
+  const previous = arr.pop()
+  emitModelEvent(segments.concat(index), previous, { op: 'arrayPop', index }, tree)
+  return previous
 }
 
 export function arrayShift (segments, tree = dataTree) {
   const arr = getArrayNode(segments, tree, true)
   if (!arr.length) return
-  return arr.shift()
+  const previous = arr.shift()
+  emitModelEvent(segments.concat(0), previous, { op: 'arrayShift', index: 0 }, tree)
+  return previous
 }
 
 export function arrayRemove (segments, index, howMany = 1, tree = dataTree) {
   const arr = getArrayNode(segments, tree, true)
-  return arr.splice(index, howMany)
+  const removed = arr.splice(index, howMany)
+  for (let i = 0; i < removed.length; i++) {
+    emitModelEvent(segments.concat(index + i), removed[i], { op: 'arrayRemove', index: index + i, howMany }, tree)
+  }
+  return removed
 }
 
 export function arrayMove (segments, from, to, howMany = 1, tree = dataTree) {
   const arr = getArrayNode(segments, tree, true)
+  const prevValue = shouldEmitModelEvents(tree) ? arr.slice() : undefined
   const len = arr.length
   if (from < 0) from += len
   if (to < 0) to += len
   const moved = arr.splice(from, howMany)
   arr.splice(to, 0, ...moved)
+  emitModelEvent(segments, prevValue, { op: 'arrayMove', from, to, howMany }, tree)
   return moved
 }
 
@@ -417,12 +461,14 @@ export function stringInsertLocal (segments, index, text, tree = dataTree) {
   const previous = dataNode[key]
   if (previous == null) {
     dataNode[key] = text
+    emitModelEvent(segments, previous, { op: 'stringInsert', index }, tree)
     return previous
   }
   if (typeof previous !== 'string') {
     throw Error(`Expected string at ${segments.join('.')}`)
   }
   dataNode[key] = previous.slice(0, index) + text + previous.slice(index)
+  emitModelEvent(segments, previous, { op: 'stringInsert', index }, tree)
   return previous
 }
 
@@ -440,6 +486,7 @@ export function stringRemoveLocal (segments, index, howMany, tree = dataTree) {
     throw Error(`Expected string at ${segments.join('.')}`)
   }
   dataNode[key] = previous.slice(0, index) + previous.slice(index + howMany)
+  emitModelEvent(segments, previous, { op: 'stringRemove', index, howMany }, tree)
   return previous
 }
 

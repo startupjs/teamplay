@@ -18,4 +18,8 @@ export {
 
 export { SignalCompat }
 
-export default globalThis?.teamplayCompatibilityMode ? SignalCompat : Signal
+const compatEnv =
+  globalThis?.teamplayCompatibilityMode ??
+  (typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')
+
+export default compatEnv ? SignalCompat : Signal
