@@ -448,3 +448,18 @@ describe('Signal.assign() function', () => {
     assert.equal($user.age.get(), 30)
   })
 })
+
+describe('Signal.batch() function', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('batch executes the callback and returns its result', async () => {
+    const $obj = $()
+    const result = $.batch(() => {
+      $obj.set({ a: 1 })
+      return 'ok'
+    })
+    assert.equal(result, 'ok')
+    assert.deepEqual($obj.get(), { a: 1 })
+  })
+})

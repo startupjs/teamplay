@@ -1,10 +1,11 @@
 import { isObservable, observable } from '@nx-js/observer-util'
-import { set as _set, del as _del } from './dataTree.js'
+import { set as _set, del as _del, getRaw as _getRaw } from './dataTree.js'
 import { SEGMENTS } from './Signal.js'
 import { getConnection, fetchOnly } from './connection.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
+import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 
@@ -79,6 +80,9 @@ class Doc {
     doc.on('load', () => this._refData())
     doc.on('create', () => this._refData())
     doc.on('del', () => _del([this.collection, this.docId]))
+    if (isModelEventsEnabled()) {
+      doc.on('op', op => emitDocOp(this.collection, this.docId, op))
+    }
   }
 
   _refData () {
@@ -166,6 +170,54 @@ export const docSubscriptions = new DocSubscriptions()
 
 function hashDoc (segments) {
   return JSON.stringify(segments)
+}
+
+function emitDocOp (collection, docId, op) {
+  if (!isModelEventsEnabled()) return
+  const ops = Array.isArray(op) ? op : [op]
+  for (const component of ops) {
+    if (!component || !component.p) continue
+    const baseSegments = [collection, docId]
+    let pathSegments = baseSegments.concat(component.p)
+    const meta = {}
+    let value
+    let prevValue
+
+    if (has(component, 'si') || has(component, 'sd')) {
+      const index = component.p[component.p.length - 1]
+      meta.op = has(component, 'si') ? 'stringInsert' : 'stringRemove'
+      meta.index = index
+      pathSegments = baseSegments.concat(component.p.slice(0, -1))
+      value = _getRaw(pathSegments)
+      prevValue = component.sd
+    } else if (has(component, 'lm')) {
+      meta.op = 'arrayMove'
+      meta.from = component.p[component.p.length - 1]
+      meta.to = component.lm
+      pathSegments = baseSegments.concat(component.p.slice(0, -1))
+      value = _getRaw(pathSegments)
+    } else if (has(component, 'li') || has(component, 'ld')) {
+      meta.op = has(component, 'li') ? 'arrayInsert' : 'arrayRemove'
+      meta.index = component.p[component.p.length - 1]
+      value = _getRaw(pathSegments)
+      prevValue = component.ld
+    } else if (has(component, 'na')) {
+      meta.op = 'increment'
+      meta.by = component.na
+      value = _getRaw(pathSegments)
+      if (typeof value === 'number') prevValue = value - component.na
+    } else {
+      meta.op = 'set'
+      value = has(component, 'oi') ? component.oi : _getRaw(pathSegments)
+      prevValue = component.od
+    }
+
+    emitModelChange(pathSegments, value, prevValue, meta)
+  }
+}
+
+function has (obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key)
 }
 
 const ERRORS = {

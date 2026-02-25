@@ -2,11 +2,15 @@ import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw } from '@nx-js/observer-util'
 import { $, sub, addModel, aggregation } from '../index.js'
-import { get as _get, del as _del } from '../orm/dataTree.js'
+import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import connect from '../connect/test.js'
 import SignalCompat from '../orm/Compat/SignalCompat.js'
+import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
+import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
+import { PARAMS, HASH as QUERY_HASH, QUERIES } from '../orm/Query.js'
+import { AGGREGATIONS } from '../orm/Aggregation.js'
 
 const REGEX_POSITIVE_INTEGER = /^(?:0|[1-9]\d*)$/
 function maybeTransformToArrayIndex (key) {
@@ -14,30 +18,37 @@ function maybeTransformToArrayIndex (key) {
   return key
 }
 
-function createCompatSignal (segments = [], rootProxy) {
+function createCompatSignal (segments = [], rootProxy, cache) {
+  const cacheKey = segments.join('.')
+  const existing = cache?.get(cacheKey)
+  if (existing) return existing
   const signal = new SignalCompat(segments)
   if (rootProxy && segments.length > 0) signal[ROOT] = rootProxy
-  return new Proxy(signal, {
+  const proxy = new Proxy(signal, {
     get (target, key, receiver) {
       if (typeof key === 'symbol') return Reflect.get(target, key, receiver)
       if (key in target) return Reflect.get(target, key, receiver)
       key = maybeTransformToArrayIndex(key)
-      return createCompatSignal([...segments, key], rootProxy)
+      return createCompatSignal([...segments, key], rootProxy, cache)
     }
   })
+  cache?.set(cacheKey, proxy)
+  return proxy
 }
 
 function createCompatRoot () {
+  const cache = new Map()
   const rootSignal = new SignalCompat([])
   const rootProxy = new Proxy(rootSignal, {
     get (target, key, receiver) {
       if (typeof key === 'symbol') return Reflect.get(target, key, receiver)
       if (key in target) return Reflect.get(target, key, receiver)
       key = maybeTransformToArrayIndex(key)
-      return createCompatSignal([key], rootProxy)
+      return createCompatSignal([key], rootProxy, cache)
     }
   })
   rootSignal[ROOT_ID] = '_compat_root_'
+  cache.set('', rootProxy)
   return rootProxy
 }
 
@@ -330,6 +341,14 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.arr[1].get(), 9)
   })
 
+  it('set deletes object key when value is null', async () => {
+    setup('setnull-delete')
+    await $base.set('obj', { a: 1, b: 2 })
+    await $base.set('obj.a', null)
+    assert.equal($base.obj.a.get(), undefined)
+    assert.deepEqual($base.obj.get(), { b: 2 })
+  })
+
   it('del supports subpath', async () => {
     setup('del')
     await $base.a.b.set(1)
@@ -350,6 +369,19 @@ describe('SignalCompat mutators with path', () => {
     setup('setdiffdeep')
     await $base.setDiffDeep('obj', { a: 1 })
     assert.equal($base.obj.a.get(), 1)
+  })
+
+  it('setDiff acts as alias to set', async () => {
+    setup('setdiff')
+    await $base.setDiff({ a: 1, b: 2 })
+    assert.deepEqual($base.get(), { a: 1, b: 2 })
+  })
+
+  it('setDiff supports null deletion on child signals', async () => {
+    setup('setdiffnull')
+    await $base.set({ a: 1 })
+    await $base.a.setDiff(null)
+    assert.equal($base.a.get(), undefined)
   })
 
   it('setEach supports subpath', async () => {
@@ -610,5 +642,209 @@ describe('SignalCompat public mutators', () => {
     const data = $doc.get()
     assert.equal(data._id, id)
     assert.equal(data.id, id)
+  })
+})
+
+const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
+
+;(isCompatMode ? describe : describe.skip)('SignalCompat query API', () => {
+  const collection = 'compatQueryApi'
+  let cleanupQueryHashes = []
+  let cleanupAggregationHashes = []
+  let $compatRoot
+
+  before(() => {
+    connect()
+    addModel(`${collection}.*`, SignalCompat)
+    $compatRoot = createCompatRoot()
+  })
+
+  function cbPromise (fn) {
+    return new Promise((resolve, reject) => {
+      fn((err, result) => err ? reject(err) : resolve(result))
+    })
+  }
+
+  afterEach(async () => {
+    const docs = getConnection().collections?.[collection] || {}
+    for (const id of Object.keys(docs)) {
+      const doc = getConnection().get(collection, id)
+      if (doc?.data) await cbPromise(cb => doc.del(cb))
+      delete getConnection().collections?.[collection]?.[id]
+    }
+    for (const hash of cleanupQueryHashes) _del([QUERIES, hash])
+    for (const hash of cleanupAggregationHashes) _del([AGGREGATIONS, hash])
+    cleanupQueryHashes = []
+    cleanupAggregationHashes = []
+    _del([collection])
+  })
+
+  it('query() normalizes shorthand params', () => {
+    const $byIds = $compatRoot.query(collection, ['a', 'b'])
+    cleanupQueryHashes.push($byIds[QUERY_HASH])
+    assert.deepEqual($byIds[PARAMS], { _id: { $in: ['a', 'b'] } })
+
+    const $byId = $compatRoot.query(collection, 'a')
+    cleanupQueryHashes.push($byId[QUERY_HASH])
+    assert.deepEqual($byId[PARAMS], { _id: 'a' })
+  })
+
+  it('query subscribe/unsubscribe and getExtra work', async () => {
+    const id1 = '_compat_query_api_1'
+    const id2 = '_compat_query_api_2'
+    const $doc1 = await sub($[collection][id1])
+    const $doc2 = await sub($[collection][id2])
+    await $doc1.set({ name: 'First', active: true })
+    await $doc2.set({ name: 'Second', active: false })
+
+    const $query = $compatRoot.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+    await $query.subscribe()
+    assert.deepEqual($query.getIds().slice().sort(), [id1])
+    await $query.unsubscribe()
+    assert.equal($query.get(), undefined)
+
+    _set([QUERIES, $query[QUERY_HASH], 'extra'], { count: 3 })
+    assert.deepEqual($query.getExtra(), { count: 3 })
+
+    const $agg = $compatRoot.query(collection, { $aggregate: [{ $match: { active: true } }] })
+    cleanupAggregationHashes.push($agg[QUERY_HASH])
+    _set([AGGREGATIONS, $agg[QUERY_HASH]], [{ _id: 'a' }, { _id: 'b' }])
+    assert.deepEqual($agg.getExtra(), [{ _id: 'a' }, { _id: 'b' }])
+  })
+
+  it('root subscribe/unsubscribe flattens arrays and ignores falsy values', async () => {
+    const id = '_compat_query_api_root'
+    const $doc = await sub($[collection][id])
+    await $doc.set({ active: true })
+
+    const $query = $compatRoot.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+    await $compatRoot.subscribe([$query, null], undefined)
+    assert.deepEqual($query.getIds(), [id])
+    await $compatRoot.unsubscribe([$query, undefined])
+  })
+})
+
+;(isCompatMode ? describe : describe.skip)('SignalCompat ref/removeRef', () => {
+  let cleanupSegments
+  let $root
+
+  function setup (suffix) {
+    const basePath = `_compatRef_${suffix}`
+    cleanupSegments = [[basePath]]
+    $root = createCompatRoot()
+    return $root[basePath]
+  }
+
+  afterEach(() => {
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+  })
+
+  it('syncs values both ways for direct signals', async () => {
+    const $base = setup('direct')
+    const $from = $base.from
+    const $to = $base.to
+    $from.ref($to)
+
+    await $to.set({ name: 'Alice' })
+    assert.deepEqual($from.get(), { name: 'Alice' })
+
+    await $from.set({ name: 'Bob' })
+    assert.deepEqual($to.get(), { name: 'Bob' })
+  })
+
+  it('supports subpath refs from root', async () => {
+    const $base = setup('subpath')
+    const $session = $base.session
+    const $target = $base.target
+    $session.ref('tutoringSession', $target)
+
+    await $target.set({ active: true })
+    assert.deepEqual($session.tutoringSession.get(), { active: true })
+
+    await $session.tutoringSession.set({ active: false })
+    assert.deepEqual($target.get(), { active: false })
+  })
+
+  it('removeRef stops syncing', async () => {
+    const $base = setup('remove')
+    const $session = $base.session
+    const $target = $base.target
+    $session.ref('tutoringSession', $target)
+
+    await $target.set({ value: 1 })
+    assert.deepEqual($session.tutoringSession.get(), { value: 1 })
+
+    $session.removeRef('tutoringSession')
+
+    await $target.set({ value: 2 })
+    assert.deepEqual($session.tutoringSession.get(), { value: 1 })
+
+    await $session.tutoringSession.set({ value: 3 })
+    assert.deepEqual($target.get(), { value: 2 })
+  })
+})
+
+;(isCompatMode ? describe : describe.skip)('Compat model events', () => {
+  let cleanupSegments
+  let $root
+
+  function setup (suffix) {
+    const basePath = `_compatEvents_${suffix}`
+    cleanupSegments = [[basePath]]
+    $root = createCompatRoot()
+    return $root[basePath]
+  }
+
+  afterEach(() => {
+    __resetModelEventsForTests()
+    __resetRefLinksForTests()
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+  })
+
+  it('emits change with prevValue for exact path', async () => {
+    const $base = setup('exact')
+    const events = []
+    const handler = (value, prevValue) => events.push([value, prevValue])
+    $root.on('change', `${$base.path()}.count`, handler)
+    await $base.count.set(1)
+    await $base.count.set(2)
+    $root.removeListener('change', handler)
+    await $base.count.set(3)
+    assert.deepEqual(events, [[1, undefined], [2, 1]])
+  })
+
+  it('passes "*" captures to the handler', async () => {
+    const $base = setup('star')
+    const events = []
+    const handler = (key, value, prevValue) => events.push([key, value, prevValue])
+    $root.on('change', `${$base.path()}.items.*`, handler)
+    await $base.items.first.set('a')
+    await $base.items.second.set('b')
+    assert.deepEqual(events, [['first', 'a', undefined], ['second', 'b', undefined]])
+  })
+
+  it('passes "**" capture and eventName for "all"', async () => {
+    const $base = setup('starstar')
+    const events = []
+    const handler = (path, eventName, value) => events.push([path, eventName, value])
+    $root.on('all', `${$base.path()}.**`, handler)
+    await $base.a.b.set(7)
+    assert.deepEqual(events, [['a.b', 'change', 7]])
+  })
+
+  it('propagates events through refs', async () => {
+    const $base = setup('ref')
+    const $from = $base.alias
+    const $to = $base.source
+    $from.ref($to)
+    const events = []
+    const handler = value => events.push(value)
+    $root.on('change', `${$from.path()}.title`, handler)
+    await $to.title.set('One')
+    assert.deepEqual(events, ['One'])
   })
 })

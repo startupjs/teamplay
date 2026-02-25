@@ -68,6 +68,7 @@ function doc$ ($doc) {
 
 function query$ (collectionName, params) {
   if (typeof params !== 'object') throw Error(ERRORS.queryParamsObject(collectionName, params))
+  if (params?.$aggregate || params?.$aggregationName) return aggregation$(collectionName, params)
   const $query = getQuerySignal(collectionName, params)
   const promise = querySubscriptions.subscribe($query)
   if (!promise) return $query

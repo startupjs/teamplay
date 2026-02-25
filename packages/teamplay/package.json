@@ -24,6 +24,9 @@
     "test-server": "NODE_OPTIONS=\"--expose-gc\" mocha 'test/[!_]*.js'",
     "test-server-only": "NODE_OPTIONS=\"--expose-gc\" mocha --grep '@only' 'test/[!_]*.js'",
     "test-client": "NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest",
+    "test-compat": "npm run test-server-compat && npm run test-client-compat",
+    "test-server-compat": "TEAMPLAY_COMPAT=1 NODE_OPTIONS=\"--expose-gc\" mocha 'test/[!_]*.js'",
+    "test-client-compat": "TEAMPLAY_COMPAT=1 NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest",
     "coverage-server": "NODE_OPTIONS=\"--expose-gc\" c8 --include 'orm/**' --include 'react/**' --include 'utils/**' mocha 'test/[!_]*.js'",
     "coverage-client": "NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest --coverage --coverageDirectory=coverage-client",
     "coverage": "npm run coverage-server && npm run coverage-client"

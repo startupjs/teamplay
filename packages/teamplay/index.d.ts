@@ -74,6 +74,12 @@ export function useBatchQueryDoc$ (collection: string, query: any, options?: any
 export function useAsyncQueryDoc (collection: string, query: any, options?: any): [any, any]
 export function useAsyncQueryDoc$ (collection: string, query: any, options?: any): any
 export function emit (eventName: string, ...args: any[]): void
+export function useOn (
+  eventName: 'change' | 'all',
+  pattern: string | { path: () => string },
+  handler: (...args: any[]) => void,
+  deps?: any[]
+): void
 export function useOn (eventName: string, handler: (...args: any[]) => void, deps?: any[]): void
 export function useEmit (): (eventName: string, ...args: any[]) => void
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
