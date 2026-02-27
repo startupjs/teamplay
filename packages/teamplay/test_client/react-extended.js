@@ -1,4 +1,4 @@
-import { createElement as el, Fragment, createRef } from 'react'
+import React, { createElement as el, Fragment, createRef } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before, jest } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
@@ -33,9 +33,14 @@ import {
   useQueryDoc,
   useQueryDoc$,
   useAsyncQueryDoc,
+  useLocalDoc,
   emit,
   useOn,
-  useEmit
+  useEmit,
+  useApi,
+  useDidUpdate,
+  useOnce,
+  useSyncEffect
 } from '../index.js'
 import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.js'
 import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.js'
@@ -102,6 +107,87 @@ describe('observer() options', () => {
 
     expect(ObservedComponent.defaultProps).toBe(MyComponent.defaultProps)
     expect(ObservedComponent.propTypes).toBe(MyComponent.propTypes)
+  })
+})
+
+describe('compat helper hooks', () => {
+  it('useDidUpdate runs on updates only', async () => {
+    let calls = 0
+    const Component = observer(() => {
+      const [count, setCount] = React.useState(0)
+      useDidUpdate(() => {
+        calls += 1
+      }, [count])
+      return el('button', { onClick: () => setCount(count + 1) }, String(count))
+    })
+
+    const { container } = render(el(Component))
+    expect(calls).toBe(0)
+    fireEvent.click(container.querySelector('button'))
+    await wait()
+    expect(calls).toBe(1)
+  })
+
+  it('useOnce runs only once when condition becomes truthy', async () => {
+    let calls = 0
+    const Component = observer(() => {
+      const [flag, setFlag] = React.useState(false)
+      useOnce(flag, () => { calls += 1 })
+      return el('button', { onClick: () => setFlag(true) }, String(flag))
+    })
+
+    const { container } = render(el(Component))
+    fireEvent.click(container.querySelector('button'))
+    await wait()
+    fireEvent.click(container.querySelector('button'))
+    await wait()
+    expect(calls).toBe(1)
+  })
+
+  it('useSyncEffect runs and cleans up', async () => {
+    let effectCalls = 0
+    let cleanupCalls = 0
+    const Component = observer(() => {
+      useSyncEffect(() => {
+        effectCalls += 1
+        return () => { cleanupCalls += 1 }
+      }, [])
+      return el('div')
+    })
+
+    const { unmount } = render(el(Component))
+    await wait()
+    unmount()
+    expect(effectCalls).toBe(1)
+    expect(cleanupCalls).toBe(1)
+  })
+
+  it('useApi returns data', async () => {
+    const api = async q => [{ id: q }]
+    const Component = observer(() => {
+      const [items] = useApi(api, ['x'], { debounce: 10 })
+      return el('div', {}, items ? String(items[0].id) : '')
+    })
+
+    jest.useFakeTimers()
+    const { container } = render(el(Component))
+    await act(async () => {
+      jest.advanceTimersByTime(20)
+    })
+    jest.useRealTimers()
+    expect(container.textContent).toBe('x')
+  })
+
+  it('useLocalDoc reads without subscription', async () => {
+    act(() => {
+      $._localDocs.doc1.set({ name: 'Local' })
+    })
+    const Component = observer(() => {
+      const [doc] = useLocalDoc('_localDocs', 'doc1')
+      return el('div', {}, doc?.name || '')
+    })
+    const { container } = render(el(Component))
+    expect(container.textContent).toBe('Local')
   })
 })
 

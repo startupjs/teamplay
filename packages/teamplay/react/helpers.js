@@ -1,4 +1,4 @@
-import { useContext, createContext, useRef, useEffect } from 'react'
+import { useContext, createContext, useRef, useEffect, useLayoutEffect } from 'react'
 
 export const ComponentMetaContext = createContext({})
 
@@ -67,6 +67,52 @@ export function useUnmount (fn) {
     },
     []
   )
+}
+
+export function useDidUpdate (fn, deps) {
+  const isFirst = useRef(true)
+  const stableDeps = useStableDeps(deps)
+  useEffect(() => {
+    if (isFirst.current) {
+      isFirst.current = false
+      return
+    }
+    return fn()
+  }, [fn, stableDeps])
+}
+
+export function useOnce (condition, fn) {
+  const fired = useRef(false)
+  useEffect(() => {
+    if (fired.current) return
+    if (!condition) return
+    fired.current = true
+    return fn()
+  }, [condition, fn])
+}
+
+export function useSyncEffect (fn, deps) {
+  const stableDeps = useStableDeps(deps)
+  useLayoutEffect(fn, [fn, stableDeps])
+}
+
+function useStableDeps (deps) {
+  const depsRef = useRef([])
+  const nextDeps = Array.isArray(deps) ? deps : []
+  if (!shallowEqualArrays(depsRef.current, nextDeps)) {
+    depsRef.current = nextDeps
+  }
+  return depsRef.current
+}
+
+function shallowEqualArrays (a, b) {
+  if (a === b) return true
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (!Object.is(a[i], b[i])) return false
+  }
+  return true
 }
 
 const ERRORS = {

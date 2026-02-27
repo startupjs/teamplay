@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, batch, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
+import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
 import { get as _get } from '../orm/dataTree.js'
 import { LOCAL } from '../orm/$.js'
 import connect from '../connect/test.js'
@@ -471,5 +471,38 @@ describe('Signal.batch() function', () => {
     })
     assert.equal(result, 'done')
     assert.deepEqual($obj.get(), { b: 2 })
+  })
+
+  it('batchModel helper proxies to root batch', () => {
+    const $obj = $()
+    const result = batchModel(() => {
+      $obj.set({ c: 3 })
+      return 'model'
+    })
+    assert.equal(result, 'model')
+    assert.deepEqual($obj.get(), { c: 3 })
+  })
+})
+
+describe('initLocalCollection()', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('initializes local collection once', () => {
+    const $collection = initLocalCollection('_localTest')
+    assert.deepEqual($collection.get(), {})
+    $collection.set({ a: 1 })
+    const again = initLocalCollection('_localTest')
+    assert.deepEqual(again.get(), { a: 1 })
+  })
+})
+
+describe('clone()', () => {
+  it('deep clones plain objects', () => {
+    const original = { a: 1, b: { c: 2 } }
+    const copied = clone(original)
+    assert.deepEqual(copied, original)
+    copied.b.c = 3
+    assert.equal(original.b.c, 2)
   })
 })

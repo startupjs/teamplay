@@ -73,6 +73,8 @@ export function useBatchQueryDoc (collection: string, query: any, options?: any)
 export function useBatchQueryDoc$ (collection: string, query: any, options?: any): any
 export function useAsyncQueryDoc (collection: string, query: any, options?: any): [any, any]
 export function useAsyncQueryDoc$ (collection: string, query: any, options?: any): any
+export function useLocalDoc (collection: string, id: any): [any, any]
+export function useLocalDoc$ (collection: string, id: any): any
 export function emit (eventName: string, ...args: any[]): void
 export function useOn (
   eventName: 'change' | 'all',
@@ -83,6 +85,14 @@ export function useOn (
 export function useOn (eventName: string, handler: (...args: any[]) => void, deps?: any[]): void
 export function useEmit (): (eventName: string, ...args: any[]) => void
 export function batch<T = any> (fn?: () => T): T | undefined
+export function batchModel<T = any> (fn?: () => T): T | undefined
+export function clone<T = any> (value: T): T
+export function initLocalCollection (name: string): any
+export function useApi (api: (...args: any[]) => any, args?: any[], options?: { debounce?: number }): [any, boolean, any]
+type EffectCleanup = (() => void) | undefined
+export function useDidUpdate (fn: () => EffectCleanup, deps?: any[]): void
+export function useOnce (condition: any, fn: () => EffectCleanup): void
+export function useSyncEffect (fn: () => EffectCleanup, deps?: any[]): void
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'

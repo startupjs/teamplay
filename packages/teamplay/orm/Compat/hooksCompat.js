@@ -44,6 +44,18 @@ export function useLocal (path) {
   return [$sig.get(), $sig]
 }
 
+export function useLocalDoc$ (collection, id) {
+  if (collection == null) throw Error('useLocalDoc() expects a collection name')
+  if (id == null) return undefined
+  return $root[collection][id]
+}
+
+export function useLocalDoc (collection, id) {
+  const $doc = useLocalDoc$(collection, id)
+  if (!$doc) return [undefined, undefined]
+  return [$doc.get(), $doc]
+}
+
 export function useSession$ (path) {
   return useLocal$(prefixLocalPath('_session', path))
 }
