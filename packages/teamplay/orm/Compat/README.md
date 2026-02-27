@@ -228,20 +228,23 @@ await $$agg.subscribe()
 const rows = $$agg.getExtra()
 ```
 
-### get()
+### get(subpath?)
 
 Returns the current value and tracks reactivity.
 
 ```js
 const name = $.users.user1.name.get()
+$root.get('$render.url')
+$user.get('profile.name')
 ```
 
-### peek()
+### peek(subpath?)
 
 Returns the current value **without** tracking reactivity.
 
 ```js
 const name = $.users.user1.name.peek()
+$user.peek('profile.name')
 ```
 
 ### getCopy(subpath)

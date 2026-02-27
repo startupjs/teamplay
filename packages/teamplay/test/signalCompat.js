@@ -164,6 +164,73 @@ describe('SignalCompat.path(subpath)', () => {
   })
 })
 
+describe('SignalCompat.get(subpath)', () => {
+  let cleanupSegments
+  let $root
+  let $base
+
+  function setup (suffix) {
+    const basePath = `_compatGet_${suffix}`
+    cleanupSegments = [[basePath]]
+    $root = createCompatRoot()
+    $base = $root[basePath]
+  }
+
+  afterEach(() => {
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+  })
+
+  it('supports string subpath on root', async () => {
+    setup('root')
+    await $root.$render.url.set('/test')
+    cleanupSegments.push(['$render'])
+    assert.equal($root.get('$render.url'), '/test')
+  })
+
+  it('supports numeric segments in string subpath', async () => {
+    setup('array')
+    await $base.items[0].set('x')
+    assert.equal($base.get('items.0'), 'x')
+  })
+
+  it('throws on invalid arguments', () => {
+    setup('args')
+    assert.throws(() => $base.get('a', 'b'), /expects zero or one argument/)
+    assert.throws(() => $base.get(1.5), /expects a string or integer argument/)
+  })
+})
+
+describe('SignalCompat.peek(subpath)', () => {
+  let cleanupSegments
+  let $root
+  let $base
+
+  function setup (suffix) {
+    const basePath = `_compatPeek_${suffix}`
+    cleanupSegments = [[basePath]]
+    $root = createCompatRoot()
+    $base = $root[basePath]
+  }
+
+  afterEach(() => {
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+  })
+
+  it('supports string subpath', async () => {
+    setup('nested')
+    await $base.a.b.set(10)
+    assert.equal($base.peek('a.b'), 10)
+  })
+
+  it('throws on invalid arguments', () => {
+    setup('args')
+    assert.throws(() => $base.peek('a', 'b'), /expects zero or one argument/)
+    assert.throws(() => $base.peek(1.5), /expects a string or integer argument/)
+  })
+})
+
 describe('SignalCompat.scope()', () => {
   let basePath
   let cleanupSegments

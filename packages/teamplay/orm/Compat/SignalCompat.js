@@ -118,12 +118,26 @@ class SignalCompat extends Signal {
   }
 
   get () {
+    if (arguments.length > 1) throw Error('Signal.get() expects zero or one argument')
+    if (arguments.length === 1) {
+      const segments = parseAtSubpath(arguments[0], 1, 'Signal.get()')
+      const $base = resolveRefSignal(this)
+      const $target = resolveSignal($base, segments)
+      return Signal.prototype.get.call($target)
+    }
     const $target = resolveRefSignal(this)
     if ($target !== this) return Signal.prototype.get.apply($target, arguments)
     return Signal.prototype.get.apply(this, arguments)
   }
 
   peek () {
+    if (arguments.length > 1) throw Error('Signal.peek() expects zero or one argument')
+    if (arguments.length === 1) {
+      const segments = parseAtSubpath(arguments[0], 1, 'Signal.peek()')
+      const $base = resolveRefSignal(this)
+      const $target = resolveSignal($base, segments)
+      return Signal.prototype.peek.call($target)
+    }
     const $target = resolveRefSignal(this)
     if ($target !== this) return Signal.prototype.peek.apply($target, arguments)
     return Signal.prototype.peek.apply(this, arguments)
