@@ -63,6 +63,10 @@ export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields 
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'
 export { accessControl } from '@teamplay/utils/accessControl'
 
+export function batch (fn) {
+  return $.batch(fn)
+}
+
 export function getRootSignal (options) {
   return _getRootSignal({
     rootFunction: universal$,

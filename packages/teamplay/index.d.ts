@@ -82,6 +82,7 @@ export function useOn (
 ): void
 export function useOn (eventName: string, handler: (...args: any[]) => void, deps?: any[]): void
 export function useEmit (): (eventName: string, ...args: any[]) => void
+export function batch<T = any> (fn?: () => T): T | undefined
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'

@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
+import { $, batch, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
 import { get as _get } from '../orm/dataTree.js'
 import { LOCAL } from '../orm/$.js'
 import connect from '../connect/test.js'
@@ -461,5 +461,15 @@ describe('Signal.batch() function', () => {
     })
     assert.equal(result, 'ok')
     assert.deepEqual($obj.get(), { a: 1 })
+  })
+
+  it('batch helper proxies to root batch', () => {
+    const $obj = $()
+    const result = batch(() => {
+      $obj.set({ b: 2 })
+      return 'done'
+    })
+    assert.equal(result, 'done')
+    assert.deepEqual($obj.get(), { b: 2 })
   })
 })
