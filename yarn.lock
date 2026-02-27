@@ -6519,7 +6519,7 @@ __metadata:
     esbuild: "npm:^0.21.4"
     react: "npm:^18.3.1"
     react-dom: "npm:^18.3.1"
-    teamplay: "npm:^0.4.0-alpha.1"
+    teamplay: "npm:^0.4.0-alpha.2"
   languageName: unknown
   linkType: soft
 
@@ -14600,7 +14600,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"teamplay@npm:^0.4.0-alpha.1, teamplay@workspace:packages/teamplay":
+"teamplay@npm:^0.4.0-alpha.2, teamplay@workspace:packages/teamplay":
   version: 0.0.0-use.local
   resolution: "teamplay@workspace:packages/teamplay"
   dependencies:
