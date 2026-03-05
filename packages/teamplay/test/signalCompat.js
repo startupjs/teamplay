@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw } from '@nx-js/observer-util'
-import { $, sub, addModel, aggregation } from '../index.js'
+import { $, sub, addModel, aggregation, getRootSignal } from '../index.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import connect from '../connect/test.js'
@@ -270,6 +270,21 @@ describe('SignalCompat.add()', () => {
     try {
       const id = await $root._tenants.root.add('_tenants', { title: 'Acme' })
       assert.equal($root._tenants[id].get('title'), 'Acme')
+    } finally {
+      globalThis.teamplayCompatibilityMode = prevCompat
+    }
+  })
+
+  it('uses raw-signal root to add via model.root', async function () {
+    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) {
+      this.skip()
+    }
+    const prevCompat = globalThis.teamplayCompatibilityMode
+    globalThis.teamplayCompatibilityMode = true
+    try {
+      const $root = getRootSignal({ rootId: 'compat_root_add' })
+      const id = await $root._tenants.root.add('_tenants', { title: 'Tenant 1' })
+      assert.equal($root._tenants[id].get('title'), 'Tenant 1')
     } finally {
       globalThis.teamplayCompatibilityMode = prevCompat
     }

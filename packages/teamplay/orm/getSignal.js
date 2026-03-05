@@ -49,6 +49,9 @@ export default function getSignal ($root, segments = [], {
       //       but without it calling the methods of root signal like $.get() doesn't work
       proxy[ROOT] = $root || getSignal(undefined, [], { rootId: GLOBAL_ROOT_ID })
     }
+    signal[ROOT] = proxy[ROOT]
+  } else {
+    signal[ROOT] = proxy
   }
   PROXY_TO_SIGNAL.set(proxy, signal)
   const dependencies = []
