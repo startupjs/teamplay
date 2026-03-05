@@ -262,6 +262,19 @@ describe('SignalCompat.add()', () => {
     assert.equal($root._users[id].get('title'), 'Zoe')
   })
 
+  it('uses root getter instead of path when in compat mode', async () => {
+    setup('rootCompat')
+    cleanupSegments.push(['_tenants'])
+    const prevCompat = globalThis.teamplayCompatibilityMode
+    globalThis.teamplayCompatibilityMode = true
+    try {
+      const id = await $root._tenants.root.add('_tenants', { title: 'Acme' })
+      assert.equal($root._tenants[id].get('title'), 'Acme')
+    } finally {
+      globalThis.teamplayCompatibilityMode = prevCompat
+    }
+  })
+
   it('supports collection add(value)', async () => {
     setup('collection')
     const id = await $base.add({ title: 'Kate' })
