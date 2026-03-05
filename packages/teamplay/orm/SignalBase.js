@@ -507,7 +507,10 @@ export const extremelyLateBindings = {
   get (signal, key, receiver) {
     if (typeof key === 'symbol') return Reflect.get(signal, key, receiver)
     if (key === 'then') return undefined // handle checks for whether the symbol is a Promise
-    if (globalThis.teamplayCompatibilityMode && key === 'root') {
+    const compatEnv =
+      globalThis?.teamplayCompatibilityMode ??
+      (typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')
+    if (compatEnv && key === 'root') {
       return Reflect.get(signal, key, receiver)
     }
     key = transformAlias(signal[SEGMENTS], key)
