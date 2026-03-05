@@ -69,7 +69,18 @@ export default function getSignal ($root, segments = [], {
 }
 
 function getDefaultProxyHandlers ({ useExtremelyLateBindings } = {}) {
-  return useExtremelyLateBindings ? extremelyLateBindings : regularBindings
+  const baseHandlers = useExtremelyLateBindings ? extremelyLateBindings : regularBindings
+  const compatEnv =
+    globalThis?.teamplayCompatibilityMode ??
+    (typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')
+  if (!compatEnv || baseHandlers !== extremelyLateBindings) return baseHandlers
+  return {
+    ...baseHandlers,
+    get (signal, key, receiver) {
+      if (key === 'root') return Reflect.get(signal, key, receiver)
+      return baseHandlers.get(signal, key, receiver)
+    }
+  }
 }
 
 function hashSegments (segments, rootId) {
