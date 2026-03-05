@@ -157,36 +157,14 @@ class SignalCompat extends Signal {
     return Signal.prototype.set.call($target, value)
   }
 
-  async add (collectionOrValue, valueOrCb, maybeCb) {
+  async add (collectionOrValue, value) {
     const isRoot = this[SEGMENTS].length === 0
     const isRootCollectionCall = isRoot && typeof collectionOrValue === 'string'
 
     if (isRootCollectionCall) {
-      if (arguments.length < 2 || arguments.length > 3) {
-        throw Error('Signal.add() expects (collection, object, [callback])')
-      }
-      const value = typeof valueOrCb === 'function' ? undefined : valueOrCb
+      if (arguments.length !== 2) throw Error('Signal.add() expects (collection, object)')
       if (!value || typeof value !== 'object') throw Error('Signal.add() expects an object argument')
-      const cb = typeof valueOrCb === 'function' ? valueOrCb : (typeof maybeCb === 'function' ? maybeCb : undefined)
-      try {
-        const id = await this[collectionOrValue].add(value)
-        if (cb) cb(null, id)
-        return id
-      } catch (err) {
-        if (cb) cb(err)
-        throw err
-      }
-    }
-
-    if (arguments.length === 2 && typeof valueOrCb === 'function') {
-      try {
-        const id = await Signal.prototype.add.call(this, collectionOrValue)
-        valueOrCb(null, id)
-        return id
-      } catch (err) {
-        valueOrCb(err)
-        throw err
-      }
+      return this[collectionOrValue].add(value)
     }
 
     if (arguments.length > 1) throw Error('Signal.add() expects a single argument')

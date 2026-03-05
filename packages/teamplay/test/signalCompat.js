@@ -255,17 +255,6 @@ describe('SignalCompat.add()', () => {
     assert.equal($root._users[id].get('title'), 'Ann')
   })
 
-  it('supports root add with callback', async () => {
-    setup('rootCb')
-    cleanupSegments.push(['_users'])
-    let cbId
-    const id = await $root.add('_users', { title: 'Bob' }, (err, result) => {
-      assert.equal(err, null)
-      cbId = result
-    })
-    assert.equal(id, cbId)
-  })
-
   it('supports collection add(value)', async () => {
     setup('collection')
     const id = await $base.add({ title: 'Kate' })
