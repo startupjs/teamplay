@@ -5,6 +5,7 @@ import { LOCAL } from './$.js'
 import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
 import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
+import { isCompatEnv } from './compatEnv.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -70,10 +71,7 @@ export default function getSignal ($root, segments = [], {
 
 function getDefaultProxyHandlers ({ useExtremelyLateBindings } = {}) {
   const baseHandlers = useExtremelyLateBindings ? extremelyLateBindings : regularBindings
-  const compatEnv =
-    globalThis?.teamplayCompatibilityMode ??
-    (typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')
-  if (!compatEnv || baseHandlers !== extremelyLateBindings) return baseHandlers
+  if (!isCompatEnv() || baseHandlers !== extremelyLateBindings) return baseHandlers
   return {
     ...baseHandlers,
     get (signal, key, receiver) {

@@ -1,5 +1,6 @@
 import { Signal } from './SignalBase.js'
 import SignalCompat from './Compat/SignalCompat.js'
+import { isCompatEnv } from './compatEnv.js'
 
 export {
   Signal,
@@ -18,8 +19,4 @@ export {
 
 export { SignalCompat }
 
-const compatEnv =
-  globalThis?.teamplayCompatibilityMode ??
-  (typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')
-
-export default compatEnv ? SignalCompat : Signal
+export default isCompatEnv() ? SignalCompat : Signal

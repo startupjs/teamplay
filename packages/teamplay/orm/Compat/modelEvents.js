@@ -1,4 +1,5 @@
 import { getRefLinks } from './refRegistry.js'
+import { isCompatEnv } from '../compatEnv.js'
 
 const modelListeners = {
   change: new Map(),
@@ -6,10 +7,7 @@ const modelListeners = {
 }
 
 export function isModelEventsEnabled () {
-  return (
-    globalThis?.teamplayCompatibilityMode ??
-    (typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')
-  )
+  return isCompatEnv()
 }
 
 export function normalizePattern (pattern, methodName) {
