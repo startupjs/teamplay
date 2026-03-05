@@ -231,6 +231,48 @@ describe('SignalCompat.peek(subpath)', () => {
   })
 })
 
+describe('SignalCompat.add()', () => {
+  let cleanupSegments
+  let $root
+  let $base
+
+  function setup (suffix) {
+    const basePath = `_compatAdd_${suffix}`
+    cleanupSegments = [[basePath]]
+    $root = createCompatRoot()
+    $base = $root[basePath]
+  }
+
+  afterEach(() => {
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+  })
+
+  it('supports root add(collection, value)', async () => {
+    setup('root')
+    cleanupSegments.push(['_users'])
+    const id = await $root.add('_users', { title: 'Ann' })
+    assert.equal($root._users[id].get('title'), 'Ann')
+  })
+
+  it('supports root add with callback', async () => {
+    setup('rootCb')
+    cleanupSegments.push(['_users'])
+    let cbId
+    const id = await $root.add('_users', { title: 'Bob' }, (err, result) => {
+      assert.equal(err, null)
+      cbId = result
+    })
+    assert.equal(id, cbId)
+  })
+
+  it('supports collection add(value)', async () => {
+    setup('collection')
+    const id = await $base.add({ title: 'Kate' })
+    assert.equal($base[id].get('title'), 'Kate')
+  })
+})
+
 describe('SignalCompat.scope()', () => {
   let basePath
   let cleanupSegments
