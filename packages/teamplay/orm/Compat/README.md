@@ -672,10 +672,12 @@ This matches StartupJS and makes updates easy:
 $users[userId].name.set('New Name')
 ```
 
-`useQuery$` returns the collection signal as well:
+`useQuery$` returns the **query signal**:
 
 ```js
-const $users = useQuery$('users', { active: true })
+const $query = useQuery$('users', { active: true })
+const ids = $query.getIds()
+const docs = $query.get()
 ```
 
 If `query == null`, a warning is logged and `{ _id: '__NON_EXISTENT__' }` is used.
@@ -758,6 +760,8 @@ const Component = observer(() => {
 ```js
 const Component = observer(() => {
   const [users, $users] = useQuery('users', { active: true })
+  const $query = useQuery$('users', { active: true })
+  const ids = $query.getIds()
   return (
     <>
       {users.map(u => <div key={u._id}>{u.name}</div>)}

@@ -911,15 +911,18 @@ describe('useQuery / useQuery$', () => {
     await wait()
 
     const Component = observer(() => {
-      const $collection = useQuery$('queryHook2', { active: true })
-      return el('span', { id: 'qNames2' }, $collection.q1.name.get() || '')
+      const $query = useQuery$('queryHook2', { active: true })
+      const ids = $query.getIds()
+      const docs = $query.get()
+      const name = docs && docs[0]?.name
+      return el('span', { id: 'qNames2' }, `${ids.join(',')}:${name || ''}`)
     }, { suspenseProps: { fallback: el('span', { id: 'qNames2' }, 'Loading...') } })
 
     const { container } = render(el(Component))
     expect(container.querySelector('#qNames2').textContent).toBe('Loading...')
 
     await wait()
-    expect(container.querySelector('#qNames2').textContent).toBe('John')
+    expect(container.querySelector('#qNames2').textContent).toBe('q1:John')
   })
 
   it('useQuery warns on undefined query and falls back to non-existent query', async () => {
@@ -976,15 +979,18 @@ describe('useBatchQuery / useBatchQuery$', () => {
     await wait()
 
     const Component = observer(() => {
-      const $collection = useBatchQuery$('queryHook4', { active: true })
-      return el('span', { id: 'bqNames2' }, $collection.q1.name.get() || '')
+      const $query = useBatchQuery$('queryHook4', { active: true })
+      const ids = $query.getIds()
+      const docs = $query.get()
+      const name = docs && docs[0]?.name
+      return el('span', { id: 'bqNames2' }, `${ids.join(',')}:${name || ''}`)
     }, { suspenseProps: { fallback: el('span', { id: 'bqNames2' }, 'Loading...') } })
 
     const { container } = render(el(Component))
     expect(container.querySelector('#bqNames2').textContent).toBe('Loading...')
 
     await wait()
-    expect(container.querySelector('#bqNames2').textContent).toBe('Mia')
+    expect(container.querySelector('#bqNames2').textContent).toBe('q1:Mia')
   })
 })
 
@@ -1015,13 +1021,18 @@ describe('useAsyncQuery / useAsyncQuery$', () => {
     await wait()
 
     const Component = observer(() => {
-      const $collection = useAsyncQuery$('asyncQueryHook2', { active: true })
-      return el('span', { id: 'aqNames2' }, $collection.q1.name.get() || '')
+      const $query = useAsyncQuery$('asyncQueryHook2', { active: true })
+      if (!$query) return el('span', { id: 'aqNames2' }, 'Loading...')
+      const ids = $query.getIds()
+      const docs = $query.get()
+      const name = docs && docs[0]?.name
+      return el('span', { id: 'aqNames2' }, `${ids.join(',')}:${name || ''}`)
     })
 
     const { container } = render(el(Component))
+    expect(container.querySelector('#aqNames2').textContent).toBe('Loading...')
     await wait()
-    expect(container.querySelector('#aqNames2').textContent).toBe('Ivy')
+    expect(container.querySelector('#aqNames2').textContent).toBe('q1:Ivy')
   })
 })
 

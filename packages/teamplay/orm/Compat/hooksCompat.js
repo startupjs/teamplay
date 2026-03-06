@@ -109,8 +109,8 @@ export function useAsyncDoc (collection, id, options) {
 export function useQuery$ (collection, query, options) {
   const $collection = getCollectionSignal(collection, query, 'useQuery')
   const normalizedOptions = options ? { ...options, async: false } : options
-  useSub($collection, normalizeQuery(query, 'useQuery'), normalizedOptions)
-  return $collection
+  const $query = useSub($collection, normalizeQuery(query, 'useQuery'), normalizedOptions)
+  return $query
 }
 
 export function useQuery (collection, query, options) {
@@ -122,8 +122,8 @@ export function useQuery (collection, query, options) {
 
 export function useAsyncQuery$ (collection, query, options) {
   const $collection = getCollectionSignal(collection, query, 'useAsyncQuery')
-  useAsyncSub($collection, normalizeQuery(query, 'useAsyncQuery'), options)
-  return $collection
+  const $query = useAsyncSub($collection, normalizeQuery(query, 'useAsyncQuery'), options)
+  return $query
 }
 
 export function useAsyncQuery (collection, query, options) {
