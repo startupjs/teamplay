@@ -84,6 +84,12 @@ describe('SignalCompat.at()', () => {
     assert.equal($base.at('c.0').get(), 'x')
   })
 
+  it('supports multiple path segments', async () => {
+    setup('multi')
+    await $base.a.b.set(11)
+    assert.equal($base.at('a', 'b').get(), 11)
+  })
+
   it('supports numeric subpath for array index', async () => {
     setup('num')
     await $base[3].set('v')
@@ -108,7 +114,7 @@ describe('SignalCompat.at()', () => {
 
   it('throws on invalid arguments', () => {
     setup('args')
-    assert.throws(() => $base.at('a', 'b'), /expects a single argument/)
+    assert.throws(() => $base.at({}, 'b'), /expects string or integer path segments/)
     assert.throws(() => $base.at(1.5), /expects a string or integer argument/)
     assert.throws(() => $base.at(null), /expects a string or integer argument/)
   })
@@ -188,6 +194,12 @@ describe('SignalCompat.get(subpath)', () => {
     assert.equal($root.get('$render.url'), '/test')
   })
 
+  it('supports multiple path segments', async () => {
+    setup('multi')
+    await $base.a.b.set(5)
+    assert.equal($base.get('a', 'b'), 5)
+  })
+
   it('supports numeric segments in string subpath', async () => {
     setup('array')
     await $base.items[0].set('x')
@@ -196,7 +208,7 @@ describe('SignalCompat.get(subpath)', () => {
 
   it('throws on invalid arguments', () => {
     setup('args')
-    assert.throws(() => $base.get('a', 'b'), /expects zero or one argument/)
+    assert.throws(() => $base.get({}, 'b'), /expects string or integer path segments/)
     assert.throws(() => $base.get(1.5), /expects a string or integer argument/)
   })
 })
@@ -224,9 +236,15 @@ describe('SignalCompat.peek(subpath)', () => {
     assert.equal($base.peek('a.b'), 10)
   })
 
+  it('supports multiple path segments', async () => {
+    setup('multi')
+    await $base.a.b.set(12)
+    assert.equal($base.peek('a', 'b'), 12)
+  })
+
   it('throws on invalid arguments', () => {
     setup('args')
-    assert.throws(() => $base.peek('a', 'b'), /expects zero or one argument/)
+    assert.throws(() => $base.peek({}, 'b'), /expects string or integer path segments/)
     assert.throws(() => $base.peek(1.5), /expects a string or integer argument/)
   })
 })
@@ -337,10 +355,16 @@ describe('SignalCompat.scope()', () => {
     assert.equal($base.scope('_a..b').get(), 5)
   })
 
+  it('supports multiple path segments', async () => {
+    setup('multi')
+    await $root._a.b.set(7)
+    cleanupSegments.push(['_a'])
+    assert.equal($base.scope('_a', 'b').get(), 7)
+  })
+
   it('throws on invalid arguments', () => {
     setup('args')
-    assert.throws(() => $base.scope('a', 'b'), /expects a single argument/)
-    assert.throws(() => $base.scope(1), /expects a string argument/)
+    assert.throws(() => $base.scope({}, 'b'), /expects string or integer path segments/)
   })
 
   it('returns root when subpath is omitted', () => {

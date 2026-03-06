@@ -58,8 +58,9 @@ class SignalCompat extends Signal {
   }
 
   at (subpath) {
-    if (arguments.length > 1) throw Error('Signal.at() expects a single argument')
-    const segments = parseAtSubpath(subpath, arguments.length, 'Signal.at()')
+    const segments = arguments.length > 1
+      ? parseAtSegments(arguments, 'Signal.at()')
+      : parseAtSubpath(subpath, arguments.length, 'Signal.at()')
     if (segments.length === 0) return this
     let $cursor = this
     for (const segment of segments) {
@@ -122,7 +123,12 @@ class SignalCompat extends Signal {
   }
 
   get () {
-    if (arguments.length > 1) throw Error('Signal.get() expects zero or one argument')
+    if (arguments.length > 1) {
+      const segments = parseAtSegments(arguments, 'Signal.get()')
+      const $base = resolveRefSignal(this)
+      const $target = resolveSignal($base, segments)
+      return Signal.prototype.get.call($target)
+    }
     if (arguments.length === 1) {
       const segments = parseAtSubpath(arguments[0], 1, 'Signal.get()')
       const $base = resolveRefSignal(this)
@@ -135,7 +141,12 @@ class SignalCompat extends Signal {
   }
 
   peek () {
-    if (arguments.length > 1) throw Error('Signal.peek() expects zero or one argument')
+    if (arguments.length > 1) {
+      const segments = parseAtSegments(arguments, 'Signal.peek()')
+      const $base = resolveRefSignal(this)
+      const $target = resolveSignal($base, segments)
+      return Signal.prototype.peek.call($target)
+    }
     if (arguments.length === 1) {
       const segments = parseAtSubpath(arguments[0], 1, 'Signal.peek()')
       const $base = resolveRefSignal(this)
@@ -529,11 +540,11 @@ class SignalCompat extends Signal {
   }
 
   scope (path) {
-    if (arguments.length > 1) throw Error('Signal.scope() expects a single argument')
     const $root = getRoot(this) || this
     if (arguments.length === 0) return $root
-    if (typeof path !== 'string') throw Error('Signal.scope() expects a string argument')
-    const segments = path.split('.').filter(Boolean)
+    const segments = arguments.length > 1
+      ? parseAtSegments(arguments, 'Signal.scope()')
+      : parseAtSubpath(path, arguments.length, 'Signal.scope()')
     if (segments.length === 0) return $root
     let $cursor = $root
     for (const segment of segments) {
@@ -618,6 +629,23 @@ function parseAtSubpath (subpath, argsLength, methodName) {
   if (typeof subpath === 'string') return subpath.split('.').filter(Boolean)
   if (typeof subpath === 'number' && Number.isFinite(subpath) && Number.isInteger(subpath)) return [subpath]
   throw Error(`${methodName} expects a string or integer argument`)
+}
+
+function parseAtSegments (args, methodName) {
+  const segments = []
+  for (const arg of Array.from(args)) {
+    if (typeof arg === 'string') {
+      const parts = arg.split('.').filter(Boolean)
+      segments.push(...parts)
+      continue
+    }
+    if (typeof arg === 'number' && Number.isFinite(arg) && Number.isInteger(arg)) {
+      segments.push(arg)
+      continue
+    }
+    throw Error(`${methodName} expects string or integer path segments`)
+  }
+  return segments
 }
 
 function resolveSignal ($signal, segments) {

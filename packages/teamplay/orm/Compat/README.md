@@ -94,9 +94,11 @@ $.users.user1.name.parent(2)   // $.users
 Legacy path navigation. Accepts:
 - string with dot path (`'a.b.c'`)
 - integer index for arrays (`0`)
+- multiple path segments (`'a', 'b', 0`)
 
 ```js
 $.users.user1.at('profile.name')
+$.users.user1.at('profile', 'name')
 $.items.at(0)
 ```
 
@@ -106,6 +108,7 @@ Resolve a path from root, ignoring the current signal path.
 
 ```js
 $.users.user1.scope('users.user2')
+$.users.user1.scope('users', 'user2')
 ```
 
 ### ref(target) / ref(subpath, target)
@@ -236,6 +239,7 @@ Returns the current value and tracks reactivity.
 const name = $.users.user1.name.get()
 $root.get('$render.url')
 $user.get('profile.name')
+$user.get('profile', 'name')
 ```
 
 ### peek(subpath?)
@@ -245,6 +249,7 @@ Returns the current value **without** tracking reactivity.
 ```js
 const name = $.users.user1.name.peek()
 $user.peek('profile.name')
+$user.peek('profile', 'name')
 ```
 
 ### getCopy(subpath)
