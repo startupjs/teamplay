@@ -1,11 +1,12 @@
 import Cache from './Cache.js'
-import Signal, { regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.js'
+import Signal, { SEGMENTS, regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.js'
 import { findModel } from './addModel.js'
 import { LOCAL } from './$.js'
 import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
 import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
 import { isCompatEnv } from './compatEnv.js'
+import { getConnection } from './connection.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -78,6 +79,13 @@ function getDefaultProxyHandlers ({ useExtremelyLateBindings } = {}) {
   return {
     ...baseHandlers,
     get (signal, key, receiver) {
+      if (key === 'connection' && signal[SEGMENTS].length === 0) {
+        try {
+          return getConnection()
+        } catch {
+          return undefined
+        }
+      }
       if (key === 'root') return Reflect.get(signal, key, receiver)
       return baseHandlers.get(signal, key, receiver)
     }
