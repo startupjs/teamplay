@@ -1,4 +1,4 @@
-import { isObservable, observable } from '@nx-js/observer-util'
+import { isObservable, observable, raw } from '@nx-js/observer-util'
 import { set as _set, del as _del, getRaw as _getRaw } from './dataTree.js'
 import { SEGMENTS } from './Signal.js'
 import { getConnection, fetchOnly } from './connection.js'
@@ -90,9 +90,12 @@ class Doc {
     if (doc.data == null) return
     const idFields = getIdFieldsForSegments([this.collection, this.docId])
     if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, this.docId)
-    if (isObservable(doc.data)) return
-    _set([this.collection, this.docId], doc.data)
-    doc.data = observable(doc.data)
+    const hasRaw = _getRaw([this.collection, this.docId]) != null
+    if (!hasRaw) {
+      const data = isObservable(doc.data) ? raw(doc.data) : doc.data
+      _set([this.collection, this.docId], data)
+    }
+    if (!isObservable(doc.data)) doc.data = observable(doc.data)
   }
 
   _removeData () {

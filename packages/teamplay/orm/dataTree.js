@@ -186,7 +186,12 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
     })
   } else {
     // > modify existing doc. Partial doc modification
-    const oldDoc = getRaw([collection, docId])
+    let oldDoc = getRaw([collection, docId])
+    if (oldDoc == null) {
+      const docData = getConnection().get(collection, docId).data
+      oldDoc = docData == null ? {} : raw(docData)
+      if (docData != null) set([collection, docId], oldDoc)
+    }
     const newDoc = JSON.parse(JSON.stringify(oldDoc))
     if (deleteValue) {
       del(segments.slice(2), newDoc)

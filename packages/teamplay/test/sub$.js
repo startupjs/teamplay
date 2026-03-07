@@ -2,7 +2,7 @@ import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, sub, aggregation } from '../index.js'
-import { get as _get } from '../orm/dataTree.js'
+import { get as _get, del as _del } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import { hashQuery } from '../orm/Query.js'
 import connect from '../connect/test.js'
@@ -178,6 +178,19 @@ describe('$sub() function. Modifying documents', () => {
     await assert.rejects(async () => {
       await $game.name.set('Game 10')
     }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
+  })
+
+  it('repopulates data tree when doc exists but raw data is missing', async () => {
+    const gameId = '_compat_partial_1'
+    const $game = await sub($.games[gameId])
+    await $game.set({ providers: {} })
+    assert.ok(getConnection().get('games', gameId).data, 'doc data exists')
+    _del(['games', gameId])
+    assert.equal(_get(['games', gameId]), undefined)
+
+    await $game.providers.google.set({ token: 'x' })
+    const rawDoc = _get(['games', gameId])
+    assert.deepEqual(rawDoc.providers.google, { token: 'x' })
   })
 
   it('supports array mutators and increment on public docs', async () => {
