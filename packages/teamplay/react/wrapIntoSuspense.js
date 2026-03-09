@@ -52,7 +52,7 @@ export default function wrapIntoSuspense ({
           // to avoid updating during the subscribe/render phase
           if (adm.hasPendingUpdate) {
             adm.hasPendingUpdate = false
-            queueMicrotask(() => adm.onStoreChange())
+            queueMicrotask(() => adm.onStoreChange?.())
           }
           return () => destroyAdm(adm)
         },

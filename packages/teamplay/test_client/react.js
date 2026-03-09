@@ -110,6 +110,21 @@ describe('observer', () => {
     expect(renders).toBe(2)
   })
 
+  it('does not crash when pending update flushes after unmount', async () => {
+    let $name
+    const Component = observer(() => {
+      $name = $('John')
+      useEffect(() => {
+        $name.set('Jane')
+      }, [])
+      return el('span', {}, $name.get())
+    })
+    const { unmount } = render(el(Component))
+    unmount()
+    await wait()
+    expect(true).toBe(true)
+  })
+
   it('react to signal changes from useLayoutEffect', async () => {
     let renders = 0
     let $name
