@@ -206,6 +206,12 @@ describe('SignalCompat.get(subpath)', () => {
     assert.equal($base.get('items.0'), 'x')
   })
 
+  it('returns undefined for nullish path', () => {
+    setup('nullish')
+    assert.equal($base.get(undefined), undefined)
+    assert.equal($base.get(null), undefined)
+  })
+
   it('throws on invalid arguments', () => {
     setup('args')
     assert.throws(() => $base.get({}, 'b'), /expects string or integer path segments/)
@@ -240,6 +246,12 @@ describe('SignalCompat.peek(subpath)', () => {
     setup('multi')
     await $base.a.b.set(12)
     assert.equal($base.peek('a', 'b'), 12)
+  })
+
+  it('returns undefined for nullish path', () => {
+    setup('nullish')
+    assert.equal($base.peek(undefined), undefined)
+    assert.equal($base.peek(null), undefined)
   })
 
   it('throws on invalid arguments', () => {

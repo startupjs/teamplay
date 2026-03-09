@@ -130,6 +130,7 @@ class SignalCompat extends Signal {
       return Signal.prototype.get.call($target)
     }
     if (arguments.length === 1) {
+      if (arguments[0] == null) return undefined
       const segments = parseAtSubpath(arguments[0], 1, 'Signal.get()')
       const $base = resolveRefSignal(this)
       const $target = resolveSignal($base, segments)
@@ -148,6 +149,7 @@ class SignalCompat extends Signal {
       return Signal.prototype.peek.call($target)
     }
     if (arguments.length === 1) {
+      if (arguments[0] == null) return undefined
       const segments = parseAtSubpath(arguments[0], 1, 'Signal.peek()')
       const $base = resolveRefSignal(this)
       const $target = resolveSignal($base, segments)
