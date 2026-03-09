@@ -1,3 +1,4 @@
+import React from 'react'
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
@@ -87,6 +88,13 @@ describe('$() function. Values', () => {
     await runGc()
     assert.equal($firstName.get(), 'John', 'firstName should still be John after GC')
     assert.equal($lastName.get(), 'Smith', 'lastName should still be Smith after GC')
+  })
+
+  it('set supports React elements without crashing', async () => {
+    const $state = $({ node: {} })
+    const el = React.createElement('div', null, 'hi')
+    await $state.node.set(el)
+    assert.equal($state.node.get(), el)
   })
 })
 

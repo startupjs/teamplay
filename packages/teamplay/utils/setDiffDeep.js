@@ -1,5 +1,9 @@
 import isPlainObject from 'lodash/isPlainObject.js'
 
+function isReactLike (value) {
+  return !!(value && typeof value === 'object' && typeof value.$$typeof === 'symbol')
+}
+
 export default function setDiffDeep (existing, updated) {
   // Handle primitive types, null, and type mismatches
   if (existing === null || updated === null ||
@@ -20,6 +24,9 @@ export default function setDiffDeep (existing, updated) {
     }
     return existing
   }
+
+  // React elements are plain objects but must be treated as non-plain
+  if (isReactLike(updated)) return updated
 
   // Handle non-plain objects - just return them as-is to fully overwrite
   // and don't try to update an old object in-place
