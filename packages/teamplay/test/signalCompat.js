@@ -206,10 +206,11 @@ describe('SignalCompat.get(subpath)', () => {
     assert.equal($base.get('items.0'), 'x')
   })
 
-  it('returns undefined for nullish path', () => {
+  it('treats nullish path as current signal', async () => {
     setup('nullish')
-    assert.equal($base.get(undefined), undefined)
-    assert.equal($base.get(null), undefined)
+    await $base.set(5)
+    assert.equal($base.get(undefined), 5)
+    assert.equal($base.get(null), 5)
   })
 
   it('throws on invalid arguments', () => {
@@ -248,10 +249,11 @@ describe('SignalCompat.peek(subpath)', () => {
     assert.equal($base.peek('a', 'b'), 12)
   })
 
-  it('returns undefined for nullish path', () => {
+  it('treats nullish path as current signal', async () => {
     setup('nullish')
-    assert.equal($base.peek(undefined), undefined)
-    assert.equal($base.peek(null), undefined)
+    await $base.set(7)
+    assert.equal($base.peek(undefined), 7)
+    assert.equal($base.peek(null), 7)
   })
 
   it('throws on invalid arguments', () => {
