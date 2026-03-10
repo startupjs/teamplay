@@ -2,6 +2,7 @@ import { useRef, useDeferredValue } from 'react'
 import sub from '../orm/sub.js'
 import { useScheduleUpdate, useCache, useDefer } from './helpers.js'
 import executionContextTracker from './executionContextTracker.js'
+import * as promiseBatcher from './promiseBatcher.js'
 
 let TEST_THROTTLING = false
 
@@ -24,10 +25,11 @@ export default function useSub (signal, params, options) {
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
-export function useSubDeferred (signal, params, { async = false, defer } = {}) {
+export function useSubDeferred (signal, params, { async = false, defer, batch = false } = {}) {
   const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()
+  if (batch) promiseBatcher.activate()
   defer ??= observerDefer ?? DEFAULT_DEFER
   if (defer) {
     signal = useDeferredValue(signal) // eslint-disable-line react-hooks/rules-of-hooks
@@ -38,6 +40,11 @@ export function useSubDeferred (signal, params, { async = false, defer } = {}) {
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
+    if (batch) {
+      promiseBatcher.add(promise)
+      if (async) scheduleUpdate(promise)
+      return $signalRef.current
+    }
     if (async) {
       scheduleUpdate(promise)
       return
@@ -53,15 +60,22 @@ export function useSubDeferred (signal, params, { async = false, defer } = {}) {
 
 // classic version which initially throws promise for Suspense
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (signal, params, { async = false } = {}) {
+export function useSubClassic (signal, params, { async = false, batch = false } = {}) {
   const id = executionContextTracker.newHookId()
   const cache = useCache()
   const activePromiseRef = useRef()
   const scheduleUpdate = useScheduleUpdate()
+  if (batch) promiseBatcher.activate()
   const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
+    if (batch) {
+      promiseBatcher.add(promise)
+      if (async) scheduleUpdate(promise)
+      if (cache.has(id)) return cache.get(id)
+      return
+    }
     // first time we just throw the promise to be caught by Suspense
     if (!cache.has(id)) {
       // if we are in async mode, we just return nothing and let the user

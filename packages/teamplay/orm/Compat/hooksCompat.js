@@ -1,5 +1,4 @@
 import { getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
-import sub from '../sub.js'
 import useSub, { useAsyncSub } from '../../react/useSub.js'
 import universal$ from '../../react/universal$.js'
 import * as promiseBatcher from '../../react/promiseBatcher.js'
@@ -98,7 +97,7 @@ export function useBatchDoc (collection, id, options) {
 
 export function useBatchDoc$ (collection, id, _options) {
   const $doc = getDocSignal(collection, id, 'useBatchDoc')
-  return subscribeInBatch($doc)
+  return useSub($doc, undefined, { async: false, batch: true })
 }
 
 export function useAsyncDoc$ (collection, id, options) {
@@ -141,7 +140,7 @@ export function useAsyncQuery (collection, query, options) {
 
 export function useBatchQuery$ (collection, query, _options) {
   const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
-  return subscribeInBatch($collection, normalizeQuery(query, 'useBatchQuery'))
+  return useSub($collection, normalizeQuery(query, 'useBatchQuery'), { async: false, batch: true })
 }
 
 export function useBatchQuery (collection, query, options) {
@@ -230,16 +229,6 @@ export function useBatchQueryDoc (collection, query, options) {
 export function useBatchQueryDoc$ (collection, query, options) {
   const [, $doc] = useBatchQueryDoc(collection, query, options)
   return $doc
-}
-
-function subscribeInBatch ($signal, params) {
-  promiseBatcher.activate()
-  const result = params != null ? sub($signal, params) : sub($signal)
-  if (result?.then) {
-    promiseBatcher.add(result)
-    return undefined
-  }
-  return result
 }
 
 export function useAsyncQueryDoc (collection, query, options) {
