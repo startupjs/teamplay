@@ -7,6 +7,7 @@ import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
 import { isCompatEnv } from './compatEnv.js'
 import { getConnection } from './connection.js'
+import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -105,7 +106,15 @@ function hashSegments (segments, rootId) {
 }
 
 export function getSignalClass (segments) {
-  return findModel(segments) ?? Signal
+  let Model = findModel(segments)
+  if (Model) return Model
+  if (!isCompatEnv()) return Signal
+  const dereferencedSegments = resolveRefSegmentsSafe(segments)
+  if (dereferencedSegments) {
+    Model = findModel(dereferencedSegments)
+    if (Model) return Model
+  }
+  return Signal
 }
 
 export function rawSignal (proxy) {

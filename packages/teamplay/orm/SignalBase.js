@@ -46,6 +46,8 @@ import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregat
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
 import { DEFAULT_ID_FIELDS, getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from './idFields.js'
+import { isCompatEnv } from './compatEnv.js'
+import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
 export const ARRAY_METHOD = Symbol('run array method on the signal')
@@ -501,8 +503,28 @@ export const extremelyLateBindings = {
     }
     const $parent = getSignal(getRoot(signal), segments)
     const rawParent = rawSignal($parent)
-    if (!(key in rawParent)) throw Error(ERRORS.noSignalKey($parent, key))
-    return Reflect.apply(rawParent[key], $parent, argumentsList)
+    if (key in rawParent) return Reflect.apply(rawParent[key], $parent, argumentsList)
+
+    if (isCompatEnv()) {
+      const $resolvedParent = resolveRefSignalSafe($parent)
+      if ($resolvedParent && $resolvedParent !== $parent) {
+        const rawResolvedParent = rawSignal($resolvedParent)
+        if (rawResolvedParent && key in rawResolvedParent) {
+          return Reflect.apply(rawResolvedParent[key], $resolvedParent, argumentsList)
+        }
+      } else {
+        const resolvedSegments = resolveRefSegmentsSafe(segments)
+        if (resolvedSegments) {
+          const $resolvedByPath = getSignal(getRoot(signal), resolvedSegments)
+          const rawResolvedByPath = rawSignal($resolvedByPath)
+          if (rawResolvedByPath && key in rawResolvedByPath) {
+            return Reflect.apply(rawResolvedByPath[key], $resolvedByPath, argumentsList)
+          }
+        }
+      }
+    }
+
+    throw Error(ERRORS.noSignalKey($parent, key))
   },
   get (signal, key, receiver) {
     if (typeof key === 'symbol') return Reflect.get(signal, key, receiver)

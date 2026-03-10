@@ -40,6 +40,7 @@ import {
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
 import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
 import { setRefLink, removeRefLink } from './refRegistry.js'
+import { REF_TARGET, resolveRefSignalSafe } from './refFallback.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -565,7 +566,6 @@ class SignalCompat extends Signal {
 }
 
 const REFS = Symbol('compat refs')
-const REF_TARGET = Symbol('compat ref target')
 
 function getRefStore ($signal) {
   const $root = getRoot($signal) || $signal
@@ -600,14 +600,7 @@ function trackDeep (value, seen = new Set()) {
 }
 
 function resolveRefSignal ($signal) {
-  let current = $signal
-  const seen = new Set()
-  while (current && current[REF_TARGET]) {
-    if (seen.has(current)) break
-    seen.add(current)
-    current = current[REF_TARGET]
-  }
-  return current
+  return resolveRefSignalSafe($signal) || $signal
 }
 
 function forwardRef ($signal, methodName, args) {

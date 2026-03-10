@@ -6,6 +6,7 @@ import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import { getConnection, setConnection } from '../orm/connection.js'
 import connect from '../connect/test.js'
 import SignalCompat from '../orm/Compat/SignalCompat.js'
+import { Signal as BaseSignal } from '../orm/SignalBase.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
@@ -844,6 +845,90 @@ describe('SignalCompat public mutators', () => {
 })
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
+
+class CompatRefUserModel extends SignalCompat {
+  joinCourse (courseId) {
+    return `${this.path()}:${courseId}`
+  }
+}
+
+class NonCompatRefUserModel extends BaseSignal {
+  joinCourse (courseId) {
+    return `${this.path()}:${courseId}`
+  }
+}
+
+;(isCompatMode ? describe : describe.skip)('SignalCompat ref model method fallback', () => {
+  const collection = 'compatRefUsers'
+  let $root
+
+  before(() => {
+    connect()
+    addModel(`${collection}.*`, CompatRefUserModel)
+    $root = getRootSignal({ rootId: '_compat_ref_method_root' })
+  })
+
+  afterEach(() => {
+    __resetRefLinksForTests()
+    _del(['_session'])
+    _del([collection])
+  })
+
+  it('calls model method via ref target in compat mode', () => {
+    const $sessionUser = $root._session.user
+    $root._session.ref('user', `${collection}.123`)
+    assert.equal($sessionUser.path(), '_session.user')
+    assert.equal($sessionUser.joinCourse('course_1'), `${collection}.123:course_1`)
+  })
+
+  it('non-ref model method still works', () => {
+    const $user = $root[collection].abc
+    assert.equal($user.joinCourse('course_2'), `${collection}.abc:course_2`)
+  })
+
+  it('ref cycle does not loop infinitely and fails gracefully', () => {
+    $root._session.ref('a', '_session.b')
+    $root._session.ref('b', '_session.a')
+    assert.throws(() => {
+      $root._session.a.joinCourse('course_3')
+    }, /Method "joinCourse" does not exist on signal "_session.a"/)
+  })
+
+  it('keeps raw signal identity and path unchanged', () => {
+    const $before = $root._session.user
+    $root._session.ref('user', `${collection}.xyz`)
+    const $after = $root._session.user
+    assert.equal($before, $after)
+    assert.equal($after.path(), '_session.user')
+    assert.equal($after.joinCourse('course_4'), `${collection}.xyz:course_4`)
+  })
+})
+
+;(!isCompatMode ? describe : describe.skip)('Non-compat model method behavior', () => {
+  const collection = 'nonCompatRefUsers'
+  let $root
+
+  before(() => {
+    connect()
+    addModel(`${collection}.*`, NonCompatRefUserModel)
+    $root = getRootSignal({ rootId: '_non_compat_ref_method_root' })
+  })
+
+  afterEach(() => {
+    _del([collection])
+    _del(['_session'])
+  })
+
+  it('keeps strict missing-method error for unresolved path', () => {
+    assert.throws(() => {
+      $root._session.user.joinCourse('course_1')
+    }, /Method "joinCourse" does not exist on signal "_session.user"/)
+  })
+
+  it('regular model method lookup still works', () => {
+    assert.equal($root[collection].abc.joinCourse('course_2'), `${collection}.abc:course_2`)
+  })
+})
 
 ;(isCompatMode ? describe : describe.skip)('SignalCompat query API', () => {
   const collection = 'compatQueryApi'
