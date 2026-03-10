@@ -15,7 +15,12 @@ import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, sub } from '../index.js'
 import { docSubscriptions } from '../orm/Doc.js'
-import { querySubscriptions, HASH as QUERY_HASH } from '../orm/Query.js'
+import {
+  querySubscriptions,
+  QuerySubscriptions,
+  HASH as QUERY_HASH,
+  getQuerySignal
+} from '../orm/Query.js'
 import { getConnection } from '../orm/connection.js'
 import { get as _get } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
@@ -315,6 +320,53 @@ describe('QuerySubscriptions', () => {
 
     assert.equal(querySubscriptions.subCount.get(hash), undefined, 'sub count should be removed after destroy')
     assert.equal(querySubscriptions.queries.get(hash), undefined, 'query should be removed from queries map after destroy')
+  })
+
+  it('recovers from stale subCount state when query entry is missing', async () => {
+    class MockQuery {
+      constructor (collectionName, params) {
+        this.collectionName = collectionName
+        this.params = params
+        this.subscribed = false
+      }
+
+      async subscribe () {
+        this.subscribed = true
+      }
+
+      async unsubscribe () {
+        this.subscribed = false
+      }
+    }
+
+    const manager = new QuerySubscriptions(MockQuery)
+    const $query = getQuerySignal('gamesQuery', { active: true })
+    const hash = $query[QUERY_HASH]
+
+    // Simulate race: ref-count says "already subscribed", but query map has been cleaned.
+    manager.subCount.set(hash, 1)
+
+    await assert.doesNotReject(async () => manager.subscribe($query))
+    assert.equal(manager.subCount.get(hash), 1, 'sub count should be normalized back to 1')
+    assert.ok(manager.queries.get(hash), 'query should be re-created')
+    assert.equal(manager.queries.get(hash).subscribed, true, 'query should be subscribed after recovery')
+
+    await assert.doesNotReject(async () => manager.unsubscribe($query))
+  })
+
+  it('unsubscribe is a no-op when query is already missing', async () => {
+    const manager = new QuerySubscriptions(class {
+      async subscribe () {}
+      async unsubscribe () {}
+    })
+    const $query = getQuerySignal('gamesQuery', { active: false })
+    const hash = $query[QUERY_HASH]
+
+    manager.subCount.set(hash, 1)
+    assert.equal(manager.queries.get(hash), undefined, 'query entry should be absent')
+
+    await assert.doesNotReject(async () => manager.unsubscribe($query))
+    assert.equal(manager.subCount.get(hash), undefined, 'stale sub count should be removed')
   })
 })
 

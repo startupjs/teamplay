@@ -218,7 +218,13 @@ export class QuerySubscriptions {
     let count = this.subCount.get(hash) || 0
     count += 1
     this.subCount.set(hash, count)
-    if (count > 1) return this.queries.get(hash)._subscribing
+    if (count > 1) {
+      const existingQuery = this.queries.get(hash)
+      if (existingQuery) return existingQuery._subscribing
+      // Recover from stale ref-count state when query was already cleaned up.
+      count = 1
+      this.subCount.set(hash, count)
+    }
 
     this.fr.register($query, { collectionName, params }, $query)
 
@@ -246,6 +252,7 @@ export class QuerySubscriptions {
     this.subCount.delete(hash)
     this.fr.unregister($query)
     const query = this.queries.get(hash)
+    if (!query) return
     await query.unsubscribe()
     if (query.subscribed) return // if we subscribed again while waiting for unsubscribe, we don't delete the doc
     this.queries.delete(hash)
