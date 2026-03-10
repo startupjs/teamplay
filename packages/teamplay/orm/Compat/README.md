@@ -174,6 +174,46 @@ $alias.get() === $user.get()       // false
 - No event emissions specific to refs.
 - No support for racer-style ref meta/options beyond the basic signature.
 
+### start(targetPath, ...deps, getter)
+
+Legacy computed binding API from Racer/StartupJS.
+Creates a reactive computation and writes its result into `targetPath`.
+Source of truth is root API (`$root.start(...)`), but non-root calls are supported as sugar:
+- `$scope.start('a.b', ...deps, getter)` → `$root.start('<scopePath>.a.b', ...deps, getter)`
+
+- `targetPath`: string path where computed value is written.
+- `deps`: dependencies used by `getter`.
+- `getter`: function called as `getter(...resolvedDeps)`.
+
+Dependency resolution:
+- Signal-like dep (`$doc`, `$session.user`) → `dep.get()`.
+- String dep (`'settings.theme'`) → `$root.get(dep)`.
+- Any other dep → passed as-is.
+
+```js
+$root.start('_virtual.lesson', $.lessons[lessonId], '_session.userId', (lesson, userId) => {
+  if (!lesson) return undefined
+  return { stageIds: lesson.stageIds, userId }
+})
+```
+
+Behavior:
+- Calling `start()` again for the same `targetPath` replaces previous reaction.
+- `undefined` / `null` result clears target path via normal `set` semantics.
+- Returns target signal.
+
+### stop(targetPath)
+
+Stops a computation created with `start(targetPath, ...)`.
+No-op if there is no active computation for the path.
+Source of truth is root API (`$root.stop(...)`), but non-root calls are supported as sugar:
+- `$scope.stop('a.b')` → `$root.stop('<scopePath>.a.b')`
+- `$scope.stop()` → `$root.stop('<scopePath>')`
+
+```js
+$root.stop('_virtual.lesson')
+```
+
 ### query(collection, query, options?)
 
 Creates a query signal **without** subscribing. Supports shorthand params:

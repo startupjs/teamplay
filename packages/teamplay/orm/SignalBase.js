@@ -48,6 +48,7 @@ import { publicOnly } from './connection.js'
 import { DEFAULT_ID_FIELDS, getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from './idFields.js'
 import { isCompatEnv } from './compatEnv.js'
 import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
+import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
 export const ARRAY_METHOD = Symbol('run array method on the signal')
@@ -521,6 +522,22 @@ export const extremelyLateBindings = {
             return Reflect.apply(rawResolvedByPath[key], $resolvedByPath, argumentsList)
           }
         }
+      }
+
+      if (key === 'start') {
+        const [relativePath, ...depsAndGetter] = argumentsList
+        if (typeof relativePath !== 'string') throw Error('Signal.start() expects targetPath to be a string')
+        const absolutePath = joinScopePath($parent.path(), relativePath)
+        return compatStartOnRoot(getRoot($parent) || $parent, absolutePath, ...depsAndGetter)
+      }
+      if (key === 'stop') {
+        if (argumentsList.length > 1) throw Error('Signal.stop() expects zero or one argument')
+        const relativePath = argumentsList.length === 0 ? '' : argumentsList[0]
+        if (relativePath != null && typeof relativePath !== 'string') {
+          throw Error('Signal.stop() expects targetPath to be a string')
+        }
+        const absolutePath = joinScopePath($parent.path(), relativePath || '')
+        return compatStopOnRoot(getRoot($parent) || $parent, absolutePath)
       }
     }
 

@@ -852,6 +852,16 @@ class CompatRefUserModel extends SignalCompat {
   }
 }
 
+class CompatDomainStartModel extends SignalCompat {
+  start (type, id) {
+    return `domain:${this.path()}:${type}:${id}`
+  }
+
+  stop (id) {
+    return `domain-stop:${this.path()}:${id}`
+  }
+}
+
 class NonCompatRefUserModel extends BaseSignal {
   joinCourse (courseId) {
     return `${this.path()}:${courseId}`
@@ -1067,6 +1077,134 @@ class NonCompatRefUserModel extends BaseSignal {
 
     await $session.tutoringSession.set({ value: 3 })
     assert.deepEqual($target.get(), { value: 2 })
+  })
+})
+
+;(isCompatMode ? describe : describe.skip)('SignalCompat.start()/stop()', () => {
+  const domainCollection = 'compatStartDomain'
+  let cleanupSegments
+  let cleanupStartPaths
+  let $root
+
+  before(() => {
+    connect()
+    addModel(`${domainCollection}.*`, CompatDomainStartModel)
+    $root = getRootSignal({ rootId: '_compat_start_stop_root' })
+  })
+
+  function setup (suffix) {
+    const basePath = `_compatStart_${suffix}`
+    cleanupSegments ??= []
+    cleanupSegments.push([basePath])
+    return $root[basePath]
+  }
+
+  afterEach(() => {
+    for (const path of cleanupStartPaths || []) {
+      try {
+        $root.stop(path)
+      } catch {}
+    }
+    cleanupStartPaths = []
+    for (const segments of cleanupSegments || []) _del(segments)
+    cleanupSegments = []
+    _del([domainCollection])
+    _del(['_session'])
+  })
+
+  it('$root.start/$root.stop compute and update value', async () => {
+    const $base = setup('writes')
+    await $base.dep.set({ stageIds: ['s1'] })
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+
+    $root.start(targetPath, $base.dep, dep => ({
+      stageIds: dep.stageIds.slice(),
+      total: dep.stageIds.length
+    }))
+
+    assert.deepEqual($base.virtual.get(), { stageIds: ['s1'], total: 1 })
+
+    await $base.dep.set({ stageIds: ['s1', 's2'] })
+    assert.deepEqual($base.virtual.get(), { stageIds: ['s1', 's2'], total: 2 })
+    $root.stop(targetPath)
+    cleanupStartPaths = []
+    await $base.dep.set({ stageIds: ['s1', 's2', 's3'] })
+    assert.deepEqual($base.virtual.get(), { stageIds: ['s1', 's2'], total: 2 })
+  })
+
+  it('non-root start/stop delegate to root (compat sugar)', async () => {
+    const $base = setup('sugar')
+    await $base.dep.set({ count: 1 })
+    const absTargetPath = `${$base.path()}.virtual.value`
+    cleanupStartPaths = [absTargetPath]
+
+    $base.start('virtual.value', $base.dep, dep => dep.count)
+    assert.equal($base.virtual.value.get(), 1)
+
+    await $base.dep.count.set(2)
+    assert.equal($base.virtual.value.get(), 2)
+
+    $base.stop('virtual.value')
+    cleanupStartPaths = []
+    await $base.dep.count.set(3)
+    assert.equal($base.virtual.value.get(), 2)
+  })
+
+  it('supports mixed dependencies (signal + string path + plain value)', async () => {
+    const $base = setup('mixed')
+    await $base.doc.set({ stageIds: ['a', 'b'] })
+    await $base.overrides.set({ bonus: 3 })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $base.doc, `${$base.path()}.overrides`, 10, (doc, overrides, extra) => {
+      return {
+        total: doc.stageIds.length + (overrides?.bonus || 0) + extra
+      }
+    })
+    assert.deepEqual($base.virtual.get(), { total: 15 })
+
+    await $base.overrides.bonus.set(5)
+    assert.deepEqual($base.virtual.get(), { total: 17 })
+    $root.stop(targetPath)
+    cleanupStartPaths = []
+  })
+
+  it('priority: domain model method start() wins over compat fallback', () => {
+    const $session = $root[domainCollection].session1
+    assert.equal($session.start('chat', 'u1'), `domain:${domainCollection}.session1:chat:u1`)
+  })
+
+  it('priority: deref model method start() wins over compat fallback', () => {
+    $root._session.ref('activeUser', `${domainCollection}.user2`)
+    assert.equal(
+      $root._session.activeUser.start('chat', 'u2'),
+      `domain:${domainCollection}.user2:chat:u2`
+    )
+  })
+
+  it('throws a clear error when getter is not a function', () => {
+    const $base = setup('getter')
+    const targetPath = `${$base.path()}.virtual`
+    assert.throws(
+      () => $root.start(targetPath, $base.dep, null),
+      /Signal\.start\(\) expects the last argument to be a getter function/
+    )
+  })
+
+  it('fields named start/stop remain regular data fields', async () => {
+    const $base = setup('fields')
+    const $doc = $base.doc
+    await $doc.set({ start: 'A', stop: 'B' })
+
+    assert.equal($doc.get('start'), 'A')
+    assert.equal($doc.get('stop'), 'B')
+
+    await $doc.start.set('C')
+    await $doc.stop.set('D')
+    assert.equal($doc.get('start'), 'C')
+    assert.equal($doc.get('stop'), 'D')
   })
 })
 
