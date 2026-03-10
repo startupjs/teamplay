@@ -1,8 +1,9 @@
 import { raw } from '@nx-js/observer-util'
-import { get as _get, set as _set, del as _del } from './dataTree.js'
+import { get as _get, set as _set, del as _del, getRaw } from './dataTree.js'
 import getSignal from './getSignal.js'
 import { getConnection, fetchOnly } from './connection.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
+import { isCompatEnv } from './compatEnv.js'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
@@ -76,6 +77,7 @@ export class Query {
 
   _initData () {
     { // reference the fetched docs
+      maybeMaterializeQueryDocsToCollection(this.collectionName, this.shareQuery.results)
       const docs = this.shareQuery.results.map(doc => {
         const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
         if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
@@ -98,6 +100,7 @@ export class Query {
     }
 
     this.shareQuery.on('insert', (shareDocs, index) => {
+      maybeMaterializeQueryDocsToCollection(this.collectionName, shareDocs)
       const newDocs = shareDocs.map(doc => {
         const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
         if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
@@ -270,6 +273,18 @@ export class QuerySubscriptions {
 }
 
 export const querySubscriptions = new QuerySubscriptions()
+
+function maybeMaterializeQueryDocsToCollection (collectionName, shareDocs) {
+  if (!isCompatEnv()) return
+  for (const doc of shareDocs) {
+    if (!doc?.id || doc.data == null) continue
+    const existing = getRaw([collectionName, doc.id])
+    if (existing != null) continue
+    const idFields = getIdFieldsForSegments([collectionName, doc.id])
+    if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
+    _set([collectionName, doc.id], raw(doc.data))
+  }
+}
 
 export function hashQuery (collectionName, params) {
   // TODO: probably makes sense to use fast-stable-json-stringify for this because of the params

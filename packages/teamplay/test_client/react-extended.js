@@ -1,6 +1,6 @@
 import React, { createElement as el, Fragment, createRef } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before, jest } from '@jest/globals'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import {
   $,
   useSub,
@@ -46,6 +46,7 @@ import {
 import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.js'
 import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.js'
 import { runGc, cache } from '../test/_helpers.js'
+import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
 
 before(connect)
@@ -54,6 +55,9 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 afterEach(runGc)
+
+const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
+const itCompat = isCompatMode ? it : it.skip
 
 describe('observer() options', () => {
   it('observer with forwardRef option - ref should be forwarded', async () => {
@@ -1006,6 +1010,89 @@ describe('useBatchQuery / useBatchQuery$', () => {
 
     await wait()
     expect(container.querySelector('#bqNames2').textContent).toBe('q1:Mia')
+  })
+
+  itCompat('batch query materializes doc for immediate useLocal read after useBatch', async () => {
+    const lessonId = 'lesson_batch_local_1'
+    const $lesson = await sub($.batchLocalLessons[lessonId])
+    $lesson.set({ courseId: 'course_1', stageIds: ['s1', 's2'] })
+    await wait()
+
+    _del(['batchLocalLessons', lessonId])
+    expect(_get(['batchLocalLessons', lessonId])).toBe(undefined)
+
+    const Component = observer(() => {
+      useBatchQuery('batchLocalLessons', { courseId: 'course_1' })
+      useBatch()
+      const [lesson] = useLocal(`batchLocalLessons.${lessonId}`)
+      const { stageIds } = lesson
+      return el('span', { id: 'batchLocalRead' }, stageIds.join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalRead' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#batchLocalRead').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalRead').textContent).toBe('s1,s2')
+    })
+  })
+
+  itCompat('batch query materialization does not overwrite existing doc in collection tree', async () => {
+    const lessonId = 'lesson_batch_local_existing'
+    const $lesson = await sub($.batchLocalLessons[lessonId])
+    $lesson.set({ courseId: 'course_existing', stageIds: ['db'] })
+    await wait()
+
+    _set(['batchLocalLessons', lessonId], {
+      _id: lessonId,
+      id: lessonId,
+      courseId: 'course_existing',
+      stageIds: ['local']
+    })
+
+    const Component = observer(() => {
+      useBatchQuery('batchLocalLessons', { courseId: 'course_existing' })
+      useBatch()
+      const [lesson] = useLocal(`batchLocalLessons.${lessonId}`)
+      const { stageIds } = lesson
+      return el('span', { id: 'batchLocalExisting' }, stageIds.join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalExisting' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#batchLocalExisting').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalExisting').textContent).toBe('local')
+    })
+  })
+
+  itCompat('batch query insert allows immediate useLocal read in same render cycle', async () => {
+    const collection = 'batchLocalLessonsInsert'
+    const lessonId = 'lesson_batch_insert_1'
+
+    const Component = observer(() => {
+      const [docs] = useBatchQuery(collection, { courseId: 'course_insert', $sort: { createdAt: 1 } })
+      useBatch()
+      if (!docs || docs.length === 0) return el('span', { id: 'batchLocalInsert' }, 'none')
+      const firstId = docs[0]?._id ?? docs[0]?.id
+      const [lesson] = useLocal(`${collection}.${firstId}`)
+      const { stageIds } = lesson
+      return el('span', { id: 'batchLocalInsert' }, stageIds.join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalInsert' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#batchLocalInsert').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalInsert').textContent).toBe('none')
+    })
+
+    const $lesson = await sub($[collection][lessonId])
+    $lesson.set({ courseId: 'course_insert', stageIds: ['i1', 'i2'], createdAt: 1 })
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalInsert').textContent).toBe('i1,i2')
+    })
   })
 })
 
