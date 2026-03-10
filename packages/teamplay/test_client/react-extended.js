@@ -1066,6 +1066,55 @@ describe('useBatchQuery / useBatchQuery$', () => {
     })
   })
 
+  itCompat('batch query param switch suspends before immediate useLocal read', async () => {
+    const collection = 'batchLocalLessonsSwitch'
+    const lessonA = 'lesson_batch_switch_1'
+    const lessonB = 'lesson_batch_switch_2'
+
+    const $lessonA = await sub($[collection][lessonA])
+    const $lessonB = await sub($[collection][lessonB])
+    $lessonA.set({ courseId: 'course_a', stageIds: ['a1'] })
+    $lessonB.set({ courseId: 'course_b', stageIds: ['b1', 'b2'] })
+    await wait()
+
+    _del([collection, lessonA])
+    _del([collection, lessonB])
+
+    const Component = observer(() => {
+      const [courseId, setCourseId] = React.useState('course_a')
+      const [lessonId, setLessonId] = React.useState(lessonA)
+
+      useBatchQuery(collection, { courseId })
+      useBatch()
+      const [lesson] = useLocal(`${collection}.${lessonId}`)
+      const { stageIds } = lesson
+
+      return el(Fragment, null,
+        el('span', { id: 'batchLocalSwitch' }, stageIds.join(',')),
+        el('button', {
+          id: 'batchLocalSwitchBtn',
+          onClick: () => {
+            setCourseId('course_b')
+            setLessonId(lessonB)
+          }
+        }, 'switch')
+      )
+    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalSwitch' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#batchLocalSwitch').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalSwitch').textContent).toBe('a1')
+    })
+
+    fireEvent.click(container.querySelector('#batchLocalSwitchBtn'))
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalSwitch').textContent).toBe('b1,b2')
+    })
+  })
+
   itCompat('batch query insert allows immediate useLocal read in same render cycle', async () => {
     const collection = 'batchLocalLessonsInsert'
     const lessonId = 'lesson_batch_insert_1'

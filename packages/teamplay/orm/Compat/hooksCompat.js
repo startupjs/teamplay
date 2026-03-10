@@ -97,7 +97,8 @@ export function useBatchDoc (collection, id, options) {
 
 export function useBatchDoc$ (collection, id, _options) {
   const $doc = getDocSignal(collection, id, 'useBatchDoc')
-  return useSub($doc, undefined, { async: false, batch: true })
+  const options = _options ? { ..._options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
+  return useSub($doc, undefined, options)
 }
 
 export function useAsyncDoc$ (collection, id, options) {
@@ -140,7 +141,8 @@ export function useAsyncQuery (collection, query, options) {
 
 export function useBatchQuery$ (collection, query, _options) {
   const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
-  return useSub($collection, normalizeQuery(query, 'useBatchQuery'), { async: false, batch: true })
+  const options = _options ? { ..._options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
+  return useSub($collection, normalizeQuery(query, 'useBatchQuery'), options)
 }
 
 export function useBatchQuery (collection, query, options) {
@@ -306,3 +308,11 @@ function normalizeQuery (query, hookName) {
   }
   return query
 }
+
+const BATCH_SUB_OPTIONS = Object.freeze({
+  async: false,
+  batch: true,
+  // Batch hooks are a hard suspense barrier. Deferred params can skip the barrier
+  // on route transitions and cause immediate reads from stale/empty local nodes.
+  defer: false
+})
