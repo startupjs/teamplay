@@ -1,6 +1,8 @@
 import { getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
+import sub from '../sub.js'
 import useSub, { useAsyncSub } from '../../react/useSub.js'
 import universal$ from '../../react/universal$.js'
+import * as promiseBatcher from '../../react/promiseBatcher.js'
 
 const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 
@@ -72,8 +74,10 @@ export function usePage (path) {
   return useLocal(prefixLocalPath('_page', path))
 }
 
-// Placeholder for startupjs batching API. No-op in teamplay.
-export function useBatch () {}
+export function useBatch () {
+  const promise = promiseBatcher.getPromiseAll()
+  if (promise) throw promise
+}
 
 export function useDoc$ (collection, id, options) {
   const $doc = getDocSignal(collection, id, 'useDoc')
@@ -86,13 +90,15 @@ export function useDoc (collection, id, options) {
   return [$doc.get(), $doc]
 }
 
-// Batch variants are aliases to non-batch versions (no batching in teamplay).
 export function useBatchDoc (collection, id, options) {
-  return useDoc(collection, id, options)
+  const $doc = useBatchDoc$(collection, id, options)
+  if (!$doc) return [undefined, undefined]
+  return [$doc.get(), $doc]
 }
 
-export function useBatchDoc$ (collection, id, options) {
-  return useDoc$(collection, id, options)
+export function useBatchDoc$ (collection, id, _options) {
+  const $doc = getDocSignal(collection, id, 'useBatchDoc')
+  return subscribeInBatch($doc)
 }
 
 export function useAsyncDoc$ (collection, id, options) {
@@ -133,13 +139,16 @@ export function useAsyncQuery (collection, query, options) {
   return [$query.get(), $collection]
 }
 
-// Batch variants are aliases to non-batch versions (no batching in teamplay).
-export function useBatchQuery$ (collection, query, options) {
-  return useQuery$(collection, query, options)
+export function useBatchQuery$ (collection, query, _options) {
+  const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
+  return subscribeInBatch($collection, normalizeQuery(query, 'useBatchQuery'))
 }
 
 export function useBatchQuery (collection, query, options) {
-  return useQuery(collection, query, options)
+  const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
+  const $query = useBatchQuery$(collection, query, options)
+  if (!$query) return [undefined, $collection]
+  return [$query.get(), $collection]
 }
 
 export function useQueryIds (collection, ids = [], options = {}) {
@@ -157,7 +166,17 @@ export function useQueryIds (collection, ids = [], options = {}) {
 }
 
 export function useBatchQueryIds (collection, ids = [], options = {}) {
-  return useQueryIds(collection, ids, options)
+  const list = Array.isArray(ids) ? ids.slice() : []
+  if (options?.reverse) list.reverse()
+  const [docs, $collection] = useBatchQuery(collection, { _id: { $in: list } }, options)
+  if (!docs) return [docs, $collection]
+  const docsById = new Map()
+  for (const doc of docs) {
+    const id = doc?._id ?? doc?.id
+    if (id != null) docsById.set(id, doc)
+  }
+  const items = list.map(id => docsById.get(id)).filter(Boolean)
+  return [items, $collection]
 }
 
 export function useAsyncQueryIds (collection, ids = [], options = {}) {
@@ -194,11 +213,33 @@ export function useQueryDoc$ (collection, query, options) {
 }
 
 export function useBatchQueryDoc (collection, query, options) {
-  return useQueryDoc(collection, query, options)
+  const normalized = normalizeQuery(query, 'useBatchQueryDoc')
+  const queryDoc = {
+    ...normalized,
+    $limit: 1,
+    $sort: normalized.$sort || { createdAt: -1 }
+  }
+  const [docs, $collection] = useBatchQuery(collection, queryDoc, options)
+  if (!docs) return [undefined, undefined]
+  const doc = docs && docs[0]
+  const docId = doc?._id ?? doc?.id
+  const $doc = docId != null ? $collection[docId] : undefined
+  return [doc, $doc]
 }
 
 export function useBatchQueryDoc$ (collection, query, options) {
-  return useQueryDoc$(collection, query, options)
+  const [, $doc] = useBatchQueryDoc(collection, query, options)
+  return $doc
+}
+
+function subscribeInBatch ($signal, params) {
+  promiseBatcher.activate()
+  const result = params != null ? sub($signal, params) : sub($signal)
+  if (result?.then) {
+    promiseBatcher.add(result)
+    return undefined
+  }
+  return result
 }
 
 export function useAsyncQueryDoc (collection, query, options) {

@@ -16,6 +16,7 @@ import {
   useSession$,
   usePage,
   usePage$,
+  useBatch,
   useDoc,
   useDoc$,
   useBatchDoc,
@@ -793,13 +794,14 @@ describe('useDoc / useDoc$', () => {
 })
 
 describe('useBatchDoc / useBatchDoc$', () => {
-  it('useBatchDoc aliases useDoc', async () => {
+  it('useBatchDoc works with useBatch suspense flush', async () => {
     const $doc = await sub($.docHook.u3)
     $doc.set({ name: 'Tom' })
     await wait()
 
     const Component = observer(() => {
       const [doc, $user] = useBatchDoc('docHook', 'u3')
+      useBatch()
       return fr(
         el('span', { id: 'batchDoc' }, doc?.name || ''),
         el('button', { id: 'batchDocBtn', onClick: () => $user.name.set('Tim') })
@@ -814,13 +816,14 @@ describe('useBatchDoc / useBatchDoc$', () => {
     expect(container.querySelector('#batchDoc').textContent).toBe('Tim')
   })
 
-  it('useBatchDoc$ aliases useDoc$', async () => {
+  it('useBatchDoc$ works with useBatch suspense flush', async () => {
     const $doc = await sub($.docHook.u4)
     $doc.set({ name: 'Sam' })
     await wait()
 
     const Component = observer(() => {
       const $user = useBatchDoc$('docHook', 'u4')
+      useBatch()
       return fr(
         el('span', { id: 'batchDoc2' }, $user.name.get() || ''),
         el('button', { id: 'batchDocBtn2', onClick: () => $user.name.set('Sue') })
@@ -833,6 +836,16 @@ describe('useBatchDoc / useBatchDoc$', () => {
 
     fireEvent.click(container.querySelector('#batchDocBtn2'))
     expect(container.querySelector('#batchDoc2').textContent).toBe('Sue')
+  })
+
+  it('throws clear error when useBatchDoc is used without useBatch', () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const Component = observer(() => {
+      useBatchDoc('docHook', 'missingBatch')
+      return el('span', { id: 'missingBatch' }, 'x')
+    })
+    expect(() => render(el(Component))).toThrow(/useBatch\* hooks were used without a closing useBatch\(\) call/i)
+    errorSpy.mockRestore()
   })
 })
 
@@ -956,13 +969,14 @@ describe('useQuery / useQuery$', () => {
 })
 
 describe('useBatchQuery / useBatchQuery$', () => {
-  it('useBatchQuery aliases useQuery', async () => {
+  it('useBatchQuery works with useBatch suspense flush', async () => {
     const $a = await sub($.queryHook3.q1)
     $a.set({ name: 'Zoe', active: true, createdAt: 1 })
     await wait()
 
     const Component = observer(() => {
       const [docs] = useBatchQuery('queryHook3', { active: true })
+      useBatch()
       return el('span', { id: 'bqNames' }, (docs || []).map(d => d.name).join(','))
     }, { suspenseProps: { fallback: el('span', { id: 'bqNames' }, 'Loading...') } })
 
@@ -973,13 +987,14 @@ describe('useBatchQuery / useBatchQuery$', () => {
     expect(container.querySelector('#bqNames').textContent).toBe('Zoe')
   })
 
-  it('useBatchQuery$ aliases useQuery$', async () => {
+  it('useBatchQuery$ works with useBatch suspense flush', async () => {
     const $a = await sub($.queryHook4.q1)
     $a.set({ name: 'Mia', active: true, createdAt: 1 })
     await wait()
 
     const Component = observer(() => {
       const $query = useBatchQuery$('queryHook4', { active: true })
+      useBatch()
       const ids = $query.getIds()
       const docs = $query.get()
       const name = docs && docs[0]?.name
