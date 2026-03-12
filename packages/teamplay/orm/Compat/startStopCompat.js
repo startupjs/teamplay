@@ -2,6 +2,7 @@ import { observe, unobserve } from '@nx-js/observer-util'
 import { getRoot } from '../Root.js'
 
 const START_REACTIONS = Symbol('compat start reactions')
+const SKIP_TICK = Symbol('compat start skip tick')
 
 export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
   if (!isRootSignal($root)) throw Error('Signal.start() is only available on root signal')
@@ -23,7 +24,12 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
   if (existing) existing.stop()
 
   const reaction = observe(() => {
-    const resolvedDeps = deps.map(dep => resolveStartDep(dep, $root))
+    const resolvedDeps = []
+    for (const dep of deps) {
+      const resolved = resolveStartDep(dep, $root)
+      if (resolved === SKIP_TICK) return
+      resolvedDeps.push(resolved)
+    }
     let nextValue
     try {
       nextValue = getter(...resolvedDeps)
@@ -70,7 +76,7 @@ function resolveStartDep (dep, $root) {
     if (typeof dep === 'string') return resolveSignal($root, parsePathSegments(dep)).get()
     return dep
   } catch (err) {
-    if (isThenable(err)) return undefined
+    if (isThenable(err)) return SKIP_TICK
     throw err
   }
 }

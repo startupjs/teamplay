@@ -1338,19 +1338,25 @@ class NonCompatRefUserModel extends BaseSignal {
     )
   })
 
-  it('treats suspended dependency as undefined (racer-like soft behavior)', () => {
+  it('skips the tick when dependency is suspended (no getter call, no write)', async () => {
     const $base = setup('suspendedDep')
     const targetPath = `${$base.path()}.virtual`
     cleanupStartPaths = [targetPath]
+    await $base.virtual.set('stable')
     const suspendedDep = {
       path: () => '_fake.suspendedDep',
       get () { throw Promise.resolve() }
     }
+    let getterCalls = 0
 
     assert.doesNotThrow(() => {
-      $root.start(targetPath, suspendedDep, value => value ?? 'fallback')
+      $root.start(targetPath, suspendedDep, value => {
+        getterCalls += 1
+        return value ?? 'fallback'
+      })
     })
-    assert.equal($base.virtual.get(), 'fallback')
+    assert.equal(getterCalls, 0)
+    assert.equal($base.virtual.get(), 'stable')
     $root.stop(targetPath)
     cleanupStartPaths = []
   })
@@ -1366,6 +1372,38 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.throws(
       () => $root.start(targetPath, badDep, value => value),
       /boom/
+    )
+  })
+
+  it('skips the tick when getter throws thenable (no write)', async () => {
+    const $base = setup('getterThenable')
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    await $base.virtual.set('stable')
+    await $base.dep.set({ value: 1 })
+    let getterCalls = 0
+
+    assert.doesNotThrow(() => {
+      $root.start(targetPath, $base.dep, () => {
+        getterCalls += 1
+        throw Promise.resolve()
+      })
+    })
+
+    assert.equal(getterCalls, 1)
+    assert.equal($base.virtual.get(), 'stable')
+    $root.stop(targetPath)
+    cleanupStartPaths = []
+  })
+
+  it('rethrows non-thenable getter errors', async () => {
+    const $base = setup('getterError')
+    const targetPath = `${$base.path()}.virtual`
+    assert.throws(
+      () => $root.start(targetPath, 1, () => {
+        throw new Error('getter-boom')
+      }),
+      /getter-boom/
     )
   })
 
