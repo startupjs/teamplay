@@ -16,7 +16,6 @@ import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '
 import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from '../idFields.js'
 import {
   setReplace as _setReplace,
-  setPublicDocReplace as _setPublicDocReplace,
   incrementPublic as _incrementPublic,
   arrayPush as _arrayPush,
   arrayUnshift as _arrayUnshift,
@@ -180,7 +179,8 @@ class SignalCompat extends Signal {
       value = path
     }
     const $target = resolveSignal(this, segments)
-    return Signal.prototype.set.call($target, value)
+    if (value === undefined) return Signal.prototype.set.call($target, value)
+    return setReplaceOnSignal($target, value)
   }
 
   async add (collectionOrValue, value) {
@@ -673,7 +673,7 @@ async function setReplaceOnSignal ($signal, value) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   if (isPublicCollection(segments[0])) {
-    return _setPublicDocReplace(segments, value)
+    return Signal.prototype.set.call($signal, value)
   }
   if (publicOnly) throw Error(ERRORS.publicOnly)
   return _setReplace(segments, value)

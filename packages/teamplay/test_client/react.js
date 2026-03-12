@@ -6,6 +6,8 @@ import { setTestThrottling, resetTestThrottling } from '../react/useSub.js'
 import { runGc, cache } from '../test/_helpers.js'
 import connect from '../connect/test.js'
 
+const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
+
 before(connect)
 beforeEach(() => {
   expect(cache.size).toBe(1)
@@ -208,7 +210,7 @@ describe('$() function for creating values', () => {
     expect(renders).toBe(2)
   })
 
-  it('handles undefined and null values correctly. Null is treated as undefined on .set()', () => {
+  it('handles undefined and null values correctly', () => {
     let $value
     const Component = observer(() => {
       $value = $(undefined)
@@ -219,7 +221,11 @@ describe('$() function for creating values', () => {
 
     act(() => { $value.set(null) })
     rerender(el(Component))
-    expect(container.textContent).toBe('undefined')
+    if (isCompatMode) {
+      expect(container.textContent).toBe('')
+    } else {
+      expect(container.textContent).toBe('undefined')
+    }
 
     act(() => { $value.set('defined') })
     rerender(el(Component))

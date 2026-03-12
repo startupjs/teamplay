@@ -540,12 +540,19 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.arr[1].get(), 9)
   })
 
-  it('set deletes object key when value is null', async () => {
+  it('set replaces value with null (no deep merge/delete semantics)', async () => {
     setup('setnull-delete')
     await $base.set('obj', { a: 1, b: 2 })
     await $base.set('obj.a', null)
-    assert.equal($base.obj.a.get(), undefined)
-    assert.deepEqual($base.obj.get(), { b: 2 })
+    assert.equal($base.obj.a.get(), null)
+    assert.deepEqual($base.obj.get(), { a: null, b: 2 })
+  })
+
+  it('set uses replace semantics for nested objects', async () => {
+    setup('set-replace')
+    await $base.set({ a: { x: 1, y: 2 } })
+    await $base.set('a', { x: 9 })
+    assert.deepEqual($base.get(), { a: { x: 9 } })
   })
 
   it('del supports subpath', async () => {
@@ -588,6 +595,56 @@ describe('SignalCompat mutators with path', () => {
     await $base.setEach('obj', { a: 1, b: 2 })
     assert.equal($base.obj.a.get(), 1)
     assert.equal($base.obj.b.get(), 2)
+  })
+
+  it('setEach replaces each key value (racer-like set per key)', async () => {
+    setup('seteach-replace')
+    await $base.set({
+      props: {
+        old: 1,
+        nested: { stale: true }
+      }
+    })
+
+    await $base.setEach({
+      props: {
+        nested: { fresh: true }
+      }
+    })
+
+    assert.deepEqual($base.props.get(), { nested: { fresh: true } })
+  })
+
+  it('set fully replaces react-like values without crashing', async () => {
+    setup('set-react-like')
+    const reactLikeA = {
+      $$typeof: Symbol.for('react.element'),
+      type: 'div',
+      props: { a: 1, b: 2 }
+    }
+    const reactLikeB = {
+      $$typeof: Symbol.for('react.element'),
+      type: 'span',
+      props: { a: 9 }
+    }
+
+    await $base.set('node', reactLikeA)
+    await $base.set('node', reactLikeB)
+    assert.equal($base.node.get().type, 'span')
+    assert.deepEqual($base.node.get().props, { a: 9 })
+  })
+
+  it('set replaces proxy-like existing values without mutating them in place', async () => {
+    setup('set-proxy-like')
+    const guarded = new Proxy({ storeId: 'old' }, {
+      set () {
+        return false
+      }
+    })
+
+    await $base.set('node', guarded)
+    await $base.set('node', { storeId: 'new' })
+    assert.deepEqual($base.node.get(), { storeId: 'new' })
   })
 
   it('increment supports subpath and default value', async () => {
