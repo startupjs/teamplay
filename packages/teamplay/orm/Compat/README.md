@@ -370,6 +370,25 @@ Compatibility mode intentionally aligns mutators with Racer. This differs from c
 Migration note: compat behavior is intentionally Racer-aligned and may differ from core mutators.
 Composite compat mutators (`setEach`, `setDiffDeep`) apply updates atomically for Teamplay-scheduled observers via the runtime batch scheduler.
 
+### Subscription GC Delay (Compat)
+
+To reduce UI blink on rapid `unsub -> sub` cycles, compat uses an unload grace period for docs/queries.
+
+- Default in compat: `300ms`
+- Default in non-compat: `0ms` (immediate cleanup)
+
+You can tune it globally:
+
+```js
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from 'teamplay'
+
+setSubscriptionGcDelay(500)
+console.log(getSubscriptionGcDelay()) // 500
+```
+
+When refCount drops to `0`, unsubscribe/destroy is scheduled after this delay.
+If a new subscribe arrives before timeout, pending destroy is cancelled and the same doc/query instance is reused.
+
 ### set(value) and set(path, value)
 
 `SignalCompat` accepts both:

@@ -6,6 +6,7 @@ import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
+import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 
@@ -103,11 +104,13 @@ class Doc {
   }
 }
 
-class DocSubscriptions {
-  constructor () {
+export class DocSubscriptions {
+  constructor (DocClass = Doc) {
+    this.DocClass = DocClass
     this.subCount = new Map()
     this.docs = new Map()
-    this.fr = new FinalizationRegistry(segments => this.destroy(segments))
+    this.pendingDestroyTimers = new Map()
+    this.fr = new FinalizationRegistry(segments => this.scheduleDestroy(segments, { force: true }))
   }
 
   init ($doc) {
@@ -118,7 +121,7 @@ class DocSubscriptions {
       if (doc.initialized) return
       doc.init()
     } else {
-      doc = new Doc(...segments)
+      doc = new this.DocClass(...segments)
       this.docs.set(hash, doc)
       this.fr.register($doc, segments, $doc)
       doc.init()
@@ -128,10 +131,17 @@ class DocSubscriptions {
   subscribe ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
+    this.cancelDestroy(hash)
     let count = this.subCount.get(hash) || 0
     count += 1
     this.subCount.set(hash, count)
-    if (count > 1) return this.docs.get(hash)._subscribing
+    if (count > 1) {
+      const existingDoc = this.docs.get(hash)
+      if (existingDoc) return existingDoc._subscribing
+      // Recover from stale ref-count state when doc entry was already cleaned up.
+      count = 1
+      this.subCount.set(hash, count)
+    }
 
     this.init($doc)
     const doc = this.docs.get(hash)
@@ -152,19 +162,83 @@ class DocSubscriptions {
       this.subCount.set(hash, count)
       return
     }
+    this.subCount.set(hash, 0)
     this.fr.unregister($doc)
-    await this.destroy(segments)
+    await this.scheduleDestroy(segments)
   }
 
   async destroy (segments) {
     const hash = hashDoc(segments)
+    await this.destroyByHash(hash, { force: true })
+  }
+
+  async clear () {
+    for (const entry of this.pendingDestroyTimers.values()) {
+      clearTimeout(entry.timer)
+    }
+    this.pendingDestroyTimers.clear()
+    const hashes = Array.from(this.docs.keys())
+    for (const hash of hashes) {
+      await this.destroyByHash(hash, { force: true })
+    }
+    this.subCount.clear()
+  }
+
+  async flushPendingDestroys () {
+    const entries = Array.from(this.pendingDestroyTimers.entries())
+    for (const [hash, entry] of entries) {
+      clearTimeout(entry.timer)
+      this.pendingDestroyTimers.delete(hash)
+      await this.destroyByHash(hash, { force: entry.force })
+    }
+  }
+
+  async scheduleDestroy (segments, options = {}) {
+    const hash = hashDoc(segments)
+    const delay = getSubscriptionGcDelay()
+    if (delay <= 0) {
+      await this.destroyByHash(hash, options)
+      return
+    }
+    const existing = this.pendingDestroyTimers.get(hash)
+    if (existing) {
+      if (options.force) existing.force = true
+      return
+    }
+    const timer = setTimeout(() => {
+      const entry = this.pendingDestroyTimers.get(hash)
+      if (!entry) return
+      this.pendingDestroyTimers.delete(hash)
+      this.destroyByHash(hash, { force: entry.force }).catch(ignoreDestroyError)
+    }, delay)
+    this.pendingDestroyTimers.set(hash, {
+      timer,
+      force: !!options.force
+    })
+  }
+
+  cancelDestroy (hash) {
+    const entry = this.pendingDestroyTimers.get(hash)
+    if (!entry) return
+    clearTimeout(entry.timer)
+    this.pendingDestroyTimers.delete(hash)
+  }
+
+  async destroyByHash (hash, options = {}) {
+    this.cancelDestroy(hash)
+    const count = this.subCount.get(hash) || 0
+    if (!options.force && count > 0) return
     const doc = this.docs.get(hash)
-    if (!doc) return
+    if (!doc) {
+      this.subCount.delete(hash)
+      return
+    }
     this.subCount.delete(hash)
     // Always call unsubscribe() - if doc is in SUBSCRIBING state, the state machine
     // will queue a pending unsubscribe to execute after subscribe completes
     await doc.unsubscribe()
     if (doc.subscribed) return // Subscribed again while unsubscribing
+    if ((this.subCount.get(hash) || 0) > 0) return
     this.docs.delete(hash)
   }
 }
@@ -174,6 +248,8 @@ export const docSubscriptions = new DocSubscriptions()
 function hashDoc (segments) {
   return JSON.stringify(segments)
 }
+
+function ignoreDestroyError () {}
 
 function emitDocOp (collection, docId, op) {
   if (!isModelEventsEnabled()) return

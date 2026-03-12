@@ -5,15 +5,19 @@ import { $, useSub, observer, sub, aggregation } from '../index.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 import { runGc, cache } from '../test/_helpers.js'
 import connect from '../connect/test.js'
 
 before(connect)
+const baselineGcDelay = getSubscriptionGcDelay()
 beforeEach(() => {
+  setSubscriptionGcDelay(0)
   expect(cache.size).toBe(1)
 })
 afterEach(cleanup)
 afterEach(runGc)
+afterEach(() => setSubscriptionGcDelay(baselineGcDelay))
 
 function fr (...children) {
   return el(Fragment, {}, ...children)
@@ -23,6 +27,14 @@ async function wait (ms = 30) {
   return await act(async () => {
     await new Promise(resolve => setTimeout(resolve, ms))
   })
+}
+
+async function waitForCondition (predicate, timeoutMs = 500, stepMs = 20) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) return
+    await wait(stepMs)
+  }
 }
 
 describe('GC cleanup: doc subscriptions', () => {
@@ -35,16 +47,16 @@ describe('GC cleanup: doc subscriptions', () => {
     await wait()
     expect(container.textContent).toBe('empty')
 
-    const initialDocsSize = docSubscriptions.docs.size
-    const initialSubCountSize = docSubscriptions.subCount.size
-    expect(initialDocsSize).toBeGreaterThanOrEqual(1)
-    expect(initialSubCountSize).toBeGreaterThanOrEqual(1)
+    const hash = JSON.stringify(['gcDoc1', 'd1'])
+    expect((docSubscriptions.subCount.get(hash) || 0)).toBeGreaterThan(0)
+    expect(docSubscriptions.docs.has(hash)).toBe(true)
 
     unmount()
     await runGc()
+    await waitForCondition(() => !docSubscriptions.subCount.has(hash) && !docSubscriptions.docs.has(hash))
 
-    expect(docSubscriptions.docs.size).toBeLessThan(initialDocsSize)
-    expect(docSubscriptions.subCount.size).toBeLessThan(initialSubCountSize)
+    expect(docSubscriptions.subCount.has(hash)).toBe(false)
+    expect(docSubscriptions.docs.has(hash)).toBe(false)
   })
 })
 
@@ -69,6 +81,10 @@ describe('GC cleanup: query subscriptions', () => {
 
     unmount()
     await runGc()
+    await waitForCondition(() =>
+      querySubscriptions.queries.size < initialQueriesSize &&
+      querySubscriptions.subCount.size < initialSubCountSize
+    )
 
     expect(querySubscriptions.queries.size).toBeLessThan(initialQueriesSize)
     expect(querySubscriptions.subCount.size).toBeLessThan(initialSubCountSize)

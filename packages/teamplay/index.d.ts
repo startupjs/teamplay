@@ -94,6 +94,8 @@ export function useDidUpdate (fn: () => EffectCleanup, deps?: any[]): void
 export function useOnce (condition: any, fn: () => EffectCleanup): void
 export function useSyncEffect (fn: () => EffectCleanup, deps?: any[]): void
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
+export function getSubscriptionGcDelay (): number
+export function setSubscriptionGcDelay (ms?: number | null): number
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'

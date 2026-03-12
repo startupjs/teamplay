@@ -8,6 +8,7 @@ import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
+import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 export const COLLECTION_NAME = Symbol('query collection name')
@@ -211,13 +212,17 @@ export class QuerySubscriptions {
     this.QueryClass = QueryClass
     this.subCount = new Map()
     this.queries = new Map()
-    this.fr = new FinalizationRegistry(({ collectionName, params }) => this.destroy(collectionName, params))
+    this.pendingDestroyTimers = new Map()
+    this.fr = new FinalizationRegistry(({ collectionName, params }) => {
+      this.scheduleDestroy(collectionName, params, undefined, { force: true })
+    })
   }
 
   subscribe ($query) {
     const collectionName = $query[COLLECTION_NAME]
     const params = JSON.parse(JSON.stringify($query[PARAMS]))
     const hash = $query[HASH]
+    this.cancelDestroy(hash)
     let count = this.subCount.get(hash) || 0
     count += 1
     this.subCount.set(hash, count)
@@ -252,22 +257,89 @@ export class QuerySubscriptions {
       this.subCount.set(hash, count)
       return
     }
-    this.subCount.delete(hash)
+    this.subCount.set(hash, 0)
     this.fr.unregister($query)
-    const query = this.queries.get(hash)
-    if (!query) return
-    await query.unsubscribe()
-    if (query.subscribed) return // if we subscribed again while waiting for unsubscribe, we don't delete the doc
-    this.queries.delete(hash)
+    await this.scheduleDestroy($query[COLLECTION_NAME], $query[PARAMS], hash)
   }
 
-  async destroy (collectionName, params) {
+  async destroy (collectionName, params, options = {}) {
     const hash = hashQuery(collectionName, params)
+    await this.destroyByHash(hash, {
+      collectionName,
+      params,
+      force: options.force ?? true
+    })
+  }
+
+  async clear () {
+    for (const entry of this.pendingDestroyTimers.values()) {
+      clearTimeout(entry.timer)
+    }
+    this.pendingDestroyTimers.clear()
+    const hashes = Array.from(this.queries.keys())
+    for (const hash of hashes) {
+      const { collectionName, params } = parseQueryHash(hash)
+      await this.destroyByHash(hash, {
+        collectionName,
+        params,
+        force: true
+      })
+    }
+    this.subCount.clear()
+  }
+
+  async flushPendingDestroys () {
+    const entries = Array.from(this.pendingDestroyTimers.entries())
+    for (const [hash, entry] of entries) {
+      clearTimeout(entry.timer)
+      this.pendingDestroyTimers.delete(hash)
+      await this.destroyByHash(hash, { force: entry.force })
+    }
+  }
+
+  async scheduleDestroy (collectionName, params, hash = hashQuery(collectionName, params), options = {}) {
+    const delay = getSubscriptionGcDelay()
+    if (delay <= 0) {
+      await this.destroyByHash(hash, { collectionName, params, force: !!options.force })
+      return
+    }
+    const existing = this.pendingDestroyTimers.get(hash)
+    if (existing) {
+      if (options.force) existing.force = true
+      return
+    }
+    const timer = setTimeout(() => {
+      const entry = this.pendingDestroyTimers.get(hash)
+      if (!entry) return
+      this.pendingDestroyTimers.delete(hash)
+      this.destroyByHash(hash, { collectionName, params, force: entry.force }).catch(ignoreDestroyError)
+    }, delay)
+    this.pendingDestroyTimers.set(hash, {
+      timer,
+      force: !!options.force
+    })
+  }
+
+  cancelDestroy (hash) {
+    const entry = this.pendingDestroyTimers.get(hash)
+    if (!entry) return
+    clearTimeout(entry.timer)
+    this.pendingDestroyTimers.delete(hash)
+  }
+
+  async destroyByHash (hash, options = {}) {
+    this.cancelDestroy(hash)
+    const count = this.subCount.get(hash) || 0
+    if (!options.force && count > 0) return
     const query = this.queries.get(hash)
-    if (!query) return
+    if (!query) {
+      this.subCount.delete(hash)
+      return
+    }
     this.subCount.delete(hash)
     await query.unsubscribe()
     if (query.subscribed) return // if we subscribed again while waiting for unsubscribe, we don't delete the doc
+    if ((this.subCount.get(hash) || 0) > 0) return
     this.queries.delete(hash)
   }
 }
@@ -322,3 +394,5 @@ const ERRORS = {
       Params: ${$query[PARAMS]}
   `
 }
+
+function ignoreDestroyError () {}

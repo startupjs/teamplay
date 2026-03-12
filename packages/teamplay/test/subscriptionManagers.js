@@ -10,27 +10,101 @@
  * Note: Some tests are skipped due to ShareDB race conditions when rapidly
  * unsubscribing and resubscribing to the same document.
  */
-import { it, describe, before, afterEach } from 'mocha'
+import { it, describe, before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, sub } from '../index.js'
-import { docSubscriptions } from '../orm/Doc.js'
+import { docSubscriptions, DocSubscriptions } from '../orm/Doc.js'
 import {
   querySubscriptions,
   QuerySubscriptions,
+  COLLECTION_NAME as QUERY_COLLECTION_NAME,
+  PARAMS as QUERY_PARAMS,
   HASH as QUERY_HASH,
   getQuerySignal
 } from '../orm/Query.js'
+import { SEGMENTS } from '../orm/Signal.js'
 import { getConnection } from '../orm/connection.js'
 import { get as _get } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
+import {
+  getSubscriptionGcDelay,
+  setSubscriptionGcDelay,
+  __resetSubscriptionGcDelayForTests
+} from '../orm/subscriptionGcDelay.js'
 
 before(connect)
+
+const TEST_DEFAULT_SUBSCRIPTION_GC_DELAY = getSubscriptionGcDelay()
+
+beforeEach(() => {
+  // Keep existing subscription manager tests deterministic.
+  setSubscriptionGcDelay(0)
+})
+
+afterEach(() => {
+  setSubscriptionGcDelay(TEST_DEFAULT_SUBSCRIPTION_GC_DELAY)
+})
 
 function cbPromise (fn) {
   return new Promise((resolve, reject) => {
     fn((err, result) => err ? reject(err) : resolve(result))
   })
+}
+
+function wait (ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function createDocSignal (collection, docId) {
+  return {
+    [SEGMENTS]: [collection, docId],
+    path: () => `${collection}.${docId}`
+  }
+}
+
+function createMockQuerySignal (collectionName, params) {
+  const clonedParams = JSON.parse(JSON.stringify(params))
+  return {
+    [QUERY_HASH]: JSON.stringify({ query: [collectionName, clonedParams] }),
+    [QUERY_COLLECTION_NAME]: collectionName,
+    [QUERY_PARAMS]: clonedParams
+  }
+}
+
+class MockDoc {
+  constructor (collection, docId) {
+    this.collection = collection
+    this.docId = docId
+    this.subscribed = false
+    this.initialized = false
+  }
+
+  init () {
+    this.initialized = true
+  }
+
+  async subscribe () {
+    this.subscribed = true
+  }
+
+  async unsubscribe () {
+    this.subscribed = false
+  }
+}
+
+class MockQuery {
+  constructor () {
+    this.subscribed = false
+  }
+
+  async subscribe () {
+    this.subscribed = true
+  }
+
+  async unsubscribe () {
+    this.subscribed = false
+  }
 }
 
 describe('DocSubscriptions', () => {
@@ -367,6 +441,161 @@ describe('QuerySubscriptions', () => {
 
     await assert.doesNotReject(async () => manager.unsubscribe($query))
     assert.equal(manager.subCount.get(hash), undefined, 'stale sub count should be removed')
+  })
+})
+
+describe('Subscription GC grace delay', () => {
+  const gcDelay = 30
+
+  beforeEach(() => {
+    setSubscriptionGcDelay(gcDelay)
+  })
+
+  afterEach(async () => {
+    setSubscriptionGcDelay(0)
+    __resetSubscriptionGcDelayForTests()
+  })
+
+  it('uses non-zero default delay in compat mode and zero in non-compat', () => {
+    __resetSubscriptionGcDelayForTests()
+    const expectedCompat = process.env.TEAMPLAY_COMPAT === '1'
+    if (expectedCompat) {
+      assert.ok(getSubscriptionGcDelay() > 0, 'compat default delay should be non-zero')
+    } else {
+      assert.equal(getSubscriptionGcDelay(), 0, 'non-compat default delay should be zero')
+    }
+    setSubscriptionGcDelay(gcDelay)
+  })
+
+  it('doc: does not destroy immediately when refCount hits zero', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $doc = createDocSignal('gamesGrace', 'doc-immediate')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    await manager.unsubscribe($doc)
+
+    assert.equal(manager.subCount.get(hash), 0, 'count stays at 0 during grace delay')
+    assert.ok(manager.docs.get(hash), 'doc should still exist before delay expires')
+
+    await manager.clear()
+  })
+
+  it('doc: rapid unsubscribe/subscribe reuses the same instance', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $docA = createDocSignal('gamesGrace', 'doc-reuse')
+    const hash = JSON.stringify($docA[SEGMENTS])
+
+    await manager.subscribe($docA)
+    const instance = manager.docs.get(hash)
+    await manager.unsubscribe($docA)
+    await wait(5)
+
+    const $docB = createDocSignal('gamesGrace', 'doc-reuse')
+    await manager.subscribe($docB)
+    assert.equal(manager.docs.get(hash), instance, 'same instance should be reused on quick resubscribe')
+
+    await wait(gcDelay + 10)
+    assert.ok(manager.docs.get(hash), 'timer callback must not remove re-subscribed doc')
+
+    await manager.unsubscribe($docB)
+    await manager.clear()
+  })
+
+  it('doc: destroys after delay if no resubscribe', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $doc = createDocSignal('gamesGrace', 'doc-destroy')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    await manager.unsubscribe($doc)
+    assert.ok(manager.docs.get(hash), 'doc is still present right after unsubscribe')
+
+    await wait(gcDelay + 10)
+    assert.equal(manager.docs.get(hash), undefined, 'doc should be destroyed after grace delay')
+    assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after destroy')
+
+    await manager.clear()
+  })
+
+  it('query: does not destroy immediately when refCount hits zero', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const $query = createMockQuerySignal('gamesGrace', { active: true })
+    const hash = $query[QUERY_HASH]
+
+    await manager.subscribe($query)
+    await manager.unsubscribe($query)
+
+    assert.equal(manager.subCount.get(hash), 0, 'count stays at 0 during grace delay')
+    assert.ok(manager.queries.get(hash), 'query should still exist before delay expires')
+
+    await manager.clear()
+  })
+
+  it('query: rapid unsubscribe/subscribe reuses the same instance', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const $queryA = createMockQuerySignal('gamesGrace', { active: true, tab: 1 })
+    const hash = $queryA[QUERY_HASH]
+
+    await manager.subscribe($queryA)
+    const instance = manager.queries.get(hash)
+    await manager.unsubscribe($queryA)
+    await wait(5)
+
+    const $queryB = createMockQuerySignal('gamesGrace', { active: true, tab: 1 })
+    await manager.subscribe($queryB)
+    assert.equal(manager.queries.get(hash), instance, 'same instance should be reused on quick resubscribe')
+
+    await wait(gcDelay + 10)
+    assert.ok(manager.queries.get(hash), 'timer callback must not remove re-subscribed query')
+
+    await manager.unsubscribe($queryB)
+    await manager.clear()
+  })
+
+  it('query: destroys after delay if no resubscribe', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const $query = createMockQuerySignal('gamesGrace', { active: false })
+    const hash = $query[QUERY_HASH]
+
+    await manager.subscribe($query)
+    await manager.unsubscribe($query)
+    assert.ok(manager.queries.get(hash), 'query is still present right after unsubscribe')
+
+    await wait(gcDelay + 10)
+    assert.equal(manager.queries.get(hash), undefined, 'query should be destroyed after grace delay')
+    assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after destroy')
+
+    await manager.clear()
+  })
+
+  it('clear cancels pending doc/query destroy timers', async () => {
+    const docManager = new DocSubscriptions(MockDoc)
+    const queryManager = new QuerySubscriptions(MockQuery)
+    const $doc = createDocSignal('gamesGrace', 'doc-clear')
+    const $query = createMockQuerySignal('gamesGrace', { active: true, clear: 1 })
+    const docHash = JSON.stringify($doc[SEGMENTS])
+    const queryHash = $query[QUERY_HASH]
+
+    await docManager.subscribe($doc)
+    await queryManager.subscribe($query)
+    await docManager.unsubscribe($doc)
+    await queryManager.unsubscribe($query)
+
+    assert.equal(docManager.pendingDestroyTimers.size, 1, 'doc pending destroy timer is scheduled')
+    assert.equal(queryManager.pendingDestroyTimers.size, 1, 'query pending destroy timer is scheduled')
+
+    await docManager.clear()
+    await queryManager.clear()
+
+    assert.equal(docManager.pendingDestroyTimers.size, 0, 'doc pending timers are cleared')
+    assert.equal(queryManager.pendingDestroyTimers.size, 0, 'query pending timers are cleared')
+    assert.equal(docManager.docs.get(docHash), undefined, 'doc map cleaned after clear')
+    assert.equal(queryManager.queries.get(queryHash), undefined, 'query map cleaned after clear')
+
+    await wait(gcDelay + 10)
+    assert.equal(docManager.docs.get(docHash), undefined, 'no late timer side effects for docs')
+    assert.equal(queryManager.queries.get(queryHash), undefined, 'no late timer side effects for queries')
   })
 })
 

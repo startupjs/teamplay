@@ -66,6 +66,7 @@ export {
   useSyncEffect
 } from './react/helpers.js'
 export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
+export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.js'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'
