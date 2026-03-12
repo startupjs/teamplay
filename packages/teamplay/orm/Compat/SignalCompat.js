@@ -249,7 +249,15 @@ class SignalCompat extends Signal {
       object = path
     }
     const $target = resolveSignal(this, segments)
-    return Signal.prototype.assign.call($target, object)
+    if (!object) return
+    if (typeof object !== 'object') {
+      throw Error('Signal.setEach() expects an object argument, got: ' + typeof object)
+    }
+    const promises = []
+    for (const key of Object.keys(object)) {
+      promises.push(SignalCompat.prototype.set.call($target[key], object[key]))
+    }
+    await Promise.all(promises)
   }
 
   async del (path) {

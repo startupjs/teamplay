@@ -615,6 +615,22 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual($base.props.get(), { nested: { fresh: true } })
   })
 
+  it('setEach with null sets null (does not delete key)', async () => {
+    setup('seteach-null')
+    await $base.set({ a: 1, b: 2 })
+    await $base.setEach({ a: null })
+    assert.equal($base.a.get(), null)
+    assert.deepEqual($base.get(), { a: null, b: 2 })
+  })
+
+  it('setEach with undefined follows compat set semantics (deletes key)', async () => {
+    setup('seteach-undefined')
+    await $base.set({ a: 1, b: 2 })
+    await $base.setEach({ a: undefined })
+    assert.equal($base.a.get(), undefined)
+    assert.deepEqual($base.get(), { b: 2 })
+  })
+
   it('set fully replaces react-like values without crashing', async () => {
     setup('set-react-like')
     const reactLikeA = {
