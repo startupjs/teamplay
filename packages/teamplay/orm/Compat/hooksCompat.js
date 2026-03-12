@@ -6,6 +6,7 @@ import { getRaw } from '../dataTree.js'
 import { getConnection } from '../connection.js'
 import { isCompatEnv } from '../compatEnv.js'
 import { hashQuery, QUERIES } from '../Query.js'
+import { AGGREGATIONS } from '../Aggregation.js'
 
 const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 
@@ -373,23 +374,23 @@ function registerBatchQueryReadinessCheck (collection, query) {
   const idsSegments = [QUERIES, hash, 'ids']
   const docsSegments = [QUERIES, hash, 'docs']
   const extraSegments = [QUERIES, hash, 'extra']
-  const querySegments = [QUERIES, hash]
+  const aggregationSegments = [AGGREGATIONS, hash]
   const isAggregate = Array.isArray(query.$aggregate)
   promiseBatcher.addCheck({
     key: `query:${hash}`,
     type: 'query',
     details: { collection, hash, query, isAggregate },
-    isReady: () => isQueryReady(collection, idsSegments, docsSegments, extraSegments, querySegments, isAggregate),
+    isReady: () => isQueryReady(collection, idsSegments, docsSegments, extraSegments, aggregationSegments, isAggregate),
     getState: () => {
       const ids = getRaw(idsSegments)
       const docs = getRaw(docsSegments)
       const extra = getRaw(extraSegments)
-      const queryRoot = getRaw(querySegments)
+      const aggregation = getRaw(aggregationSegments)
       return {
         ids,
         queryDocs: docs,
         extra,
-        queryRoot,
+        aggregation,
         idMaterialization: Array.isArray(ids)
           ? ids.map(id => ({
             id,
@@ -401,13 +402,12 @@ function registerBatchQueryReadinessCheck (collection, query) {
   })
 }
 
-function isQueryReady (collection, idsSegments, docsSegments, extraSegments, querySegments, isAggregate) {
+function isQueryReady (collection, idsSegments, docsSegments, extraSegments, aggregationSegments, isAggregate) {
   if (isAggregate) {
     const docs = getRaw(docsSegments)
     if (Array.isArray(docs)) return true
     if (getRaw(extraSegments) !== undefined) return true
-    if (Array.isArray(getRaw(idsSegments))) return true
-    return getRaw(querySegments) !== undefined
+    return getRaw(aggregationSegments) !== undefined
   }
   const ids = getRaw(idsSegments)
   if (!Array.isArray(ids)) return false

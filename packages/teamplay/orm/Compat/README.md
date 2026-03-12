@@ -819,6 +819,8 @@ Async variant: no Suspense, returns `undefined` until ready.
 - for `$aggregate` queries, readiness is query-level:
   DataTree must have `$queries.<hash>.docs` (array, including empty), or `extra`.
   Aggregate rows are not required to exist as `collection.<id>` docs.
+  Presence of `$queries.<hash>.ids` alone does not mark aggregate readiness.
+  For Teamplay aggregation subscriptions, `$aggregations.<hash>` also marks readiness.
 
 ### Query Helpers
 

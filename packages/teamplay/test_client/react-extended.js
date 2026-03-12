@@ -50,6 +50,7 @@ import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
+import { aggregationSubscriptions, AGGREGATIONS } from '../orm/Aggregation.js'
 
 before(connect)
 beforeEach(() => {
@@ -1194,6 +1195,44 @@ describe('useBatchQuery / useBatchQuery$', () => {
 
     await wait()
     expect(container.querySelector('#bqNames2').textContent).toBe('q1:Mia')
+  })
+
+  itCompat('aggregate useBatchQuery resolves from query-level docs without waiting for collection docs', async () => {
+    const collection = 'batchAggregateClientReady'
+    const queryProto = aggregationSubscriptions.QueryClass.prototype
+    const originalInitData = queryProto._initData
+    queryProto._initData = function (...args) {
+      if (this.collectionName === collection && Array.isArray(this.params?.$aggregate)) {
+        _set([AGGREGATIONS, this.hash], [{ _id: null, startedStageIds: ['s1', 's2'] }])
+        return
+      }
+      return originalInitData.apply(this, args)
+    }
+
+    try {
+      const Component = observer(() => {
+        const [rows] = useBatchQuery(collection, {
+          $aggregate: [
+            { $match: { active: true } },
+            { $group: { _id: null, startedStageIds: { $push: '$stageId' } } }
+          ]
+        })
+        useBatch()
+        const joined = (rows?.[0]?.startedStageIds || []).join(',')
+        return el('span', { id: 'batchAggregateClientReady' }, `${rows?.length || 0}:${joined}`)
+      }, { suspenseProps: { fallback: el('span', { id: 'batchAggregateClientReady' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchAggregateClientReady').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchAggregateClientReady').textContent).toBe('1:s1,s2')
+      })
+      expect(_get([collection, null])).toBe(undefined)
+      expect(_get([collection, 'null'])).toBe(undefined)
+    } finally {
+      queryProto._initData = originalInitData
+    }
   })
 
   itCompat('batch query materializes doc for immediate useLocal read after useBatch', async () => {
