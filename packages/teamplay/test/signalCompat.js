@@ -585,6 +585,61 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.obj.a.get(), 1)
   })
 
+  it('setDiffDeep removes stale object keys recursively', async () => {
+    setup('setdiffdeep-remove')
+    await $base.set({
+      profile: {
+        name: 'Ann',
+        role: 'student'
+      }
+    })
+    await $base.setDiffDeep({
+      profile: {
+        name: 'Kate'
+      }
+    })
+    assert.deepEqual($base.get(), {
+      profile: {
+        name: 'Kate'
+      }
+    })
+  })
+
+  it('setDiffDeep handles nested arrays in object branches', async () => {
+    setup('setdiffdeep-arrays')
+    await $base.set({
+      lists: {
+        a: [1, 2],
+        b: [1]
+      }
+    })
+    await $base.setDiffDeep({
+      lists: {
+        a: [2, 3],
+        b: [1]
+      }
+    })
+    assert.deepEqual($base.get(), {
+      lists: {
+        a: [2, 3],
+        b: [1]
+      }
+    })
+  })
+
+  it('setDiffDeep(path, value) applies recursive compat diff on the target path', async () => {
+    setup('setdiffdeep-path')
+    await $base.set({
+      profile: {
+        name: 'Ann',
+        role: 'student'
+      }
+    })
+    await $base.setDiffDeep('profile', { name: 'Bob' })
+    assert.deepEqual($base.profile.get(), { name: 'Bob' })
+    assert.deepEqual($base.get(), { profile: { name: 'Bob' } })
+  })
+
   it('setDiff(value) is an alias to compat set(value)', async () => {
     setup('setdiff-alias')
     await $base.set({ a: { x: 1, y: 2 } })

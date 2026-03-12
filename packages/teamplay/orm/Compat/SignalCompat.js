@@ -8,12 +8,12 @@ import {
   isPublicCollectionSignal,
   isPublicDocumentSignal
 } from '../SignalBase.js'
-import { getRoot } from '../Root.js'
+import { getRoot, ROOT } from '../Root.js'
 import { publicOnly, fetchOnly, setFetchOnly } from '../connection.js'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
-import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from '../idFields.js'
+import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields, isPlainObject } from '../idFields.js'
 import {
   setReplace as _setReplace,
   incrementPublic as _incrementPublic,
@@ -225,7 +225,7 @@ class SignalCompat extends Signal {
       value = path
     }
     const $target = resolveSignal(this, segments)
-    return Signal.prototype.set.call($target, value)
+    return setDiffDeepOnSignal($target, value)
   }
 
   async setDiff (path, value) {
@@ -625,6 +625,10 @@ function isSignalLike (value) {
   return value && typeof value.path === 'function' && typeof value.get === 'function'
 }
 
+function isReactLike (value) {
+  return !!(value && typeof value === 'object' && typeof value.$$typeof === 'symbol')
+}
+
 function resolveRefTarget ($signal, target, methodName) {
   if (isSignalLike(target)) return target
   if (typeof target === 'string') {
@@ -665,6 +669,89 @@ function resolveSignal ($signal, segments) {
     $cursor = $cursor[segment]
   }
   return $cursor
+}
+
+async function setDiffDeepOnSignal ($target, value) {
+  if ($target[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
+  const before = $target.get()
+  await diffDeepCompat($target, before, value)
+}
+
+async function diffDeepCompat ($signal, before, after) {
+  if (before === after) return
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    if (deepEqualCompat(before, after)) return
+    const changedIndexes = getChangedArrayIndexes(before, after)
+    if (before.length === after.length && changedIndexes.length === 1) {
+      const index = changedIndexes[0]
+      await diffDeepCompat(getChildSignal($signal, index), before[index], after[index])
+      return
+    }
+    await SignalCompat.prototype.set.call($signal, after)
+    return
+  }
+
+  if (isDiffableObject(before, after)) {
+    for (const key of Object.keys(before)) {
+      if (Object.prototype.hasOwnProperty.call(after, key)) continue
+      await SignalCompat.prototype.del.call(getChildSignal($signal, key))
+    }
+    for (const key of Object.keys(after)) {
+      await diffDeepCompat(getChildSignal($signal, key), before[key], after[key])
+    }
+    return
+  }
+
+  await SignalCompat.prototype.set.call($signal, after)
+}
+
+function isDiffableObject (before, after) {
+  if (!isPlainObject(before) || !isPlainObject(after)) return false
+  if (isReactLike(before) || isReactLike(after)) return false
+  return true
+}
+
+function getChangedArrayIndexes (before, after) {
+  if (!Array.isArray(before) || !Array.isArray(after)) return []
+  const maxLength = Math.max(before.length, after.length)
+  const changed = []
+  for (let i = 0; i < maxLength; i++) {
+    if (!deepEqualCompat(before[i], after[i])) changed.push(i)
+  }
+  return changed
+}
+
+function getChildSignal ($parent, key) {
+  const $child = new SignalCompat([...$parent[SEGMENTS], key])
+  const $root = getRoot($parent)
+  if ($root) $child[ROOT] = $root
+  return $child
+}
+
+function deepEqualCompat (left, right) {
+  if (left === right) return true
+  if (left == null || right == null) return false
+  if (typeof left !== 'object' || typeof right !== 'object') return false
+  if (Array.isArray(left) !== Array.isArray(right)) return false
+
+  if (Array.isArray(left)) {
+    if (left.length !== right.length) return false
+    for (let i = 0; i < left.length; i++) {
+      if (!deepEqualCompat(left[i], right[i])) return false
+    }
+    return true
+  }
+
+  if (!isPlainObject(left) || !isPlainObject(right)) return false
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false
+    if (!deepEqualCompat(left[key], right[key])) return false
+  }
+  return true
 }
 
 function getSignalValueAt ($signal, segments) {
