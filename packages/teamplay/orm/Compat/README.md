@@ -590,7 +590,8 @@ General notes:
 - Hooks should be used inside `observer()` components to get reactive updates.
 - Sync hooks (`useDoc`, `useQuery`) use Suspense by default (via `useSub`).
 - Async hooks (`useAsyncDoc`, `useAsyncQuery`) never throw; they return `undefined` until ready.
-- Batch hooks are **aliases**, no batching is implemented.
+- Batch hooks use a Suspense batch barrier (`useBatch`) and wait for both
+  subscribe promises and DataTree materialization readiness.
 
 ### Events
 
@@ -763,10 +764,12 @@ if (!user) return 'Loading...'
 
 Returns `undefined` until subscription resolves.
 
-#### Batch aliases
+#### Batch variants
 
-`useBatchDoc` / `useBatchDoc$` are aliases to `useDoc` / `useDoc$`.
-Batching is not implemented in Teamplay.
+`useBatchDoc` / `useBatchDoc$` participate in batch Suspense flow:
+- they register subscribe promises for `useBatch()`;
+- they also register a **materialization readiness check**:
+  doc is considered ready only when it is visible in DataTree (or explicitly missing).
 
 ### Query Hooks
 
@@ -803,9 +806,13 @@ if (!users) return 'Loading...'
 
 Async variant: no Suspense, returns `undefined` until ready.
 
-#### Batch aliases
+#### Batch variants
 
-`useBatchQuery` / `useBatchQuery$` are aliases to `useQuery` / `useQuery$`.
+`useBatchQuery` / `useBatchQuery$` participate in batch Suspense flow:
+- they register subscribe promises for `useBatch()`;
+- they register a **query readiness check**:
+  query ids must be materialized in DataTree, and each `collection.id` from ids must
+  be visible in DataTree (or explicitly missing).
 
 ### Query Helpers
 
@@ -819,7 +826,7 @@ const [users] = useQueryIds('users', ['b', 'a'])
 Options:
 - `reverse: true` — reverse order of IDs before mapping.
 
-`useBatchQueryIds` and `useAsyncQueryIds` are alias/async variants.
+`useBatchQueryIds` and `useAsyncQueryIds` are batch/async variants.
 
 #### `useQueryDoc`
 
@@ -834,16 +841,20 @@ Implementation details:
 - Adds default `$sort: { createdAt: -1 }` if `$sort` is missing
 
 `useQueryDoc$` returns only the doc signal (or `undefined`).
-`useBatchQueryDoc` / `useAsyncQueryDoc` are alias/async variants.
+`useBatchQueryDoc` / `useAsyncQueryDoc` are batch/async variants.
 
-### Batching Placeholder
+### Batch Barrier
 
-`useBatch()` is a no-op placeholder.  
-All batch hooks are **aliases** to their non-batch versions.
+`useBatch()` is a Suspense barrier for batch hooks.
 
-```js
-useBatch() // does nothing in Teamplay
-```
+It throws while:
+- batch subscribe promises are pending;
+- or subscribe promises are resolved but requested docs/queries are not yet
+  materialized in DataTree.
+
+After `useBatch()` stops throwing in compat mode, immediate reads via
+`useLocal(...).get(...)` for already requested batch entities should not produce
+transient `undefined` caused by materialization races.
 
 ## Examples
 

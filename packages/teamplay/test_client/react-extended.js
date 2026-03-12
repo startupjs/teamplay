@@ -48,6 +48,8 @@ import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.js
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
+import { docSubscriptions } from '../orm/Doc.js'
+import { querySubscriptions } from '../orm/Query.js'
 
 before(connect)
 beforeEach(() => {
@@ -851,6 +853,46 @@ describe('useBatchDoc / useBatchDoc$', () => {
     expect(() => render(el(Component))).toThrow(/useBatch\* hooks were used without a closing useBatch\(\) call/i)
     errorSpy.mockRestore()
   })
+
+  itCompat('useBatchDoc waits for data tree materialization barrier', async () => {
+    const collection = 'batchDocReadyBarrier'
+    const docId = 'doc_ready_1'
+    await $[collection][docId].set({ name: 'Ready', active: true })
+    _del([collection, docId])
+
+    const docProto = docSubscriptions.DocClass.prototype
+    const originalRefData = docProto._refData
+    docProto._refData = function (...args) {
+      if (this.collection === collection && this.docId === docId && !this.__delayRefDataOnce) {
+        this.__delayRefDataOnce = true
+        setTimeout(() => originalRefData.apply(this, args), 60)
+        return
+      }
+      return originalRefData.apply(this, args)
+    }
+
+    try {
+      const Component = observer(() => {
+        useBatchDoc(collection, docId)
+        useBatch()
+        const [doc] = useLocal(`${collection}.${docId}`)
+        const { name } = doc
+        return el('span', { id: 'batchDocReadyBarrier' }, name)
+      }, { suspenseProps: { fallback: el('span', { id: 'batchDocReadyBarrier' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Loading...')
+
+      await wait(20)
+      expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Ready')
+      })
+    } finally {
+      docProto._refData = originalRefData
+    }
+  })
 })
 
 describe('useAsyncDoc / useAsyncDoc$', () => {
@@ -1142,6 +1184,50 @@ describe('useBatchQuery / useBatchQuery$', () => {
     await waitFor(() => {
       expect(container.querySelector('#batchLocalInsert').textContent).toBe('i1,i2')
     })
+  })
+
+  itCompat('useBatchQuery waits for query materialization barrier before immediate useLocal read', async () => {
+    const collection = 'batchQueryReadyBarrier'
+    const lessonId = 'lesson_query_ready_1'
+    await $[collection][lessonId].set({ courseId: 'course_query_ready', stageIds: ['q1', 'q2'] })
+    _del([collection, lessonId])
+
+    const queryProto = querySubscriptions.QueryClass.prototype
+    const originalInitData = queryProto._initData
+    queryProto._initData = function (...args) {
+      if (
+        this.collectionName === collection &&
+        this.params?.courseId === 'course_query_ready' &&
+        !this.__delayInitDataOnce
+      ) {
+        this.__delayInitDataOnce = true
+        setTimeout(() => originalInitData.apply(this, args), 60)
+        return
+      }
+      return originalInitData.apply(this, args)
+    }
+
+    try {
+      const Component = observer(() => {
+        useBatchQuery(collection, { courseId: 'course_query_ready' })
+        useBatch()
+        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const { stageIds } = lesson
+        return el('span', { id: 'batchQueryReadyBarrier' }, stageIds.join(','))
+      }, { suspenseProps: { fallback: el('span', { id: 'batchQueryReadyBarrier' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('Loading...')
+
+      await wait(20)
+      expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('q1,q2')
+      })
+    } finally {
+      queryProto._initData = originalInitData
+    }
   })
 })
 
