@@ -1,12 +1,13 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { raw } from '@nx-js/observer-util'
+import { raw, observe, unobserve } from '@nx-js/observer-util'
 import { $, sub, addModel, aggregation, getRootSignal } from '../index.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import { getConnection, setConnection } from '../orm/connection.js'
 import connect from '../connect/test.js'
 import SignalCompat from '../orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../orm/SignalBase.js'
+import { scheduleReaction } from '../orm/batchScheduler.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
@@ -17,6 +18,11 @@ const REGEX_POSITIVE_INTEGER = /^(?:0|[1-9]\d*)$/
 function maybeTransformToArrayIndex (key) {
   if (typeof key === 'string' && REGEX_POSITIVE_INTEGER.test(key)) return +key
   return key
+}
+
+function deepCopyCompat (value) {
+  if (!value || typeof value !== 'object') return value
+  return JSON.parse(JSON.stringify(value))
 }
 
 function createCompatSignal (segments = [], rootProxy, cache) {
@@ -701,6 +707,47 @@ describe('SignalCompat mutators with path', () => {
     await $base.setEach({ a: undefined })
     assert.equal($base.a.get(), undefined)
     assert.deepEqual($base.get(), { b: 2 })
+  })
+
+  it('setEach applies updates atomically for scheduled observers', async () => {
+    setup('seteach-atomic')
+    await $base.set({ a: 0, b: 0 })
+
+    const snapshots = []
+    const reaction = observe(
+      () => ({ a: $base.a.get(), b: $base.b.get() }),
+      { lazy: true, scheduler: reaction => scheduleReaction(() => snapshots.push(reaction())) }
+    )
+    snapshots.push(reaction())
+
+    await $base.setEach({ a: 1, b: 2 })
+    unobserve(reaction)
+
+    assert.deepEqual(snapshots[snapshots.length - 1], { a: 1, b: 2 })
+    assert.equal(snapshots.some(s => s.a === 1 && s.b === 0), false)
+  })
+
+  it('setDiffDeep applies updates atomically for scheduled observers', async () => {
+    setup('setdiffdeep-atomic')
+    await $base.set({
+      profile: {
+        name: 'Ann',
+        role: 'student'
+      }
+    })
+
+    const snapshots = []
+    const reaction = observe(
+      () => deepCopyCompat($base.profile.get()),
+      { lazy: true, scheduler: reaction => scheduleReaction(() => snapshots.push(reaction())) }
+    )
+    snapshots.push(reaction())
+
+    await $base.setDiffDeep({ profile: { name: 'Kate' } })
+    unobserve(reaction)
+
+    assert.deepEqual(snapshots[snapshots.length - 1], { name: 'Kate' })
+    assert.equal(snapshots.some(s => s && s.name === 'Ann' && !('role' in s)), false)
   })
 
   it('set fully replaces react-like values without crashing', async () => {

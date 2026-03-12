@@ -3,6 +3,7 @@ import { SEGMENTS } from './Signal.js'
 import { set as _set, del as _del } from './dataTree.js'
 import { LOCAL } from './Value.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
+import { scheduleReaction } from './batchScheduler.js'
 
 // this is `let` to be able to directly change it if needed in tests or in the app
 export let DELETION_DELAY = 0 // eslint-disable-line prefer-const
@@ -18,7 +19,7 @@ class ReactionSubscriptions {
     if (this.initialized.has(id)) return
 
     this.initialized.set(id, true)
-    const reactionScheduler = reaction => runReaction(id, reaction)
+    const reactionScheduler = reaction => scheduleReaction(() => runReaction(id, reaction))
     const reaction = observe(fn, { lazy: true, scheduler: reactionScheduler })
     this.fr.register($value, [id, reaction])
     runReaction(id, reaction)

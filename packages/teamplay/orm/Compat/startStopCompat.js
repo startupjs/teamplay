@@ -1,5 +1,6 @@
 import { observe, unobserve } from '@nx-js/observer-util'
 import { getRoot } from '../Root.js'
+import { scheduleReaction } from '../batchScheduler.js'
 
 const START_REACTIONS = Symbol('compat start reactions')
 const SKIP_TICK = Symbol('compat start skip tick')
@@ -39,7 +40,7 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
     }
     const maybePromise = $target.set(nextValue)
     if (maybePromise?.catch) maybePromise.catch(ignorePromiseRejection)
-  })
+  }, { scheduler: scheduleReaction })
   store.set(targetKey, { stop: () => unobserve(reaction) })
   return $target
 }

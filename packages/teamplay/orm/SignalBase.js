@@ -49,6 +49,7 @@ import { DEFAULT_ID_FIELDS, getIdFieldsForSegments, isIdFieldPath, normalizeIdFi
 import { isCompatEnv } from './compatEnv.js'
 import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
+import { runInBatch } from './batchScheduler.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
 export const ARRAY_METHOD = Symbol('run array method on the signal')
@@ -105,7 +106,7 @@ export class Signal extends Function {
     if (arguments.length > 1) throw Error('Signal.batch() expects a single argument')
     if (fn == null) return
     if (typeof fn !== 'function') throw Error('Signal.batch() expects a function argument')
-    return fn()
+    return runInBatch(fn)
   }
 
   [GET] (method) {

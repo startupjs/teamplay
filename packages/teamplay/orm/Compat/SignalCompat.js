@@ -40,6 +40,7 @@ import { on as onCustomEvent, removeListener as removeCustomEventListener } from
 import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
 import { setRefLink, removeRefLink } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe } from './refFallback.js'
+import { runInBatch } from '../batchScheduler.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -225,7 +226,7 @@ class SignalCompat extends Signal {
       value = path
     }
     const $target = resolveSignal(this, segments)
-    return setDiffDeepOnSignal($target, value)
+    return runInBatch(() => setDiffDeepOnSignal($target, value))
   }
 
   async setDiff (path, value) {
@@ -253,11 +254,13 @@ class SignalCompat extends Signal {
     if (typeof object !== 'object') {
       throw Error('Signal.setEach() expects an object argument, got: ' + typeof object)
     }
-    const promises = []
-    for (const key of Object.keys(object)) {
-      promises.push(SignalCompat.prototype.set.call($target[key], object[key]))
-    }
-    await Promise.all(promises)
+    return runInBatch(async () => {
+      const promises = []
+      for (const key of Object.keys(object)) {
+        promises.push(SignalCompat.prototype.set.call($target[key], object[key]))
+      }
+      await Promise.all(promises)
+    })
   }
 
   async del (path) {

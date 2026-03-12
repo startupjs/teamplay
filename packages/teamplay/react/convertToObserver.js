@@ -6,6 +6,7 @@ import { __increment, __decrement } from '@teamplay/debug'
 import executionContextTracker from './executionContextTracker.js'
 import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helpers.js'
 import trapRender from './trapRender.js'
+import { scheduleReaction } from '../orm/batchScheduler.js'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
 
@@ -52,7 +53,7 @@ export default function convertToObserver (BaseComponent, {
         componentId
       })
       reactionRef.current = observe(trappedRender, {
-        scheduler: update,
+        scheduler: () => scheduleReaction(update),
         lazy: true
       })
     }

@@ -199,7 +199,8 @@ $root.start('_virtual.lesson', $.lessons[lessonId], '_session.userId', (lesson, 
 
 Behavior:
 - Calling `start()` again for the same `targetPath` replaces previous reaction.
-- `undefined` / `null` result clears target path via normal `set` semantics.
+- `undefined` result applies compat delete semantics at target path.
+- `null` result is stored as `null`.
 - Returns target signal.
 - If any dependency temporarily suspends (throws a Promise/thenable), compat skips the whole tick (getter is not called and target is not written).
 - If `getter` throws a Promise, compat skips that tick and retries on next reactive update.
@@ -365,6 +366,7 @@ Compatibility mode intentionally aligns mutators with Racer. This differs from c
 | `setDiff` | N/A as compat shim. | Alias to compat `set` for both signatures: `setDiff(value)` and `setDiff(path, value)`. |
 
 Migration note: compat behavior is intentionally Racer-aligned and may differ from core mutators.
+Composite compat mutators (`setEach`, `setDiffDeep`) apply updates atomically for Teamplay-scheduled observers via the runtime batch scheduler.
 
 ### set(value) and set(path, value)
 
