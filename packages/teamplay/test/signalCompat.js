@@ -1240,6 +1240,32 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($to.get(), { name: 'Bob' })
   })
 
+  it('routes ref syncing through scheduler in batch mode (no intermediate alias snapshots)', async () => {
+    const $base = setup('batch')
+    const $from = $base.from
+    const $to = $base.to
+
+    $from.ref($to)
+    await $to.set({ a: 0, b: 0 })
+
+    const snapshots = []
+    const reaction = observe(
+      () => deepCopyCompat($from.get()),
+      { lazy: true, scheduler: job => scheduleReaction(() => snapshots.push(job())) }
+    )
+    snapshots.push(reaction())
+    await $root.batch(async () => {
+      await $to.set({ a: 1, b: 0 })
+      await $to.set({ a: 1, b: 2 })
+    })
+
+    unobserve(reaction)
+
+    assert.deepEqual($from.get(), { a: 1, b: 2 })
+    assert.deepEqual(snapshots[snapshots.length - 1], { a: 1, b: 2 })
+    assert.equal(snapshots.some(s => s && s.a === 1 && s.b === 0), false)
+  })
+
   it('supports subpath refs from root', async () => {
     const $base = setup('subpath')
     const $session = $base.session

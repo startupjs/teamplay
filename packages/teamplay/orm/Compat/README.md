@@ -116,6 +116,8 @@ $.users.user1.scope('users', 'user2')
 Creates a lightweight alias between signals (minimal Racer-style ref).
 Mutations on the alias are forwarded to the target. The alias mirrors target updates.
 Reads (`get`/`peek`) are forwarded to the target while the ref is active.
+Ref mirroring is scheduled through Teamplay runtime scheduler, so updates remain batch-friendly
+and do not leak intermediate ref states during a single batched cycle.
 
 ```js
 const $local = $.local.value

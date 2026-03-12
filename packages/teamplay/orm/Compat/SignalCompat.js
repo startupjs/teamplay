@@ -40,7 +40,7 @@ import { on as onCustomEvent, removeListener as removeCustomEventListener } from
 import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
 import { setRefLink, removeRefLink } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe } from './refFallback.js'
-import { runInBatch } from '../batchScheduler.js'
+import { runInBatch, scheduleReaction } from '../batchScheduler.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -577,6 +577,7 @@ class SignalCompat extends Signal {
 }
 
 const REFS = Symbol('compat refs')
+const SKIP_REF_TICK = Symbol('compat ref skip tick')
 
 function getRefStore ($signal) {
   const $root = getRoot($signal) || $signal
@@ -586,12 +587,22 @@ function getRefStore ($signal) {
 
 function createRefLink ($from, $to) {
   const toReaction = observe(() => {
-    const value = $to.get()
+    const value = readRefValue($to)
+    if (value === SKIP_REF_TICK) return
     trackDeep(value)
     setDiffDeepBypassRef($from, deepCopy(value))
-  })
+  }, { scheduler: scheduleReaction })
   return () => {
     unobserve(toReaction)
+  }
+}
+
+function readRefValue ($signal) {
+  try {
+    return $signal.get()
+  } catch (err) {
+    if (isThenable(err)) return SKIP_REF_TICK
+    throw err
   }
 }
 
@@ -630,6 +641,10 @@ function isSignalLike (value) {
 
 function isReactLike (value) {
   return !!(value && typeof value === 'object' && typeof value.$$typeof === 'symbol')
+}
+
+function isThenable (value) {
+  return !!value && typeof value.then === 'function'
 }
 
 function resolveRefTarget ($signal, target, methodName) {
