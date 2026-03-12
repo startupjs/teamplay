@@ -84,7 +84,7 @@ export function useBatch () {
 
 export function useDoc$ (collection, id, options) {
   const $doc = getDocSignal(collection, id, 'useDoc')
-  const normalizedOptions = options ? { ...options, async: false } : options
+  const normalizedOptions = normalizeSyncSubOptions(options)
   return useSub($doc, undefined, normalizedOptions)
 }
 
@@ -119,14 +119,14 @@ export function useAsyncDoc (collection, id, options) {
 
 export function useQuery$ (collection, query, options) {
   const $collection = getCollectionSignal(collection, query, 'useQuery')
-  const normalizedOptions = options ? { ...options, async: false } : options
+  const normalizedOptions = normalizeSyncSubOptions(options)
   const $query = useSub($collection, normalizeQuery(query, 'useQuery'), normalizedOptions)
   return $query
 }
 
 export function useQuery (collection, query, options) {
   const $collection = getCollectionSignal(collection, query, 'useQuery')
-  const normalizedOptions = options ? { ...options, async: false } : options
+  const normalizedOptions = normalizeSyncSubOptions(options)
   const $query = useSub($collection, normalizeQuery(query, 'useQuery'), normalizedOptions)
   return [$query.get(), $collection]
 }
@@ -323,6 +323,18 @@ const BATCH_SUB_OPTIONS = Object.freeze({
   // on route transitions and cause immediate reads from stale/empty local nodes.
   defer: false
 })
+
+function normalizeSyncSubOptions (options) {
+  if (!isCompatEnv()) {
+    return options ? { ...options, async: false } : options
+  }
+  return {
+    ...(options || {}),
+    async: false,
+    // Compat sync hooks are strict by design: no deferred snapshots between route/tab switches.
+    defer: false
+  }
+}
 
 function getDocIdFromSignal ($doc) {
   const path = typeof $doc?.path === 'function' ? $doc.path() : ''

@@ -589,6 +589,9 @@ They are designed to behave close to StartupJS hooks, but adapted to Teamplay’
 General notes:
 - Hooks should be used inside `observer()` components to get reactive updates.
 - Sync hooks (`useDoc`, `useQuery`) use Suspense by default (via `useSub`).
+- In compatibility mode, sync hooks are strict (`defer: false`) to match racer-like
+  semantics and avoid transient `undefined` / empty snapshots during fast navigation.
+  This is enforced by compat hooks (user `defer` option is ignored for sync hooks).
 - Async hooks (`useAsyncDoc`, `useAsyncQuery`) never throw; they return `undefined` until ready.
 - Batch hooks use a Suspense batch barrier (`useBatch`) and wait for both
   subscribe promises and DataTree materialization readiness.

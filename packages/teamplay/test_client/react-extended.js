@@ -797,6 +797,98 @@ describe('useDoc / useDoc$', () => {
 
     warnSpy.mockRestore()
   })
+
+  itCompat('sync useDoc$ keeps suspense barrier on fast doc route switching (no transient undefined)', async () => {
+    const collection = 'syncDocRouteSwitch'
+    const lessonA = 'lesson_sync_doc_a'
+    const lessonB = 'lesson_sync_doc_b'
+    await $[collection][lessonA].set({ stageIds: ['a1'] })
+    await $[collection][lessonB].set({ stageIds: ['b1', 'b2'] })
+    _del([collection, lessonA])
+    _del([collection, lessonB])
+
+    setTestThrottling(80)
+    try {
+      const seen = []
+      const Component = observer(() => {
+        const [lessonId, setLessonId] = React.useState(lessonA)
+        useDoc$(collection, lessonId)
+        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const stageIds = lesson?.stageIds
+        const text = stageIds ? stageIds.join(',') : 'undefined'
+        seen.push(text)
+        return fr(
+          el('span', { id: 'syncDocRouteSwitch' }, text),
+          el('button', {
+            id: 'syncDocRouteSwitchToB',
+            onClick: () => setLessonId(lessonB)
+          }, 'to-b'),
+          el('button', {
+            id: 'syncDocRouteSwitchToA',
+            onClick: () => setLessonId(lessonA)
+          }, 'to-a')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'syncDocRouteSwitch' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('Loading...')
+      await waitFor(() => {
+        expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('a1')
+      })
+
+      fireEvent.click(container.querySelector('#syncDocRouteSwitchToB'))
+      await waitFor(() => {
+        expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('b1,b2')
+      })
+
+      fireEvent.click(container.querySelector('#syncDocRouteSwitchToA'))
+      await waitFor(() => {
+        expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('a1')
+      })
+      expect(seen).not.toContain('undefined')
+    } finally {
+      resetTestThrottling()
+    }
+  })
+
+  itCompat('tab-like stageIds destructuring with useDoc$ does not crash on fast switch', async () => {
+    const collection = 'syncDocTabLike'
+    const lessonA = 'lesson_sync_tab_a'
+    const lessonB = 'lesson_sync_tab_b'
+    await $[collection][lessonA].set({ stageIds: ['ta1'] })
+    await $[collection][lessonB].set({ stageIds: ['tb1', 'tb2'] })
+    _del([collection, lessonA])
+    _del([collection, lessonB])
+
+    setTestThrottling(80)
+    try {
+      const Component = observer(() => {
+        const [lessonId, setLessonId] = React.useState(lessonA)
+        useDoc$(collection, lessonId)
+        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const { stageIds } = lesson
+        return fr(
+          el('span', { id: 'syncDocTabLike' }, stageIds.join(',')),
+          el('button', {
+            id: 'syncDocTabLikeSwitch',
+            onClick: () => setLessonId(curr => curr === lessonA ? lessonB : lessonA)
+          }, 'switch')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'syncDocTabLike' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      await waitFor(() => {
+        expect(container.querySelector('#syncDocTabLike').textContent).toBe('ta1')
+      })
+
+      fireEvent.click(container.querySelector('#syncDocTabLikeSwitch'))
+      await waitFor(() => {
+        expect(container.querySelector('#syncDocTabLike').textContent).toBe('tb1,tb2')
+      })
+    } finally {
+      resetTestThrottling()
+    }
+  })
 })
 
 describe('useBatchDoc / useBatchDoc$', () => {
@@ -1011,6 +1103,56 @@ describe('useQuery / useQuery$', () => {
 
     expect(() => render(el(Component))).toThrow(/query must be an object/i)
     errorSpy.mockRestore()
+  })
+
+  itCompat('sync useQuery$ keeps suspense barrier on fast params change (no transient empty/undefined)', async () => {
+    const collection = 'syncQueryRouteSwitch'
+    const lessonA = 'lesson_sync_query_a'
+    const lessonB = 'lesson_sync_query_b'
+    await $[collection][lessonA].set({ courseId: 'courseA', stageIds: ['qa1'] })
+    await $[collection][lessonB].set({ courseId: 'courseB', stageIds: ['qb1', 'qb2'] })
+    _del([collection, lessonA])
+    _del([collection, lessonB])
+
+    setTestThrottling(80)
+    try {
+      const seen = []
+      const Component = observer(() => {
+        const [courseId, setCourseId] = React.useState('courseA')
+        const [lessonId, setLessonId] = React.useState(lessonA)
+        const $query = useQuery$(collection, { courseId })
+        const ids = $query.getIds()
+        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const stageIds = lesson?.stageIds
+        const stageText = stageIds ? stageIds.join(',') : 'undefined'
+        seen.push(`${ids.length}:${stageText}`)
+        return fr(
+          el('span', { id: 'syncQueryRouteSwitch' }, `${ids.length}:${stageText}`),
+          el('button', {
+            id: 'syncQueryRouteSwitchBtn',
+            onClick: () => {
+              setCourseId('courseB')
+              setLessonId(lessonB)
+            }
+          }, 'switch')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'syncQueryRouteSwitch' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#syncQueryRouteSwitch').textContent).toBe('Loading...')
+      await waitFor(() => {
+        expect(container.querySelector('#syncQueryRouteSwitch').textContent).toBe('1:qa1')
+      })
+
+      fireEvent.click(container.querySelector('#syncQueryRouteSwitchBtn'))
+      await waitFor(() => {
+        expect(container.querySelector('#syncQueryRouteSwitch').textContent).toBe('1:qb1,qb2')
+      })
+      expect(seen.some(text => text.includes('undefined'))).toBe(false)
+      expect(seen).not.toContain('0:qb1,qb2')
+    } finally {
+      resetTestThrottling()
+    }
   })
 })
 
