@@ -548,6 +548,14 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual($base.obj.get(), { a: null, b: 2 })
   })
 
+  it('set with undefined follows compat delete semantics', async () => {
+    setup('set-undefined')
+    await $base.set({ a: 1, b: 2 })
+    await $base.set('a', undefined)
+    assert.equal($base.a.get(), undefined)
+    assert.deepEqual($base.get(), { b: 2 })
+  })
+
   it('set uses replace semantics for nested objects', async () => {
     setup('set-replace')
     await $base.set({ a: { x: 1, y: 2 } })
@@ -577,7 +585,7 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.obj.a.get(), 1)
   })
 
-  it('setDiff acts as alias to set', async () => {
+  it('setDiff(value) applies base Signal.set semantics on current signal', async () => {
     setup('setdiff')
     await $base.setDiff({ a: 1, b: 2 })
     assert.deepEqual($base.get(), { a: 1, b: 2 })
@@ -588,6 +596,14 @@ describe('SignalCompat mutators with path', () => {
     await $base.set({ a: 1 })
     await $base.a.setDiff(null)
     assert.equal($base.a.get(), undefined)
+  })
+
+  it('setDiff(path, value) delegates to compat set semantics', async () => {
+    setup('setdiff-path-delegates')
+    await $base.set({ a: 1, b: 2 })
+    await $base.setDiff('a', null)
+    assert.equal($base.a.get(), null)
+    assert.deepEqual($base.get(), { a: null, b: 2 })
   })
 
   it('setEach supports subpath', async () => {

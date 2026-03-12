@@ -353,6 +353,19 @@ for (const $doc of $query) {
 }
 ```
 
+### Mutator Semantics (Core vs Compat)
+
+Compatibility mode intentionally aligns mutators with Racer. This differs from core `Signal` behavior.
+
+| API | Core (`Signal`) | Compat (`SignalCompat`) |
+| --- | --- | --- |
+| `set` | Uses deep-diff path (`dataTree.set` + internal `setDiffDeep`). | Path-targeted replace semantics, Racer-like. `undefined` keeps delete semantics. |
+| `setEach` | Not a special API in core mutators. | Per-key compat `set` (not `assign` merge/delete behavior). |
+| `setDiffDeep` | Deep-diff engine (`utils/setDiffDeep.js`). | Explicit deep-diff mutator (`SignalCompat.setDiffDeep`) using base deep-diff path. |
+| `setDiff` | N/A as compat shim. | `setDiff(value)` -> base `Signal.set(value)` on current signal. `setDiff(path, value)` -> compat `set(path, value)`. |
+
+Migration note: compat behavior is intentionally Racer-aligned and may differ from core mutators.
+
 ### set(value) and set(path, value)
 
 `SignalCompat` accepts both:
@@ -362,7 +375,14 @@ $.users.user1.name.set('Alice')
 $.users.user1.set('profile.name', 'Alice')
 ```
 
-In compat mode, `set` replaces values at the target path.
+In compat mode, `set` replaces the value at the target path.
+- `set(path, null)` stores `null`.
+- `set(path, undefined)` applies current delete semantics.
+
+```js
+await $.users.user1.set('profile', { name: 'Ann', role: 'student' })
+await $.users.user1.set('profile', { name: 'Kate' }) // role is removed
+```
 
 ### setNull(path?, value)
 
@@ -377,23 +397,43 @@ $.config.setNull('theme', 'light')
 Applies a diff-deep update (uses base `Signal.set` internally).
 
 ```js
-$.users.user1.setDiffDeep({ profile: { name: 'Alice' } })
+await $.users.user1.set({ profile: { name: 'Ann', role: 'student' } })
+await $.users.user1.setDiffDeep({ profile: { name: 'Kate' } }) // deep-diff path
 ```
 
 ### setDiff(path?, value)
 
-Alias for `set()` in compat. Accepts the same arguments and semantics.
+`setDiff` has two branches in compat:
+- `setDiff(value)` calls base `Signal.set(value)` on current signal (deep-diff semantics).
+- `setDiff(path, value)` delegates to compat `set(path, value)`.
 
 ```js
-$.users.user1.setDiff({ profile: { name: 'Alice' } })
+await $.users.user1.setDiff({ profile: { name: 'Kate' } })
+await $.users.user1.setDiff('profile', { name: 'Bob' }) // compat set semantics
 ```
 
 ### setEach(path?, object)
 
-Shorthand for assign. Sets or deletes fields from an object.
+Racer-like per-key set. `setEach` iterates keys and applies compat `set` for each key.
+- `setEach({ k: null })` stores `null`.
+- `setEach({ k: undefined })` applies current delete semantics.
 
 ```js
-$.users.user1.setEach({ name: 'Bob', age: 30 })
+await $.users.user1.setEach({ name: 'Bob', age: null })
+```
+
+### Null / Undefined Matrix (Compat)
+
+| Call | Result |
+| --- | --- |
+| `set(path, null)` | stores `null` at `path` |
+| `set(path, undefined)` | applies delete semantics at `path` |
+| `setEach({ k: null })` | stores `null` for `k` |
+| `setEach({ k: undefined })` | applies delete semantics for `k` |
+
+```js
+await $.users.user1.set('status', null) // status === null
+await $.users.user1.setEach({ status: undefined }) // status deleted
 ```
 
 ### assign(object)
