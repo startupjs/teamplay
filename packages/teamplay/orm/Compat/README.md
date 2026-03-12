@@ -362,7 +362,7 @@ Compatibility mode intentionally aligns mutators with Racer. This differs from c
 | `set` | Uses deep-diff path (`dataTree.set` + internal `setDiffDeep`). | Path-targeted replace semantics, Racer-like. `undefined` keeps delete semantics. |
 | `setEach` | Not a special API in core mutators. | Per-key compat `set` (not `assign` merge/delete behavior). |
 | `setDiffDeep` | Deep-diff engine (`utils/setDiffDeep.js`). | Explicit deep-diff mutator (`SignalCompat.setDiffDeep`) using base deep-diff path. |
-| `setDiff` | N/A as compat shim. | `setDiff(value)` -> base `Signal.set(value)` on current signal. `setDiff(path, value)` -> compat `set(path, value)`. |
+| `setDiff` | N/A as compat shim. | Alias to compat `set` for both signatures: `setDiff(value)` and `setDiff(path, value)`. |
 
 Migration note: compat behavior is intentionally Racer-aligned and may differ from core mutators.
 
@@ -403,13 +403,13 @@ await $.users.user1.setDiffDeep({ profile: { name: 'Kate' } }) // deep-diff path
 
 ### setDiff(path?, value)
 
-`setDiff` has two branches in compat:
-- `setDiff(value)` calls base `Signal.set(value)` on current signal (deep-diff semantics).
-- `setDiff(path, value)` delegates to compat `set(path, value)`.
+Alias for compat `set` in both forms:
+- `setDiff(value)` -> same as `set(value)`
+- `setDiff(path, value)` -> same as `set(path, value)`
 
 ```js
 await $.users.user1.setDiff({ profile: { name: 'Kate' } })
-await $.users.user1.setDiff('profile', { name: 'Bob' }) // compat set semantics
+await $.users.user1.setDiff('profile', { name: 'Bob' })
 ```
 
 ### setEach(path?, object)

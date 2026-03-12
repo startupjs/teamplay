@@ -233,7 +233,7 @@ class SignalCompat extends Signal {
     if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.setDiff() expects one or two arguments')
     if (arguments.length === 1) {
-      return Signal.prototype.set.call(this, path)
+      return this.set(path)
     }
     return this.set(path, value)
   }

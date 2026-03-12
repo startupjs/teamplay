@@ -585,17 +585,18 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.obj.a.get(), 1)
   })
 
-  it('setDiff(value) applies base Signal.set semantics on current signal', async () => {
-    setup('setdiff')
-    await $base.setDiff({ a: 1, b: 2 })
-    assert.deepEqual($base.get(), { a: 1, b: 2 })
+  it('setDiff(value) is an alias to compat set(value)', async () => {
+    setup('setdiff-alias')
+    await $base.set({ a: { x: 1, y: 2 } })
+    await $base.setDiff({ a: { x: 9 } })
+    assert.deepEqual($base.get(), { a: { x: 9 } })
   })
 
-  it('setDiff supports null deletion on child signals', async () => {
+  it('setDiff on child signal follows compat set semantics', async () => {
     setup('setdiffnull')
     await $base.set({ a: 1 })
     await $base.a.setDiff(null)
-    assert.equal($base.a.get(), undefined)
+    assert.equal($base.a.get(), null)
   })
 
   it('setDiff(path, value) delegates to compat set semantics', async () => {
