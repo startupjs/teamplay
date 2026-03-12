@@ -201,6 +201,8 @@ Behavior:
 - Calling `start()` again for the same `targetPath` replaces previous reaction.
 - `undefined` / `null` result clears target path via normal `set` semantics.
 - Returns target signal.
+- If a dependency temporarily suspends (throws a Promise), compat treats it as `undefined` for this tick.
+- If `getter` throws a Promise, compat skips that tick and retries on next reactive update.
 
 ### stop(targetPath)
 

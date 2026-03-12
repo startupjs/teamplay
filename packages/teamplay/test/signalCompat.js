@@ -1193,6 +1193,37 @@ class NonCompatRefUserModel extends BaseSignal {
     )
   })
 
+  it('treats suspended dependency as undefined (racer-like soft behavior)', () => {
+    const $base = setup('suspendedDep')
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    const suspendedDep = {
+      path: () => '_fake.suspendedDep',
+      get () { throw Promise.resolve() }
+    }
+
+    assert.doesNotThrow(() => {
+      $root.start(targetPath, suspendedDep, value => value ?? 'fallback')
+    })
+    assert.equal($base.virtual.get(), 'fallback')
+    $root.stop(targetPath)
+    cleanupStartPaths = []
+  })
+
+  it('rethrows non-thenable dependency errors', () => {
+    const $base = setup('depError')
+    const targetPath = `${$base.path()}.virtual`
+    const badDep = {
+      path: () => '_fake.badDep',
+      get () { throw new Error('boom') }
+    }
+
+    assert.throws(
+      () => $root.start(targetPath, badDep, value => value),
+      /boom/
+    )
+  })
+
   it('fields named start/stop remain regular data fields', async () => {
     const $base = setup('fields')
     const $doc = $base.doc

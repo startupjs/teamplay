@@ -24,7 +24,13 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
 
   const reaction = observe(() => {
     const resolvedDeps = deps.map(dep => resolveStartDep(dep, $root))
-    const nextValue = getter(...resolvedDeps)
+    let nextValue
+    try {
+      nextValue = getter(...resolvedDeps)
+    } catch (err) {
+      if (isThenable(err)) return
+      throw err
+    }
     const maybePromise = $target.set(nextValue)
     if (maybePromise?.catch) maybePromise.catch(ignorePromiseRejection)
   })
@@ -59,9 +65,14 @@ function getStartStore ($root) {
 }
 
 function resolveStartDep (dep, $root) {
-  if (isSignalLike(dep)) return dep.get()
-  if (typeof dep === 'string') return resolveSignal($root, parsePathSegments(dep)).get()
-  return dep
+  try {
+    if (isSignalLike(dep)) return dep.get()
+    if (typeof dep === 'string') return resolveSignal($root, parsePathSegments(dep)).get()
+    return dep
+  } catch (err) {
+    if (isThenable(err)) return undefined
+    throw err
+  }
 }
 
 function isSignalLike (value) {
@@ -83,3 +94,7 @@ function isRootSignal ($signal) {
 }
 
 function ignorePromiseRejection () {}
+
+function isThenable (value) {
+  return !!value && typeof value.then === 'function'
+}
