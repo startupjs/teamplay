@@ -816,6 +816,9 @@ Async variant: no Suspense, returns `undefined` until ready.
 - they register a **query readiness check**:
   query ids must be materialized in DataTree, and each `collection.id` from ids must
   be visible in DataTree (or explicitly missing).
+- for `$aggregate` queries, readiness is query-level:
+  DataTree must have `$queries.<hash>.docs` (array, including empty), or `extra`.
+  Aggregate rows are not required to exist as `collection.<id>` docs.
 
 ### Query Helpers
 

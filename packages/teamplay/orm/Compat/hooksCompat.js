@@ -371,16 +371,26 @@ function registerBatchQueryReadinessCheck (collection, query) {
   if (!collection || !query || typeof query !== 'object') return
   const hash = hashQuery(collection, query)
   const idsSegments = [QUERIES, hash, 'ids']
+  const docsSegments = [QUERIES, hash, 'docs']
+  const extraSegments = [QUERIES, hash, 'extra']
+  const querySegments = [QUERIES, hash]
+  const isAggregate = Array.isArray(query.$aggregate)
   promiseBatcher.addCheck({
     key: `query:${hash}`,
     type: 'query',
-    details: { collection, hash, query },
-    isReady: () => isQueryReady(collection, idsSegments),
+    details: { collection, hash, query, isAggregate },
+    isReady: () => isQueryReady(collection, idsSegments, docsSegments, extraSegments, querySegments, isAggregate),
     getState: () => {
       const ids = getRaw(idsSegments)
+      const docs = getRaw(docsSegments)
+      const extra = getRaw(extraSegments)
+      const queryRoot = getRaw(querySegments)
       return {
         ids,
-        docs: Array.isArray(ids)
+        queryDocs: docs,
+        extra,
+        queryRoot,
+        idMaterialization: Array.isArray(ids)
           ? ids.map(id => ({
             id,
             raw: getRaw([collection, id])
@@ -391,10 +401,18 @@ function registerBatchQueryReadinessCheck (collection, query) {
   })
 }
 
-function isQueryReady (collection, idsSegments) {
+function isQueryReady (collection, idsSegments, docsSegments, extraSegments, querySegments, isAggregate) {
+  if (isAggregate) {
+    const docs = getRaw(docsSegments)
+    if (Array.isArray(docs)) return true
+    if (getRaw(extraSegments) !== undefined) return true
+    if (Array.isArray(getRaw(idsSegments))) return true
+    return getRaw(querySegments) !== undefined
+  }
   const ids = getRaw(idsSegments)
   if (!Array.isArray(ids)) return false
   for (const id of ids) {
+    if (id == null) continue
     if (!isDocReady([collection, id])) return false
   }
   return true
@@ -415,4 +433,8 @@ function getShareDoc (collection, id) {
   } catch {
     return undefined
   }
+}
+
+export const __COMPAT_BATCH_READY__ = {
+  isQueryReady
 }
