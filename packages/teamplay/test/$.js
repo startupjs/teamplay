@@ -92,9 +92,25 @@ describe('$() function. Values', () => {
 
   it('set supports React elements without crashing', async () => {
     const $state = $({ node: {} })
-    const el = React.createElement('div', null, 'hi')
-    await $state.node.set(el)
-    assert.equal($state.node.get(), el)
+    const el1 = React.createElement('div', null, 'hi')
+    const el2 = React.createElement('span', null, 'bye')
+    await $state.node.set(el1)
+    await $state.node.set(el2)
+    assert.equal($state.node.get(), el2)
+  })
+
+  it('set falls back to replace when existing value rejects deep writes', async () => {
+    const guarded = new Proxy({ storeId: 'old' }, {
+      set () {
+        return false
+      }
+    })
+    const $state = $({ node: {} })
+
+    await $state.node.set(guarded)
+    await $state.node.set({ storeId: 'new' })
+
+    assert.deepEqual($state.node.get(), { storeId: 'new' })
   })
 })
 
