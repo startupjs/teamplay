@@ -3,7 +3,7 @@ import jsonDiff from 'json0-ot-diff'
 import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.js'
 import setDiffDeep from '../utils/setDiffDeep.js'
-import { getIdFieldsForSegments, stripIdFields } from './idFields.js'
+import { getIdFieldsForSegments, injectIdFields, stripIdFields } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
@@ -158,8 +158,12 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
     // > create a new doc. Full doc data is provided
     if (typeof value !== 'object') throw Error(ERRORS.notObject(segments, value))
     const newDoc = value
-    return new Promise((resolve, reject) => {
-      doc.create(newDoc, err => err ? reject(err) : resolve())
+    return createPublicDocAndHydrateLocal({
+      doc,
+      collection,
+      docId,
+      newDoc,
+      idFields
     })
   } else if (!doc.data) {
     // >> create a new doc. Partial doc data is provided (subpath)
@@ -168,8 +172,12 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
     if (!ALLOW_PARTIAL_DOC_CREATION) throw Error(ERRORS.partialDocCreation(segments, value))
     const newDoc = {}
     set(segments.slice(2), value, newDoc)
-    return new Promise((resolve, reject) => {
-      doc.create(newDoc, err => err ? reject(err) : resolve())
+    return createPublicDocAndHydrateLocal({
+      doc,
+      collection,
+      docId,
+      newDoc,
+      idFields
     })
   } else if (segments.length === 2 && (deleteValue || value == null)) {
     // > delete doc
@@ -233,8 +241,12 @@ export async function setPublicDocReplace (segments, value) {
       // > create a new doc. Full doc data is provided
       if (typeof value !== 'object') throw Error(ERRORS.notObject(segments, value))
       const newDoc = value
-      return new Promise((resolve, reject) => {
-        doc.create(newDoc, err => err ? reject(err) : resolve())
+      return createPublicDocAndHydrateLocal({
+        doc,
+        collection,
+        docId,
+        newDoc,
+        idFields
       })
     }
     // >> create a new doc. Partial doc data is provided (subpath)
@@ -243,8 +255,12 @@ export async function setPublicDocReplace (segments, value) {
     if (!ALLOW_PARTIAL_DOC_CREATION) throw Error(ERRORS.partialDocCreation(segments, value))
     const newDoc = {}
     setReplace(segments.slice(2), value, newDoc)
-    return new Promise((resolve, reject) => {
-      doc.create(newDoc, err => err ? reject(err) : resolve())
+    return createPublicDocAndHydrateLocal({
+      doc,
+      collection,
+      docId,
+      newDoc,
+      idFields
     })
   }
 
@@ -263,6 +279,21 @@ export async function setPublicDocReplace (segments, value) {
   return new Promise((resolve, reject) => {
     doc.submitOp(op, err => err ? reject(err) : resolve())
   })
+}
+
+async function createPublicDocAndHydrateLocal ({
+  doc,
+  collection,
+  docId,
+  newDoc,
+  idFields
+}) {
+  await new Promise((resolve, reject) => {
+    doc.create(newDoc, err => err ? reject(err) : resolve())
+  })
+
+  const localDoc = newDoc == null ? newDoc : JSON.parse(JSON.stringify(newDoc))
+  set([collection, docId], injectIdFields(localDoc, idFields, docId))
 }
 
 function normalizeUndefined (value) {
