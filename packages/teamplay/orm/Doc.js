@@ -40,10 +40,6 @@ class Doc {
 
   async unsubscribe () {
     await this.lifecycle.unsubscribe()
-    if (!this.subscribed) {
-      this.initialized = undefined
-      this._removeData()
-    }
   }
 
   async _subscribe () {
@@ -60,19 +56,38 @@ class Doc {
   async _unsubscribe () {
     const doc = getConnection().get(this.collection, this.docId)
     await new Promise((resolve, reject) => {
-      // First unsubscribe cleanly, then destroy to remove from connection.collections.
-      // We can't call destroy() directly because it has a race condition: if connection.get()
-      // is called before destroy completes (e.g. rapid unsub/resub), it resets _wantsDestroy
-      // creating a corrupted state ("Cannot read properties of null (reading 'callback')").
-      // By unsubscribing first and destroying in the callback, the doc is in a clean state.
       doc.unsubscribe(err => {
         if (err) return reject(err)
-        doc.destroy(err => {
-          if (err) return reject(err)
-          resolve()
-        })
+        resolve()
       })
     })
+  }
+
+  hasPending () {
+    const doc = getConnection().get(this.collection, this.docId)
+    if (typeof doc.hasPending !== 'function') return false
+    return doc.hasPending()
+  }
+
+  whenNothingPending (fn) {
+    const doc = getConnection().get(this.collection, this.docId)
+    if (typeof doc.whenNothingPending !== 'function') return fn()
+    doc.whenNothingPending(fn)
+  }
+
+  async destroy () {
+    const doc = getConnection().get(this.collection, this.docId)
+    await new Promise((resolve, reject) => {
+      doc.destroy(err => {
+        if (err) return reject(err)
+        resolve()
+      })
+    })
+  }
+
+  dispose () {
+    this.initialized = undefined
+    this._removeData()
   }
 
   _initData () {
@@ -259,13 +274,23 @@ export class DocSubscriptions {
       this.subCount.delete(hash)
       return
     }
-    this.subCount.delete(hash)
     // Always call unsubscribe() - if doc is in SUBSCRIBING state, the state machine
     // will queue a pending unsubscribe to execute after subscribe completes
     await doc.unsubscribe()
     if (doc.subscribed) return // Subscribed again while unsubscribing
-    if ((this.subCount.get(hash) || 0) > 0) return
+    if (!options.force && (this.subCount.get(hash) || 0) > 0) return
+    if (typeof doc.hasPending === 'function' && doc.hasPending()) {
+      if (typeof doc.whenNothingPending === 'function') {
+        doc.whenNothingPending(() => {
+          this.destroyByHash(hash, options).catch(ignoreDestroyError)
+        })
+      }
+      return
+    }
+    if (typeof doc.destroy === 'function') await doc.destroy()
+    if (typeof doc.dispose === 'function') doc.dispose()
     this.docs.delete(hash)
+    this.subCount.delete(hash)
   }
 }
 

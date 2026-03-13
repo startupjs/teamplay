@@ -16,6 +16,17 @@ function cbPromise (fn) {
   })
 }
 
+async function delIfExists (collection, id) {
+  const doc = getConnection().get(collection, id)
+  await cbPromise(cb => {
+    doc.fetch(err => {
+      if (err) return cb(err)
+      if (doc.data == null) return cb()
+      doc.del(cb)
+    })
+  })
+}
+
 describe('GC Cleanup Tests', () => {
   describe('Doc GC cleanup', () => {
     it('doc subscription is cleaned up when signal is garbage collected', async () => {
@@ -333,8 +344,7 @@ describe('GC Cleanup Tests', () => {
 
       // Clean up docs
       for (let i = 0; i < 3; i++) {
-        const doc = getConnection().get(collection, `leak_q_${i}`)
-        await cbPromise(cb => doc.del(cb))
+        await delIfExists(collection, `leak_q_${i}`)
       }
     })
 
@@ -477,8 +487,7 @@ describe('GC Cleanup Tests', () => {
       assert.equal(querySubscriptions.queries.size, initialQueriesSize, 'no query leaked')
 
       // Cleanup
-      const doc2 = getConnection().get(collection, 'qf_1')
-      await cbPromise(cb => doc2.del(cb))
+      await delIfExists(collection, 'qf_1')
     })
   })
 })

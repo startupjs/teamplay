@@ -93,6 +93,38 @@ class MockDoc {
   }
 }
 
+class PendingMockDoc extends MockDoc {
+  pending = false
+  destroyed = false
+  pendingCallbacks = []
+
+  setPending (value) {
+    this.pending = value
+    if (!value) {
+      const callbacks = this.pendingCallbacks
+      this.pendingCallbacks = []
+      for (const cb of callbacks) cb()
+    }
+  }
+
+  hasPending () {
+    return this.pending
+  }
+
+  whenNothingPending (cb) {
+    if (!this.pending) return cb()
+    this.pendingCallbacks.push(cb)
+  }
+
+  async destroy () {
+    this.destroyed = true
+  }
+
+  dispose () {
+    this.initialized = false
+  }
+}
+
 class MockQuery {
   constructor () {
     this.subscribed = false
@@ -530,6 +562,30 @@ describe('Subscription GC grace delay', () => {
 
     await wait(gcDelay + 10)
     assert.equal(manager.docs.get(hash), undefined, 'doc should be destroyed after grace delay')
+    assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after destroy')
+
+    await manager.clear()
+  })
+
+  it('doc: waits pending operations before destroy', async () => {
+    const manager = new DocSubscriptions(PendingMockDoc)
+    const $doc = createDocSignal('gamesGrace', 'doc-pending')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    const docInstance = manager.docs.get(hash)
+    docInstance.setPending(true)
+
+    await manager.unsubscribe($doc)
+    await wait(gcDelay + 10)
+
+    assert.ok(manager.docs.get(hash), 'doc should stay while pending')
+    assert.equal(docInstance.destroyed, false, 'destroy must be deferred')
+
+    docInstance.setPending(false)
+    await wait(0)
+
+    assert.equal(manager.docs.get(hash), undefined, 'doc should be destroyed after pending resolves')
     assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after destroy')
 
     await manager.clear()
