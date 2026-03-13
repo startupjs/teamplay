@@ -250,6 +250,19 @@ await $.subscribe($user, $$active)
 $.unsubscribe($user, $$active)
 ```
 
+### close(callback?)
+
+Compatibility shim for legacy `model.close()` calls.
+
+- In Teamplay, `$`/`model` is a global root signal (not a per-request Racer model instance).
+- Therefore `close()` is intentionally a no-op.
+- Optional callback is supported and called immediately.
+
+```js
+model.close()
+model.close(() => console.log('closed'))
+```
+
 ### fetch(...signals) / unfetch(...signals)
 
 Fetch-only variants of `subscribe` / `unsubscribe`. They load data once without a live subscription.

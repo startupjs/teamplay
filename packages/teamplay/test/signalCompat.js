@@ -363,6 +363,22 @@ describe('SignalCompat.root.connection', () => {
   })
 })
 
+describe('SignalCompat.close()', () => {
+  it('is a no-op compat shim and supports optional callback', () => {
+    const $root = createCompatRoot()
+    let called = 0
+    const result = $root.close(() => { called++ })
+    assert.equal(result, undefined)
+    assert.equal(called, 1)
+  })
+
+  it('throws on invalid callback type', () => {
+    const $root = createCompatRoot()
+    assert.throws(() => $root.close(123), /expects callback to be a function/)
+    assert.throws(() => $root.close(() => {}, () => {}), /expects zero or one argument/)
+  })
+})
+
 describe('SignalCompat.scope()', () => {
   let basePath
   let cleanupSegments

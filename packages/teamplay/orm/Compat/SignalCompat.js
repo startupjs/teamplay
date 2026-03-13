@@ -123,6 +123,16 @@ class SignalCompat extends Signal {
     return undefined
   }
 
+  close (callback) {
+    if (arguments.length > 1) throw Error('Signal.close() expects zero or one argument')
+    if (callback != null && typeof callback !== 'function') {
+      throw Error('Signal.close() expects callback to be a function')
+    }
+    // Compatibility shim for legacy `model.close()` calls.
+    // Teamplay uses a global root signal and does not have per-model instances to dispose.
+    if (callback) callback()
+  }
+
   get () {
     if (arguments.length > 1) {
       const segments = parseAtSegments(arguments, 'Signal.get()')
