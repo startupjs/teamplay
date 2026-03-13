@@ -281,6 +281,13 @@ function getArrayNode (segments, tree = dataTree, create = true) {
     const segment = segments[i]
     if (dataNode[segment] == null) {
       if (!create) return
+      // Array mutators target the final segment as an array itself.
+      // If the path is missing, initialize that final node to [].
+      if (i === segments.length - 1) {
+        dataNode[segment] = []
+        dataNode = dataNode[segment]
+        continue
+      }
       const next = segments[i + 1]
       dataNode[segment] = typeof next === 'number' ? [] : {}
     }

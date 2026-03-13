@@ -866,6 +866,54 @@ describe('SignalCompat mutators with path', () => {
     await $base.text.stringRemove(1, 10)
     assert.equal($base.text.get(), 'X')
   })
+
+  it('initializes missing nested array paths for all array mutators', async () => {
+    setup('array-implied-missing-path')
+
+    const len1 = await $base.ui.toasts.push('a')
+    assert.equal(len1, 1)
+    assert.deepEqual($base.ui.toasts.get(), ['a'])
+
+    const len2 = await $base.ui.toasts.unshift('b')
+    assert.equal(len2, 2)
+    assert.deepEqual($base.ui.toasts.get(), ['b', 'a'])
+
+    const len3 = await $base.ui.toasts.insert(1, ['x', 'y'])
+    assert.equal(len3, 4)
+    assert.deepEqual($base.ui.toasts.get(), ['b', 'x', 'y', 'a'])
+
+    const popped = await $base.ui.toasts.pop()
+    assert.equal(popped, 'a')
+    assert.deepEqual($base.ui.toasts.get(), ['b', 'x', 'y'])
+
+    const shifted = await $base.ui.toasts.shift()
+    assert.equal(shifted, 'b')
+    assert.deepEqual($base.ui.toasts.get(), ['x', 'y'])
+
+    const removed = await $base.ui.toasts.remove(0, 1)
+    assert.deepEqual(removed, ['x'])
+    assert.deepEqual($base.ui.toasts.get(), ['y'])
+
+    const moved = await $base.ui.toasts.move(0, 0)
+    assert.deepEqual(moved, ['y'])
+    assert.deepEqual($base.ui.toasts.get(), ['y'])
+
+    const popMissing = await $base.ui.missing.pop()
+    assert.equal(popMissing, undefined)
+    assert.deepEqual($base.ui.missing.get(), [])
+
+    const shiftMissing = await $base.ui.missing.shift()
+    assert.equal(shiftMissing, undefined)
+    assert.deepEqual($base.ui.missing.get(), [])
+
+    const removeMissing = await $base.ui.missing.remove(0, 1)
+    assert.deepEqual(removeMissing, [])
+    assert.deepEqual($base.ui.missing.get(), [])
+
+    const moveMissing = await $base.ui.missing.move(0, 0)
+    assert.deepEqual(moveMissing, [])
+    assert.deepEqual($base.ui.missing.get(), [])
+  })
 })
 
 describe('SignalCompat.parent()', () => {

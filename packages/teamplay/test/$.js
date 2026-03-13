@@ -182,6 +182,18 @@ describe('Signal array mutators (local)', () => {
     assert.equal(prev2, 'Xabc')
     assert.equal($text.get(), 'Xc')
   })
+
+  it('initializes missing nested array paths for local signals', async () => {
+    const $state = $({})
+
+    const len = await $state.ui.toasts.unshift('first')
+    assert.equal(len, 1)
+    assert.deepEqual($state.ui.toasts.get(), ['first'])
+
+    const popMissing = await $state.ui.other.pop()
+    assert.equal(popMissing, undefined)
+    assert.deepEqual($state.ui.other.get(), [])
+  })
 })
 
 describe('set, get, del on local collections', () => {
