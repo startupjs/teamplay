@@ -60,6 +60,18 @@ export const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 're
 export class Signal extends Function {
   static ID_FIELDS = DEFAULT_ID_FIELDS
   static [GETTERS] = DEFAULT_GETTERS
+  static associations = []
+
+  static addAssociation (association) {
+    if (!association || typeof association !== 'object') {
+      throw Error('Signal.addAssociation() expects an association object')
+    }
+    const inherited = this.associations || []
+    const own = Object.prototype.hasOwnProperty.call(this, 'associations')
+      ? this.associations
+      : inherited.slice()
+    this.associations = own.concat(association)
+  }
 
   constructor (segments) {
     if (!Array.isArray(segments)) throw Error('Signal constructor expects an array of segments')
@@ -182,6 +194,11 @@ export class Signal extends Function {
       return getAggregationCollectionName(this[SEGMENTS])
     }
     return this[SEGMENTS][0]
+  }
+
+  getAssociations () {
+    const $raw = rawSignal(this) || this
+    return $raw.constructor.associations || []
   }
 
   * [Symbol.iterator] () {

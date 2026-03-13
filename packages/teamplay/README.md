@@ -19,6 +19,18 @@ Features:
 
 For installation and documentation see [teamplay.dev](https://teamplay.dev)
 
+## ORM Compat Helpers
+
+For legacy Racer-style model mixins (for example versioning libraries which call
+`getAssociations()`), use ORM compat helpers from the `teamplay/orm` subpath:
+
+```js
+import BaseModel, { hasMany, hasOne, belongsTo } from 'teamplay/orm'
+```
+
+These helpers attach class-level associations and expose them through
+`$doc.getAssociations()` on model signals.
+
 ## License
 
 MIT

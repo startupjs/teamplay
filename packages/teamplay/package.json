@@ -6,6 +6,7 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./orm": "./orm/index.js",
     "./connect": "./connect/index.js",
     "./server": "./server.js",
     "./connect-test": "./connect/test.js",
