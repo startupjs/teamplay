@@ -193,6 +193,13 @@ export class Signal extends Function {
     if (this[SEGMENTS][0] === AGGREGATIONS) {
       return getAggregationCollectionName(this[SEGMENTS])
     }
+    // Racer compatibility:
+    // prefer static model collection (when model is mounted on alternative paths,
+    // e.g. `_virtualFields.*` -> model with `static collection = 'fields'`).
+    const collectionFromModel = this.constructor?.collection
+    if (typeof collectionFromModel === 'string' && collectionFromModel) {
+      return collectionFromModel
+    }
     return this[SEGMENTS][0]
   }
 
