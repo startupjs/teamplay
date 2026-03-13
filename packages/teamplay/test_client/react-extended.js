@@ -1289,6 +1289,62 @@ describe('useBatchQuery / useBatchQuery$', () => {
     })
   })
 
+  itCompat('batch query keeps materialized doc alive after unrelated doc subscriber unmounts', async () => {
+    const lessonId = 'lesson_batch_local_retained'
+    const $lesson = await sub($.batchLocalLessons[lessonId])
+    $lesson.set({ courseId: 'course_retained', stageIds: ['s1', 's2'] })
+    await wait()
+
+    _del(['batchLocalLessons', lessonId])
+    expect(_get(['batchLocalLessons', lessonId])).toBe(undefined)
+
+    function QueryOwner () {
+      useBatchQuery('batchLocalLessons', { courseId: 'course_retained' })
+      useBatch()
+      const [lesson] = useLocal(`batchLocalLessons.${lessonId}`)
+      return el('span', { id: 'batchLocalRetained' }, lesson.stageIds.join(','))
+    }
+
+    const QueryOwnerObserved = observer(QueryOwner, {
+      suspenseProps: { fallback: el('span', { id: 'batchLocalRetained' }, 'Loading...') }
+    })
+
+    function DocSubscriber ({ visible }) {
+      useDoc('batchLocalLessons', visible ? lessonId : '__DUMMY__')
+      if (!visible) return null
+      return el('span', { id: 'batchDocSubscriber' }, 'subscribed')
+    }
+
+    const DocSubscriberObserved = observer(DocSubscriber)
+
+    function Root () {
+      const [visible, setVisible] = React.useState(true)
+      React.useEffect(() => {
+        setVisible(false)
+      }, [])
+      return el(React.Fragment, null,
+        el(QueryOwnerObserved),
+        el(DocSubscriberObserved, { visible })
+      )
+    }
+
+    const { container } = render(el(Root))
+    expect(container.querySelector('#batchLocalRetained').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalRetained').textContent).toBe('s1,s2')
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchDocSubscriber')).toBe(null)
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchLocalRetained').textContent).toBe('s1,s2')
+      expect(_get(['batchLocalLessons', lessonId]).stageIds).toEqual(['s1', 's2'])
+    })
+  })
+
   itCompat('batch query param switch suspends before immediate useLocal read', async () => {
     const collection = 'batchLocalLessonsSwitch'
     const lessonA = 'lesson_batch_switch_1'

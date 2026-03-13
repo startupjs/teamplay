@@ -89,7 +89,7 @@ export class Query {
       const ids = this.shareQuery.results.map(doc => doc.id)
       for (const docId of ids) {
         const $doc = getSignal(undefined, [this.collectionName, docId])
-        docSubscriptions.init($doc)
+        docSubscriptions.retain($doc)
         this.docSignals.add($doc)
       }
       _set([QUERIES, this.hash, 'ids'], ids)
@@ -112,7 +112,7 @@ export class Query {
       const ids = shareDocs.map(doc => doc.id)
       for (const docId of ids) {
         const $doc = getSignal(undefined, [this.collectionName, docId])
-        docSubscriptions.init($doc)
+        docSubscriptions.retain($doc)
         this.docSignals.add($doc)
       }
       _get([QUERIES, this.hash, 'ids']).splice(index, 0, ...ids)
@@ -172,6 +172,7 @@ export class Query {
       const docIds = shareDocs.map(doc => doc.id)
       for (const docId of docIds) {
         const $doc = getSignal(undefined, [this.collectionName, docId])
+        docSubscriptions.release($doc).catch(ignoreDestroyError)
         this.docSignals.delete($doc)
       }
       const ids = _get([QUERIES, this.hash, 'ids'])
@@ -202,6 +203,9 @@ export class Query {
   }
 
   _removeData () {
+    for (const $doc of this.docSignals) {
+      docSubscriptions.release($doc).catch(ignoreDestroyError)
+    }
     this.docSignals.clear()
     _del([QUERIES, this.hash])
   }

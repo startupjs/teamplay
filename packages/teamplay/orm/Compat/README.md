@@ -389,6 +389,11 @@ console.log(getSubscriptionGcDelay()) // 500
 When refCount drops to `0`, unsubscribe/destroy is scheduled after this delay.
 If a new subscribe arrives before timeout, pending destroy is cancelled and the same doc/query instance is reused.
 
+Compat queries also retain lifecycle ownership of docs they materialize into DataTree.
+This means a doc that arrived through `useQuery` / `useBatchQuery` will stay available
+for immediate `useLocal` / `useModel` reads while that query remains subscribed, even if
+some unrelated `useDoc` subscriber for the same `collection.id` unmounts.
+
 ### set(value) and set(path, value)
 
 `SignalCompat` accepts both:

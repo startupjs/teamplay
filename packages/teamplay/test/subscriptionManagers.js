@@ -396,6 +396,23 @@ describe('QuerySubscriptions', () => {
     assert.equal(querySubscriptions.queries.get(hash), undefined, 'query should be removed from queries map after destroy')
   })
 
+  it('query retains materialized docs after an unrelated doc subscription unsubscribes', async () => {
+    const params = { active: true }
+    const $activeGames = await sub($.gamesQuery, params)
+    const hash = $activeGames[QUERY_HASH]
+    const $game = $.gamesQuery._q1
+
+    assert.deepEqual(_get(['gamesQuery', '_q1']), { name: 'Game 1', active: true, _id: '_q1' })
+
+    await docSubscriptions.subscribe($game)
+    await docSubscriptions.unsubscribe($game)
+
+    assert.equal(querySubscriptions.subCount.get(hash), 1, 'query should still be subscribed')
+    assert.deepEqual(_get(['gamesQuery', '_q1']), { name: 'Game 1', active: true, _id: '_q1' })
+
+    await querySubscriptions.unsubscribe($activeGames)
+  })
+
   it('recovers from stale subCount state when query entry is missing', async () => {
     class MockQuery {
       constructor (collectionName, params) {

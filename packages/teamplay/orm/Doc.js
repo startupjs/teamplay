@@ -149,6 +149,15 @@ export class DocSubscriptions {
     return doc._subscribing
   }
 
+  retain ($doc) {
+    const segments = [...$doc[SEGMENTS]]
+    const hash = hashDoc(segments)
+    this.cancelDestroy(hash)
+    const count = this.subCount.get(hash) || 0
+    this.subCount.set(hash, count + 1)
+    this.init($doc)
+  }
+
   async unsubscribe ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
@@ -164,6 +173,23 @@ export class DocSubscriptions {
     }
     this.subCount.set(hash, 0)
     this.fr.unregister($doc)
+    await this.scheduleDestroy(segments)
+  }
+
+  async release ($doc) {
+    const segments = [...$doc[SEGMENTS]]
+    const hash = hashDoc(segments)
+    let count = this.subCount.get(hash) || 0
+    count -= 1
+    if (count < 0) {
+      if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw ERRORS.notSubscribed($doc)
+      return
+    }
+    if (count > 0) {
+      this.subCount.set(hash, count)
+      return
+    }
+    this.subCount.set(hash, 0)
     await this.scheduleDestroy(segments)
   }
 
