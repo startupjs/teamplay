@@ -554,6 +554,31 @@ class SignalCompat extends Signal {
     return $from
   }
 
+  refExtra (path) {
+    if (arguments.length !== 1) throw Error('Signal.refExtra() expects a single argument')
+    const segments = parseAtSubpath(path, 1, 'Signal.refExtra()')
+    const $root = getRoot(this) || this
+    const $target = resolveSignal($root, segments)
+
+    let $source = this
+    if (this[IS_QUERY]) {
+      $source = this.extra
+    }
+
+    return SignalCompat.prototype.ref.call($target, $source)
+  }
+
+  refIds (path) {
+    if (arguments.length !== 1) throw Error('Signal.refIds() expects a single argument')
+    if (!this[IS_QUERY]) {
+      throw Error('Signal.refIds() can only be used on query signals')
+    }
+    const segments = parseAtSubpath(path, 1, 'Signal.refIds()')
+    const $root = getRoot(this) || this
+    const $target = resolveSignal($root, segments)
+    return SignalCompat.prototype.ref.call($target, this.ids)
+  }
+
   removeRef (path) {
     if (arguments.length > 1) throw Error('Signal.removeRef() expects a single argument')
     let $from = this
