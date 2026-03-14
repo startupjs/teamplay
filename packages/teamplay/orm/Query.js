@@ -101,13 +101,16 @@ export class Query {
     }
 
     this.shareQuery.on('insert', (shareDocs, index) => {
+      const docs = _get([QUERIES, this.hash, 'docs'])
+      const idsState = _get([QUERIES, this.hash, 'ids'])
+      if (!Array.isArray(docs) || !Array.isArray(idsState)) return
       maybeMaterializeQueryDocsToCollection(this.collectionName, shareDocs)
       const newDocs = shareDocs.map(doc => {
         const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
         if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
         return raw(doc.data)
       })
-      _get([QUERIES, this.hash, 'docs']).splice(index, 0, ...newDocs)
+      docs.splice(index, 0, ...newDocs)
 
       const ids = shareDocs.map(doc => doc.id)
       for (const docId of ids) {
@@ -115,7 +118,7 @@ export class Query {
         docSubscriptions.retain($doc)
         this.docSignals.add($doc)
       }
-      _get([QUERIES, this.hash, 'ids']).splice(index, 0, ...ids)
+      idsState.splice(index, 0, ...ids)
 
       if (isModelEventsEnabled()) {
         const docsPath = [QUERIES, this.hash, 'docs']
@@ -136,6 +139,8 @@ export class Query {
     })
     this.shareQuery.on('move', (shareDocs, from, to) => {
       const docs = _get([QUERIES, this.hash, 'docs'])
+      const ids = _get([QUERIES, this.hash, 'ids'])
+      if (!Array.isArray(docs) || !Array.isArray(ids)) return
       const prevDocs = isModelEventsEnabled() ? docs.slice() : undefined
       docs.splice(from, shareDocs.length)
       docs.splice(to, 0, ...shareDocs.map(doc => {
@@ -144,7 +149,6 @@ export class Query {
         return raw(doc.data)
       }))
 
-      const ids = _get([QUERIES, this.hash, 'ids'])
       const prevIds = isModelEventsEnabled() ? ids.slice() : undefined
       ids.splice(from, shareDocs.length)
       ids.splice(to, 0, ...shareDocs.map(doc => doc.id))
@@ -166,6 +170,8 @@ export class Query {
     })
     this.shareQuery.on('remove', (shareDocs, index) => {
       const docs = _get([QUERIES, this.hash, 'docs'])
+      const ids = _get([QUERIES, this.hash, 'ids'])
+      if (!Array.isArray(docs) || !Array.isArray(ids)) return
       const removedDocs = isModelEventsEnabled() ? docs.slice(index, index + shareDocs.length) : undefined
       docs.splice(index, shareDocs.length)
 
@@ -175,7 +181,6 @@ export class Query {
         docSubscriptions.release($doc).catch(ignoreDestroyError)
         this.docSignals.delete($doc)
       }
-      const ids = _get([QUERIES, this.hash, 'ids'])
       const removedIds = isModelEventsEnabled() ? ids.slice(index, index + docIds.length) : undefined
       ids.splice(index, docIds.length)
 
@@ -197,6 +202,7 @@ export class Query {
       }
     })
     this.shareQuery.on('extra', extra => {
+      if (_get([QUERIES, this.hash]) == null) return
       extra = raw(extra)
       _set([QUERIES, this.hash, 'extra'], extra)
     })
@@ -276,11 +282,10 @@ export class QuerySubscriptions {
   }
 
   async clear () {
-    for (const entry of this.pendingDestroyTimers.values()) {
-      clearTimeout(entry.timer)
-    }
-    this.pendingDestroyTimers.clear()
-    const hashes = Array.from(this.queries.keys())
+    const hashes = new Set([
+      ...this.pendingDestroyTimers.keys(),
+      ...this.queries.keys()
+    ])
     for (const hash of hashes) {
       const { collectionName, params } = parseQueryHash(hash)
       await this.destroyByHash(hash, {
@@ -293,11 +298,9 @@ export class QuerySubscriptions {
   }
 
   async flushPendingDestroys () {
-    const entries = Array.from(this.pendingDestroyTimers.entries())
-    for (const [hash, entry] of entries) {
-      clearTimeout(entry.timer)
-      this.pendingDestroyTimers.delete(hash)
-      await this.destroyByHash(hash, { force: entry.force })
+    const hashes = Array.from(this.pendingDestroyTimers.keys())
+    for (const hash of hashes) {
+      await this.destroyByHash(hash)
     }
   }
 
@@ -310,41 +313,70 @@ export class QuerySubscriptions {
     const existing = this.pendingDestroyTimers.get(hash)
     if (existing) {
       if (options.force) existing.force = true
-      return
+      return existing.promise
     }
-    const timer = setTimeout(() => {
-      const entry = this.pendingDestroyTimers.get(hash)
-      if (!entry) return
-      this.pendingDestroyTimers.delete(hash)
-      this.destroyByHash(hash, { collectionName, params, force: entry.force }).catch(ignoreDestroyError)
+    const entry = createPendingDestroyEntry()
+    if (options.force) entry.force = true
+    entry.timer = setTimeout(() => {
+      this.destroyByHash(hash, { collectionName, params, force: entry.force })
+        .catch(ignoreDestroyError)
     }, delay)
-    this.pendingDestroyTimers.set(hash, {
-      timer,
-      force: !!options.force
-    })
+    this.pendingDestroyTimers.set(hash, entry)
+    return entry.promise
   }
 
   cancelDestroy (hash) {
+    const entry = this.takePendingDestroy(hash)
+    if (!entry) return
+    entry.resolve()
+  }
+
+  async destroyByHash (hash, options = {}) {
+    const pendingDestroy = this.takePendingDestroy(hash)
+    if (pendingDestroy?.force) options.force = true
+
+    const settlePending = err => {
+      if (!pendingDestroy) return
+      if (err) pendingDestroy.reject(err)
+      else pendingDestroy.resolve()
+    }
+
+    try {
+      const count = this.subCount.get(hash) || 0
+      if (!options.force && count > 0) {
+        settlePending()
+        return
+      }
+      const query = this.queries.get(hash)
+      if (!query) {
+        this.subCount.delete(hash)
+        settlePending()
+        return
+      }
+      this.subCount.delete(hash)
+      await query.unsubscribe()
+      if (query.subscribed) {
+        settlePending()
+        return // if we subscribed again while waiting for unsubscribe, we don't delete the doc
+      }
+      if ((this.subCount.get(hash) || 0) > 0) {
+        settlePending()
+        return
+      }
+      this.queries.delete(hash)
+      settlePending()
+    } catch (err) {
+      settlePending(err)
+      throw err
+    }
+  }
+
+  takePendingDestroy (hash) {
     const entry = this.pendingDestroyTimers.get(hash)
     if (!entry) return
     clearTimeout(entry.timer)
     this.pendingDestroyTimers.delete(hash)
-  }
-
-  async destroyByHash (hash, options = {}) {
-    this.cancelDestroy(hash)
-    const count = this.subCount.get(hash) || 0
-    if (!options.force && count > 0) return
-    const query = this.queries.get(hash)
-    if (!query) {
-      this.subCount.delete(hash)
-      return
-    }
-    this.subCount.delete(hash)
-    await query.unsubscribe()
-    if (query.subscribed) return // if we subscribed again while waiting for unsubscribe, we don't delete the doc
-    if ((this.subCount.get(hash) || 0) > 0) return
-    this.queries.delete(hash)
+    return entry
   }
 }
 
@@ -400,3 +432,20 @@ const ERRORS = {
 }
 
 function ignoreDestroyError () {}
+
+function createPendingDestroyEntry () {
+  let resolvePending
+  let rejectPending
+  const promise = new Promise((resolve, reject) => {
+    resolvePending = resolve
+    rejectPending = reject
+  })
+  promise.catch(ignoreDestroyError)
+  return {
+    timer: undefined,
+    force: false,
+    promise,
+    resolve: resolvePending,
+    reject: rejectPending
+  }
+}

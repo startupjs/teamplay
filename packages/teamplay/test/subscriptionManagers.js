@@ -522,10 +522,13 @@ describe('Subscription GC grace delay', () => {
     const hash = JSON.stringify($doc[SEGMENTS])
 
     await manager.subscribe($doc)
-    await manager.unsubscribe($doc)
+    const unsubscribePromise = manager.unsubscribe($doc)
 
     assert.equal(manager.subCount.get(hash), 0, 'count stays at 0 during grace delay')
     assert.ok(manager.docs.get(hash), 'doc should still exist before delay expires')
+    await unsubscribePromise
+    assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after delayed cleanup')
+    assert.equal(manager.docs.get(hash), undefined, 'doc should be removed after delayed cleanup')
 
     await manager.clear()
   })
@@ -537,12 +540,13 @@ describe('Subscription GC grace delay', () => {
 
     await manager.subscribe($docA)
     const instance = manager.docs.get(hash)
-    await manager.unsubscribe($docA)
+    const unsubscribePromise = manager.unsubscribe($docA)
     await wait(5)
 
     const $docB = createDocSignal('gamesGrace', 'doc-reuse')
     await manager.subscribe($docB)
     assert.equal(manager.docs.get(hash), instance, 'same instance should be reused on quick resubscribe')
+    await unsubscribePromise
 
     await wait(gcDelay + 10)
     assert.ok(manager.docs.get(hash), 'timer callback must not remove re-subscribed doc')
@@ -557,10 +561,9 @@ describe('Subscription GC grace delay', () => {
     const hash = JSON.stringify($doc[SEGMENTS])
 
     await manager.subscribe($doc)
-    await manager.unsubscribe($doc)
+    const unsubscribePromise = manager.unsubscribe($doc)
     assert.ok(manager.docs.get(hash), 'doc is still present right after unsubscribe')
-
-    await wait(gcDelay + 10)
+    await unsubscribePromise
     assert.equal(manager.docs.get(hash), undefined, 'doc should be destroyed after grace delay')
     assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after destroy')
 
@@ -576,14 +579,19 @@ describe('Subscription GC grace delay', () => {
     const docInstance = manager.docs.get(hash)
     docInstance.setPending(true)
 
-    await manager.unsubscribe($doc)
+    const unsubscribePromise = manager.unsubscribe($doc)
+    let unsubscribeResolved = false
+    unsubscribePromise.then(() => {
+      unsubscribeResolved = true
+    })
     await wait(gcDelay + 10)
 
     assert.ok(manager.docs.get(hash), 'doc should stay while pending')
     assert.equal(docInstance.destroyed, false, 'destroy must be deferred')
+    assert.equal(unsubscribeResolved, false, 'unsubscribe should wait until pending ops are done')
 
     docInstance.setPending(false)
-    await wait(0)
+    await unsubscribePromise
 
     assert.equal(manager.docs.get(hash), undefined, 'doc should be destroyed after pending resolves')
     assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after destroy')
@@ -597,10 +605,13 @@ describe('Subscription GC grace delay', () => {
     const hash = $query[QUERY_HASH]
 
     await manager.subscribe($query)
-    await manager.unsubscribe($query)
+    const unsubscribePromise = manager.unsubscribe($query)
 
     assert.equal(manager.subCount.get(hash), 0, 'count stays at 0 during grace delay')
     assert.ok(manager.queries.get(hash), 'query should still exist before delay expires')
+    await unsubscribePromise
+    assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after delayed cleanup')
+    assert.equal(manager.queries.get(hash), undefined, 'query should be removed after delayed cleanup')
 
     await manager.clear()
   })
@@ -612,12 +623,13 @@ describe('Subscription GC grace delay', () => {
 
     await manager.subscribe($queryA)
     const instance = manager.queries.get(hash)
-    await manager.unsubscribe($queryA)
+    const unsubscribePromise = manager.unsubscribe($queryA)
     await wait(5)
 
     const $queryB = createMockQuerySignal('gamesGrace', { active: true, tab: 1 })
     await manager.subscribe($queryB)
     assert.equal(manager.queries.get(hash), instance, 'same instance should be reused on quick resubscribe')
+    await unsubscribePromise
 
     await wait(gcDelay + 10)
     assert.ok(manager.queries.get(hash), 'timer callback must not remove re-subscribed query')
@@ -632,10 +644,9 @@ describe('Subscription GC grace delay', () => {
     const hash = $query[QUERY_HASH]
 
     await manager.subscribe($query)
-    await manager.unsubscribe($query)
+    const unsubscribePromise = manager.unsubscribe($query)
     assert.ok(manager.queries.get(hash), 'query is still present right after unsubscribe')
-
-    await wait(gcDelay + 10)
+    await unsubscribePromise
     assert.equal(manager.queries.get(hash), undefined, 'query should be destroyed after grace delay')
     assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after destroy')
 
@@ -652,14 +663,15 @@ describe('Subscription GC grace delay', () => {
 
     await docManager.subscribe($doc)
     await queryManager.subscribe($query)
-    await docManager.unsubscribe($doc)
-    await queryManager.unsubscribe($query)
+    const docUnsubscribePromise = docManager.unsubscribe($doc)
+    const queryUnsubscribePromise = queryManager.unsubscribe($query)
 
     assert.equal(docManager.pendingDestroyTimers.size, 1, 'doc pending destroy timer is scheduled')
     assert.equal(queryManager.pendingDestroyTimers.size, 1, 'query pending destroy timer is scheduled')
 
     await docManager.clear()
     await queryManager.clear()
+    await Promise.all([docUnsubscribePromise, queryUnsubscribePromise])
 
     assert.equal(docManager.pendingDestroyTimers.size, 0, 'doc pending timers are cleared')
     assert.equal(queryManager.pendingDestroyTimers.size, 0, 'query pending timers are cleared')

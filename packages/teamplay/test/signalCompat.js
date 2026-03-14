@@ -1091,12 +1091,19 @@ describe('SignalCompat public mutators', () => {
     assert.ok(results.every(doc => doc.id))
   })
 
-  it('compat add normalizes id and _id', async () => {
-    const id = await $.compatGames.add({ id: 'custom', _id: 'other', name: 'Compat Add' })
+  it('compat add accepts equal id and _id', async () => {
+    const id = await $.compatGames.add({ id: 'custom', _id: 'custom', name: 'Compat Add' })
     const $doc = await sub($.compatGames[id])
     const data = $doc.get()
     assert.equal(data._id, id)
     assert.equal(data.id, id)
+  })
+
+  it('compat add throws on conflicting id and _id', async () => {
+    await assert.rejects(
+      $.compatGames.add({ id: 'custom', _id: 'other', name: 'Compat Add' }),
+      /conflicting "id".*"_id"/
+    )
   })
 })
 

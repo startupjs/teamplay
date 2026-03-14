@@ -425,7 +425,14 @@ export class Signal extends Function {
   async add (value) {
     if (arguments.length > 1) throw Error('Signal.add() expects a single argument')
     if (!value || typeof value !== 'object') throw Error('Signal.add() expects an object argument')
-    let id = value._id ?? value.id
+    const hasId = value.id != null
+    const hasUnderscoreId = value._id != null
+    if (hasId && hasUnderscoreId && value.id !== value._id) {
+      throw Error(
+        `Signal.add() got conflicting "id" (${JSON.stringify(value.id)}) and "_id" (${JSON.stringify(value._id)})`
+      )
+    }
+    let id = value.id ?? value._id
     id ??= uuid()
     const idFields = getIdFieldsForSegments([this[SEGMENTS][0], id])
     if (idFields.includes('_id')) value._id = id

@@ -147,4 +147,13 @@ describe('Id fields in docs, queries, aggregations', () => {
     const added = $[collection][createdId].get()
     assert.equal(added._id, createdId)
   })
+
+  it('local add throws on conflicting id and _id', async () => {
+    const collection = '_localIdConflict'
+    await assert.rejects(
+      $[collection].add({ id: 'custom', _id: 'other', name: 'Conflict' }),
+      /conflicting "id".*"_id"/
+    )
+    assert.equal($[collection].get(), undefined)
+  })
 })

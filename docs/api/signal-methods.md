@@ -118,6 +118,9 @@ Adds a new item to a collection signal, automatically generating a unique ID.
 const newId = await $signal.add({ name: 'New Item' })
 ```
 
+`add()` accepts either `id` or `_id` as a provided document ID.
+If both are provided, they must be equal, otherwise `add()` throws.
+
 ## getId()
 
 Returns the id for the current signal.

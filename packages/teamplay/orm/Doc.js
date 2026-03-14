@@ -106,11 +106,11 @@ class Doc {
     if (doc.data == null) return
     const idFields = getIdFieldsForSegments([this.collection, this.docId])
     if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, this.docId)
-    const hasRaw = _getRaw([this.collection, this.docId]) != null
-    if (!hasRaw) {
-      const data = isObservable(doc.data) ? raw(doc.data) : doc.data
-      _set([this.collection, this.docId], data)
-    }
+    const path = [this.collection, this.docId]
+    const data = isObservable(doc.data) ? raw(doc.data) : doc.data
+    _set(path, data)
+    const synced = _getRaw(path)
+    if (synced != null && synced !== raw(doc.data)) doc.data = synced
     if (!isObservable(doc.data)) doc.data = observable(doc.data)
   }
 
@@ -214,11 +214,10 @@ export class DocSubscriptions {
   }
 
   async clear () {
-    for (const entry of this.pendingDestroyTimers.values()) {
-      clearTimeout(entry.timer)
-    }
-    this.pendingDestroyTimers.clear()
-    const hashes = Array.from(this.docs.keys())
+    const hashes = new Set([
+      ...this.pendingDestroyTimers.keys(),
+      ...this.docs.keys()
+    ])
     for (const hash of hashes) {
       await this.destroyByHash(hash, { force: true })
     }
@@ -226,11 +225,9 @@ export class DocSubscriptions {
   }
 
   async flushPendingDestroys () {
-    const entries = Array.from(this.pendingDestroyTimers.entries())
-    for (const [hash, entry] of entries) {
-      clearTimeout(entry.timer)
-      this.pendingDestroyTimers.delete(hash)
-      await this.destroyByHash(hash, { force: entry.force })
+    const hashes = Array.from(this.pendingDestroyTimers.keys())
+    for (const hash of hashes) {
+      await this.destroyByHash(hash)
     }
   }
 
@@ -244,53 +241,88 @@ export class DocSubscriptions {
     const existing = this.pendingDestroyTimers.get(hash)
     if (existing) {
       if (options.force) existing.force = true
-      return
+      return existing.promise
     }
-    const timer = setTimeout(() => {
-      const entry = this.pendingDestroyTimers.get(hash)
-      if (!entry) return
-      this.pendingDestroyTimers.delete(hash)
+    const entry = createPendingDestroyEntry()
+    if (options.force) entry.force = true
+    entry.timer = setTimeout(() => {
       this.destroyByHash(hash, { force: entry.force }).catch(ignoreDestroyError)
     }, delay)
-    this.pendingDestroyTimers.set(hash, {
-      timer,
-      force: !!options.force
-    })
+    this.pendingDestroyTimers.set(hash, entry)
+    return entry.promise
   }
 
   cancelDestroy (hash) {
-    const entry = this.pendingDestroyTimers.get(hash)
+    const entry = this.takePendingDestroy(hash)
     if (!entry) return
-    clearTimeout(entry.timer)
-    this.pendingDestroyTimers.delete(hash)
+    entry.resolve()
   }
 
   async destroyByHash (hash, options = {}) {
-    this.cancelDestroy(hash)
-    const count = this.subCount.get(hash) || 0
-    if (!options.force && count > 0) return
-    const doc = this.docs.get(hash)
-    if (!doc) {
-      this.subCount.delete(hash)
-      return
+    let pendingDestroy = options._pendingDestroy
+    if (pendingDestroy) this.takePendingDestroy(hash, pendingDestroy)
+    else pendingDestroy = this.takePendingDestroy(hash)
+    if (pendingDestroy?.force) options.force = true
+
+    const settlePending = err => {
+      if (!pendingDestroy) return
+      if (err) pendingDestroy.reject(err)
+      else pendingDestroy.resolve()
     }
-    // Always call unsubscribe() - if doc is in SUBSCRIBING state, the state machine
-    // will queue a pending unsubscribe to execute after subscribe completes
-    await doc.unsubscribe()
-    if (doc.subscribed) return // Subscribed again while unsubscribing
-    if (!options.force && (this.subCount.get(hash) || 0) > 0) return
-    if (typeof doc.hasPending === 'function' && doc.hasPending()) {
-      if (typeof doc.whenNothingPending === 'function') {
-        doc.whenNothingPending(() => {
-          this.destroyByHash(hash, options).catch(ignoreDestroyError)
-        })
+
+    try {
+      const count = this.subCount.get(hash) || 0
+      if (!options.force && count > 0) {
+        settlePending()
+        return
       }
-      return
+      const doc = this.docs.get(hash)
+      if (!doc) {
+        this.subCount.delete(hash)
+        settlePending()
+        return
+      }
+      // Always call unsubscribe() - if doc is in SUBSCRIBING state, the state machine
+      // will queue a pending unsubscribe to execute after subscribe completes
+      await doc.unsubscribe()
+      if (doc.subscribed) {
+        settlePending()
+        return // Subscribed again while unsubscribing
+      }
+      if (!options.force && (this.subCount.get(hash) || 0) > 0) {
+        settlePending()
+        return
+      }
+      if (typeof doc.hasPending === 'function' && doc.hasPending()) {
+        if (typeof doc.whenNothingPending === 'function') {
+          if (pendingDestroy) this.pendingDestroyTimers.set(hash, pendingDestroy)
+          doc.whenNothingPending(() => {
+            const nextOptions = pendingDestroy ? { ...options, _pendingDestroy: pendingDestroy } : options
+            this.destroyByHash(hash, nextOptions).catch(ignoreDestroyError)
+          })
+        } else {
+          settlePending()
+        }
+        return
+      }
+      if (typeof doc.destroy === 'function') await doc.destroy()
+      if (typeof doc.dispose === 'function') doc.dispose()
+      this.docs.delete(hash)
+      this.subCount.delete(hash)
+      settlePending()
+    } catch (err) {
+      settlePending(err)
+      throw err
     }
-    if (typeof doc.destroy === 'function') await doc.destroy()
-    if (typeof doc.dispose === 'function') doc.dispose()
-    this.docs.delete(hash)
-    this.subCount.delete(hash)
+  }
+
+  takePendingDestroy (hash, expectedEntry) {
+    const entry = this.pendingDestroyTimers.get(hash)
+    if (!entry) return
+    if (expectedEntry && entry !== expectedEntry) return
+    clearTimeout(entry.timer)
+    this.pendingDestroyTimers.delete(hash)
+    return entry
   }
 }
 
@@ -301,6 +333,23 @@ function hashDoc (segments) {
 }
 
 function ignoreDestroyError () {}
+
+function createPendingDestroyEntry () {
+  let resolvePending
+  let rejectPending
+  const promise = new Promise((resolve, reject) => {
+    resolvePending = resolve
+    rejectPending = reject
+  })
+  promise.catch(ignoreDestroyError)
+  return {
+    timer: undefined,
+    force: false,
+    promise,
+    resolve: resolvePending,
+    reject: rejectPending
+  }
+}
 
 function emitDocOp (collection, docId, op) {
   if (!isModelEventsEnabled()) return

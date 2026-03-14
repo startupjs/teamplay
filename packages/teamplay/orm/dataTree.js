@@ -3,7 +3,7 @@ import jsonDiff from 'json0-ot-diff'
 import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.js'
 import setDiffDeep from '../utils/setDiffDeep.js'
-import { getIdFieldsForSegments, injectIdFields, stripIdFields } from './idFields.js'
+import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
@@ -145,6 +145,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
+  ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
   if (!doc.data && deleteValue) throw Error(ERRORS.deleteNonExistentDoc(segments))
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
@@ -229,6 +230,7 @@ export async function setPublicDocReplace (segments, value) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
+  ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
   if (value != null) {
@@ -292,8 +294,20 @@ async function createPublicDocAndHydrateLocal ({
     doc.create(newDoc, err => err ? reject(err) : resolve())
   })
 
-  const localDoc = newDoc == null ? newDoc : JSON.parse(JSON.stringify(newDoc))
-  set([collection, docId], injectIdFields(localDoc, idFields, docId))
+  ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
+}
+
+function ensureLocalDocSyncedWithShareDoc ({
+  collection,
+  docId,
+  doc,
+  idFields
+}) {
+  if (doc?.data == null) return
+  if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, docId)
+  const shared = raw(doc.data)
+  if (getRaw([collection, docId]) === shared) return
+  setReplace([collection, docId], shared)
 }
 
 function normalizeUndefined (value) {
