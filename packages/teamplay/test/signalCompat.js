@@ -1045,6 +1045,21 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.text.get(), 'X')
   })
 
+  it('treats del on non-existing public docs as no-op', async () => {
+    // Ensure the collection exists in the local data tree so this test can run in isolation.
+    const $seed = await sub($.compatGames._compat_public_seed)
+    await $seed.set({ ok: true })
+    await $seed.del()
+
+    const gameId = '_compat_public_missing_del'
+    const $game = await sub($.compatGames[gameId])
+    assert.equal($game.get(), undefined)
+
+    await $game.del()
+    await $game.del('name')
+    assert.equal($game.get(), undefined)
+  })
+
   it('injects _id/id into compat docs and ignores id changes', async () => {
     const gameId = '_compat_public_ids'
     const $game = await sub($.compatGames[gameId])

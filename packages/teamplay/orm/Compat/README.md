@@ -489,6 +489,8 @@ $.users.user1.assign({ name: 'Bob', age: null })
 ### del(path?)
 
 Deletes a value. Can be used with a subpath.
+In compat mode, deleting a non-existing **public** document (or its subpath) is a no-op
+to match legacy racer behavior.
 
 ```js
 $.users.user1.del('profile.name')

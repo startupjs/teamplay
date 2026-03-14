@@ -279,7 +279,12 @@ class SignalCompat extends Signal {
     if (arguments.length > 1) throw Error('Signal.del() expects a single argument')
     const segments = parseAtSubpath(path, arguments.length, 'Signal.del()')
     const $target = resolveSignal(this, segments)
-    return Signal.prototype.del.call($target)
+    try {
+      return await Signal.prototype.del.call($target)
+    } catch (error) {
+      if (isMissingPublicDocDeleteError($target, error)) return
+      throw error
+    }
   }
 
   async increment (path, byNumber) {
@@ -697,6 +702,14 @@ function resolveSignal ($signal, segments) {
     $cursor = $cursor[segment]
   }
   return $cursor
+}
+
+function isMissingPublicDocDeleteError ($signal, error) {
+  const segments = $signal?.[SEGMENTS]
+  if (!Array.isArray(segments) || segments.length < 2) return false
+  if (!isPublicCollection(segments[0])) return false
+  if (!(error instanceof Error)) return false
+  return error.message.includes('Trying to delete data from a non-existing doc')
 }
 
 async function setDiffDeepOnSignal ($target, value) {
