@@ -601,6 +601,32 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.b.get(), 3)
   })
 
+  it('create creates a non-existing document and throws on second create', async () => {
+    setup('create')
+    const $doc = $base.doc1
+    await $doc.create({ title: 'first' })
+    assert.deepEqual($doc.get(), { title: 'first' })
+    await assert.rejects(
+      $doc.create({ title: 'second' }),
+      /non-existing document path/
+    )
+    assert.deepEqual($doc.get(), { title: 'first' })
+  })
+
+  it('create(path, value) resolves path relative to current signal', async () => {
+    setup('create-path')
+    await $base.create('doc2', { title: 'path create' })
+    assert.deepEqual($base.doc2.get(), { title: 'path create' })
+  })
+
+  it('create throws on non-document paths', async () => {
+    setup('create-invalid')
+    await assert.rejects(
+      $base.create({ a: 1 }),
+      /document path/
+    )
+  })
+
   it('setDiffDeep supports subpath', async () => {
     setup('setdiffdeep')
     await $base.setDiffDeep('obj', { a: 1 })

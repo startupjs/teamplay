@@ -225,6 +225,31 @@ class SignalCompat extends Signal {
     return setReplaceOnSignal($target, value)
   }
 
+  async create (path, value) {
+    const forwarded = forwardRef(this, 'create', arguments)
+    if (forwarded) return forwarded
+    if (arguments.length > 2) throw Error('Signal.create() expects zero to two arguments')
+    let segments = []
+    if (arguments.length === 2) {
+      segments = parseAtSubpath(path, 1, 'Signal.create()')
+    } else if (arguments.length === 1) {
+      if (typeof path === 'string' || typeof path === 'number') {
+        segments = parseAtSubpath(path, 1, 'Signal.create()')
+        value = {}
+      } else {
+        value = path
+      }
+    } else {
+      value = {}
+    }
+    const $target = resolveSignal(this, segments)
+    ensureCreateTarget($target, 'Signal.create()')
+    if ($target.get() != null) {
+      throw Error(`Signal.create() may only be used on a non-existing document path. Path: ${$target.path()}`)
+    }
+    return setReplaceOnSignal($target, value)
+  }
+
   async setDiffDeep (path, value) {
     const forwarded = forwardRef(this, 'setDiffDeep', arguments)
     if (forwarded) return forwarded
@@ -870,6 +895,15 @@ function ensureValueTarget ($signal) {
   const segments = $signal[SEGMENTS]
   if (segments.length < 2) throw Error('Can\'t mutate on a collection or root signal')
   if ($signal[IS_QUERY]) throw Error('Mutators can\'t be used on a query signal')
+  return segments
+}
+
+function ensureCreateTarget ($signal, methodName) {
+  const segments = $signal[SEGMENTS]
+  if ($signal[IS_QUERY]) throw Error(`${methodName} can't be used on a query signal`)
+  if (segments.length !== 2) {
+    throw Error(`${methodName} may only be used on a document path`)
+  }
   return segments
 }
 
