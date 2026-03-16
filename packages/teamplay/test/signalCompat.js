@@ -10,6 +10,7 @@ import { Signal as BaseSignal } from '../orm/SignalBase.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
+import { __resetSilentContextForTests, isSilentContextActive } from '../orm/Compat/silentContext.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
 import { PARAMS, HASH as QUERY_HASH, QUERIES } from '../orm/Query.js'
 import { AGGREGATIONS } from '../orm/Aggregation.js'
@@ -1621,6 +1622,7 @@ class NonCompatRefUserModel extends BaseSignal {
   afterEach(() => {
     __resetModelEventsForTests()
     __resetRefLinksForTests()
+    __resetSilentContextForTests()
     if (!cleanupSegments) return
     for (const segments of cleanupSegments) _del(segments)
   })
@@ -1666,5 +1668,62 @@ class NonCompatRefUserModel extends BaseSignal {
     $root.on('change', `${$from.path()}.title`, handler)
     await $to.title.set('One')
     assert.deepEqual(events, ['One'])
+  })
+
+  it('silent() suppresses compat model events for direct mutator call', async () => {
+    const $base = setup('silentDirect')
+    const events = []
+    const handler = (value, prevValue) => events.push([value, prevValue])
+    $root.on('change', `${$base.path()}.count`, handler)
+
+    await $base.count.silent().set(1)
+    assert.deepEqual(events, [])
+
+    await $base.count.set(2)
+    assert.deepEqual(events, [[2, 1]])
+  })
+
+  it('silent() suppresses compat model events when mutating through child path', async () => {
+    const $base = setup('silentChild')
+    const events = []
+    const handler = value => events.push(value)
+    $root.on('change', `${$base.path()}.profile.title`, handler)
+
+    await $base.silent().profile.title.set('Kate')
+    assert.deepEqual(events, [])
+
+    await $base.profile.title.set('Ann')
+    assert.deepEqual(events, ['Ann'])
+  })
+
+  it('silent(false) keeps compat model events enabled', async () => {
+    const $base = setup('silentDisabled')
+    const events = []
+    const handler = value => events.push(value)
+    $root.on('change', `${$base.path()}.title`, handler)
+
+    await $base.title.silent(false).set('One')
+    assert.deepEqual(events, ['One'])
+  })
+
+  it('silent() suppresses reactive updates scheduled via observe()', async () => {
+    const $base = setup('silentReaction')
+    await $base.count.set(0)
+    const snapshots = []
+    const reaction = observe(
+      () => $base.count.get(),
+      { lazy: true, scheduler: job => scheduleReaction(() => snapshots.push(job())) }
+    )
+    try {
+      snapshots.push(reaction())
+      await $base.count.silent().set(1)
+      assert.equal(isSilentContextActive(), false)
+      assert.deepEqual(snapshots, [0])
+
+      await $base.count.set(2)
+      assert.deepEqual(snapshots, [0, 2])
+    } finally {
+      unobserve(reaction)
+    }
   })
 })

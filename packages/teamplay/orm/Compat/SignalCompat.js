@@ -41,6 +41,7 @@ import { normalizePattern, onModelEvent, removeModelListener } from './modelEven
 import { setRefLink, removeRefLink } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe } from './refFallback.js'
 import { runInBatch, scheduleReaction } from '../batchScheduler.js'
+import { runInSilentContext } from './silentContext.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -131,6 +132,12 @@ class SignalCompat extends Signal {
     // Compatibility shim for legacy `model.close()` calls.
     // Teamplay uses a global root signal and does not have per-model instances to dispose.
     if (callback) callback()
+  }
+
+  silent (value) {
+    if (arguments.length > 1) throw Error('Signal.silent() expects zero or one argument')
+    const enabled = value == null ? true : !!value
+    return createSilentSignalWrapper(this, enabled)
   }
 
   get () {
@@ -639,6 +646,54 @@ class SignalCompat extends Signal {
     }
     return $cursor
   }
+}
+
+const SILENT_WRAPPER = Symbol('compat silent wrapper')
+const SILENT_WRAPPER_TARGET = Symbol('compat silent wrapper target')
+const SILENT_WRAPPER_ENABLED = Symbol('compat silent wrapper enabled')
+
+function createSilentSignalWrapper ($signal, enabled = true) {
+  if (!$signal || typeof $signal !== 'function') return $signal
+  if ($signal[SILENT_WRAPPER]) {
+    const target = $signal[SILENT_WRAPPER_TARGET] || $signal
+    return createSilentSignalWrapper(target, enabled)
+  }
+
+  const handler = {
+    get (target, key, receiver) {
+      if (key === SILENT_WRAPPER) return true
+      if (key === SILENT_WRAPPER_TARGET) return target
+      if (key === SILENT_WRAPPER_ENABLED) return enabled
+
+      if (key === 'silent') {
+        return function silentWrapper (value) {
+          if (arguments.length > 1) throw Error('Signal.silent() expects zero or one argument')
+          const nextEnabled = value == null ? true : !!value
+          return createSilentSignalWrapper(target, nextEnabled)
+        }
+      }
+
+      const value = Reflect.get(target, key, receiver)
+      if (isSignalLike(value)) {
+        return createSilentSignalWrapper(value, enabled)
+      }
+
+      if (typeof value === 'function') {
+        return function wrappedMethod (...args) {
+          if (!enabled) return Reflect.apply(value, target, args)
+          return runInSilentContext(() => Reflect.apply(value, target, args))
+        }
+      }
+      return value
+    },
+
+    apply (target, thisArg, args) {
+      if (!enabled) return Reflect.apply(target, thisArg, args)
+      return runInSilentContext(() => Reflect.apply(target, thisArg, args))
+    }
+  }
+
+  return new Proxy($signal, handler)
 }
 
 const REFS = Symbol('compat refs')

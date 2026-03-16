@@ -5,14 +5,20 @@ import { getConnection } from './connection.js'
 import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
+import { isSilentContextActive } from './Compat/silentContext.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 
 export const dataTreeRaw = {}
 const dataTree = observable(dataTreeRaw)
 
+function getWritableTree (tree) {
+  if (tree === dataTree && isSilentContextActive()) return dataTreeRaw
+  return tree
+}
+
 function shouldEmitModelEvents (tree) {
-  return tree === dataTree && isModelEventsEnabled()
+  return tree === dataTree && isModelEventsEnabled() && !isSilentContextActive()
 }
 
 function emitModelEvent (segments, prevValue, meta, tree = dataTree) {
@@ -35,10 +41,11 @@ export function getRaw (segments) {
 }
 
 export function set (segments, value, tree = dataTree) {
+  const writableTree = getWritableTree(tree)
   const shouldEmit = shouldEmitModelEvents(tree)
   const prevValue = shouldEmit ? getRaw(segments) : undefined
-  let dataNode = tree
-  let dataNodeRaw = raw(tree)
+  let dataNode = writableTree
+  let dataNodeRaw = raw(writableTree)
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
     if (dataNode[segment] == null) {
@@ -89,9 +96,10 @@ export function set (segments, value, tree = dataTree) {
 
 // Like set(), but always assigns the value without equality checks or delete-on-null behavior
 export function setReplace (segments, value, tree = dataTree) {
+  const writableTree = getWritableTree(tree)
   const shouldEmit = shouldEmitModelEvents(tree)
   const prevValue = shouldEmit ? getRaw(segments) : undefined
-  let dataNode = tree
+  let dataNode = writableTree
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
     if (dataNode[segment] == null) {
@@ -107,9 +115,10 @@ export function setReplace (segments, value, tree = dataTree) {
 }
 
 export function del (segments, tree = dataTree) {
+  const writableTree = getWritableTree(tree)
   const shouldEmit = shouldEmitModelEvents(tree)
   const prevValue = shouldEmit ? getRaw(segments) : undefined
-  let dataNode = tree
+  let dataNode = writableTree
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
     if (dataNode[segment] == null) return
@@ -321,7 +330,7 @@ function normalizeValueForOp (value) {
 }
 
 function getArrayNode (segments, tree = dataTree, create = true) {
-  let dataNode = tree
+  let dataNode = getWritableTree(tree)
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i]
     if (dataNode[segment] == null) {
@@ -506,7 +515,7 @@ export async function arrayMovePublic (segments, from, to, howMany = 1) {
 }
 
 export function stringInsertLocal (segments, index, text, tree = dataTree) {
-  let dataNode = tree
+  let dataNode = getWritableTree(tree)
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
     if (dataNode[segment] == null) {
@@ -530,7 +539,7 @@ export function stringInsertLocal (segments, index, text, tree = dataTree) {
 }
 
 export function stringRemoveLocal (segments, index, howMany, tree = dataTree) {
-  let dataNode = tree
+  let dataNode = getWritableTree(tree)
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
     if (dataNode[segment] == null) return
