@@ -24,12 +24,12 @@ export function getPromiseAll () {
   const pendingPromises = promises
   const pendingChecks = Array.from(checks.values())
   const hasPromises = pendingPromises.length > 0
-  const hasChecks = pendingChecks.length > 0
-  const result = !hasPromises && !hasChecks
-    ? null
-    : hasPromises || !areChecksReady(pendingChecks)
-      ? waitForBatchReady(pendingPromises, pendingChecks)
-      : null
+  // Checks are a materialization barrier for initial batch subscriptions.
+  // If there were no subscription promises in this render, we are in update mode
+  // and should not suspend the whole subtree.
+  const result = hasPromises
+    ? waitForBatchReady(pendingPromises, pendingChecks)
+    : null
   reset()
   return result
 }
@@ -64,11 +64,6 @@ async function waitForChecksReady (pendingChecks) {
     }
     await delay(READINESS_POLL_INTERVAL_MS)
   }
-}
-
-function areChecksReady (pendingChecks) {
-  if (pendingChecks.length === 0) return true
-  return getNotReadyChecks(pendingChecks).length === 0
 }
 
 function getNotReadyChecks (pendingChecks) {

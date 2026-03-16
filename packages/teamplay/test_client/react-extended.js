@@ -267,6 +267,56 @@ describe('useSub edge cases', () => {
     expect(renders).toBe(3)
   })
 
+  itCompat('useSubClassic with batch keeps update resubscribe in background', async () => {
+    const collection = 'classicBatchSwitch'
+    const lessonA = 'lesson_classic_batch_switch_1'
+    const lessonB = 'lesson_classic_batch_switch_2'
+
+    const $lessonA = await sub($[collection][lessonA])
+    const $lessonB = await sub($[collection][lessonB])
+    $lessonA.set({ courseId: 'course_a', stageIds: ['a1'] })
+    $lessonB.set({ courseId: 'course_b', stageIds: ['b1', 'b2'] })
+    await wait()
+
+    _del([collection, lessonA])
+    _del([collection, lessonB])
+
+    const Component = observer(() => {
+      const [courseId, setCourseId] = React.useState('course_a')
+      const [lessonId, setLessonId] = React.useState(lessonA)
+
+      useSubClassic($[collection], { courseId }, { batch: true })
+      useBatch()
+      const [lesson] = useLocal(`${collection}.${lessonId}`)
+      const stageIds = lesson?.stageIds
+
+      return el(Fragment, null,
+        el('span', { id: 'classicBatchSwitch' }, stageIds ? stageIds.join(',') : 'pending'),
+        el('button', {
+          id: 'classicBatchSwitchBtn',
+          onClick: () => {
+            setCourseId('course_b')
+            setLessonId(lessonB)
+          }
+        }, 'switch')
+      )
+    }, { suspenseProps: { fallback: el('span', { id: 'classicBatchSwitch' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#classicBatchSwitch').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#classicBatchSwitch').textContent).toBe('a1')
+    })
+
+    fireEvent.click(container.querySelector('#classicBatchSwitchBtn'))
+    expect(container.querySelector('#classicBatchSwitch').textContent).not.toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#classicBatchSwitch').textContent).toBe('b1,b2')
+    })
+  })
+
   it('setTestThrottling validation - wrong values throw errors', () => {
     expect(() => setTestThrottling('invalid')).toThrow()
     expect(() => setTestThrottling(0)).toThrow()
@@ -986,6 +1036,49 @@ describe('useBatchDoc / useBatchDoc$', () => {
       docProto._refData = originalRefData
     }
   })
+
+  itCompat('useBatchDoc route switch keeps previous snapshot without update fallback', async () => {
+    const collection = 'batchDocRouteSwitch'
+    const docA = 'doc_batch_route_a'
+    const docB = 'doc_batch_route_b'
+    await $[collection][docA].set({ stageIds: ['a1'] })
+    await $[collection][docB].set({ stageIds: ['b1', 'b2'] })
+    _del([collection, docA])
+    _del([collection, docB])
+
+    setTestThrottling(80)
+    try {
+      const Component = observer(() => {
+        const [docId, setDocId] = React.useState(docA)
+        const [doc] = useBatchDoc(collection, docId)
+        useBatch()
+        const { stageIds } = doc
+        return fr(
+          el('span', { id: 'batchDocRouteSwitch' }, stageIds.join(',')),
+          el('button', {
+            id: 'batchDocRouteSwitchBtn',
+            onClick: () => setDocId(docB)
+          }, 'switch')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'batchDocRouteSwitch' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchDocRouteSwitch').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchDocRouteSwitch').textContent).toBe('a1')
+      })
+
+      fireEvent.click(container.querySelector('#batchDocRouteSwitchBtn'))
+      expect(container.querySelector('#batchDocRouteSwitch').textContent).not.toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchDocRouteSwitch').textContent).toBe('b1,b2')
+      })
+    } finally {
+      resetTestThrottling()
+    }
+  })
 })
 
 describe('useAsyncDoc / useAsyncDoc$', () => {
@@ -1345,7 +1438,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     })
   })
 
-  itCompat('batch query param switch suspends before immediate useLocal read', async () => {
+  itCompat('batch query param switch does not suspend on update resubscribe', async () => {
     const collection = 'batchLocalLessonsSwitch'
     const lessonA = 'lesson_batch_switch_1'
     const lessonB = 'lesson_batch_switch_2'
@@ -1366,10 +1459,10 @@ describe('useBatchQuery / useBatchQuery$', () => {
       useBatchQuery(collection, { courseId })
       useBatch()
       const [lesson] = useLocal(`${collection}.${lessonId}`)
-      const { stageIds } = lesson
+      const stageIds = lesson?.stageIds
 
       return el(Fragment, null,
-        el('span', { id: 'batchLocalSwitch' }, stageIds.join(',')),
+        el('span', { id: 'batchLocalSwitch' }, stageIds ? stageIds.join(',') : 'pending'),
         el('button', {
           id: 'batchLocalSwitchBtn',
           onClick: () => {
@@ -1388,10 +1481,58 @@ describe('useBatchQuery / useBatchQuery$', () => {
     })
 
     fireEvent.click(container.querySelector('#batchLocalSwitchBtn'))
+    // Update resubscribe should not suspend the whole tree.
+    expect(container.querySelector('#batchLocalSwitch').textContent).not.toBe('Loading...')
 
     await waitFor(() => {
       expect(container.querySelector('#batchLocalSwitch').textContent).toBe('b1,b2')
     })
+  })
+
+  itCompat('batch query switch keeps previous docs for no-guard local read', async () => {
+    const collection = 'batchLocalLessonsSwitchNoGuard'
+    const lessonA = 'lesson_batch_switch_no_guard_1'
+    const lessonB = 'lesson_batch_switch_no_guard_2'
+    await $[collection][lessonA].set({ courseId: 'course_a', stageIds: ['a1'], createdAt: 1 })
+    await $[collection][lessonB].set({ courseId: 'course_b', stageIds: ['b1', 'b2'], createdAt: 1 })
+    _del([collection, lessonA])
+    _del([collection, lessonB])
+
+    setTestThrottling(80)
+    try {
+      const Component = observer(() => {
+        const [courseId, setCourseId] = React.useState('course_a')
+        const [docs] = useBatchQuery(collection, { courseId, $sort: { createdAt: 1 } })
+        useBatch()
+        const firstId = docs[0]._id || docs[0].id
+        const [lesson] = useLocal(`${collection}.${firstId}`)
+        const { stageIds } = lesson
+
+        return fr(
+          el('span', { id: 'batchLocalSwitchNoGuard' }, stageIds.join(',')),
+          el('button', {
+            id: 'batchLocalSwitchNoGuardBtn',
+            onClick: () => setCourseId('course_b')
+          }, 'switch')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'batchLocalSwitchNoGuard' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).toBe('a1')
+      })
+
+      fireEvent.click(container.querySelector('#batchLocalSwitchNoGuardBtn'))
+      expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).not.toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).toBe('b1,b2')
+      })
+    } finally {
+      resetTestThrottling()
+    }
   })
 
   itCompat('batch query insert allows immediate useLocal read in same render cycle', async () => {

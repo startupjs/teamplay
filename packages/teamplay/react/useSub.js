@@ -41,7 +41,14 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
     if (batch) {
-      promiseBatcher.add(promise)
+      const hasPreviousSignal = !!$signalRef.current
+      // Batch suspense must block only on initial load.
+      // On resubscribe we keep rendering previous signal and refresh in background.
+      if (!hasPreviousSignal) {
+        promiseBatcher.add(promise)
+      } else {
+        scheduleUpdate(promise)
+      }
       if (async) scheduleUpdate(promise)
       return $signalRef.current
     }
@@ -71,9 +78,16 @@ export function useSubClassic (signal, params, { async = false, batch = false } 
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
     if (batch) {
-      promiseBatcher.add(promise)
+      const hasPreviousSignal = cache.has(id)
+      // Batch suspense must block only on initial load.
+      // On resubscribe we keep rendering previous signal and refresh in background.
+      if (!hasPreviousSignal) {
+        promiseBatcher.add(promise)
+      } else {
+        scheduleUpdate(promise)
+      }
       if (async) scheduleUpdate(promise)
-      if (cache.has(id)) return cache.get(id)
+      if (hasPreviousSignal) return cache.get(id)
       return
     }
     // first time we just throw the promise to be caught by Suspense
