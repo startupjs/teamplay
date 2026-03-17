@@ -60,6 +60,26 @@ describe('ORM associations', () => {
     assert.equal(association.type, 'hasOne')
   })
 
+  it('uses pluralize singularization for collection names', () => {
+    class CourseModel extends BaseModel {}
+    CourseModel.collection = 'courses'
+
+    class LessonModel extends BaseModel {}
+    LessonModel.collection = 'lessons'
+
+    belongsTo(CourseModel)(LessonModel)
+    hasMany(LessonModel)(CourseModel)
+    hasOne(LessonModel)(CourseModel)
+
+    const lessonBelongsTo = LessonModel.associations.find(a => a.type === 'belongsTo')
+    const courseHasMany = CourseModel.associations.find(a => a.type === 'hasMany')
+    const courseHasOne = CourseModel.associations.find(a => a.type === 'hasOne')
+
+    assert.equal(lessonBelongsTo.key, 'courseId')
+    assert.equal(courseHasMany.key, 'lessonIds')
+    assert.equal(courseHasOne.key, 'lessonId')
+  })
+
   it('keeps inherited associations isolated per subclass', () => {
     class ParentModel extends BaseModel {}
     ParentModel.collection = 'ormAssocParentD'

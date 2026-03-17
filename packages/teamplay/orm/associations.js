@@ -1,3 +1,5 @@
+import pluralize from 'pluralize'
+
 function getCollectionName (OrmEntity, options = {}, helperName = 'association') {
   if (options.key) return undefined
   const collection = OrmEntity?.collection
@@ -10,11 +12,7 @@ function getCollectionName (OrmEntity, options = {}, helperName = 'association')
 
 function toSingular (name) {
   if (typeof name !== 'string' || !name) return name
-  if (name.endsWith('ies') && name.length > 3) return name.slice(0, -3) + 'y'
-  if (name.endsWith('sses') && name.length > 4) return name.slice(0, -2) // classes -> class
-  if (name.endsWith('ses') && name.length > 3) return name.slice(0, -2) // houses -> house
-  if (name.endsWith('s') && !name.endsWith('ss') && name.length > 1) return name.slice(0, -1)
-  return name
+  return pluralize.singular(name)
 }
 
 export function belongsTo (AssociatedOrmEntity, options = {}) {

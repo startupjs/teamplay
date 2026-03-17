@@ -12550,6 +12550,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pluralize@npm:^8.0.0":
+  version: 8.0.0
+  resolution: "pluralize@npm:8.0.0"
+  checksum: 10c0/2044cfc34b2e8c88b73379ea4a36fc577db04f651c2909041b054c981cd863dd5373ebd030123ab058d194ae615d3a97cfdac653991e499d10caf592e8b3dc33
+  languageName: node
+  linkType: hard
+
 "possible-typed-array-names@npm:^1.0.0":
   version: 1.0.0
   resolution: "possible-typed-array-names@npm:1.0.0"
@@ -14623,6 +14630,7 @@ __metadata:
     localforage: "npm:^1.10.0"
     lodash: "npm:^4.17.20"
     mocha: "npm:^11.0.1"
+    pluralize: "npm:^8.0.0"
     react: "npm:^18.3.1"
     react-dom: "npm:^18.3.1"
     sharedb: "npm:^5.0.0"
