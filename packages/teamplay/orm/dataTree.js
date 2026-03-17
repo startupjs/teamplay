@@ -447,9 +447,18 @@ export async function arrayInsertPublic (segments, index, values) {
   if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  let current = getRaw(segments)
+  if (current == null) {
+    // Ensure the array path exists before inserting
+    await setPublicDoc(segments, [])
+    current = getRaw(segments)
+  }
+  if (current != null && !Array.isArray(current)) {
+    throw Error(`Expected array at ${segments.join('.')}`)
+  }
   const doc = getConnection().get(collection, docId)
   const inserted = Array.isArray(values) ? values : [values]
-  const baseLength = (getRaw(segments) || []).length
+  const baseLength = (current || []).length
   const relativePath = segments.slice(2)
   let i = index
   const op = inserted.map(value => ({

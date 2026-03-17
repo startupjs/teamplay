@@ -1072,6 +1072,27 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.text.get(), 'X')
   })
 
+  it('creates missing public arrays on push', async () => {
+    const gameId = '_compat_public_missing_array'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'Missing Array' })
+
+    const len = await $game.push('list', 1)
+    assert.equal(len, 1)
+    assert.deepEqual($game.list.get(), [1])
+  })
+
+  it('throws when pushing to non-array on public docs', async () => {
+    const gameId = '_compat_public_non_array'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ list: 'nope' })
+
+    await assert.rejects(
+      () => $game.push('list', 1),
+      /Expected array at/
+    )
+  })
+
   it('treats del on non-existing public docs as no-op', async () => {
     // Ensure the collection exists in the local data tree so this test can run in isolation.
     const $seed = await sub($.compatGames._compat_public_seed)
