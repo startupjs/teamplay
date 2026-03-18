@@ -21,7 +21,8 @@ import {
   COLLECTION_NAME as QUERY_COLLECTION_NAME,
   PARAMS as QUERY_PARAMS,
   HASH as QUERY_HASH,
-  getQuerySignal
+  getQuerySignal,
+  hashQuery
 } from '../orm/Query.js'
 import { SEGMENTS } from '../orm/Signal.js'
 import { getConnection } from '../orm/connection.js'
@@ -490,6 +491,34 @@ describe('QuerySubscriptions', () => {
 
     await assert.doesNotReject(async () => manager.unsubscribe($query))
     assert.equal(manager.subCount.get(hash), undefined, 'stale sub count should be removed')
+  })
+
+  it('normalizes undefined values in query params the same way as Racer in compat mode', () => {
+    const rawParams = {
+      $or: [
+        { entity: 'group', entityId: undefined },
+        { entity: 'lesson', entityId: 'lesson-1' }
+      ]
+    }
+    const expectedParams = process.env.TEAMPLAY_COMPAT === '1'
+      ? {
+          $or: [
+            { entity: 'group', entityId: null },
+            { entity: 'lesson', entityId: 'lesson-1' }
+          ]
+        }
+      : {
+          $or: [
+            { entity: 'group' },
+            { entity: 'lesson', entityId: 'lesson-1' }
+          ]
+        }
+
+    const $query = getQuerySignal('gamesQuery', rawParams)
+    const hash = hashQuery('gamesQuery', rawParams)
+
+    assert.deepEqual($query[QUERY_PARAMS], expectedParams, 'stored params should match normalized shape')
+    assert.equal(hash, JSON.stringify({ query: ['gamesQuery', expectedParams] }), 'query hash should match normalized params')
   })
 })
 

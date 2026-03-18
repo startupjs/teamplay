@@ -230,7 +230,7 @@ export class QuerySubscriptions {
 
   subscribe ($query) {
     const collectionName = $query[COLLECTION_NAME]
-    const params = JSON.parse(JSON.stringify($query[PARAMS]))
+    const params = cloneQueryParams($query[PARAMS])
     const hash = $query[HASH]
     this.cancelDestroy(hash)
     let count = this.subCount.get(hash) || 0
@@ -395,6 +395,7 @@ function maybeMaterializeQueryDocsToCollection (collectionName, shareDocs) {
 }
 
 export function hashQuery (collectionName, params) {
+  params = normalizeQueryParamsForHash(params)
   // TODO: probably makes sense to use fast-stable-json-stringify for this because of the params
   return JSON.stringify({ query: [collectionName, params] })
 }
@@ -409,7 +410,7 @@ export function parseQueryHash (hash) {
 }
 
 export function getQuerySignal (collectionName, params, options) {
-  params = JSON.parse(JSON.stringify(params))
+  params = cloneQueryParams(params)
   const hash = hashQuery(collectionName, params)
 
   const $query = getSignal(undefined, [collectionName], {
@@ -432,6 +433,31 @@ const ERRORS = {
 }
 
 function ignoreDestroyError () {}
+
+function cloneQueryParams (params) {
+  if (!isCompatEnv()) return JSON.parse(JSON.stringify(params))
+  return cloneQueryParamsCompat(params)
+}
+
+function normalizeQueryParamsForHash (params) {
+  if (!isCompatEnv()) return params
+  return cloneQueryParamsCompat(params)
+}
+
+// Racer compat: keep query keys with undefined values by normalizing them to null
+// instead of dropping them via JSON serialization.
+function cloneQueryParamsCompat (value) {
+  if (value === undefined) return null
+  if (value == null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(item => cloneQueryParamsCompat(item))
+  const object = {}
+  for (const key in value) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      object[key] = cloneQueryParamsCompat(value[key])
+    }
+  }
+  return object
+}
 
 function createPendingDestroyEntry () {
   let resolvePending
