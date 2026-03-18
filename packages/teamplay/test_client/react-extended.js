@@ -45,6 +45,8 @@ import {
 } from '../index.js'
 import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.js'
 import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.js'
+import trapRender from '../react/trapRender.js'
+import renderAttemptDestroyer from '../react/renderAttemptDestroyer.js'
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
@@ -200,6 +202,85 @@ describe('compat helper hooks', () => {
 })
 
 describe('useSub edge cases', () => {
+  it('trapRender keeps legacy immediate destroy for non-compat thrown promises', async () => {
+    const events = []
+    let resolvePromise
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+    const wrapped = trapRender({
+      componentId: 'legacyTrapRender',
+      render: () => {
+        throw pending
+      },
+      cache: {
+        activate: () => events.push('activate'),
+        deactivate: () => events.push('deactivate')
+      },
+      destroy: where => events.push(`destroy:${where}`)
+    })
+
+    let thrown
+    try {
+      wrapped()
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown).toBe(pending)
+    expect(events).toEqual([
+      'activate',
+      'destroy:trapRender.js'
+    ])
+
+    resolvePromise()
+    await pending
+  })
+
+  itCompat('trapRender defers compat cleanup until thrown promise resolves', async () => {
+    const events = []
+    let resolvePromise
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+    const wrapped = trapRender({
+      componentId: 'compatTrapRender',
+      render: () => {
+        renderAttemptDestroyer.add(() => {
+          events.push('attempt-cleanup')
+        }, { compat: true })
+        throw pending
+      },
+      cache: {
+        activate: () => events.push('activate'),
+        deactivate: () => events.push('deactivate')
+      },
+      destroy: where => events.push(`destroy:${where}`)
+    })
+
+    let thrown
+    try {
+      wrapped()
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(events).toEqual([
+      'activate',
+      'deactivate'
+    ])
+    expect(typeof thrown?.then).toBe('function')
+
+    resolvePromise()
+    await thrown
+
+    expect(events).toEqual([
+      'activate',
+      'deactivate',
+      'attempt-cleanup'
+    ])
+  })
+
   it('useSub with doc subscription that starts loading (Suspense)', async () => {
     let renders = 0
     const Component = observer(() => {

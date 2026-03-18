@@ -3,6 +3,7 @@ import sub from '../orm/sub.js'
 import { useScheduleUpdate, useCache, useDefer } from './helpers.js'
 import executionContextTracker from './executionContextTracker.js'
 import * as promiseBatcher from './promiseBatcher.js'
+import renderAttemptDestroyer from './renderAttemptDestroyer.js'
 
 let TEST_THROTTLING = false
 
@@ -25,7 +26,7 @@ export default function useSub (signal, params, options) {
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
-export function useSubDeferred (signal, params, { async = false, defer, batch = false } = {}) {
+export function useSubDeferred (signal, params, { async = false, defer, batch = false, compatAttemptCleanup = false } = {}) {
   const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()
@@ -46,6 +47,7 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
       // On resubscribe we keep rendering previous signal and refresh in background.
       if (!hasPreviousSignal) {
         promiseBatcher.add(promise)
+        if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
       } else {
         scheduleUpdate(promise)
       }
@@ -56,6 +58,7 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
       scheduleUpdate(promise)
       return
     }
+    if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
     throw promise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
@@ -67,7 +70,7 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
 
 // classic version which initially throws promise for Suspense
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (signal, params, { async = false, batch = false } = {}) {
+export function useSubClassic (signal, params, { async = false, batch = false, compatAttemptCleanup = false } = {}) {
   const id = executionContextTracker.newHookId()
   const cache = useCache()
   const activePromiseRef = useRef()
@@ -83,6 +86,7 @@ export function useSubClassic (signal, params, { async = false, batch = false } 
       // On resubscribe we keep rendering previous signal and refresh in background.
       if (!hasPreviousSignal) {
         promiseBatcher.add(promise)
+        if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
       } else {
         scheduleUpdate(promise)
       }
@@ -100,6 +104,7 @@ export function useSubClassic (signal, params, { async = false, batch = false } 
         scheduleUpdate(promise)
         return
       }
+      if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
       // in regular mode we throw the promise to be caught by Suspense
       // this way we guarantee that the signal with all the data
       // will always be there when component is rendered
@@ -143,4 +148,11 @@ function maybeThrottle (promise) {
       promise.then(resolve, reject)
     }, TEST_THROTTLING)
   })
+}
+
+function registerCompatAttemptCleanup (signal, params) {
+  // Compat hooks don't build per-hook init objects like Racer.
+  // We still need a marker so trapRender can defer observer-shell cleanup
+  // to Suspense resolution instead of tearing the whole shell down immediately.
+  renderAttemptDestroyer.armCompat()
 }
