@@ -155,8 +155,8 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
-  ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
-  if (!doc.data && deleteValue) throw Error(ERRORS.deleteNonExistentDoc(segments))
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists && deleteValue) throw Error(ERRORS.deleteNonExistentDoc(segments))
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
   if (value == null) {
@@ -165,7 +165,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
     value = JSON.parse(JSON.stringify(value))
     value = stripIdFields(value, idFields)
   }
-  if (segments.length === 2 && !doc.data) {
+  if (segments.length === 2 && !docState.exists) {
     // > create a new doc. Full doc data is provided
     if (typeof value !== 'object') throw Error(ERRORS.notObject(segments, value))
     const newDoc = value
@@ -176,7 +176,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
       newDoc,
       idFields
     })
-  } else if (!doc.data) {
+  } else if (!docState.exists) {
     // >> create a new doc. Partial doc data is provided (subpath)
     // NOTE: We throw an error when trying to set a subpath on a non-existing doc
     //       to prevent potential mistakes. In future we might allow it though.
@@ -198,19 +198,14 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   } else if (segments.length === 2) {
     // > modify existing doc. Full doc modification
     if (typeof value !== 'object') throw Error(ERRORS.notObject(segments, value))
-    const oldDoc = stripIdFields(getRaw([collection, docId]), idFields)
+    const oldDoc = stripIdFields(docState.snapshot || {}, idFields)
     const diff = jsonDiff(oldDoc, value, diffMatchPatch)
     return new Promise((resolve, reject) => {
       doc.submitOp(diff, err => err ? reject(err) : resolve())
     })
   } else {
     // > modify existing doc. Partial doc modification
-    let oldDoc = getRaw([collection, docId])
-    if (oldDoc == null) {
-      const docData = getConnection().get(collection, docId).data
-      oldDoc = docData == null ? {} : raw(docData)
-      if (docData != null) set([collection, docId], oldDoc)
-    }
+    const oldDoc = docState.snapshot || {}
     const newDoc = JSON.parse(JSON.stringify(oldDoc))
     if (deleteValue) {
       del(segments.slice(2), newDoc)
@@ -240,7 +235,7 @@ export async function setPublicDocReplace (segments, value) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
-  ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
   if (value != null) {
@@ -248,7 +243,7 @@ export async function setPublicDocReplace (segments, value) {
     value = stripIdFields(value, idFields)
   }
 
-  if (!doc.data) {
+  if (!docState.exists) {
     if (segments.length === 2) {
       // > create a new doc. Full doc data is provided
       if (typeof value !== 'object') throw Error(ERRORS.notObject(segments, value))
@@ -316,6 +311,37 @@ async function createPublicDocAndHydrateLocal ({
   }
 
   ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
+}
+
+function resolvePublicDocState ({
+  collection,
+  docId,
+  doc,
+  idFields,
+  hydrateCompatDocData = false
+}) {
+  ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
+
+  if (doc?.data != null) {
+    return {
+      exists: true,
+      snapshot: getRaw([collection, docId]) ?? raw(doc.data),
+      source: 'share'
+    }
+  }
+
+  const localSnapshot = getRaw([collection, docId])
+  if (!(isCompatEnv() && localSnapshot != null)) {
+    return { exists: false, snapshot: undefined, source: 'none' }
+  }
+
+  // In compat mode local raw data can be the source of truth between create/add
+  // and later subpath mutations even if ShareDB doc.data is currently empty.
+  if (hydrateCompatDocData) {
+    doc.data = localSnapshot
+  }
+
+  return { exists: true, snapshot: localSnapshot, source: 'local' }
 }
 
 function ensureLocalDocSyncedWithShareDoc ({
@@ -436,6 +462,9 @@ export async function incrementPublic (segments, byNumber) {
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
+  const idFields = getIdFieldsForSegments([collection, docId])
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)
   const op = [{ p: relativePath, na: byNumber }]
   return new Promise((resolve, reject) => {
@@ -459,6 +488,10 @@ export async function arrayInsertPublic (segments, index, values) {
   if (typeof docId === 'number') throw Error(ERRORS.publicDocIdNumber(segments))
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
+  const doc = getConnection().get(collection, docId)
+  const idFields = getIdFieldsForSegments([collection, docId])
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   let current = getRaw(segments)
   if (current == null) {
     // Ensure the array path exists before inserting
@@ -468,7 +501,6 @@ export async function arrayInsertPublic (segments, index, values) {
   if (current != null && !Array.isArray(current)) {
     throw Error(`Expected array at ${segments.join('.')}`)
   }
-  const doc = getConnection().get(collection, docId)
   const inserted = Array.isArray(values) ? values : [values]
   const baseLength = (current || []).length
   const relativePath = segments.slice(2)
@@ -506,6 +538,9 @@ export async function arrayRemovePublic (segments, index, howMany = 1) {
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
+  const idFields = getIdFieldsForSegments([collection, docId])
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const arr = getRaw(segments) || []
   const removed = arr.slice(index, index + howMany)
   const op = removed.map(value => ({ p: segments.slice(2).concat(index), ld: normalizeUndefined(value) }))
@@ -521,6 +556,9 @@ export async function arrayMovePublic (segments, from, to, howMany = 1) {
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
+  const idFields = getIdFieldsForSegments([collection, docId])
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const arr = getRaw(segments) || []
   const len = arr.length
   if (from < 0) from += len
@@ -584,6 +622,9 @@ export async function stringInsertPublic (segments, index, text) {
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
+  const idFields = getIdFieldsForSegments([collection, docId])
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)
   const previous = getRaw(segments)
   if (previous == null) {
@@ -604,6 +645,9 @@ export async function stringRemovePublic (segments, index, howMany) {
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
+  const idFields = getIdFieldsForSegments([collection, docId])
+  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)
   const previous = getRaw(segments)
   if (previous == null) return previous

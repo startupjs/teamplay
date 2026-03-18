@@ -199,6 +199,43 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
+  it('compat: allows delayed subpath set after create() without subscribe', async () => {
+    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
+
+    const gameId = '_compat_create_delayed_subpath_set'
+    const $game = $.games[gameId]
+
+    await $game.create({ name: 'Created' })
+    const doc = getConnection().get('games', gameId)
+    doc.data = undefined
+
+    await $game.players.set(2)
+
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 2 })
+    assert.equal(doc.data.players, 2)
+
+    await sub($game)
+    await $game.del()
+  })
+
+  it('compat: allows delayed subpath set after add() without subscribe', async () => {
+    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
+
+    const gameId = '_compat_add_delayed_subpath_set'
+    await $.games.add({ _id: gameId, name: 'Added' })
+    const $game = $.games[gameId]
+    const doc = getConnection().get('games', gameId)
+    doc.data = undefined
+
+    await $game.players.set(3)
+
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 3 })
+    assert.equal(doc.data.players, 3)
+
+    await sub($game)
+    await $game.del()
+  })
+
   it('repopulates data tree when doc exists but raw data is missing', async () => {
     const gameId = '_compat_partial_1'
     const $game = await sub($.games[gameId])

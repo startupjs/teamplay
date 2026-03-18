@@ -1168,6 +1168,32 @@ describe('SignalCompat public mutators', () => {
       /conflicting "id".*"_id"/
     )
   })
+
+  it('compat: public increment/array/string mutators work after ShareDB snapshot drop', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+
+    const gameId = '_compat_public_snapshot_drop'
+    const $game = $.compatGames[gameId]
+    await $game.create({ count: 0, list: [1], text: 'ab' })
+
+    const doc = getConnection().get('compatGames', gameId)
+    doc.data = undefined
+
+    const nextCount = await $game.increment('count', 1)
+    assert.equal(nextCount, 1)
+    assert.equal($game.count.get(), 1)
+
+    const len = await $game.push('list', 2)
+    assert.equal(len, 2)
+    assert.deepEqual($game.list.get(), [1, 2])
+
+    const prevText = await $game.stringInsert('text', 2, 'c')
+    assert.equal(prevText, 'ab')
+    assert.equal($game.text.get(), 'abc')
+
+    await sub($game)
+    await $game.del()
+  })
 })
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
