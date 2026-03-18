@@ -1,9 +1,10 @@
 import { useRef, useDeferredValue } from 'react'
 import sub from '../orm/sub.js'
-import { useScheduleUpdate, useCache, useDefer } from './helpers.js'
+import { useScheduleUpdate, useCache, useDefer, useId } from './helpers.js'
 import executionContextTracker from './executionContextTracker.js'
 import * as promiseBatcher from './promiseBatcher.js'
 import renderAttemptDestroyer from './renderAttemptDestroyer.js'
+import { markCompatComponent } from './compatComponentRegistry.js'
 
 let TEST_THROTTLING = false
 
@@ -28,8 +29,10 @@ export default function useSub (signal, params, options) {
 // version of sub() which works as a react hook and throws promise for Suspense
 export function useSubDeferred (signal, params, { async = false, defer, batch = false, compatAttemptCleanup = false } = {}) {
   const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
+  const componentId = useId()
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()
+  if (compatAttemptCleanup) markCompatComponent(componentId)
   if (batch) promiseBatcher.activate()
   defer ??= observerDefer ?? DEFAULT_DEFER
   if (defer) {
@@ -72,9 +75,11 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
 export function useSubClassic (signal, params, { async = false, batch = false, compatAttemptCleanup = false } = {}) {
   const id = executionContextTracker.newHookId()
+  const componentId = useId()
   const cache = useCache()
   const activePromiseRef = useRef()
   const scheduleUpdate = useScheduleUpdate()
+  if (compatAttemptCleanup) markCompatComponent(componentId)
   if (batch) promiseBatcher.activate()
   const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish

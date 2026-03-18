@@ -47,6 +47,7 @@ import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/
 import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.js'
 import trapRender from '../react/trapRender.js'
 import renderAttemptDestroyer from '../react/renderAttemptDestroyer.js'
+import { __resetCompatComponentRegistryForTests } from '../react/compatComponentRegistry.js'
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
@@ -60,6 +61,9 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 afterEach(runGc)
+afterEach(() => {
+  __resetCompatComponentRegistryForTests()
+})
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
 const itCompat = isCompatMode ? it : it.skip
@@ -395,6 +399,30 @@ describe('useSub edge cases', () => {
 
     await waitFor(() => {
       expect(container.querySelector('#classicBatchSwitch').textContent).toBe('b1,b2')
+    })
+  })
+
+  itCompat('compat observer replays updates skipped during execution context', async () => {
+    act(() => {
+      $.compatReplayDoc.test1.set({ name: 'John' })
+      $.page.compatReplayFlag.set(false)
+    })
+
+    const Component = observer(() => {
+      const [doc] = useDoc('compatReplayDoc', 'test1')
+      const flag = $.page.compatReplayFlag.get() || false
+      if (!flag) $.page.compatReplayFlag.set(true)
+      return el('span', { id: 'compatReplay' }, `${doc?.name || 'missing'}:${flag}`)
+    }, {
+      suspenseProps: {
+        fallback: el('span', { id: 'compatReplay' }, 'Loading...')
+      }
+    })
+
+    const { container } = render(el(Component))
+
+    await waitFor(() => {
+      expect(container.querySelector('#compatReplay').textContent).toBe('John:true')
     })
   })
 
