@@ -6,6 +6,7 @@ import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isSilentContextActive } from './Compat/silentContext.js'
+import { isCompatEnv } from './compatEnv.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 
@@ -302,6 +303,17 @@ async function createPublicDocAndHydrateLocal ({
   await new Promise((resolve, reject) => {
     doc.create(newDoc, err => err ? reject(err) : resolve())
   })
+
+  // In compatibility mode we must allow immediate subpath writes after create()
+  // even when the ShareDB snapshot hasn't been loaded via subscribe/fetch yet.
+  if (isCompatEnv() && doc?.data == null) {
+    const localDoc = JSON.parse(JSON.stringify(newDoc || {}))
+    if (isPlainObject(localDoc)) injectIdFields(localDoc, idFields, docId)
+    setReplace([collection, docId], localDoc)
+    // Keep ShareDB doc shape consistent for same-tick setPublicDoc checks.
+    doc.data = localDoc
+    return
+  }
 
   ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
 }

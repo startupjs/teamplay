@@ -180,6 +180,25 @@ describe('$sub() function. Modifying documents', () => {
     }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
   })
 
+  it('compat: allows immediate subpath set after create() without subscribe', async () => {
+    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
+
+    const gameId = '_compat_create_then_subpath_set'
+    const $game = $.games[gameId]
+
+    await $game.create({ name: 'Created' })
+    await $game.players.set(1)
+
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 1 })
+    const doc = getConnection().get('games', gameId)
+    assert.equal(doc.data.players, 1)
+
+    // Cleanup through normal subscribed path so ShareDB/test GC hooks
+    // can release doc references the same way as other tests.
+    await sub($game)
+    await $game.del()
+  })
+
   it('repopulates data tree when doc exists but raw data is missing', async () => {
     const gameId = '_compat_partial_1'
     const $game = await sub($.games[gameId])
