@@ -1175,9 +1175,11 @@ describe('SignalCompat public mutators', () => {
     const gameId = '_compat_public_snapshot_drop'
     const $game = $.compatGames[gameId]
     await $game.create({ count: 0, list: [1], text: 'ab' })
+    await new Promise(resolve => setTimeout(resolve, 10))
 
-    const doc = getConnection().get('compatGames', gameId)
-    doc.data = undefined
+    const connection = getConnection()
+    delete connection.collections.compatGames[gameId]
+    _del(['compatGames', gameId])
 
     const nextCount = await $game.increment('count', 1)
     assert.equal(nextCount, 1)

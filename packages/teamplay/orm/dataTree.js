@@ -155,7 +155,16 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists && segments.length > 2) {
+    docState = await resolvePublicDocStateWithCompatFetchFallback({
+      collection,
+      docId,
+      doc,
+      idFields,
+      hydrateCompatDocData: true
+    })
+  }
   if (!docState.exists && deleteValue) throw Error(ERRORS.deleteNonExistentDoc(segments))
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
@@ -235,7 +244,16 @@ export async function setPublicDocReplace (segments, value) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
   const doc = getConnection().get(collection, docId)
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  if (!docState.exists && segments.length > 2) {
+    docState = await resolvePublicDocStateWithCompatFetchFallback({
+      collection,
+      docId,
+      doc,
+      idFields,
+      hydrateCompatDocData: true
+    })
+  }
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
   if (value != null) {
@@ -342,6 +360,24 @@ function resolvePublicDocState ({
   }
 
   return { exists: true, snapshot: localSnapshot, source: 'local' }
+}
+
+async function resolvePublicDocStateWithCompatFetchFallback ({
+  collection,
+  docId,
+  doc,
+  idFields,
+  hydrateCompatDocData = false
+}) {
+  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData })
+  if (docState.exists || !isCompatEnv()) return docState
+
+  await new Promise((resolve, reject) => {
+    doc.fetch(err => err ? reject(err) : resolve())
+  })
+
+  docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData })
+  return docState
 }
 
 function ensureLocalDocSyncedWithShareDoc ({
@@ -463,7 +499,13 @@ export async function incrementPublic (segments, byNumber) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+    collection,
+    docId,
+    doc,
+    idFields,
+    hydrateCompatDocData: true
+  })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)
   const op = [{ p: relativePath, na: byNumber }]
@@ -490,7 +532,13 @@ export async function arrayInsertPublic (segments, index, values) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+    collection,
+    docId,
+    doc,
+    idFields,
+    hydrateCompatDocData: true
+  })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   let current = getRaw(segments)
   if (current == null) {
@@ -539,7 +587,13 @@ export async function arrayRemovePublic (segments, index, howMany = 1) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+    collection,
+    docId,
+    doc,
+    idFields,
+    hydrateCompatDocData: true
+  })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const arr = getRaw(segments) || []
   const removed = arr.slice(index, index + howMany)
@@ -557,7 +611,13 @@ export async function arrayMovePublic (segments, from, to, howMany = 1) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+    collection,
+    docId,
+    doc,
+    idFields,
+    hydrateCompatDocData: true
+  })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const arr = getRaw(segments) || []
   const len = arr.length
@@ -623,7 +683,13 @@ export async function stringInsertPublic (segments, index, text) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+    collection,
+    docId,
+    doc,
+    idFields,
+    hydrateCompatDocData: true
+  })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)
   const previous = getRaw(segments)
@@ -646,7 +712,13 @@ export async function stringRemovePublic (segments, index, howMany) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+    collection,
+    docId,
+    doc,
+    idFields,
+    hydrateCompatDocData: true
+  })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)
   const previous = getRaw(segments)

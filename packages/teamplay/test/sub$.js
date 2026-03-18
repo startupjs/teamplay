@@ -206,12 +206,15 @@ describe('$sub() function. Modifying documents', () => {
     const $game = $.games[gameId]
 
     await $game.create({ name: 'Created' })
-    const doc = getConnection().get('games', gameId)
-    doc.data = undefined
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const connection = getConnection()
+    delete connection.collections.games[gameId]
+    _del(['games', gameId])
 
     await $game.players.set(2)
 
     assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 2 })
+    const doc = getConnection().get('games', gameId)
     assert.equal(doc.data.players, 2)
 
     await sub($game)
@@ -223,13 +226,16 @@ describe('$sub() function. Modifying documents', () => {
 
     const gameId = '_compat_add_delayed_subpath_set'
     await $.games.add({ _id: gameId, name: 'Added' })
+    await new Promise(resolve => setTimeout(resolve, 10))
     const $game = $.games[gameId]
-    const doc = getConnection().get('games', gameId)
-    doc.data = undefined
+    const connection = getConnection()
+    delete connection.collections.games[gameId]
+    _del(['games', gameId])
 
     await $game.players.set(3)
 
     assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 3 })
+    const doc = getConnection().get('games', gameId)
     assert.equal(doc.data.players, 3)
 
     await sub($game)
