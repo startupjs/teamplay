@@ -5,14 +5,15 @@ import { hashQuery, QUERIES } from '../orm/Query.js'
 import { AGGREGATIONS } from '../orm/Aggregation.js'
 import { set as _set, del as _del } from '../orm/dataTree.js'
 
-function checkReady (collection, hash, isAggregate) {
+function checkReady (collection, hash, isAggregate, hasExtraResult = false) {
   return __COMPAT_BATCH_READY__.isQueryReady(
     collection,
     [QUERIES, hash, 'ids'],
     [QUERIES, hash, 'docs'],
     [QUERIES, hash, 'extra'],
     [AGGREGATIONS, hash],
-    isAggregate
+    isAggregate,
+    hasExtraResult
   )
 }
 
@@ -77,6 +78,29 @@ describe('Compat batch query readiness', () => {
       strictEqual(checkReady(collection, hash, true), false)
     } finally {
       _del(querySegments)
+      _del([AGGREGATIONS, hash])
+    }
+  })
+
+  it('extra query ($count) is ready only when extra is materialized', () => {
+    const collection = 'messages'
+    const query = { chatId: 'c1', $count: true }
+    const hash = hashQuery(collection, query)
+    const querySegments = [QUERIES, hash]
+
+    try {
+      _del(querySegments)
+      strictEqual(checkReady(collection, hash, false, true), false)
+
+      _set([QUERIES, hash, 'ids'], ['m1'])
+      _set([collection, 'm1'], { _id: 'm1', chatId: 'c1' })
+      strictEqual(checkReady(collection, hash, false, true), false)
+
+      _set([QUERIES, hash, 'extra'], 1)
+      strictEqual(checkReady(collection, hash, false, true), true)
+    } finally {
+      _del(querySegments)
+      _del([collection, 'm1'])
       _del([AGGREGATIONS, hash])
     }
   })

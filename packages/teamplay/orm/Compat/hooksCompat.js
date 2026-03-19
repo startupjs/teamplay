@@ -119,10 +119,11 @@ export function useAsyncDoc (collection, id, options) {
 }
 
 export function useQuery$ (collection, query, options) {
+  const normalizedQuery = normalizeQuery(query, 'useQuery')
   const $collection = getCollectionSignal(collection, query, 'useQuery')
   const normalizedOptions = normalizeSyncSubOptions(options)
-  const $query = useSub($collection, normalizeQuery(query, 'useQuery'), normalizedOptions)
-  return $query
+  const $query = useSub($collection, normalizedQuery, normalizedOptions)
+  return isExtraQuery(normalizedQuery) ? $query.extra : $query
 }
 
 export function useQuery (collection, query, options) {
@@ -133,9 +134,11 @@ export function useQuery (collection, query, options) {
 }
 
 export function useAsyncQuery$ (collection, query, options) {
+  const normalizedQuery = normalizeQuery(query, 'useAsyncQuery')
   const $collection = getCollectionSignal(collection, query, 'useAsyncQuery')
-  const $query = useAsyncSub($collection, normalizeQuery(query, 'useAsyncQuery'), options)
-  return $query
+  const $query = useAsyncSub($collection, normalizedQuery, options)
+  if (!$query) return $query
+  return isExtraQuery(normalizedQuery) ? $query.extra : $query
 }
 
 export function useAsyncQuery (collection, query, options) {
@@ -150,7 +153,9 @@ export function useBatchQuery$ (collection, query, _options) {
   const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
   registerBatchQueryReadinessCheck(collection, normalizedQuery)
   const options = _options ? { ..._options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
-  return useSub($collection, normalizedQuery, options)
+  const $query = useSub($collection, normalizedQuery, options)
+  if (!$query) return $query
+  return isExtraQuery(normalizedQuery) ? $query.extra : $query
 }
 
 export function useBatchQuery (collection, query, options) {
@@ -317,6 +322,15 @@ function normalizeQuery (query, hookName) {
   return query
 }
 
+function isExtraQuery (query) {
+  if (!query || typeof query !== 'object') return false
+  return !!(
+    query.$count ||
+    query.$queryName ||
+    query.$aggregationName
+  )
+}
+
 const BATCH_SUB_OPTIONS = Object.freeze({
   async: false,
   batch: true,
@@ -378,11 +392,20 @@ function registerBatchQueryReadinessCheck (collection, query) {
   const extraSegments = [QUERIES, hash, 'extra']
   const aggregationSegments = [AGGREGATIONS, hash]
   const isAggregate = Array.isArray(query.$aggregate)
+  const hasExtraResult = isExtraQuery(query)
   promiseBatcher.addCheck({
     key: `query:${hash}`,
-    type: 'query',
-    details: { collection, hash, query, isAggregate },
-    isReady: () => isQueryReady(collection, idsSegments, docsSegments, extraSegments, aggregationSegments, isAggregate),
+    type: hasExtraResult ? 'queryExtra' : 'query',
+    details: { collection, hash, query, isAggregate, hasExtraResult },
+    isReady: () => isQueryReady(
+      collection,
+      idsSegments,
+      docsSegments,
+      extraSegments,
+      aggregationSegments,
+      isAggregate,
+      hasExtraResult
+    ),
     getState: () => {
       const ids = getRaw(idsSegments)
       const docs = getRaw(docsSegments)
@@ -404,7 +427,18 @@ function registerBatchQueryReadinessCheck (collection, query) {
   })
 }
 
-function isQueryReady (collection, idsSegments, docsSegments, extraSegments, aggregationSegments, isAggregate) {
+function isQueryReady (
+  collection,
+  idsSegments,
+  docsSegments,
+  extraSegments,
+  aggregationSegments,
+  isAggregate,
+  hasExtraResult
+) {
+  if (hasExtraResult) {
+    return getRaw(extraSegments) !== undefined
+  }
   if (isAggregate) {
     const docs = getRaw(docsSegments)
     if (Array.isArray(docs)) return true

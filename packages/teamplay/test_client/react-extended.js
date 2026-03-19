@@ -206,6 +206,33 @@ describe('compat helper hooks', () => {
 })
 
 describe('useSub edge cases', () => {
+  itCompat('useBatchQuery$ returns extra value for $count queries', async () => {
+    await act(async () => {
+      $.users.countUser1.set({ _id: 'countUser1', name: 'A' })
+      $.users.countUser2.set({ _id: 'countUser2', name: 'B' })
+    })
+
+    const Component = observer(() => {
+      const $count = useBatchQuery$('users', {
+        _id: { $in: ['countUser1', 'countUser2'] },
+        $count: true
+      })
+      useBatch()
+      const count = $count.get()
+      return el('div', {}, `${typeof count}:${String(count)}`)
+    })
+
+    const { container } = render(el(Component))
+    await waitFor(() => {
+      expect(container.textContent).toBe('number:2')
+    })
+
+    await act(async () => {
+      $.users.countUser1.del()
+      $.users.countUser2.del()
+    })
+  })
+
   it('trapRender keeps legacy immediate destroy for non-compat thrown promises', async () => {
     const events = []
     let resolvePromise
