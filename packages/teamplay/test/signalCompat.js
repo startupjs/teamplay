@@ -1245,6 +1245,32 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal($sessionUser.joinCourse('course_1'), `${collection}.123:course_1`)
   })
 
+  it('session alias resolves ref target methods when ref is created via canonical _session path', () => {
+    const $aliasSessionUser = $root.session.user
+    const $canonicalSessionUser = $root._session.user
+
+    assert.equal($aliasSessionUser, $canonicalSessionUser)
+    assert.equal($aliasSessionUser.path(), '_session.user')
+
+    $root._session.ref('user', `${collection}.123`)
+
+    assert.equal($aliasSessionUser.joinCourse('course_alias_1'), `${collection}.123:course_alias_1`)
+    assert.equal($canonicalSessionUser.joinCourse('course_alias_2'), `${collection}.123:course_alias_2`)
+  })
+
+  it('session alias resolves ref target methods when ref is created via alias path', () => {
+    const $aliasSessionUser = $root.session.user
+    const $canonicalSessionUser = $root._session.user
+
+    assert.equal($aliasSessionUser, $canonicalSessionUser)
+    assert.equal($aliasSessionUser.path(), '_session.user')
+
+    $root.session.ref('user', `${collection}.xyz`)
+
+    assert.equal($aliasSessionUser.joinCourse('course_alias_3'), `${collection}.xyz:course_alias_3`)
+    assert.equal($canonicalSessionUser.joinCourse('course_alias_4'), `${collection}.xyz:course_alias_4`)
+  })
+
   it('non-ref model method still works', () => {
     const $user = $root[collection].abc
     assert.equal($user.joinCourse('course_2'), `${collection}.abc:course_2`)

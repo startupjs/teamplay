@@ -1,4 +1,4 @@
-import { raw, observe, unobserve } from '@nx-js/observer-util'
+import { raw } from '@nx-js/observer-util'
 import {
   Signal,
   GETTERS,
@@ -8,7 +8,7 @@ import {
   isPublicCollectionSignal,
   isPublicDocumentSignal
 } from '../SignalBase.js'
-import { getRoot, ROOT } from '../Root.js'
+import { getRoot, ROOT, getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
 import { publicOnly, fetchOnly, setFetchOnly } from '../connection.js'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
@@ -38,10 +38,11 @@ import {
 } from '../dataTree.js'
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
 import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
-import { setRefLink, removeRefLink } from './refRegistry.js'
-import { REF_TARGET, resolveRefSignalSafe } from './refFallback.js'
-import { runInBatch, scheduleReaction } from '../batchScheduler.js'
-import { runInSilentContext } from './silentContext.js'
+import { setRefLink, removeRefLink, getRefLinks } from './refRegistry.js'
+import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
+import { runInBatch } from '../batchScheduler.js'
+import { runInSilentContext, runInModelEventsSilentContext } from './silentContext.js'
+import universal$ from '../../react/universal$.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -143,23 +144,17 @@ class SignalCompat extends Signal {
   get () {
     if (arguments.length > 1) {
       const segments = parseAtSegments(arguments, 'Signal.get()')
-      const $base = resolveRefSignal(this)
-      const $target = resolveSignal($base, segments)
+      const $target = resolveSignal(this, segments)
       return Signal.prototype.get.call($target)
     }
     if (arguments.length === 1) {
       if (arguments[0] == null) {
-        const $target = resolveRefSignal(this)
-        if ($target !== this) return Signal.prototype.get.apply($target, [])
         return Signal.prototype.get.apply(this, [])
       }
       const segments = parseAtSubpath(arguments[0], 1, 'Signal.get()')
-      const $base = resolveRefSignal(this)
-      const $target = resolveSignal($base, segments)
+      const $target = resolveSignal(this, segments)
       return Signal.prototype.get.call($target)
     }
-    const $target = resolveRefSignal(this)
-    if ($target !== this) return Signal.prototype.get.apply($target, arguments)
     return Signal.prototype.get.apply(this, arguments)
   }
 
@@ -706,14 +701,14 @@ function getRefStore ($signal) {
 }
 
 function createRefLink ($from, $to) {
-  const toReaction = observe(() => {
+  const syncFromTarget = () => {
     const value = readRefValue($to)
     if (value === SKIP_REF_TICK) return
-    trackDeep(value)
     setDiffDeepBypassRef($from, deepCopy(value))
-  }, { scheduler: scheduleReaction })
+  }
+  syncFromTarget()
   return () => {
-    unobserve(toReaction)
+    // Subsequent sync happens directly at mutation time via mirrorRefMutationFromTarget().
   }
 }
 
@@ -726,23 +721,13 @@ function readRefValue ($signal) {
   }
 }
 
-function trackDeep (value, seen = new Set()) {
-  if (!value || typeof value !== 'object') return
-  if (seen.has(value)) return
-  seen.add(value)
-  if (Array.isArray(value)) {
-    for (const item of value) trackDeep(item, seen)
-  } else {
-    for (const key in value) {
-      if (Object.prototype.hasOwnProperty.call(value, key)) {
-        trackDeep(value[key], seen)
-      }
-    }
-  }
-}
-
 function resolveRefSignal ($signal) {
-  return resolveRefSignalSafe($signal) || $signal
+  const directTarget = resolveRefSignalSafe($signal)
+  if (directTarget && directTarget !== $signal) return directTarget
+  const resolvedSegments = resolveRefSegmentsSafe($signal[SEGMENTS])
+  if (!resolvedSegments) return $signal
+  const $root = getRoot($signal) || $signal
+  return resolveSignal($root, resolvedSegments)
 }
 
 function forwardRef ($signal, methodName, args) {
@@ -752,7 +737,35 @@ function forwardRef ($signal, methodName, args) {
 }
 
 function setDiffDeepBypassRef ($signal, value) {
-  return Signal.prototype.set.call($signal, value)
+  const segments = $signal[SEGMENTS]
+  if (isPublicCollection(segments[0])) return Signal.prototype.set.call($signal, value)
+  return _setReplace(segments, value)
+}
+
+function mirrorRefMutationFromTarget (targetSegments, value) {
+  if (!Array.isArray(targetSegments) || targetSegments.length === 0) return
+  const updates = []
+  for (const link of getRefLinks().values()) {
+    if (!isPathPrefix(link.toSegments, targetSegments)) continue
+    const suffix = targetSegments.slice(link.toSegments.length)
+    updates.push({ segments: link.fromSegments.concat(suffix), value: deepCopy(value) })
+  }
+  if (!updates.length) return
+  const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
+  runInModelEventsSilentContext(() => {
+    for (const update of updates) {
+      const $target = resolveSignal($root, update.segments)
+      setDiffDeepBypassRef($target, update.value)
+    }
+  })
+}
+
+function isPathPrefix (prefixSegments, fullSegments) {
+  if (prefixSegments.length > fullSegments.length) return false
+  for (let i = 0; i < prefixSegments.length; i++) {
+    if (String(prefixSegments[i]) !== String(fullSegments[i])) return false
+  }
+  return true
 }
 
 function isSignalLike (value) {
@@ -914,10 +927,14 @@ async function setReplaceOnSignal ($signal, value) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   if (isPublicCollection(segments[0])) {
-    return Signal.prototype.set.call($signal, value)
+    const result = await Signal.prototype.set.call($signal, value)
+    mirrorRefMutationFromTarget(segments, value)
+    return result
   }
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _setReplace(segments, value)
+  const result = _setReplace(segments, value)
+  mirrorRefMutationFromTarget(segments, value)
+  return result
 }
 
 async function incrementOnSignal ($signal, byNumber) {

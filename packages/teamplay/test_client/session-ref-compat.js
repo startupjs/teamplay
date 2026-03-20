@@ -1,0 +1,294 @@
+import { createElement as el, Fragment } from 'react'
+import { describe, it, beforeAll as before, afterEach, expect } from '@jest/globals'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { $, observer, useSession } from '../index.js'
+import connect from '../connect/test.js'
+import { del as _del } from '../orm/dataTree.js'
+
+const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
+const describeCompat = isCompatMode ? describe : describe.skip
+
+before(connect)
+afterEach(cleanup)
+afterEach(() => {
+  _del(['_session'])
+  _del(['users'])
+  _del(['tenants'])
+})
+
+describeCompat('session alias + ref contract', () => {
+  async function setupSessionRefs () {
+    await act(async () => {
+      await $.users.u1.set({ id: 'u1', name: 'Alice', email: 'alice@example.com', timeZone: 'Europe/Kyiv', profile: { lang: 'en' }, baseLearnLanguages: ['en'] })
+      await $.users.u2.set({ id: 'u2', name: 'Bob', email: 'bob@example.com', timeZone: 'Europe/Istanbul', profile: { lang: 'tr' }, baseLearnLanguages: ['tr'] })
+      await $.tenants.t1.set({
+        id: 't1',
+        name: 'Exxon Mobil',
+        features: { credits: true },
+        branding: { theme: 'dark' },
+        subjectId: 'subj-1',
+        questions: { deposit: 15 }
+      })
+      await $.tenants.t2.set({
+        id: 't2',
+        name: 'Chevron',
+        features: { credits: false },
+        branding: { theme: 'light' },
+        subjectId: 'subj-2',
+        questions: { deposit: 40 }
+      })
+      $.session.userId.set('u1')
+      $.session.tenantId.set('t1')
+      $.session.ref('user', $.users.u1)
+      $.session.ref('tenant', $.tenants.t1)
+    })
+  }
+
+  it('exposes nested session ref paths through the alias exactly like canonical _session', async () => {
+    await setupSessionRefs()
+
+    expect($.session.user.email.get()).toBe('alice@example.com')
+    expect($.session.user.timeZone.get()).toBe('Europe/Kyiv')
+    expect($.session.tenant.name.get()).toBe('Exxon Mobil')
+    expect($.session.tenant.questions.deposit.get()).toBe(15)
+
+    expect($.session.user.email).toBe($._session.user.email)
+    expect($.session.user.timeZone).toBe($._session.user.timeZone)
+    expect($.session.tenant.questions.deposit).toBe($._session.tenant.questions.deposit)
+
+    expect($.session.user.email.path()).toBe('_session.user.email')
+    expect($.session.tenant.questions.deposit.path()).toBe('_session.tenant.questions.deposit')
+    expect($.session.user.at().path()).toBe('_session.user')
+    expect($.session.tenant.at().path()).toBe('_session.tenant')
+  })
+
+  it('materializes target ids in plain session snapshot', async () => {
+    await setupSessionRefs()
+
+    const session = $.session.get()
+
+    expect(session.user).toBeDefined()
+    expect(session.tenant).toBeDefined()
+    expect(session.user._id).toBe('u1')
+    expect(session.user.id).toBe('u1')
+    expect(session.tenant._id).toBe('t1')
+    expect(session.tenant.id).toBe('t1')
+  })
+
+  it('exposes the same session user/tenant signals through alias and canonical paths', async () => {
+    await setupSessionRefs()
+
+    expect($.session.user).toBe($._session.user)
+    expect($.session.tenant).toBe($._session.tenant)
+
+    expect($.session.user.path()).toBe('_session.user')
+    expect($.session.tenant.path()).toBe('_session.tenant')
+
+    expect($.session.user.get().name).toBe('Alice')
+    expect($.session.tenant.get().name).toBe('Exxon Mobil')
+  })
+
+  it('useSession("user") reflects the dereferenced user value and writes through to the target doc', async () => {
+    await setupSessionRefs()
+
+    let lastUserSignal
+    const Component = observer(() => {
+      const [user, $user] = useSession('user')
+      lastUserSignal = $user
+      return el(Fragment, null,
+        el('span', { id: 'sessionUserName' }, user?.name || ''),
+        el('span', { id: 'sessionUserLang' }, user?.profile?.lang || ''),
+        el('button', { id: 'renameSessionUser', onClick: () => $user.name.set('Bob') }),
+        el('button', { id: 'reLangSessionUser', onClick: () => $user.profile.lang.set('de') })
+      )
+    })
+
+    const { container } = render(el(Component))
+
+    expect(container.querySelector('#sessionUserName').textContent).toBe('Alice')
+    expect(container.querySelector('#sessionUserLang').textContent).toBe('en')
+    expect(lastUserSignal).toBe($.session.user)
+    expect(lastUserSignal).toBe($._session.user)
+
+    fireEvent.click(container.querySelector('#renameSessionUser'))
+    await waitFor(() => {
+      expect($.users.u1.name.get()).toBe('Bob')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#sessionUserName').textContent).toBe('Bob')
+    })
+
+    fireEvent.click(container.querySelector('#reLangSessionUser'))
+    await waitFor(() => {
+      expect($.users.u1.profile.lang.get()).toBe('de')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#sessionUserLang').textContent).toBe('de')
+    })
+  })
+
+  it('useSession("user") rerenders when the target user doc changes directly', async () => {
+    await setupSessionRefs()
+
+    const Component = observer(() => {
+      const [user] = useSession('user')
+      return el('span', { id: 'sessionUserNameDirect' }, user?.name || '')
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#sessionUserNameDirect').textContent).toBe('Alice')
+
+    await act(async () => {
+      await $.users.u1.name.set('Carol')
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#sessionUserNameDirect').textContent).toBe('Carol')
+    })
+  })
+
+  it('useSession on nested user and tenant paths follows direct target doc updates', async () => {
+    await setupSessionRefs()
+
+    const Component = observer(() => {
+      const [userTimeZone] = useSession('user.timeZone')
+      const [tenantName] = useSession('tenant.name')
+      const [tenantDeposit] = useSession('tenant.questions.deposit')
+      return el(Fragment, null,
+        el('span', { id: 'nestedUserTimeZone' }, userTimeZone || ''),
+        el('span', { id: 'nestedTenantName' }, tenantName || ''),
+        el('span', { id: 'nestedTenantDeposit' }, String(tenantDeposit ?? ''))
+      )
+    })
+
+    const { container } = render(el(Component))
+
+    expect(container.querySelector('#nestedUserTimeZone').textContent).toBe('Europe/Kyiv')
+    expect(container.querySelector('#nestedTenantName').textContent).toBe('Exxon Mobil')
+    expect(container.querySelector('#nestedTenantDeposit').textContent).toBe('15')
+
+    await act(async () => {
+      await $.users.u1.timeZone.set('UTC')
+      await $.tenants.t1.name.set('Exxon LNG')
+      await $.tenants.t1.questions.deposit.set(25)
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#nestedUserTimeZone').textContent).toBe('UTC')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#nestedTenantName').textContent).toBe('Exxon LNG')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#nestedTenantDeposit').textContent).toBe('25')
+    })
+  })
+
+  it('useSession session refs switch to the new target when the session ref is rebound', async () => {
+    await setupSessionRefs()
+
+    let latestUserSignal
+    const Component = observer(() => {
+      const [user, $user] = useSession('user')
+      const [userTimeZone] = useSession('user.timeZone')
+      latestUserSignal = $user
+      return el(Fragment, null,
+        el('span', { id: 'reboundUserName' }, user?.name || ''),
+        el('span', { id: 'reboundUserTimeZone' }, userTimeZone || '')
+      )
+    })
+
+    const { container } = render(el(Component))
+
+    expect(container.querySelector('#reboundUserName').textContent).toBe('Alice')
+    expect(container.querySelector('#reboundUserTimeZone').textContent).toBe('Europe/Kyiv')
+    expect(latestUserSignal).toBe($.session.user)
+
+    await act(async () => {
+      $.session.userId.set('u2')
+      $.session.ref('user', $.users.u2)
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#reboundUserName').textContent).toBe('Bob')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#reboundUserTimeZone').textContent).toBe('Europe/Istanbul')
+    })
+
+    expect($.session.user.email.get()).toBe('bob@example.com')
+    expect($.session.userId.get()).toBe('u2')
+  })
+
+  it('tenant session refs switch to the new target when the session ref is rebound', async () => {
+    await setupSessionRefs()
+
+    const Component = observer(() => {
+      const [tenant] = useSession('tenant')
+      const [tenantName] = useSession('tenant.name')
+      const [tenantDeposit] = useSession('tenant.questions.deposit')
+      return el(Fragment, null,
+        el('span', { id: 'reboundTenantRootName' }, tenant?.name || ''),
+        el('span', { id: 'reboundTenantName' }, tenantName || ''),
+        el('span', { id: 'reboundTenantDeposit' }, String(tenantDeposit ?? ''))
+      )
+    })
+
+    const { container } = render(el(Component))
+
+    expect(container.querySelector('#reboundTenantRootName').textContent).toBe('Exxon Mobil')
+    expect(container.querySelector('#reboundTenantName').textContent).toBe('Exxon Mobil')
+    expect(container.querySelector('#reboundTenantDeposit').textContent).toBe('15')
+
+    await act(async () => {
+      $.session.tenantId.set('t2')
+      $.session.ref('tenant', $.tenants.t2)
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#reboundTenantRootName').textContent).toBe('Chevron')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#reboundTenantName').textContent).toBe('Chevron')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#reboundTenantDeposit').textContent).toBe('40')
+    })
+
+    expect($.session.tenant.subjectId.get()).toBe('subj-2')
+    expect($.session.tenantId.get()).toBe('t2')
+  })
+
+  it('useSession("tenant") rerenders when the target tenant doc changes directly', async () => {
+    await setupSessionRefs()
+
+    let lastTenantSignal
+    const Component = observer(() => {
+      const [tenant, $tenant] = useSession('tenant')
+      lastTenantSignal = $tenant
+      return el(Fragment, null,
+        el('span', { id: 'sessionTenantName' }, tenant?.name || ''),
+        el('span', { id: 'sessionTenantTheme' }, tenant?.branding?.theme || '')
+      )
+    })
+
+    const { container } = render(el(Component))
+
+    expect(container.querySelector('#sessionTenantName').textContent).toBe('Exxon Mobil')
+    expect(container.querySelector('#sessionTenantTheme').textContent).toBe('dark')
+    expect(lastTenantSignal).toBe($.session.tenant)
+    expect(lastTenantSignal).toBe($._session.tenant)
+
+    await act(async () => {
+      await $.tenants.t1.name.set('Exxon LNG')
+      await $.tenants.t1.branding.theme.set('light')
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#sessionTenantName').textContent).toBe('Exxon LNG')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#sessionTenantTheme').textContent).toBe('light')
+    })
+  })
+})

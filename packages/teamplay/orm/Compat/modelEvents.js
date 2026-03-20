@@ -1,6 +1,6 @@
 import { getRefLinks } from './refRegistry.js'
 import { isCompatEnv } from '../compatEnv.js'
-import { isSilentContextActive } from './silentContext.js'
+import { isSilentContextActive, isModelEventsSilentContextActive } from './silentContext.js'
 
 const modelListeners = {
   change: new Map(),
@@ -49,7 +49,7 @@ export function removeModelListener (eventName, handler) {
 
 export function emitModelChange (path, value, prevValue, meta) {
   if (!isModelEventsEnabled()) return
-  if (isSilentContextActive()) return
+  if (isSilentContextActive() || isModelEventsSilentContextActive()) return
   const initialSegments = splitPath(path)
   const visited = new Set()
   const queue = [initialSegments]
