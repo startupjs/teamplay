@@ -72,6 +72,18 @@ class SignalCompat extends Signal {
     return $cursor
   }
 
+  getId () {
+    const $target = resolveRefSignal(this)
+    if ($target !== this) return $target.getId()
+    return super.getId()
+  }
+
+  getCollection () {
+    const $target = resolveRefSignal(this)
+    if ($target !== this) return $target.getCollection()
+    return super.getCollection()
+  }
+
   getCopy (subpath) {
     if (arguments.length > 1) throw Error('Signal.getCopy() expects a single argument')
     const segments = parseAtSubpath(subpath, arguments.length, 'Signal.getCopy()')

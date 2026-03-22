@@ -88,6 +88,18 @@ describeCompat('session alias + ref contract', () => {
     expect($.session.tenant.get().name).toBe('Exxon Mobil')
   })
 
+  it('resolves getId() and getCollection() through session refs', async () => {
+    await setupSessionRefs()
+
+    expect($.session.user.getId()).toBe('u1')
+    expect($.session.tenant.getId()).toBe('t1')
+    expect($.session.user.getCollection()).toBe('users')
+    expect($.session.tenant.getCollection()).toBe('tenants')
+
+    expect($.session.user.name.getId()).toBe('name')
+    expect($.session.tenant.questions.deposit.getId()).toBe('deposit')
+  })
+
   it('useSession("user") reflects the dereferenced user value and writes through to the target doc', async () => {
     await setupSessionRefs()
 
