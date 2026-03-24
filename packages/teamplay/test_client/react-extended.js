@@ -148,6 +148,35 @@ describe('compat helper hooks', () => {
     expect(calls).toBe(1)
   })
 
+  itCompat('useDidUpdate ignores callback identity changes when deps are unchanged', async () => {
+    let dismissCalls = 0
+
+    const Component = observer(() => {
+      const [visible, setVisible] = React.useState(true)
+      const [counter, setCounter] = React.useState(0)
+
+      useDidUpdate(() => {
+        if (!visible) {
+          dismissCalls += 1
+          setCounter(value => value + 1)
+        }
+      }, [visible])
+
+      return el(Fragment, {}, [
+        el('button', { key: 'hide', onClick: () => setVisible(false) }, 'hide'),
+        el('div', { key: 'counter' }, String(counter))
+      ])
+    })
+
+    const { container } = render(el(Component))
+
+    fireEvent.click(container.querySelector('button'))
+    await wait()
+
+    expect(dismissCalls).toBe(1)
+    expect(container.textContent).toContain('1')
+  })
+
   it('useOnce runs only once when condition becomes truthy', async () => {
     let calls = 0
     const Component = observer(() => {

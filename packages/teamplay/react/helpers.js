@@ -71,14 +71,16 @@ export function useUnmount (fn) {
 
 export function useDidUpdate (fn, deps) {
   const isFirst = useRef(true)
+  const fnRef = useRef(fn)
+  if (fnRef.current !== fn) fnRef.current = fn
   const stableDeps = useStableDeps(deps)
   useEffect(() => {
     if (isFirst.current) {
       isFirst.current = false
       return
     }
-    return fn()
-  }, [fn, stableDeps])
+    return fnRef.current()
+  }, stableDeps)
 }
 
 export function useOnce (condition, fn) {
