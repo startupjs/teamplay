@@ -54,6 +54,11 @@ import connect from '../connect/test.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions, AGGREGATIONS } from '../orm/Aggregation.js'
+import {
+  on as onCompatEvent,
+  removeListener as removeCompatListener,
+  __resetEventsForTests
+} from '../orm/Compat/eventsCompat.js'
 
 before(connect)
 beforeEach(() => {
@@ -63,6 +68,7 @@ afterEach(cleanup)
 afterEach(runGc)
 afterEach(() => {
   __resetCompatComponentRegistryForTests()
+  __resetEventsForTests()
 })
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
@@ -752,6 +758,50 @@ describe('emit / useOn / useEmit', () => {
     })
     render(el(Component))
     expect(captured).toBe(emit)
+  })
+
+  it('emit does not call listeners added during the same dispatch', () => {
+    const calls = []
+    const secondHandler = jest.fn(() => {
+      calls.push('second')
+    })
+    const firstHandler = jest.fn(() => {
+      calls.push('first')
+      removeCompatListener('CustomEventSnapshot', firstHandler)
+      onCompatEvent('CustomEventSnapshot', secondHandler)
+    })
+
+    onCompatEvent('CustomEventSnapshot', firstHandler)
+
+    emit('CustomEventSnapshot')
+    expect(calls).toEqual(['first'])
+
+    emit('CustomEventSnapshot')
+    expect(calls).toEqual(['first', 'second'])
+  })
+
+  itCompat('useOn handler that writes page state is called only once per emit', () => {
+    let calls = 0
+
+    const Component = observer(() => {
+      const [, $errors] = usePage('errors')
+
+      useOn('LessonSave', () => {
+        calls++
+        $errors.set({ name: 'requiredField' })
+      })
+
+      return null
+    })
+
+    render(el(Component))
+
+    act(() => {
+      emit('LessonSave')
+    })
+
+    expect(calls).toBe(1)
+    expect($.page.errors.get()).toEqual({ name: 'requiredField' })
   })
 })
 

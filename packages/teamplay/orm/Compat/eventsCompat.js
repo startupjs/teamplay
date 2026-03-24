@@ -12,7 +12,8 @@ const listeners = new Map()
 export function emit (eventName, ...args) {
   const subs = listeners.get(eventName)
   if (!subs) return
-  for (const handler of subs) {
+  const snapshot = Array.from(subs)
+  for (const handler of snapshot) {
     handler(...args)
   }
 }
