@@ -654,6 +654,27 @@ describe('useValue / useValue$', () => {
     expect(container.textContent).toBe('Jane')
     expect(renders).toBe(2)
   })
+
+  it('useValue materializes object state when setting nested child under primitive default', async () => {
+    const chatId = 'chat_1'
+
+    const Component = observer(() => {
+      const [, $visibleMap] = useValue(false)
+      return fr(
+        el('span', { id: 'state' }, JSON.stringify($visibleMap.get())),
+        el('span', { id: 'child' }, String($visibleMap.at(chatId).get())),
+        el('button', { id: 'btn3', onClick: () => $visibleMap.at(chatId).set(true) })
+      )
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#state').textContent).toBe('false')
+    expect(container.querySelector('#child').textContent).toBe('undefined')
+
+    fireEvent.click(container.querySelector('#btn3'))
+    expect(container.querySelector('#state').textContent).toBe('{"chat_1":true}')
+    expect(container.querySelector('#child').textContent).toBe('true')
+  })
 })
 
 describe('useModel', () => {

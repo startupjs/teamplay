@@ -894,6 +894,14 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.text.get(), 'X')
   })
 
+  it('materializes nested objects when setting a child under a primitive value', async () => {
+    setup('primitive-child-set')
+    await $base.set(false)
+    await $base.at('menu.open').set(true)
+    assert.deepEqual($base.get(), { menu: { open: true } })
+    assert.equal($base.at('menu.open').get(), true)
+  })
+
   it('initializes missing nested array paths for all array mutators', async () => {
     setup('array-implied-missing-path')
 

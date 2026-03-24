@@ -49,13 +49,15 @@ export function set (segments, value, tree = dataTree) {
   let dataNodeRaw = raw(writableTree)
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
-    if (dataNode[segment] == null) {
+    const nextSegment = segments[i + 1]
+    const currentValue = dataNodeRaw?.[segment]
+    if (currentValue == null || typeof currentValue !== 'object') {
       // if next segment is a number, it means that we are in the array
-      if (typeof segments[i + 1] === 'number') dataNode[segment] = []
+      if (typeof nextSegment === 'number') dataNode[segment] = []
       else dataNode[segment] = {}
     }
     dataNode = dataNode[segment]
-    dataNodeRaw = dataNodeRaw[segment]
+    dataNodeRaw = raw(dataNode)
   }
   const key = segments[segments.length - 1]
   // handle adding out of bounds empty element to the array
@@ -103,9 +105,11 @@ export function setReplace (segments, value, tree = dataTree) {
   let dataNode = writableTree
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
-    if (dataNode[segment] == null) {
+    const nextSegment = segments[i + 1]
+    const currentValue = dataNode[segment]
+    if (currentValue == null || typeof currentValue !== 'object') {
       // if next segment is a number, it means that we are in the array
-      if (typeof segments[i + 1] === 'number') dataNode[segment] = []
+      if (typeof nextSegment === 'number') dataNode[segment] = []
       else dataNode[segment] = {}
     }
     dataNode = dataNode[segment]
