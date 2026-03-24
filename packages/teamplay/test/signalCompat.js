@@ -1585,6 +1585,42 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupStartPaths = []
   })
 
+  it('detaches started object snapshots so target mutations do not alias source', async () => {
+    const $base = setup('detached')
+    await $base.doc.set({
+      config: {
+        enabled: false,
+        nested: { mode: 'text' }
+      }
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $base.doc, doc => doc)
+
+    assert.deepEqual($base.virtual.get(), $base.doc.get())
+    assert.notEqual($base.virtual.get(), $base.doc.get())
+    assert.notEqual($base.virtual.get().config, $base.doc.get().config)
+    assert.notEqual($base.virtual.get().config.nested, $base.doc.get().config.nested)
+
+    await $base.virtual.config.enabled.set(true)
+    await $base.virtual.config.nested.mode.set('voice')
+
+    assert.equal($base.virtual.get('config.enabled'), true)
+    assert.equal($base.virtual.get('config.nested.mode'), 'voice')
+    assert.equal($base.doc.get('config.enabled'), false)
+    assert.equal($base.doc.get('config.nested.mode'), 'text')
+
+    await $base.doc.set({
+      config: {
+        enabled: true,
+        nested: { mode: 'audio' }
+      }
+    })
+    assert.equal($base.virtual.get('config.enabled'), true)
+    assert.equal($base.virtual.get('config.nested.mode'), 'audio')
+  })
+
   it('priority: domain model method start() wins over compat fallback', () => {
     const $session = $root[domainCollection].session1
     assert.equal($session.start('chat', 'u1'), `domain:${domainCollection}.session1:chat:u1`)

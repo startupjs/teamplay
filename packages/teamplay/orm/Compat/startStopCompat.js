@@ -1,4 +1,4 @@
-import { observe, unobserve } from '@nx-js/observer-util'
+import { observe, raw, unobserve } from '@nx-js/observer-util'
 import { getRoot } from '../Root.js'
 import { scheduleReaction } from '../batchScheduler.js'
 
@@ -38,7 +38,7 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
       if (isThenable(err)) return
       throw err
     }
-    const maybePromise = $target.set(nextValue)
+    const maybePromise = $target.set(detachStartValue(nextValue))
     if (maybePromise?.catch) maybePromise.catch(ignorePromiseRejection)
   }, { scheduler: scheduleReaction })
   store.set(targetKey, { stop: () => unobserve(reaction) })
@@ -104,4 +104,37 @@ function ignorePromiseRejection () {}
 
 function isThenable (value) {
   return !!value && typeof value.then === 'function'
+}
+
+function detachStartValue (value) {
+  const rawValue = raw(value)
+  if (!rawValue || typeof rawValue !== 'object') return rawValue
+  if (typeof globalThis.structuredClone === 'function') {
+    try {
+      return globalThis.structuredClone(rawValue)
+    } catch {}
+  }
+  return racerDeepCopy(rawValue)
+}
+
+function racerDeepCopy (value) {
+  if (value instanceof Date) return new Date(value)
+  if (typeof value === 'object') {
+    if (value === null) return null
+    if (Array.isArray(value)) {
+      const array = []
+      for (let i = value.length; i--;) {
+        array[i] = racerDeepCopy(value[i])
+      }
+      return array
+    }
+    const object = new value.constructor()
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        object[key] = racerDeepCopy(value[key])
+      }
+    }
+    return object
+  }
+  return value
 }
