@@ -59,6 +59,7 @@ import {
   removeListener as removeCompatListener,
   __resetEventsForTests
 } from '../orm/Compat/eventsCompat.js'
+import { __resetCompatWarningsForTests } from '../orm/Compat/hooksCompat.js'
 
 before(connect)
 beforeEach(() => {
@@ -69,6 +70,7 @@ afterEach(runGc)
 afterEach(() => {
   __resetCompatComponentRegistryForTests()
   __resetEventsForTests()
+  __resetCompatWarningsForTests()
 })
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
@@ -237,6 +239,32 @@ describe('compat helper hooks', () => {
     })
     const { container } = render(el(Component))
     expect(container.textContent).toBe('Local')
+  })
+
+  itCompat('undefined doc warning is emitted only once across rerenders', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const Component = observer(() => {
+      const [count, setCount] = React.useState(0)
+      useDoc('chats', undefined)
+
+      React.useEffect(() => {
+        if (count === 0) setCount(1)
+      }, [count])
+
+      return el('div', {}, String(count))
+    })
+
+    render(el(Component))
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalled()
+    })
+
+    const compatWarnings = warnSpy.mock.calls.filter(([message]) =>
+      String(message).includes('[useDoc] You are trying to subscribe to an undefined document id')
+    )
+    expect(compatWarnings).toHaveLength(1)
+    warnSpy.mockRestore()
   })
 })
 

@@ -9,6 +9,7 @@ import { hashQuery, QUERIES } from '../Query.js'
 import { AGGREGATIONS } from '../Aggregation.js'
 
 const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
+const emittedCompatWarnings = new Set()
 
 // Hook-compatible wrapper around $() for compatibility mode.
 export function useValue$ (defaultValue) {
@@ -288,7 +289,7 @@ function getDocSignal (collection, id, hookName) {
     throw Error(`[${hookName}] collection must be a string. Got: ${collection}`)
   }
   if (id == null) {
-    console.warn(`
+    warnCompatOnce(`doc:${hookName}:${collection}:${id}`, `
       [${hookName}] You are trying to subscribe to an undefined document id:
         ${collection}.${id}
       Falling back to '__NULL__' document to prevent critical crash.
@@ -304,7 +305,7 @@ function getCollectionSignal (collection, query, hookName) {
     throw Error(`[${hookName}] collection must be a string. Got: ${collection}`)
   }
   if (query == null) {
-    console.warn(`
+    warnCompatOnce(`query:${hookName}:${collection}`, `
       [${hookName}] Query is undefined. Got:
         ${collection}, ${query}
       Falling back to {_id: '__NON_EXISTENT__'} query to prevent critical crash.
@@ -312,6 +313,16 @@ function getCollectionSignal (collection, query, hookName) {
     `)
   }
   return $root[collection]
+}
+
+function warnCompatOnce (key, message) {
+  if (emittedCompatWarnings.has(key)) return
+  emittedCompatWarnings.add(key)
+  console.warn(message)
+}
+
+export function __resetCompatWarningsForTests () {
+  emittedCompatWarnings.clear()
 }
 
 function normalizeQuery (query, hookName) {
