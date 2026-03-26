@@ -55,6 +55,7 @@ function createCompatRoot () {
       return createCompatSignal([key], rootProxy, cache)
     }
   })
+  rootSignal[ROOT] = rootProxy
   rootSignal[ROOT_ID] = '_compat_root_'
   cache.set('', rootProxy)
   return rootProxy
@@ -951,6 +952,139 @@ describe('SignalCompat mutators with path', () => {
   })
 })
 
+describe('SignalCompat relative path split equivalence', () => {
+  let cleanupSegments
+  let $root
+
+  function setupPair (suffix) {
+    const leftPath = `_compatSplit_${suffix}_left`
+    const rightPath = `_compatSplit_${suffix}_right`
+    cleanupSegments = [[leftPath], [rightPath]]
+    $root = createCompatRoot()
+    return {
+      $left: $root[leftPath],
+      $right: $root[rightPath]
+    }
+  }
+
+  afterEach(() => {
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+  })
+
+  it('get/peek return the same value regardless of path split', async () => {
+    const { $left, $right } = setupPair('getpeek')
+    await $left.a.b.c.d.e.f.set(17)
+    await $right.a.b.c.d.e.f.set(17)
+
+    assert.equal($left.a.b.c.get('d.e.f'), $right.a.b.get('c.d.e.f'))
+    assert.equal($left.a.b.c.peek('d.e.f'), $right.a.b.peek('c.d.e.f'))
+  })
+
+  it('set-like path methods resolve to the same absolute target', async () => {
+    const { $left, $right } = setupPair('setlike')
+
+    await $left.a.b.c.set('d.e.f', 1)
+    await $right.a.b.set('c.d.e.f', 1)
+    assert.deepEqual($left.get(), $right.get())
+
+    await $left.a.b.c.setNull('d.e.f', 2)
+    await $right.a.b.setNull('c.d.e.f', 2)
+    assert.deepEqual($left.get(), $right.get())
+
+    await $left.create('docs_left', { title: 'x' })
+    await $right.set('docs_left', { title: 'x' })
+    await $right.create('docs_right', { title: 'x' })
+    await $left.set('docs_right', { title: 'x' })
+    assert.deepEqual($left.get(), $right.get())
+
+    await $left.a.b.c.setDiffDeep('d', { only: 'new' })
+    await $right.a.b.setDiffDeep('c.d', { only: 'new' })
+    assert.deepEqual($left.get(), $right.get())
+
+    await $left.a.b.c.setEach('d', { x: 1, y: 2 })
+    await $right.a.b.setEach('c.d', { x: 1, y: 2 })
+    assert.deepEqual($left.get(), $right.get())
+
+    await $left.a.b.c.del('d.y')
+    await $right.a.b.del('c.d.y')
+    assert.deepEqual($left.get(), $right.get())
+
+    await $left.a.b.c.increment('counter', 3)
+    await $right.a.b.increment('c.counter', 3)
+    assert.deepEqual($left.get(), $right.get())
+  })
+
+  it('array path methods resolve to the same absolute target', async () => {
+    const { $left, $right } = setupPair('arrays')
+
+    const pushLeft = await $left.a.b.c.push('list', 1)
+    const pushRight = await $right.a.b.push('c.list', 1)
+    assert.equal(pushLeft, pushRight)
+
+    const unshiftLeft = await $left.a.b.c.unshift('list', 0)
+    const unshiftRight = await $right.a.b.unshift('c.list', 0)
+    assert.equal(unshiftLeft, unshiftRight)
+
+    const insertLeft = await $left.a.b.c.insert('list', 1, ['x', 'y'])
+    const insertRight = await $right.a.b.insert('c.list', 1, ['x', 'y'])
+    assert.equal(insertLeft, insertRight)
+
+    const moveLeft = await $left.a.b.c.move('list', 0, 2)
+    const moveRight = await $right.a.b.move('c.list', 0, 2)
+    assert.deepEqual(moveLeft, moveRight)
+
+    const removeLeft = await $left.a.b.c.remove('list', 1, 2)
+    const removeRight = await $right.a.b.remove('c.list', 1, 2)
+    assert.deepEqual(removeLeft, removeRight)
+
+    const popLeft = await $left.a.b.c.pop('list')
+    const popRight = await $right.a.b.pop('c.list')
+    assert.equal(popLeft, popRight)
+
+    const shiftLeft = await $left.a.b.c.shift('list')
+    const shiftRight = await $right.a.b.shift('c.list')
+    assert.equal(shiftLeft, shiftRight)
+
+    assert.deepEqual($left.get(), $right.get())
+  })
+
+  it('string path methods resolve to the same absolute target', async () => {
+    const { $left, $right } = setupPair('strings')
+    await $left.a.b.c.set('text', 'helo')
+    await $right.a.b.set('c.text', 'helo')
+
+    const prevInsertLeft = await $left.a.b.c.stringInsert('text', 3, 'l')
+    const prevInsertRight = await $right.a.b.stringInsert('c.text', 3, 'l')
+    assert.equal(prevInsertLeft, prevInsertRight)
+
+    const prevRemoveLeft = await $left.a.b.c.stringRemove('text', 1, 2)
+    const prevRemoveRight = await $right.a.b.stringRemove('c.text', 1, 2)
+    assert.equal(prevRemoveLeft, prevRemoveRight)
+
+    assert.deepEqual($left.get(), $right.get())
+  })
+
+  it('path split equivalence is preserved when refs are inside the path', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+    const leftPath = '_compatSplit_refs_left'
+    const rightPath = '_compatSplit_refs_right'
+    cleanupSegments = [[leftPath], [rightPath]]
+    const $realRoot = getRootSignal({ rootId: '_compat_split_refs_root' })
+    const $left = $realRoot[leftPath]
+    const $right = $realRoot[rightPath]
+    $left.a.b.ref('c', $left.target)
+    $right.a.b.ref('c', $right.target)
+
+    await $left.a.b.set('c.profile.name', 'Alice')
+    await $right.a.set('b.c.profile.name', 'Alice')
+
+    assert.equal($left.a.b.get('c.profile.name'), $right.a.get('b.c.profile.name'))
+    assert.equal($left.target.profile.name.get(), $right.target.profile.name.get())
+    assert.deepEqual($left.get(), $right.get())
+  })
+})
+
 describe('SignalCompat.parent()', () => {
   let basePath
   let cleanupSegments
@@ -1486,6 +1620,19 @@ class NonCompatRefUserModel extends BaseSignal {
 
     assert.equal($target.superField.get(), 'superValue')
     assert.equal($session.user.superField.get(), 'superValue')
+  })
+
+  it('set(path, value) on local signals works when root pointer is raw', async () => {
+    setup('rawRootPathSet')
+    const localId = '_raw_local_0'
+    const cache = new Map()
+    const $local = createCompatSignal(['$local', localId], raw($root), cache)
+    cleanupSegments.push(['$local', localId])
+
+    await $local.set({ nodes: {} })
+    await $local.set('nodes.dropdown', { open: true })
+
+    assert.deepEqual($local.nodes.dropdown.get(), { open: true })
   })
 
   it('removeRef stops syncing', async () => {

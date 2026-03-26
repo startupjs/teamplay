@@ -156,7 +156,7 @@ class SignalCompat extends Signal {
   get () {
     if (arguments.length > 1) {
       const segments = parseAtSegments(arguments, 'Signal.get()')
-      const $target = resolveSignal(this, segments)
+      const $target = resolveRelativePathTarget(this, segments)
       return Signal.prototype.get.call($target)
     }
     if (arguments.length === 1) {
@@ -164,7 +164,7 @@ class SignalCompat extends Signal {
         return Signal.prototype.get.apply(this, [])
       }
       const segments = parseAtSubpath(arguments[0], 1, 'Signal.get()')
-      const $target = resolveSignal(this, segments)
+      const $target = resolveRelativePathTarget(this, segments)
       return Signal.prototype.get.call($target)
     }
     return Signal.prototype.get.apply(this, arguments)
@@ -173,8 +173,7 @@ class SignalCompat extends Signal {
   peek () {
     if (arguments.length > 1) {
       const segments = parseAtSegments(arguments, 'Signal.peek()')
-      const $base = resolveRefSignal(this)
-      const $target = resolveSignal($base, segments)
+      const $target = resolveRelativePathTarget(this, segments)
       return Signal.prototype.peek.call($target)
     }
     if (arguments.length === 1) {
@@ -184,8 +183,7 @@ class SignalCompat extends Signal {
         return Signal.prototype.peek.apply(this, [])
       }
       const segments = parseAtSubpath(arguments[0], 1, 'Signal.peek()')
-      const $base = resolveRefSignal(this)
-      const $target = resolveSignal($base, segments)
+      const $target = resolveRelativePathTarget(this, segments)
       return Signal.prototype.peek.call($target)
     }
     const $target = resolveRefSignal(this)
@@ -203,9 +201,7 @@ class SignalCompat extends Signal {
     } else if (arguments.length === 1) {
       value = path
     }
-    const $target = segments.length
-      ? resolveSignalWithRefs(this, segments)
-      : resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     if (value === undefined) return Signal.prototype.set.call($target, value)
     return setReplaceOnSignal($target, value)
   }
@@ -236,7 +232,7 @@ class SignalCompat extends Signal {
     } else if (arguments.length === 1) {
       value = path
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     if ($target.get() != null) return
     return setReplaceOnSignal($target, value)
   }
@@ -258,7 +254,7 @@ class SignalCompat extends Signal {
     } else {
       value = {}
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     ensureCreateTarget($target, 'Signal.create()')
     if ($target.get() != null) {
       throw Error(`Signal.create() may only be used on a non-existing document path. Path: ${$target.path()}`)
@@ -276,7 +272,7 @@ class SignalCompat extends Signal {
     } else if (arguments.length === 1) {
       value = path
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return runInBatch(() => setDiffDeepOnSignal($target, value))
   }
 
@@ -300,7 +296,7 @@ class SignalCompat extends Signal {
     } else if (arguments.length === 1) {
       object = path
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     if (!object) return
     if (typeof object !== 'object') {
       throw Error('Signal.setEach() expects an object argument, got: ' + typeof object)
@@ -319,7 +315,7 @@ class SignalCompat extends Signal {
     if (forwarded) return forwarded
     if (arguments.length > 1) throw Error('Signal.del() expects a single argument')
     const segments = parseAtSubpath(path, arguments.length, 'Signal.del()')
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     try {
       return await Signal.prototype.del.call($target)
     } catch (error) {
@@ -342,7 +338,7 @@ class SignalCompat extends Signal {
         segments = parseAtSubpath(path, 1, 'Signal.increment()')
       }
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return incrementOnSignal($target, byNumber)
   }
 
@@ -356,7 +352,7 @@ class SignalCompat extends Signal {
     } else {
       value = path
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return arrayPushOnSignal($target, value)
   }
 
@@ -370,7 +366,7 @@ class SignalCompat extends Signal {
     } else {
       value = path
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return arrayUnshiftOnSignal($target, value)
   }
 
@@ -391,7 +387,7 @@ class SignalCompat extends Signal {
     if (typeof index !== 'number' || !Number.isFinite(index)) {
       throw Error('Signal.insert() expects a numeric index')
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return arrayInsertOnSignal($target, index, values)
   }
 
@@ -400,7 +396,7 @@ class SignalCompat extends Signal {
     if (forwarded) return forwarded
     if (arguments.length > 1) throw Error('Signal.pop() expects a single argument')
     const segments = parseAtSubpath(path, arguments.length, 'Signal.pop()')
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return arrayPopOnSignal($target)
   }
 
@@ -409,7 +405,7 @@ class SignalCompat extends Signal {
     if (forwarded) return forwarded
     if (arguments.length > 1) throw Error('Signal.shift() expects a single argument')
     const segments = parseAtSubpath(path, arguments.length, 'Signal.shift()')
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return arrayShiftOnSignal($target)
   }
 
@@ -454,7 +450,7 @@ class SignalCompat extends Signal {
     if (typeof index !== 'number' || !Number.isFinite(index)) {
       throw Error('Signal.remove() expects a numeric index')
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return arrayRemoveOnSignal($target, index, howMany)
   }
 
@@ -486,7 +482,7 @@ class SignalCompat extends Signal {
     if (typeof from !== 'number' || !Number.isFinite(from) || typeof to !== 'number' || !Number.isFinite(to)) {
       throw Error('Signal.move() expects numeric from/to')
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return arrayMoveOnSignal($target, from, to, howMany)
   }
 
@@ -507,7 +503,7 @@ class SignalCompat extends Signal {
     if (typeof index !== 'number' || !Number.isFinite(index)) {
       throw Error('Signal.stringInsert() expects a numeric index')
     }
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return stringInsertOnSignal($target, index, text)
   }
 
@@ -529,7 +525,7 @@ class SignalCompat extends Signal {
       throw Error('Signal.stringRemove() expects a numeric index')
     }
     if (howMany == null) howMany = 1
-    const $target = resolveSignal(this, segments)
+    const $target = resolveRelativePathTarget(this, segments)
     return stringRemoveOnSignal($target, index, howMany)
   }
 
@@ -858,11 +854,23 @@ function resolveSignal ($signal, segments) {
 }
 
 function resolveSignalWithRefs ($signal, relativeSegments) {
-  const $root = getRoot($signal) || $signal
   const baseSegments = Array.isArray($signal?.[SEGMENTS]) ? $signal[SEGMENTS] : []
   const absoluteSegments = baseSegments.concat(relativeSegments)
-  const resolvedSegments = resolveRefSegmentsSafe(absoluteSegments) || absoluteSegments
-  return resolveSignal($root, resolvedSegments)
+  const resolvedSegments = resolveRefSegmentsSafe(absoluteSegments)
+  if (!resolvedSegments) return resolveSignal($signal, relativeSegments)
+
+  // Signals created through root functions can carry a raw root in [ROOT].
+  // For path-based ref writes we need proxy traversal semantics.
+  const $root = getRoot($signal) || $signal
+  const $traversalRoot = getRoot($root) || $root
+  return resolveSignal($traversalRoot, resolvedSegments)
+}
+
+function resolveRelativePathTarget ($signal, relativeSegments) {
+  if (!Array.isArray(relativeSegments) || relativeSegments.length === 0) {
+    return resolveSignal($signal, [])
+  }
+  return resolveSignalWithRefs($signal, relativeSegments)
 }
 
 function isMissingPublicDocDeleteError ($signal, error) {
