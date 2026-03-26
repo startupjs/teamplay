@@ -1781,6 +1781,29 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal($base.virtual.get('config.nested.mode'), 'audio')
   })
 
+  it('reacts to deep source mutations even when getter only returns the whole object', async () => {
+    const $base = setup('deepMutation')
+    await $base.doc.set({
+      config: {
+        realtimeConfig: {
+          voice: 'alloy'
+        }
+      }
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $base.doc, doc => doc)
+
+    assert.deepEqual($base.virtual.get('config.realtimeConfig'), { voice: 'alloy' })
+
+    await $base.doc.set('config.realtimeConfig.useProxyForVoice', true)
+    assert.deepEqual($base.virtual.get('config.realtimeConfig'), {
+      voice: 'alloy',
+      useProxyForVoice: true
+    })
+  })
+
   it('priority: domain model method start() wins over compat fallback', () => {
     const $session = $root[domainCollection].session1
     assert.equal($session.start('chat', 'u1'), `domain:${domainCollection}.session1:chat:u1`)

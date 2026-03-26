@@ -73,13 +73,36 @@ function getStartStore ($root) {
 
 function resolveStartDep (dep, $root) {
   try {
-    if (isSignalLike(dep)) return dep.get()
-    if (typeof dep === 'string') return resolveSignal($root, parsePathSegments(dep)).get()
+    if (isSignalLike(dep)) return getStartDepValue(dep)
+    if (typeof dep === 'string') return getStartDepValue(resolveSignal($root, parsePathSegments(dep)))
     return dep
   } catch (err) {
     if (isThenable(err)) return SKIP_TICK
     throw err
   }
+}
+
+function getStartDepValue ($signal) {
+  return readReactiveSnapshot($signal.get())
+}
+
+function readReactiveSnapshot (value) {
+  if (!value || typeof value !== 'object') return value
+  if (value instanceof Date) return new Date(value)
+  if (Array.isArray(value)) {
+    const array = []
+    for (let i = 0; i < value.length; i++) {
+      array[i] = readReactiveSnapshot(value[i])
+    }
+    return array
+  }
+  const object = new value.constructor()
+  for (const key in value) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      object[key] = readReactiveSnapshot(value[key])
+    }
+  }
+  return object
 }
 
 function isSignalLike (value) {
