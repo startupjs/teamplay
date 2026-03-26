@@ -1475,6 +1475,19 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($target.get(), { active: false })
   })
 
+  it('set(path, value) on root resolves refs inside the path', async () => {
+    const $base = setup('setPathRef')
+    const $session = $base.session
+    const $target = $base.target
+    $session.ref('user', $target)
+
+    const path = `${$session.path()}.user.superField`
+    await $root.set(path, 'superValue')
+
+    assert.equal($target.superField.get(), 'superValue')
+    assert.equal($session.user.superField.get(), 'superValue')
+  })
+
   it('removeRef stops syncing', async () => {
     const $base = setup('remove')
     const $session = $base.session

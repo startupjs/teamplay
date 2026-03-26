@@ -203,7 +203,9 @@ class SignalCompat extends Signal {
     } else if (arguments.length === 1) {
       value = path
     }
-    const $target = resolveSignal(this, segments)
+    const $target = segments.length
+      ? resolveSignalWithRefs(this, segments)
+      : resolveSignal(this, segments)
     if (value === undefined) return Signal.prototype.set.call($target, value)
     return setReplaceOnSignal($target, value)
   }
@@ -853,6 +855,14 @@ function resolveSignal ($signal, segments) {
     $cursor = $cursor[segment]
   }
   return $cursor
+}
+
+function resolveSignalWithRefs ($signal, relativeSegments) {
+  const $root = getRoot($signal) || $signal
+  const baseSegments = Array.isArray($signal?.[SEGMENTS]) ? $signal[SEGMENTS] : []
+  const absoluteSegments = baseSegments.concat(relativeSegments)
+  const resolvedSegments = resolveRefSegmentsSafe(absoluteSegments) || absoluteSegments
+  return resolveSignal($root, resolvedSegments)
 }
 
 function isMissingPublicDocDeleteError ($signal, error) {
