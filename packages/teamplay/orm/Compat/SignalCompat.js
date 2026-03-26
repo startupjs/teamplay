@@ -552,6 +552,27 @@ class SignalCompat extends Signal {
     return onCustomEvent(eventName, pattern)
   }
 
+  once (eventName, pattern, handler) {
+    if (arguments.length < 2) throw Error('Signal.once() expects at least two arguments')
+    const isModelEvent = eventName === 'change' || eventName === 'all'
+    if (isModelEvent && typeof pattern !== 'function') {
+      if (typeof handler !== 'function') throw Error('Signal.once() expects a handler function')
+      const onceHandler = (...args) => {
+        this.removeListener(eventName, onceHandler)
+        handler(...args)
+      }
+      this.on(eventName, pattern, onceHandler)
+      return onceHandler
+    }
+    if (typeof pattern !== 'function') throw Error('Signal.once() expects a handler function')
+    const onceHandler = (...args) => {
+      this.removeListener(eventName, onceHandler)
+      pattern(...args)
+    }
+    this.on(eventName, onceHandler)
+    return onceHandler
+  }
+
   removeListener (eventName, handler) {
     if (arguments.length !== 2) throw Error('Signal.removeListener() expects two arguments')
     if (eventName === 'change' || eventName === 'all') {

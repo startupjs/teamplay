@@ -1777,6 +1777,19 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual(events, [['a.b', 'change', 7]])
   })
 
+  it('supports once() for compat model events', async () => {
+    const $base = setup('once')
+    const events = []
+    $root.once('change', `${$base.path()}.count`, (value, prevValue) => {
+      events.push([value, prevValue])
+    })
+
+    await $base.count.set(1)
+    await $base.count.set(2)
+
+    assert.deepEqual(events, [[1, undefined]])
+  })
+
   it('propagates events through refs', async () => {
     const $base = setup('ref')
     const $from = $base.alias
