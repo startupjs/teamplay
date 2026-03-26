@@ -1,6 +1,6 @@
 {
   "name": "teamplay",
-  "version": "0.4.0-alpha.68",
+  "version": "0.4.0-alpha.69",
   "description": "Full-stack signals ORM with multiplayer",
   "type": "module",
   "main": "index.js",
