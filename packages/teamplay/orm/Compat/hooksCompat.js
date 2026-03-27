@@ -5,8 +5,6 @@ import * as promiseBatcher from '../../react/promiseBatcher.js'
 import { getRaw } from '../dataTree.js'
 import { getConnection } from '../connection.js'
 import { isCompatEnv } from '../compatEnv.js'
-import { hashQuery, QUERIES } from '../Query.js'
-import { AGGREGATIONS } from '../Aggregation.js'
 
 const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 const emittedCompatWarnings = new Set()
@@ -103,7 +101,6 @@ export function useBatchDoc (collection, id, options) {
 
 export function useBatchDoc$ (collection, id, _options) {
   const $doc = getDocSignal(collection, id, 'useBatchDoc')
-  registerBatchDocReadinessCheck(collection, getDocIdFromSignal($doc))
   const options = _options ? { ..._options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
   return useSub($doc, undefined, options)
 }
@@ -152,7 +149,6 @@ export function useAsyncQuery (collection, query, options) {
 export function useBatchQuery$ (collection, query, _options) {
   const normalizedQuery = normalizeQuery(query, 'useBatchQuery')
   const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
-  registerBatchQueryReadinessCheck(collection, normalizedQuery)
   const options = _options ? { ..._options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
   const $query = useSub($collection, normalizedQuery, options)
   if (!$query) return $query
@@ -362,80 +358,6 @@ function normalizeSyncSubOptions (options) {
     // Compat sync hooks are strict by design: no deferred snapshots between route/tab switches.
     defer: false
   }
-}
-
-function getDocIdFromSignal ($doc) {
-  const path = typeof $doc?.path === 'function' ? $doc.path() : ''
-  const segments = path ? path.split('.').filter(Boolean) : []
-  return segments[segments.length - 1]
-}
-
-function registerBatchDocReadinessCheck (collection, id) {
-  if (!isCompatEnv()) return
-  if (!collection || id == null) return
-  const docSegments = [collection, id]
-  promiseBatcher.addCheck({
-    key: `doc:${collection}.${id}`,
-    type: 'doc',
-    details: `${collection}.${id}`,
-    isReady: () => isDocReady(docSegments),
-    getState: () => {
-      const shareDoc = getShareDoc(collection, id)
-      return {
-        raw: getRaw(docSegments),
-        shareDoc: shareDoc
-          ? {
-              type: shareDoc.type,
-              data: shareDoc.data
-            }
-          : undefined
-      }
-    }
-  })
-}
-
-function registerBatchQueryReadinessCheck (collection, query) {
-  if (!isCompatEnv()) return
-  if (!collection || !query || typeof query !== 'object') return
-  const hash = hashQuery(collection, query)
-  const idsSegments = [QUERIES, hash, 'ids']
-  const docsSegments = [QUERIES, hash, 'docs']
-  const extraSegments = [QUERIES, hash, 'extra']
-  const aggregationSegments = [AGGREGATIONS, hash]
-  const isAggregate = Array.isArray(query.$aggregate)
-  const hasExtraResult = isExtraQuery(query)
-  promiseBatcher.addCheck({
-    key: `query:${hash}`,
-    type: hasExtraResult ? 'queryExtra' : 'query',
-    details: { collection, hash, query, isAggregate, hasExtraResult },
-    isReady: () => isQueryReady(
-      collection,
-      idsSegments,
-      docsSegments,
-      extraSegments,
-      aggregationSegments,
-      isAggregate,
-      hasExtraResult
-    ),
-    getState: () => {
-      const ids = getRaw(idsSegments)
-      const docs = getRaw(docsSegments)
-      const extra = getRaw(extraSegments)
-      const aggregation = getRaw(aggregationSegments)
-      return {
-        ids,
-        queryDocs: docs,
-        extra,
-        aggregation,
-        idMaterialization: Array.isArray(ids)
-          ? ids.map(id => ({
-            id,
-            raw: getRaw([collection, id])
-          }))
-          : ids
-      }
-    }
-  })
 }
 
 function isQueryReady (

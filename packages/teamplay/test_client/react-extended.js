@@ -1261,7 +1261,7 @@ describe('useBatchDoc / useBatchDoc$', () => {
     errorSpy.mockRestore()
   })
 
-  itCompat('useBatchDoc waits for data tree materialization barrier', async () => {
+  itCompat('useBatchDoc allows temporary undefined local snapshot after useBatch (guarded read)', async () => {
     const collection = 'batchDocReadyBarrier'
     const docId = 'doc_ready_1'
     await $[collection][docId].set({ name: 'Ready', active: true })
@@ -1280,21 +1280,24 @@ describe('useBatchDoc / useBatchDoc$', () => {
 
     try {
       const Component = observer(() => {
-        useBatchDoc(collection, docId)
+        const [doc] = useBatchDoc(collection, docId)
         useBatch()
-        const [doc] = useLocal(`${collection}.${docId}`)
-        const { name } = doc
-        return el('span', { id: 'batchDocReadyBarrier' }, name)
+        const [localDoc] = useLocal(`${collection}.${docId}`)
+        return fr(
+          el('span', { id: 'batchDocReadyBarrier' }, localDoc?.name || 'pending'),
+          el('span', { id: 'batchDocReadyBarrierHookValue' }, doc?.name || 'pending')
+        )
       }, { suspenseProps: { fallback: el('span', { id: 'batchDocReadyBarrier' }, 'Loading...') } })
 
       const { container } = render(el(Component))
       expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Loading...')
 
       await wait(20)
-      expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Loading...')
+      expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('pending')
 
       await waitFor(() => {
         expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Ready')
+        expect(container.querySelector('#batchDocReadyBarrierHookValue').textContent).toBe('Ready')
       })
     } finally {
       docProto._refData = originalRefData
@@ -1828,7 +1831,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     })
   })
 
-  itCompat('useBatchQuery waits for query materialization barrier before immediate useLocal read', async () => {
+  itCompat('useBatchQuery allows temporary undefined local snapshot after useBatch (guarded read)', async () => {
     const collection = 'batchQueryReadyBarrier'
     const lessonId = 'lesson_query_ready_1'
     await $[collection][lessonId].set({ courseId: 'course_query_ready', stageIds: ['q1', 'q2'] })
@@ -1843,7 +1846,10 @@ describe('useBatchQuery / useBatchQuery$', () => {
         !this.__delayInitDataOnce
       ) {
         this.__delayInitDataOnce = true
-        setTimeout(() => originalInitData.apply(this, args), 60)
+        setTimeout(() => {
+          if (!this.shareQuery) return
+          originalInitData.apply(this, args)
+        }, 60)
         return
       }
       return originalInitData.apply(this, args)
@@ -1854,15 +1860,15 @@ describe('useBatchQuery / useBatchQuery$', () => {
         useBatchQuery(collection, { courseId: 'course_query_ready' })
         useBatch()
         const [lesson] = useLocal(`${collection}.${lessonId}`)
-        const { stageIds } = lesson
-        return el('span', { id: 'batchQueryReadyBarrier' }, stageIds.join(','))
+        const stageIds = lesson?.stageIds
+        return el('span', { id: 'batchQueryReadyBarrier' }, stageIds ? stageIds.join(',') : 'pending')
       }, { suspenseProps: { fallback: el('span', { id: 'batchQueryReadyBarrier' }, 'Loading...') } })
 
       const { container } = render(el(Component))
       expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('Loading...')
 
       await wait(20)
-      expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('Loading...')
+      expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('pending')
 
       await waitFor(() => {
         expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('q1,q2')

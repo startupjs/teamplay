@@ -1,6 +1,6 @@
 import { isCompatEnv } from './compatEnv.js'
 
-const DEFAULT_COMPAT_SUBSCRIPTION_GC_DELAY = 300
+const DEFAULT_COMPAT_SUBSCRIPTION_GC_DELAY = 3000
 const DEFAULT_SUBSCRIPTION_GC_DELAY = 0
 
 let subscriptionGcDelay = getDefaultSubscriptionGcDelay()

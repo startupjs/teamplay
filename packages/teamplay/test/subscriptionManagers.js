@@ -524,6 +524,7 @@ describe('QuerySubscriptions', () => {
 
 describe('Subscription GC grace delay', () => {
   const gcDelay = 30
+  const defaultCompatGcDelay = 3000
 
   beforeEach(() => {
     setSubscriptionGcDelay(gcDelay)
@@ -538,7 +539,7 @@ describe('Subscription GC grace delay', () => {
     __resetSubscriptionGcDelayForTests()
     const expectedCompat = process.env.TEAMPLAY_COMPAT === '1'
     if (expectedCompat) {
-      assert.ok(getSubscriptionGcDelay() > 0, 'compat default delay should be non-zero')
+      assert.equal(getSubscriptionGcDelay(), defaultCompatGcDelay, 'compat default delay should match racer-like grace window')
     } else {
       assert.equal(getSubscriptionGcDelay(), 0, 'non-compat default delay should be zero')
     }
