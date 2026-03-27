@@ -65,11 +65,7 @@ class SignalCompat extends Signal {
       ? parseAtSegments(arguments, 'Signal.at()')
       : parseAtSubpath(subpath, arguments.length, 'Signal.at()')
     if (segments.length === 0) return this
-    let $cursor = this
-    for (const segment of segments) {
-      $cursor = $cursor[segment]
-    }
-    return $cursor
+    return resolveRelativePathTarget(this, segments)
   }
 
   getId () {
@@ -666,11 +662,7 @@ class SignalCompat extends Signal {
       ? parseAtSegments(arguments, 'Signal.scope()')
       : parseAtSubpath(path, arguments.length, 'Signal.scope()')
     if (segments.length === 0) return $root
-    let $cursor = $root
-    for (const segment of segments) {
-      $cursor = $cursor[segment]
-    }
-    return $cursor
+    return resolveRelativePathTarget($root, segments)
   }
 }
 
@@ -965,7 +957,7 @@ function deepEqualCompat (left, right) {
 }
 
 function getSignalValueAt ($signal, segments) {
-  const $target = resolveSignal($signal, segments)
+  const $target = resolveRelativePathTarget($signal, segments)
   return $target.get()
 }
 

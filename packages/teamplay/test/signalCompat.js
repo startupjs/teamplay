@@ -121,6 +121,19 @@ describe('SignalCompat.at()', () => {
     assert.equal($child.at('b').get(), 7)
   })
 
+  it('resolves refs in relative path segments', async () => {
+    setup('refs')
+    cleanupSegments.push(['users'])
+    await $root.users.u1.set({ profile: { title: 'Alice' } })
+    $base.ref('user', 'users.u1')
+
+    assert.equal($base.get('user.profile.title'), 'Alice')
+    assert.equal($base.at('user.profile').get('title'), 'Alice')
+
+    await $base.at('user.profile').set('title', 'Bob')
+    assert.equal($root.users.u1.get('profile.title'), 'Bob')
+  })
+
   it('throws on invalid arguments', () => {
     setup('args')
     assert.throws(() => $base.at({}, 'b'), /expects string or integer path segments/)
@@ -428,6 +441,15 @@ describe('SignalCompat.scope()', () => {
     assert.equal($base.scope('_a', 'b').get(), 7)
   })
 
+  it('resolves refs in scoped path', async () => {
+    setup('refs')
+    cleanupSegments.push(['users'], ['_session'])
+    await $root.users.u1.set({ title: 'admin' })
+    $root._session.ref('user', 'users.u1')
+
+    assert.equal($base.scope('_session.user.title').get(), 'admin')
+  })
+
   it('throws on invalid arguments', () => {
     setup('args')
     assert.throws(() => $base.scope({}, 'b'), /expects string or integer path segments/)
@@ -523,6 +545,25 @@ describe('SignalCompat.getCopy()/getDeepCopy()', () => {
     await $base.arr.set([1, 2, 3, 4])
     assert.equal($base.arr.getDeepCopy(2), 3)
     assert.equal($base.arr.getCopy(3), 4)
+  })
+
+  it('resolves refs in subpath for copy helpers', async () => {
+    setup('refs')
+    cleanupSegments.push(['users'])
+    await $root.users.u1.set({
+      profile: {
+        flags: { active: true }
+      }
+    })
+    $base.ref('user', 'users.u1')
+
+    const deepCopy = $base.getDeepCopy('user.profile')
+    const shallowCopy = $base.getCopy('user.profile')
+
+    assert.deepEqual(deepCopy, { flags: { active: true } })
+    assert.deepEqual(shallowCopy, { flags: { active: true } })
+    assert.notEqual(deepCopy, $root.users.u1.get('profile'))
+    assert.notEqual(shallowCopy, $root.users.u1.get('profile'))
   })
 
   it('throws on invalid arguments', () => {
