@@ -46,7 +46,7 @@ import universal$ from '../../react/universal$.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
-  static [GETTERS] = [...DEFAULT_GETTERS, 'getCopy', 'getDeepCopy']
+  static [GETTERS] = [...DEFAULT_GETTERS, 'at', 'scope', 'getCopy', 'getDeepCopy']
 
   get root () {
     return this.scope()

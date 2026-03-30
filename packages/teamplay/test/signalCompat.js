@@ -1745,6 +1745,32 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($root.get(`${$base.path()}.dataSource`), rows2)
   })
 
+  it('at() on aggregation rows is synchronous and returns a signal', () => {
+    setup('aggRowAtSync')
+    const $agg = $root.query('courses', {
+      $aggregate: [
+        { $match: { kind: 'template' } },
+        { $sort: { createdAt: -1, name: 1 } },
+        { $limit: 5 },
+        { $project: { _id: 1, description: 1 } }
+      ]
+    })
+    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+
+    _set([AGGREGATIONS, $agg[QUERY_HASH]], [
+      {
+        _id: 'row-sync-at',
+        description: { text: 'hello' }
+      }
+    ])
+
+    const $fromAt = $agg[0].at('description.text')
+    assert.equal(typeof $fromAt, 'function')
+    assert.equal(typeof $fromAt.get, 'function')
+    assert.equal($fromAt.get(), 'hello')
+    assert.equal($fromAt.path(), `${AGGREGATIONS}.${$agg[QUERY_HASH]}.0.description.text`)
+  })
+
   it('refExtra from aggregation is mirror-only and does not mutate source on target writes', async () => {
     const $base = setup('refExtraAggMirrorOnly')
     const $agg = $root.query('courses', {
