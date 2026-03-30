@@ -718,7 +718,7 @@ describe('useValue / useValue$', () => {
     expect(renders).toBe(2)
   })
 
-  it('useValue materializes object state when setting nested child under primitive default', async () => {
+  itCompat('useValue materializes object state when setting nested child under primitive default', async () => {
     const chatId = 'chat_1'
 
     const Component = observer(() => {
