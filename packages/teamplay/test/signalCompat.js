@@ -121,6 +121,16 @@ describe('SignalCompat.at()', () => {
     assert.equal($child.at('b').get(), 7)
   })
 
+  it('keeps dot/at equivalence for chained read-write access', async () => {
+    setup('chain')
+    await $base.a.b.c.d.set(1)
+    assert.equal($base.a.b.at('c.d').get(), 1)
+
+    await $base.a.b.at('c.d').set(2)
+    assert.equal($base.a.b.c.d.get(), 2)
+    assert.equal($base.at('a.b.c.d').get(), 2)
+  })
+
   it('resolves refs in relative path segments', async () => {
     setup('refs')
     cleanupSegments.push(['users'])
@@ -132,6 +142,7 @@ describe('SignalCompat.at()', () => {
 
     await $base.at('user.profile').set('title', 'Bob')
     assert.equal($root.users.u1.get('profile.title'), 'Bob')
+    assert.equal($base.user.profile.title.get(), 'Bob')
   })
 
   it('throws on invalid arguments', () => {
@@ -1769,6 +1780,29 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal(typeof $fromAt.get, 'function')
     assert.equal($fromAt.get(), 'hello')
     assert.equal($fromAt.path(), `${AGGREGATIONS}.${$agg[QUERY_HASH]}.0.description.text`)
+  })
+
+  it('scope() on aggregation rows is synchronous and does not return a promise', () => {
+    setup('aggRowScopeSync')
+    const $agg = $root.query('courses', {
+      $aggregate: [
+        { $match: { kind: 'template' } },
+        { $limit: 1 }
+      ]
+    })
+    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+
+    _set([AGGREGATIONS, $agg[QUERY_HASH]], [
+      {
+        _id: 'row-sync-scope',
+        description: { text: 'world' }
+      }
+    ])
+
+    const $fromScope = $agg[0].scope('_session')
+    assert.equal(typeof $fromScope, 'function')
+    assert.equal(typeof $fromScope.get, 'function')
+    assert.equal($fromScope instanceof Promise, false)
   })
 
   it('refExtra from aggregation is mirror-only and does not mutate source on target writes', async () => {
