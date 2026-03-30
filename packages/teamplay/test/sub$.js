@@ -283,6 +283,18 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
+  it('materializes missing public array path on push', async () => {
+    const gameId = '_compat_base_missing_list_1'
+    const $game = await sub($.games[gameId])
+    await $game.set({ count: 0 })
+
+    const len = await $game.list.push(1)
+    assert.equal(len, 1)
+    assert.deepEqual($game.list.get(), [1])
+
+    await $game.del()
+  })
+
   it('supports stringInsert/stringRemove on public docs', async () => {
     const gameId = '_compat_base_2'
     const $game = await sub($.games[gameId])
