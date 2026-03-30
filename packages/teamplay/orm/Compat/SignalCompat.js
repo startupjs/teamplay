@@ -1,4 +1,4 @@
-import { raw } from '@nx-js/observer-util'
+import { raw, observe, unobserve } from '@nx-js/observer-util'
 import {
   Signal,
   GETTERS,
@@ -601,10 +601,19 @@ class SignalCompat extends Signal {
     const fromPath = $from.path()
     const existing = store.get(fromPath)
     if (existing) existing.stop()
-    const stop = createRefLink($from, $to, options)
+    const mirrorOnly = !!($to?.[IS_QUERY] || $to?.[IS_AGGREGATION])
+    const { stop, onChange } = createRefLink($from, $to, { mirrorOnly, options })
     store.set(fromPath, { stop })
-    $from[REF_TARGET] = $to
-    setRefLink(fromPath, $to.path())
+    if (!mirrorOnly) {
+      $from[REF_TARGET] = $to
+      setRefLink(fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], { mirrorOnly: false })
+    } else {
+      setRefLink(fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
+        mirrorOnly: true,
+        onChange
+      })
+      if ($from[REF_TARGET]) delete $from[REF_TARGET]
+    }
     return $from
   }
 
@@ -715,23 +724,55 @@ function createSilentSignalWrapper ($signal, enabled = true) {
 }
 
 const REFS = Symbol('compat refs')
-const SKIP_REF_TICK = Symbol('compat ref skip tick')
-
 function getRefStore ($signal) {
   const $root = getRoot($signal) || $signal
   $root[REFS] ??= new Map()
   return $root[REFS]
 }
 
-function createRefLink ($from, $to) {
+function createRefLink ($from, $to, { mirrorOnly = false } = {}) {
+  let disposed = false
+  let pendingRead = null
+  let mirrorObserver
+
   const syncFromTarget = () => {
     const value = readRefValue($to)
-    if (value === SKIP_REF_TICK) return
+    if (isThenable(value)) {
+      pendingRead = value
+      value.then(() => {
+        if (disposed || pendingRead !== value) return
+        pendingRead = null
+        syncFromTarget()
+      }, () => {
+        if (pendingRead === value) pendingRead = null
+      })
+      return
+    }
+    if (value === undefined) return
     setDiffDeepBypassRef($from, deepCopy(value))
   }
+
   syncFromTarget()
-  return () => {
-    // Subsequent sync happens directly at mutation time via mirrorRefMutationFromTarget().
+  if (mirrorOnly) {
+    mirrorObserver = observe(
+      () => {
+        syncFromTarget()
+        return readRefValue($to)
+      },
+      {
+        scheduler: job => job()
+      }
+    )
+    // initialize dependency graph
+    mirrorObserver()
+  }
+  return {
+    onChange: syncFromTarget,
+    stop: () => {
+      disposed = true
+      if (mirrorObserver) unobserve(mirrorObserver)
+      // Subsequent sync happens directly at mutation time via mirrorRefMutationFromTarget().
+    }
   }
 }
 
@@ -739,7 +780,7 @@ function readRefValue ($signal) {
   try {
     return $signal.get()
   } catch (err) {
-    if (isThenable(err)) return SKIP_REF_TICK
+    if (isThenable(err)) return err
     throw err
   }
 }

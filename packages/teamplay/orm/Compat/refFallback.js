@@ -39,6 +39,7 @@ export function resolveRefSegmentsSafe (segments, maxDepth = 32) {
 function findBestMatchingLink (segments) {
   let best
   for (const link of getRefLinks().values()) {
+    if (link.mirrorOnly) continue
     if (!isPathPrefix(link.fromSegments, segments)) continue
     if (!best || link.fromSegments.length > best.fromSegments.length) {
       best = link

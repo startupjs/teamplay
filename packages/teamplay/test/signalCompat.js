@@ -1693,6 +1693,80 @@ class NonCompatRefUserModel extends BaseSignal {
     await $session.tutoringSession.set({ value: 3 })
     assert.deepEqual($target.get(), { value: 2 })
   })
+
+  it('refExtra from aggregation keeps target readable for hash paths with dots', async () => {
+    const $base = setup('refExtraAggReadable')
+    const query = {
+      $aggregate: [
+        {
+          $match: {
+            kind: 'template',
+            forceUpdate: { $ne: 0 }
+          }
+        },
+        {
+          $lookup: {
+            from: 'courses',
+            let: { courseId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$nodeRefs.courseTemplateNodeId', '$$courseId'] }
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'courses'
+          }
+        },
+        { $sort: { createdAt: -1, name: 1 } },
+        { $limit: 15 }
+      ]
+    }
+    const $agg = $root.query('courses', query)
+    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+
+    const rows1 = [{ _id: 'row1', name: 'First' }, { _id: 'row2', name: 'Second' }]
+    _set([AGGREGATIONS, $agg[QUERY_HASH]], rows1)
+    $agg.refExtra(`${$base.path()}.dataSource`)
+
+    assert.deepEqual($base.dataSource.get(), rows1)
+    assert.deepEqual($base.at('dataSource').get(), rows1)
+    assert.deepEqual($root.get(`${$base.path()}.dataSource`), rows1)
+
+    const rows2 = [{ _id: 'row3', name: 'Third' }]
+    _set([AGGREGATIONS, $agg[QUERY_HASH]], rows2)
+
+    assert.deepEqual($base.dataSource.get(), rows2)
+    assert.deepEqual($base.at('dataSource').get(), rows2)
+    assert.deepEqual($root.get(`${$base.path()}.dataSource`), rows2)
+  })
+
+  it('refExtra from aggregation is mirror-only and does not mutate source on target writes', async () => {
+    const $base = setup('refExtraAggMirrorOnly')
+    const $agg = $root.query('courses', {
+      $aggregate: [
+        { $match: { kind: 'template' } },
+        { $sort: { createdAt: -1, name: 1 } },
+        { $limit: 5 }
+      ]
+    })
+    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+
+    const sourceRows = [{ _id: 's1', name: 'Source' }]
+    _set([AGGREGATIONS, $agg[QUERY_HASH]], sourceRows)
+    $agg.refExtra(`${$base.path()}.dataSource`)
+    assert.deepEqual($base.dataSource.get(), sourceRows)
+
+    const localRows = [{ _id: 'l1', name: 'Local' }]
+    await $base.dataSource.set(localRows)
+
+    assert.deepEqual($base.dataSource.get(), localRows)
+    assert.deepEqual($agg.get(), sourceRows)
+  })
 })
 
 ;(isCompatMode ? describe : describe.skip)('SignalCompat.start()/stop()', () => {

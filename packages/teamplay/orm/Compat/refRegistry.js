@@ -1,12 +1,20 @@
 const refLinks = new Map()
 
-export function setRefLink (fromPath, toPath) {
+export function setRefLink (fromPath, toPath, fromSegments, toSegments, options = {}) {
   if (typeof fromPath !== 'string' || typeof toPath !== 'string') return
+  const normalizedFromSegments = Array.isArray(fromSegments)
+    ? fromSegments.map(segment => String(segment))
+    : splitPath(fromPath)
+  const normalizedToSegments = Array.isArray(toSegments)
+    ? toSegments.map(segment => String(segment))
+    : splitPath(toPath)
   refLinks.set(fromPath, {
     fromPath,
     toPath,
-    fromSegments: splitPath(fromPath),
-    toSegments: splitPath(toPath)
+    fromSegments: normalizedFromSegments,
+    toSegments: normalizedToSegments,
+    mirrorOnly: !!options.mirrorOnly,
+    onChange: typeof options.onChange === 'function' ? options.onChange : undefined
   })
 }
 

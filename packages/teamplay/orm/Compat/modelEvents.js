@@ -66,6 +66,9 @@ export function emitModelChange (path, value, prevValue, meta) {
 
     for (const link of getRefLinks().values()) {
       if (!isPathPrefix(link.toSegments, segments)) continue
+      if (link.mirrorOnly && typeof link.onChange === 'function') {
+        link.onChange()
+      }
       const suffix = segments.slice(link.toSegments.length)
       const nextSegments = link.fromSegments.concat(suffix)
       const nextKey = nextSegments.join('.')

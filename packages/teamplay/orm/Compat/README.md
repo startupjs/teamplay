@@ -169,10 +169,39 @@ $alias.get()                       // { name: 'Bob' }
 $alias.get() === $user.get()       // false
 ```
 
+### `ref` on query/aggregation targets (`mirror-only`)
+
+Compat supports `refExtra` / `refIds` and query/aggregation-backed refs, but with a
+different contract from plain document refs.
+
+When target is a query or aggregation signal, compat creates a **mirror-only** link:
+- Source path is updated from target changes (target -> source).
+- Source path does **not** become an alias to target path (no `REF_TARGET` forwarding).
+- Writes to source path do not forward to query/aggregation internals.
+
+Why:
+- Query/aggregation paths are hashed/synthetic and are not safe as generic alias targets.
+- Racer behavior for these cases is effectively "mirror data into page/local path",
+  not "make full bidirectional alias".
+
+Reactivity:
+- Initial sync runs immediately on `ref(...)`.
+- Further target updates are mirrored through compat model-change events.
+
+```js
+const $query = $.query('courses', { active: true })
+const $table = $._page.tables._adminCourses
+
+// mirror query.extra/docs into page model
+$query.refExtra('_page.tables._adminCourses.dataSource')
+
+// reactively mirrors target -> source
+$table.dataSource.get()
+```
+
 **Limitations vs Racer**
-- No `refList`, `refExtra`, `refMap`.
+- No `refList`, `refMap`.
 - No automatic list index patching on insert/remove/move.
-- No support for query/aggregation refs.
 - No event emissions specific to refs.
 - No support for racer-style ref meta/options beyond the basic signature.
 
