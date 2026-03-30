@@ -5,6 +5,7 @@ import * as promiseBatcher from '../../react/promiseBatcher.js'
 import { getRaw } from '../dataTree.js'
 import { getConnection } from '../connection.js'
 import { isCompatEnv } from '../compatEnv.js'
+import { isMissingShareDoc } from '../missingDoc.js'
 
 const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 const emittedCompatWarnings = new Set()
@@ -393,7 +394,7 @@ function isDocReady (segments) {
   const [collection, id] = segments
   const shareDoc = getShareDoc(collection, id)
   // Missing docs should not block the batch barrier forever.
-  return !!(shareDoc && shareDoc.type === null && shareDoc.data == null)
+  return isMissingShareDoc(shareDoc)
 }
 
 function getShareDoc (collection, id) {

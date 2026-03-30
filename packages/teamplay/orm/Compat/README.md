@@ -913,6 +913,19 @@ After `useBatch()` stops throwing in compat mode, immediate reads via
 `useLocal(...).get(...)` for already requested batch entities should not produce
 transient `undefined` caused by materialization races.
 
+### Missing ShareDB Docs
+
+Compat now mirrors Racer behavior for **missing public docs** (`type === null`,
+`version === 0`) after subscribe/fetch:
+
+- `connection.get(collection, id).data` becomes a truthy empty observable object;
+- but the compat/model path still stays unresolved, so `$.collection[id].get()`
+  continues to return `undefined` until the document is actually created.
+
+This matters for legacy consumers which read `shareDoc.data` directly (for
+example readonly rich-text paths) while still expecting normal public-doc
+creation semantics from model mutators.
+
 ## Examples
 
 ### useDoc with Suspense

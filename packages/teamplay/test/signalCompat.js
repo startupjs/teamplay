@@ -11,6 +11,7 @@ import { scheduleReaction } from '../orm/batchScheduler.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetSilentContextForTests, isSilentContextActive } from '../orm/Compat/silentContext.js'
+import { isMissingShareDoc } from '../orm/missingDoc.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
 import { PARAMS, HASH as QUERY_HASH, QUERIES } from '../orm/Query.js'
 import { AGGREGATIONS } from '../orm/Aggregation.js'
@@ -1202,7 +1203,7 @@ describe('SignalCompat public mutators', () => {
     const games = getConnection().collections?.compatGames || {}
     for (const id of Object.keys(games)) {
       const doc = getConnection().get('compatGames', id)
-      if (doc?.data) await cbPromise(cb => doc.del(cb))
+      if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
       delete getConnection().collections?.compatGames?.[id]
     }
     assert.deepEqual(_get(['compatGames']), {}, 'compatGames collection is empty in signal\'s data tree')
@@ -1536,7 +1537,7 @@ class NonCompatRefUserModel extends BaseSignal {
     const docs = getConnection().collections?.[collection] || {}
     for (const id of Object.keys(docs)) {
       const doc = getConnection().get(collection, id)
-      if (doc?.data) await cbPromise(cb => doc.del(cb))
+      if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
       delete getConnection().collections?.[collection]?.[id]
     }
     for (const hash of cleanupQueryHashes) _del([QUERIES, hash])

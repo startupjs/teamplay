@@ -7,6 +7,7 @@ import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
+import { isMissingShareDoc } from './missingDoc.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 
@@ -103,6 +104,20 @@ class Doc {
 
   _refData () {
     const doc = getConnection().get(this.collection, this.docId)
+    // Racer/react-sharedb-hooks normalizes a missing ShareDB doc into a truthy
+    // observable placeholder on the shareDoc itself (`observable(undefined) -> {}`),
+    // while still keeping the model tree path unresolved. Some legacy consumers
+    // (for example readonly RTEditor paths) rely on this exact contract by reading
+    // `connection.get(...).data` directly and only checking for truthiness.
+    //
+    // We intentionally mirror that behavior here:
+    // - missing doc => keep model path undefined
+    // - but make shareDoc.data truthy/observable so direct ShareDB consumers behave
+    //   the same way they do under Racer.
+    if (isMissingShareDoc(doc) && doc.data === undefined) {
+      if (!isObservable(doc.data)) doc.data = observable(undefined)
+      return
+    }
     if (doc.data == null) return
     const idFields = getIdFieldsForSegments([this.collection, this.docId])
     if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, this.docId)

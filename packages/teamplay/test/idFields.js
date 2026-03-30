@@ -4,6 +4,7 @@ import { $, sub, aggregation } from '../index.js'
 import { getConnection } from '../orm/connection.js'
 import { afterEachTestGc } from './_helpers.js'
 import connect from '../connect/test.js'
+import { isMissingShareDoc } from '../orm/missingDoc.js'
 
 before(connect)
 
@@ -20,7 +21,7 @@ describe('Id fields in docs, queries, aggregations', () => {
   afterEach(async () => {
     for (const { collection, id } of cleanup.splice(0)) {
       const doc = getConnection().get(collection, id)
-      if (doc?.data) await cbPromise(cb => doc.del(cb))
+      if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
       delete getConnection().collections?.[collection]?.[id]
     }
   })

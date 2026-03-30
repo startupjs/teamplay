@@ -15,6 +15,7 @@ import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, sub } from '../index.js'
 import { docSubscriptions, DocSubscriptions } from '../orm/Doc.js'
+import { isMissingShareDoc } from '../orm/missingDoc.js'
 import {
   querySubscriptions,
   QuerySubscriptions,
@@ -300,7 +301,7 @@ describe('DocSubscriptions', () => {
     // Cleanup
     await docSubscriptions.unsubscribe($game)
     const shareDoc = getConnection().get('games', gameId)
-    if (shareDoc.data) await cbPromise(cb => shareDoc.del(cb))
+    if (shareDoc.data && !isMissingShareDoc(shareDoc)) await cbPromise(cb => shareDoc.del(cb))
   })
 
   it('init() for existing doc that\'s not initialized - re-initializes', async () => {
@@ -327,7 +328,7 @@ describe('DocSubscriptions', () => {
     // Cleanup
     await docSubscriptions.unsubscribe($game)
     const shareDoc = getConnection().get('games', gameId)
-    if (shareDoc.data) await cbPromise(cb => shareDoc.del(cb))
+    if (shareDoc.data && !isMissingShareDoc(shareDoc)) await cbPromise(cb => shareDoc.del(cb))
   })
 })
 
@@ -750,7 +751,7 @@ describe('sub() function - error handling and edge cases', () => {
     // Cleanup
     await docSubscriptions.unsubscribe($game)
     const doc = getConnection().get('games', gameId)
-    if (doc.data) await cbPromise(cb => doc.del(cb))
+    if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
   })
 
   it('sub() returns promise for new subscription', async () => {
@@ -766,7 +767,7 @@ describe('sub() function - error handling and edge cases', () => {
     // Cleanup
     await docSubscriptions.unsubscribe($game)
     const doc = getConnection().get('games', gameId)
-    if (doc.data) await cbPromise(cb => doc.del(cb))
+    if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
   })
 })
 

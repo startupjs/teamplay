@@ -7,6 +7,7 @@ import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject } 
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isSilentContextActive } from './Compat/silentContext.js'
 import { isCompatEnv } from './compatEnv.js'
+import { isMissingShareDoc } from './missingDoc.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 
@@ -344,6 +345,10 @@ function resolvePublicDocState ({
 }) {
   ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
 
+  if (isMissingShareDoc(doc)) {
+    return { exists: false, snapshot: undefined, source: 'none' }
+  }
+
   if (doc?.data != null) {
     return {
       exists: true,
@@ -390,6 +395,7 @@ function ensureLocalDocSyncedWithShareDoc ({
   doc,
   idFields
 }) {
+  if (isMissingShareDoc(doc)) return
   if (doc?.data == null) return
   if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, docId)
   const shared = raw(doc.data)
