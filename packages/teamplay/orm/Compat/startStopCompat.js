@@ -38,7 +38,12 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
       if (isThenable(err)) return
       throw err
     }
-    const maybePromise = $target.set(detachStartValue(nextValue))
+    const detachedValue = detachStartValue(nextValue)
+    // Keep the detached snapshot to avoid aliasing source and target.
+    // Old racer start() writes through diffDeep by default. In compat mode we must preserve
+    // that behavior, but also avoid reading the target reactively inside start(), otherwise
+    // start() subscribes to its own output and local child edits get immediately overwritten.
+    const maybePromise = $target.setDiffDeep(detachedValue)
     if (maybePromise?.catch) maybePromise.catch(ignorePromiseRejection)
   }, { scheduler: scheduleReaction })
   store.set(targetKey, { stop: () => unobserve(reaction) })

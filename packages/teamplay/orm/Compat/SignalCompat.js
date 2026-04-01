@@ -15,6 +15,7 @@ import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
 import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields, isPlainObject } from '../idFields.js'
 import {
+  del as _del,
   setReplace as _setReplace,
   incrementPublic as _incrementPublic,
   arrayPush as _arrayPush,
@@ -916,8 +917,15 @@ function isMissingPublicDocDeleteError ($signal, error) {
 
 async function setDiffDeepOnSignal ($target, value) {
   if ($target[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
-  const before = $target.get()
-  await diffDeepCompat($target, before, value)
+  // Use peek() here. compat start() writes via setDiffDeep inside an observer and must not
+  // subscribe to its own target, otherwise later local edits on child signals cause start()
+  // to rerun and overwrite them from source.
+  const before = $target.peek()
+  if (isPublicCollection($target[SEGMENTS][0])) {
+    await diffDeepCompat($target, before, value)
+    return
+  }
+  diffDeepCompatSync($target, before, value)
 }
 
 async function diffDeepCompat ($signal, before, after) {
@@ -949,6 +957,35 @@ async function diffDeepCompat ($signal, before, after) {
   await SignalCompat.prototype.set.call($signal, after)
 }
 
+function diffDeepCompatSync ($signal, before, after) {
+  if (before === after) return
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    if (deepEqualCompat(before, after)) return
+    const changedIndexes = getChangedArrayIndexes(before, after)
+    if (before.length === after.length && changedIndexes.length === 1) {
+      const index = changedIndexes[0]
+      diffDeepCompatSync(getChildSignal($signal, index), before[index], after[index])
+      return
+    }
+    setReplacePrivateCompatSync($signal, after)
+    return
+  }
+
+  if (isDiffableObject(before, after)) {
+    for (const key of Object.keys(before)) {
+      if (Object.prototype.hasOwnProperty.call(after, key)) continue
+      delPrivateCompatSync(getChildSignal($signal, key))
+    }
+    for (const key of Object.keys(after)) {
+      diffDeepCompatSync(getChildSignal($signal, key), before[key], after[key])
+    }
+    return
+  }
+
+  setReplacePrivateCompatSync($signal, after)
+}
+
 function isDiffableObject (before, after) {
   if (!isPlainObject(before) || !isPlainObject(after)) return false
   if (isReactLike(before) || isReactLike(after)) return false
@@ -970,6 +1007,26 @@ function getChildSignal ($parent, key) {
   const $root = getRoot($parent)
   if ($root) $child[ROOT] = $root
   return $child
+}
+
+function setReplacePrivateCompatSync ($signal, value) {
+  const segments = $signal[SEGMENTS]
+  if (segments.length === 0) throw Error('Can\'t set the root signal data')
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
+  if (segments.length === 2) {
+    value = normalizeIdFields(value, idFields, segments[1])
+  }
+  _setReplace(segments, value)
+  mirrorRefMutationFromTarget(segments, value)
+}
+
+function delPrivateCompatSync ($signal) {
+  const segments = $signal[SEGMENTS]
+  if (segments.length === 0) throw Error('Can\'t delete the root signal data')
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
+  _del(segments)
 }
 
 function deepEqualCompat (left, right) {

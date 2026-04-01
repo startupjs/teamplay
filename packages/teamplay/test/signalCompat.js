@@ -1980,6 +1980,119 @@ class NonCompatRefUserModel extends BaseSignal {
     })
   })
 
+  it('keeps child-signal observers reactive after syncing object targets', async () => {
+    const $base = setup('childSignalReactivity')
+    await $base.doc.set({
+      name: 'Stage 1',
+      config: {
+        realtimeConfig: {
+          voice: 'alloy'
+        }
+      }
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    const $name = $base.virtual.name
+    const $voice = $base.virtual.config.realtimeConfig.voice
+    $root.start(targetPath, $base.doc, doc => doc)
+    const snapshots = []
+    const reaction = observe(
+      () => ({
+        name: $name.get(),
+        voice: $voice.get()
+      }),
+      {
+        lazy: true,
+        scheduler: job => scheduleReaction(() => {
+          const snapshot = job()
+          const prev = snapshots[snapshots.length - 1]
+          if (JSON.stringify(prev) !== JSON.stringify(snapshot)) snapshots.push(snapshot)
+        })
+      }
+    )
+    snapshots.push(reaction())
+
+    await $base.doc.name.set('Stage 2')
+    await $base.doc.config.realtimeConfig.voice.set('echo')
+    await $base.virtual.name.set('Draft')
+    await $base.virtual.config.realtimeConfig.voice.set('nova')
+    await $base.doc.set({
+      name: 'Stage 3',
+      config: {
+        realtimeConfig: {
+          voice: 'shimmer'
+        }
+      }
+    })
+
+    unobserve(reaction)
+
+    assert.deepEqual(snapshots, [
+      { name: 'Stage 1', voice: 'alloy' },
+      { name: 'Stage 2', voice: 'alloy' },
+      { name: 'Stage 2', voice: 'echo' },
+      { name: 'Draft', voice: 'echo' },
+      { name: 'Draft', voice: 'nova' },
+      { name: 'Stage 3', voice: 'shimmer' }
+    ])
+  })
+
+  it('keeps pre-bound undefined boolean and text child signals writable after object syncs', async () => {
+    const $base = setup('undefinedChildFields')
+    await $base.doc.set({
+      name: 'Stage 1',
+      config: {}
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    const $final = $base.virtual.final
+    const $prompt = $base.virtual.prompt
+    $root.start(targetPath, $base.doc, doc => doc)
+
+    const snapshots = []
+    const reaction = observe(
+      () => ({
+        final: $final.get(),
+        prompt: $prompt.get()
+      }),
+      {
+        lazy: true,
+        scheduler: job => scheduleReaction(() => {
+          const snapshot = job()
+          const prev = snapshots[snapshots.length - 1]
+          if (JSON.stringify(prev) !== JSON.stringify(snapshot)) snapshots.push(snapshot)
+        })
+      }
+    )
+    snapshots.push(reaction())
+
+    await $final.set(true)
+    await $prompt.set('Draft prompt')
+
+    assert.equal($base.virtual.get('final'), true)
+    assert.equal($base.virtual.get('prompt'), 'Draft prompt')
+    assert.equal($base.doc.get('final'), undefined)
+    assert.equal($base.doc.get('prompt'), undefined)
+
+    await $base.doc.set({
+      name: 'Stage 2',
+      final: true,
+      prompt: 'Saved prompt',
+      config: {}
+    })
+
+    unobserve(reaction)
+
+    assert.deepEqual(snapshots, [
+      { final: undefined, prompt: undefined },
+      { final: true, prompt: undefined },
+      { final: true, prompt: 'Draft prompt' },
+      { final: true, prompt: 'Saved prompt' }
+    ])
+  })
+
   it('priority: domain model method start() wins over compat fallback', () => {
     const $session = $root[domainCollection].session1
     assert.equal($session.start('chat', 'u1'), `domain:${domainCollection}.session1:chat:u1`)

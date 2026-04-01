@@ -1877,6 +1877,128 @@ describe('useBatchQuery / useBatchQuery$', () => {
       queryProto._initData = originalInitData
     }
   })
+
+  itCompat('compat start keeps pre-bound child signals reactive across object syncs', async () => {
+    const basePath = '_compatStartReactBinding'
+    _del([basePath])
+
+    await $[basePath].doc.set({
+      name: 'Stage 1',
+      config: {
+        realtimeConfig: {
+          voice: 'alloy'
+        }
+      }
+    })
+
+    const $name = $[basePath].virtual.name
+    const $voice = $[basePath].virtual.config.realtimeConfig.voice
+    $.start(`${basePath}.virtual`, $[basePath].doc, doc => doc)
+
+    try {
+      const Component = observer(() => {
+        return fr(
+          el('span', { id: 'compatStartName' }, $name.get() || 'undefined'),
+          el('span', { id: 'compatStartVoice' }, $voice.get() || 'undefined')
+        )
+      })
+
+      const { container } = render(el(Component))
+
+      expect(container.querySelector('#compatStartName').textContent).toBe('Stage 1')
+      expect(container.querySelector('#compatStartVoice').textContent).toBe('alloy')
+
+      await act(async () => {
+        await $[basePath].doc.name.set('Stage 2')
+      })
+      await wait()
+      expect(container.querySelector('#compatStartName').textContent).toBe('Stage 2')
+
+      await act(async () => {
+        await $[basePath].doc.config.realtimeConfig.voice.set('echo')
+      })
+      await wait()
+      expect(container.querySelector('#compatStartVoice').textContent).toBe('echo')
+
+      await act(async () => {
+        await $name.set('Draft')
+        await $voice.set('nova')
+      })
+      await wait()
+      expect(container.querySelector('#compatStartName').textContent).toBe('Draft')
+      expect(container.querySelector('#compatStartVoice').textContent).toBe('nova')
+
+      await act(async () => {
+        await $[basePath].doc.set({
+          name: 'Stage 3',
+          config: {
+            realtimeConfig: {
+              voice: 'shimmer'
+            }
+          }
+        })
+      })
+      await wait()
+      expect(container.querySelector('#compatStartName').textContent).toBe('Stage 3')
+      expect(container.querySelector('#compatStartVoice').textContent).toBe('shimmer')
+    } finally {
+      $.stop(`${basePath}.virtual`)
+      _del([basePath])
+    }
+  })
+
+  itCompat('compat start keeps pre-bound undefined boolean and text child signals reactive', async () => {
+    const basePath = '_compatStartUndefinedFields'
+    _del([basePath])
+
+    await $[basePath].doc.set({
+      name: 'Stage 1',
+      config: {}
+    })
+
+    const $final = $[basePath].virtual.final
+    const $prompt = $[basePath].virtual.prompt
+    $.start(`${basePath}.virtual`, $[basePath].doc, doc => doc)
+
+    try {
+      const Component = observer(() => {
+        return fr(
+          el('span', { id: 'compatStartFinal' }, String($final.get())),
+          el('span', { id: 'compatStartPrompt' }, $prompt.get() || 'undefined')
+        )
+      })
+
+      const { container } = render(el(Component))
+
+      expect(container.querySelector('#compatStartFinal').textContent).toBe('undefined')
+      expect(container.querySelector('#compatStartPrompt').textContent).toBe('undefined')
+
+      await act(async () => {
+        await $final.set(true)
+        await $prompt.set('Draft prompt')
+      })
+      await wait()
+
+      expect(container.querySelector('#compatStartFinal').textContent).toBe('true')
+      expect(container.querySelector('#compatStartPrompt').textContent).toBe('Draft prompt')
+
+      await act(async () => {
+        await $[basePath].doc.set({
+          name: 'Stage 2',
+          final: true,
+          prompt: 'Saved prompt',
+          config: {}
+        })
+      })
+      await wait()
+
+      expect(container.querySelector('#compatStartFinal').textContent).toBe('true')
+      expect(container.querySelector('#compatStartPrompt').textContent).toBe('Saved prompt')
+    } finally {
+      $.stop(`${basePath}.virtual`)
+      _del([basePath])
+    }
+  })
 })
 
 describe('useAsyncQuery / useAsyncQuery$', () => {
