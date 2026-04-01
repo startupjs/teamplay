@@ -283,6 +283,23 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
+  it('treats missing public numeric paths as zero on increment', async () => {
+    const gameId = '_increment_missing_public_field'
+    const $game = await sub($.games[gameId])
+    await $game.set({ title: 'Game' })
+
+    const direct = await $game.count.increment(1)
+    assert.equal(direct, 1)
+    assert.equal($game.count.get(), 1)
+
+    const nested = await $game.stats.entriesNum.increment(2)
+    assert.equal(nested, 2)
+    assert.equal($game.stats.entriesNum.get(), 2)
+    assert.deepEqual($game.stats.get(), { entriesNum: 2 })
+
+    await $game.del()
+  })
+
   it('materializes missing public array path on push', async () => {
     const gameId = '_compat_base_missing_list_1'
     const $game = await sub($.games[gameId])
@@ -291,6 +308,26 @@ describe('$sub() function. Modifying documents', () => {
     const len = await $game.list.push(1)
     assert.equal(len, 1)
     assert.deepEqual($game.list.get(), [1])
+
+    await $game.del()
+  })
+
+  it('keeps racer-like missing-path semantics for public string/array mutators', async () => {
+    const gameId = '_public_missing_string_array_semantics'
+    const $game = await sub($.games[gameId])
+    await $game.set({ title: 'Game' })
+
+    const prevString = await $game.text.stringInsert(0, 'abc')
+    assert.equal(prevString, undefined)
+    assert.equal($game.text.get(), 'abc')
+
+    const removedMissingString = await $game.missingText.stringRemove(0, 1)
+    assert.equal(removedMissingString, undefined)
+
+    const popMissingArray = await $game.missingList.pop()
+    assert.equal(popMissingArray, undefined)
+    const shiftMissingArray = await $game.missingList.shift()
+    assert.equal(shiftMissingArray, undefined)
 
     await $game.del()
   })

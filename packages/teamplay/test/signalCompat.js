@@ -1243,6 +1243,21 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.text.get(), 'hlo')
   })
 
+  it('treats missing public numeric compat paths as zero on increment', async () => {
+    const gameId = '_compat_public_increment_missing'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ title: 'Game' })
+
+    const direct = await $game.increment('count', 1)
+    assert.equal(direct, 1)
+    assert.equal($game.count.get(), 1)
+
+    const nested = await $game.increment('stats.entriesNum', 2)
+    assert.equal(nested, 2)
+    assert.equal($game.stats.entriesNum.get(), 2)
+    assert.deepEqual($game.stats.get(), { entriesNum: 2 })
+  })
+
   it('handles edge cases for public array/string mutators', async () => {
     const gameId = '_compat_public_2'
     const $game = await sub($.compatGames[gameId])
@@ -1275,6 +1290,24 @@ describe('SignalCompat public mutators', () => {
     const len = await $game.push('list', 1)
     assert.equal(len, 1)
     assert.deepEqual($game.list.get(), [1])
+  })
+
+  it('keeps racer-like missing-path semantics for public compat string/array mutators', async () => {
+    const gameId = '_compat_public_missing_string_array'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ title: 'Game' })
+
+    const prevString = await $game.stringInsert('text', 0, 'abc')
+    assert.equal(prevString, undefined)
+    assert.equal($game.text.get(), 'abc')
+
+    const removedMissingString = await $game.stringRemove('missingText', 0, 1)
+    assert.equal(removedMissingString, undefined)
+
+    const popMissingArray = await $game.pop('missingList')
+    assert.equal(popMissingArray, undefined)
+    const shiftMissingArray = await $game.shift('missingList')
+    assert.equal(shiftMissingArray, undefined)
   })
 
   it('throws when pushing to non-array on public docs', async () => {

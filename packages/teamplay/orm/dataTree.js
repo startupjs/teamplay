@@ -517,6 +517,14 @@ export async function incrementPublic (segments, byNumber) {
     hydrateCompatDocData: true
   })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
+  const current = getRaw(segments)
+  if (current == null) {
+    // Align with Racer's RemoteDoc.increment(): if the document exists but the
+    // target path is missing/null, initialize the path with the increment value
+    // instead of emitting a numeric-add op against a non-existing path.
+    await setPublicDoc(segments, byNumber)
+    return
+  }
   const relativePath = segments.slice(2)
   const op = [{ p: relativePath, na: byNumber }]
   return new Promise((resolve, reject) => {
