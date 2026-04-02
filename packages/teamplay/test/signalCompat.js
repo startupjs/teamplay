@@ -1,4 +1,4 @@
-import { it, describe, afterEach, before } from 'mocha'
+import { it, describe, afterEach, before, after } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
 import { $, sub, addModel, aggregation, getRootSignal } from '../index.js'
@@ -13,8 +13,13 @@ import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetSilentContextForTests, isSilentContextActive } from '../orm/Compat/silentContext.js'
 import { isMissingShareDoc } from '../orm/missingDoc.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
-import { PARAMS, HASH as QUERY_HASH, QUERIES } from '../orm/Query.js'
+import { PARAMS, HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
 import { AGGREGATIONS } from '../orm/Aggregation.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+import {
+  __setImperativeQueryReadyTimeoutForTests,
+  __resetImperativeQueryReadyTimeoutForTests
+} from '../orm/Compat/queryReadiness.js'
 
 const REGEX_POSITIVE_INTEGER = /^(?:0|[1-9]\d*)$/
 function maybeTransformToArrayIndex (key) {
@@ -1553,11 +1558,14 @@ class NonCompatRefUserModel extends BaseSignal {
   let cleanupQueryHashes = []
   let cleanupAggregationHashes = []
   let $compatRoot
+  let prevSubscriptionGcDelay
 
   before(() => {
     connect()
     addModel(`${collection}.*`, SignalCompat)
     $compatRoot = createCompatRoot()
+    prevSubscriptionGcDelay = getSubscriptionGcDelay()
+    setSubscriptionGcDelay(0)
   })
 
   function cbPromise (fn) {
@@ -1567,6 +1575,7 @@ class NonCompatRefUserModel extends BaseSignal {
   }
 
   afterEach(async () => {
+    querySubscriptions.subscribe = QuerySubscriptionsSubscribe
     const docs = getConnection().collections?.[collection] || {}
     for (const id of Object.keys(docs)) {
       const doc = getConnection().get(collection, id)
@@ -1577,8 +1586,19 @@ class NonCompatRefUserModel extends BaseSignal {
     for (const hash of cleanupAggregationHashes) _del([AGGREGATIONS, hash])
     cleanupQueryHashes = []
     cleanupAggregationHashes = []
+    __resetImperativeQueryReadyTimeoutForTests()
     _del([collection])
   })
+
+  afterEach(() => {
+    setSubscriptionGcDelay(0)
+  })
+
+  after(() => {
+    setSubscriptionGcDelay(prevSubscriptionGcDelay)
+  })
+
+  const QuerySubscriptionsSubscribe = querySubscriptions.subscribe.bind(querySubscriptions)
 
   it('query() normalizes shorthand params', () => {
     const $byIds = $compatRoot.query(collection, ['a', 'b'])
@@ -1624,6 +1644,77 @@ class NonCompatRefUserModel extends BaseSignal {
     await $compatRoot.subscribe([$query, null], undefined)
     assert.deepEqual($query.getIds(), [id])
     await $compatRoot.unsubscribe([$query, undefined])
+  })
+
+  it('await query.subscribe waits for full materialization and returns dense docs', async () => {
+    const $query = $compatRoot.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+
+    querySubscriptions.subscribe = async () => {
+      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc1', 'doc2'])
+      _set([QUERIES, $query[QUERY_HASH], 'docs'], [{ _id: 'doc1', id: 'doc1', active: true }, undefined])
+      setTimeout(() => {
+        _set([collection, 'doc1'], { _id: 'doc1', id: 'doc1', active: true })
+        _set([collection, 'doc2'], { _id: 'doc2', id: 'doc2', active: true })
+      }, 5)
+    }
+
+    await $query.subscribe()
+
+    assert.deepEqual($query.getIds(), ['doc1', 'doc2'])
+    assert.deepEqual($query.get().map(doc => doc.id), ['doc1', 'doc2'])
+  })
+
+  it('await root.subscribe($query) also waits for full materialization', async () => {
+    const $query = $compatRoot.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+
+    querySubscriptions.subscribe = async () => {
+      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc3', 'doc4'])
+      _set([QUERIES, $query[QUERY_HASH], 'docs'], [undefined, { _id: 'doc4', id: 'doc4', active: true }])
+      setTimeout(() => {
+        _set([collection, 'doc3'], { _id: 'doc3', id: 'doc3', active: true })
+        _set([collection, 'doc4'], { _id: 'doc4', id: 'doc4', active: true })
+      }, 5)
+    }
+
+    await $compatRoot.subscribe($query)
+
+    assert.deepEqual($query.get().map(doc => doc.id), ['doc3', 'doc4'])
+  })
+
+  it('await query.fetch also waits for full materialization', async () => {
+    const $query = $compatRoot.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+
+    querySubscriptions.subscribe = async () => {
+      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc6', 'doc7'])
+      _set([QUERIES, $query[QUERY_HASH], 'docs'], [{ _id: 'doc6', id: 'doc6', active: true }, undefined])
+      setTimeout(() => {
+        _set([collection, 'doc6'], { _id: 'doc6', id: 'doc6', active: true })
+        _set([collection, 'doc7'], { _id: 'doc7', id: 'doc7', active: true })
+      }, 5)
+    }
+
+    await $query.fetch()
+
+    assert.deepEqual($query.get().map(doc => doc.id), ['doc6', 'doc7'])
+  })
+
+  it('throws when imperative compat query never fully materializes', async () => {
+    const $query = $compatRoot.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+    __setImperativeQueryReadyTimeoutForTests(20)
+
+    querySubscriptions.subscribe = async () => {
+      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc5'])
+      _set([QUERIES, $query[QUERY_HASH], 'docs'], [undefined])
+    }
+
+    await assert.rejects(
+      $query.subscribe(),
+      /Compat query did not fully materialize/
+    )
   })
 })
 

@@ -2,10 +2,8 @@ import { getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
 import useSub, { useAsyncSub } from '../../react/useSub.js'
 import universal$ from '../../react/universal$.js'
 import * as promiseBatcher from '../../react/promiseBatcher.js'
-import { getRaw } from '../dataTree.js'
-import { getConnection } from '../connection.js'
 import { isCompatEnv } from '../compatEnv.js'
-import { isMissingShareDoc } from '../missingDoc.js'
+import { isQueryReady } from './queryReadiness.js'
 
 const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 const emittedCompatWarnings = new Set()
@@ -358,50 +356,6 @@ function normalizeSyncSubOptions (options) {
     compatAttemptCleanup: true,
     // Compat sync hooks are strict by design: no deferred snapshots between route/tab switches.
     defer: false
-  }
-}
-
-function isQueryReady (
-  collection,
-  idsSegments,
-  docsSegments,
-  extraSegments,
-  aggregationSegments,
-  isAggregate,
-  hasExtraResult
-) {
-  if (hasExtraResult) {
-    return getRaw(extraSegments) !== undefined
-  }
-  if (isAggregate) {
-    const docs = getRaw(docsSegments)
-    if (Array.isArray(docs)) return true
-    if (getRaw(extraSegments) !== undefined) return true
-    return getRaw(aggregationSegments) !== undefined
-  }
-  const ids = getRaw(idsSegments)
-  if (!Array.isArray(ids)) return false
-  for (const id of ids) {
-    if (id == null) continue
-    if (!isDocReady([collection, id])) return false
-  }
-  return true
-}
-
-function isDocReady (segments) {
-  const rawDoc = getRaw(segments)
-  if (rawDoc !== undefined) return true
-  const [collection, id] = segments
-  const shareDoc = getShareDoc(collection, id)
-  // Missing docs should not block the batch barrier forever.
-  return isMissingShareDoc(shareDoc)
-}
-
-function getShareDoc (collection, id) {
-  try {
-    return getConnection().get(collection, id)
-  } catch {
-    return undefined
   }
 }
 

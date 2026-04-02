@@ -38,6 +38,7 @@ import {
   stringRemovePublic as _stringRemovePublic
 } from '../dataTree.js'
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
+import { waitForImperativeQueryReady } from './queryReadiness.js'
 import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
 import { setRefLink, removeRefLink, getRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
@@ -1284,8 +1285,18 @@ function flattenItems (items, result = []) {
 }
 
 function subscribeSelf ($signal) {
-  if ($signal[IS_QUERY]) return querySubscriptions.subscribe($signal)
-  if ($signal[IS_AGGREGATION]) return aggregationSubscriptions.subscribe($signal)
+  if ($signal[IS_QUERY]) {
+    return (async () => {
+      await querySubscriptions.subscribe($signal)
+      await waitForImperativeQueryReady($signal)
+    })()
+  }
+  if ($signal[IS_AGGREGATION]) {
+    return (async () => {
+      await aggregationSubscriptions.subscribe($signal)
+      await waitForImperativeQueryReady($signal)
+    })()
+  }
   if (isPublicDocumentSignal($signal)) return docSubscriptions.subscribe($signal)
   if (isPublicCollectionSignal($signal)) {
     throw Error('Signal.subscribe() expects a query signal. Use .query() for collections.')
