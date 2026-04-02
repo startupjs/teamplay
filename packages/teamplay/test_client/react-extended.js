@@ -1034,6 +1034,94 @@ describe('usePage / usePage$', () => {
     expect(renders).toBe(2)
   })
 
+  it('usePage rerenders on external page-path updates via child and parent setters', () => {
+    act(() => { $.page.langExternal.set('en') })
+
+    let renders = 0
+    const Component = observer(() => {
+      renders++
+      const [lang] = usePage('langExternal')
+      return el('span', { id: 'plangExternal' }, lang || '')
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#plangExternal').textContent).toBe('en')
+    expect(renders).toBe(1)
+
+    act(() => { $.page.langExternal.set('fr') })
+    expect(container.querySelector('#plangExternal').textContent).toBe('fr')
+    expect(renders).toBe(2)
+
+    act(() => { $.page.set('langExternal', 'it') })
+    expect(container.querySelector('#plangExternal').textContent).toBe('it')
+    expect(renders).toBe(3)
+  })
+
+  it('usePage without path rerenders on deep external updates', () => {
+    act(() => {
+      $.page.set({
+        simple: 'one',
+        nested: { value: 'alpha' }
+      })
+    })
+
+    let renders = 0
+    const Component = observer(() => {
+      renders++
+      const [page] = usePage()
+      return fr(
+        el('span', { id: 'pageSimple2' }, page?.simple || ''),
+        el('span', { id: 'pageNested2' }, page?.nested?.value || '')
+      )
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#pageSimple2').textContent).toBe('one')
+    expect(container.querySelector('#pageNested2').textContent).toBe('alpha')
+    expect(renders).toBe(1)
+
+    act(() => { $.page.set('simple', 'two') })
+    expect(container.querySelector('#pageSimple2').textContent).toBe('two')
+    expect(container.querySelector('#pageNested2').textContent).toBe('alpha')
+    expect(renders).toBe(2)
+
+    act(() => { $.page.nested.value.set('beta') })
+    expect(container.querySelector('#pageSimple2').textContent).toBe('two')
+    expect(container.querySelector('#pageNested2').textContent).toBe('beta')
+    expect(renders).toBe(3)
+
+    act(() => { $._page.set('nested.value', 'gamma') })
+    expect(container.querySelector('#pageNested2').textContent).toBe('gamma')
+    expect(renders).toBe(4)
+  })
+
+  it('usePage for nested object rerenders on deep external updates', () => {
+    act(() => {
+      $.page.deepObj.set({
+        child: { title: 'one' }
+      })
+    })
+
+    let renders = 0
+    const Component = observer(() => {
+      renders++
+      const [deepObj] = usePage('deepObj')
+      return el('span', { id: 'pageDeepObj' }, deepObj?.child?.title || '')
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#pageDeepObj').textContent).toBe('one')
+    expect(renders).toBe(1)
+
+    act(() => { $.page.deepObj.child.title.set('two') })
+    expect(container.querySelector('#pageDeepObj').textContent).toBe('two')
+    expect(renders).toBe(2)
+
+    act(() => { $.page.set('deepObj.child.title', 'three') })
+    expect(container.querySelector('#pageDeepObj').textContent).toBe('three')
+    expect(renders).toBe(3)
+  })
+
   it('usePage without path returns root page', () => {
     act(() => { $.page.rootFlag.set('ok') })
 
