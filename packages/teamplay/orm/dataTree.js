@@ -44,6 +44,10 @@ export function set (segments, value, tree = dataTree) {
     return
   }
   // handle when the value didn't change
+  // TODO: this should explicitly check for plain type or non-serializable values (like function).
+  //       For object/array this check should never pass because we HAVE to clone the whole
+  //       value we are setting in order to keep the dataTree immutable from the user code -
+  //       and this cloning is happening below in setDiffDeep.
   if (value === dataNodeRaw[key]) return
   // handle setting undefined value
   if (value == null) {
@@ -65,6 +69,7 @@ export function set (segments, value, tree = dataTree) {
   }
   // instead of just setting the new value `dataNode[key] = value` we want
   // to deeply update it to prevent unnecessary reactivity triggers.
+  // TODO: deep clone the value before setting it (keep functions and other non-serializable stuff as-is)
   const newValue = setDiffDeep(dataNode[key], value)
   // handle case when the value couldn't be updated in place and is completely new
   // (we just set it to this value)

@@ -456,8 +456,13 @@ export const extremelyLateBindings = {
             })
           })
         }
-      } else if (!DEFAULT_GETTERS.includes(key)) {
-        throw Error(ERRORS.aggregationSetter(segments, key))
+      } else {
+        const $root = getRoot(signal)
+        // we have to get the list of getters of the Signal class dynamically instead
+        // of directly checking DEFAULT_GETTERS, because the Signal itself might be
+        // the SignalCompat which has extra getters (getCopy, getDeepCopy).
+        const getters = rawSignal($root).constructor[GETTERS]
+        if (!getters.includes(key)) throw Error(ERRORS.aggregationSetter(segments, key))
       }
     }
     const $parent = getSignal(getRoot(signal), segments)
