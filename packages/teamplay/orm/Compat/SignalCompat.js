@@ -13,7 +13,7 @@ import { publicOnly, fetchOnly, setFetchOnly } from '../connection.js'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
-import { getIdFieldsForSegments, isIdFieldPath, normalizeIdFields, isPlainObject } from '../idFields.js'
+import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields, isPlainObject } from '../idFields.js'
 import {
   del as _del,
   setReplace as _setReplace,
@@ -1015,7 +1015,7 @@ function setReplacePrivateCompatSync ($signal, value) {
   if (segments.length === 0) throw Error('Can\'t set the root signal data')
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
-  if (segments.length === 2) {
+  if (isPublicDocPath(segments)) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   _setReplace(segments, value)
@@ -1065,7 +1065,7 @@ async function setReplaceOnSignal ($signal, value) {
   if (segments.length === 0) throw Error('Can\'t set the root signal data')
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
-  if (segments.length === 2) {
+  if (isPublicDocPath(segments)) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   if (isPublicCollection(segments[0])) {

@@ -45,7 +45,7 @@ import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
-import { DEFAULT_ID_FIELDS, getIdFieldsForSegments, isIdFieldPath, normalizeIdFields } from './idFields.js'
+import { DEFAULT_ID_FIELDS, getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields } from './idFields.js'
 import { isCompatEnv } from './compatEnv.js'
 import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
@@ -262,7 +262,7 @@ export class Signal extends Function {
     if (this[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
     const idFields = getIdFieldsForSegments(this[SEGMENTS])
     if (isIdFieldPath(this[SEGMENTS], idFields)) return
-    if (this[SEGMENTS].length === 2) {
+    if (isPublicDocPath(this[SEGMENTS])) {
       value = normalizeIdFields(value, idFields, this[SEGMENTS][1])
     }
     if (isPublicCollection(this[SEGMENTS][0])) {

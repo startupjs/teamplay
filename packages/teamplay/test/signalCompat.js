@@ -139,15 +139,15 @@ describe('SignalCompat.at()', () => {
 
   it('resolves refs in relative path segments', async () => {
     setup('refs')
-    cleanupSegments.push(['users'])
-    await $root.users.u1.set({ profile: { title: 'Alice' } })
-    $base.ref('user', 'users.u1')
+    cleanupSegments.push(['_users'])
+    await $root._users.u1.set({ profile: { title: 'Alice' } })
+    $base.ref('user', '_users.u1')
 
     assert.equal($base.get('user.profile.title'), 'Alice')
     assert.equal($base.at('user.profile').get('title'), 'Alice')
 
     await $base.at('user.profile').set('title', 'Bob')
-    assert.equal($root.users.u1.get('profile.title'), 'Bob')
+    assert.equal($root._users.u1.get('profile.title'), 'Bob')
     assert.equal($base.user.profile.title.get(), 'Bob')
   })
 
@@ -460,9 +460,9 @@ describe('SignalCompat.scope()', () => {
 
   it('resolves refs in scoped path', async () => {
     setup('refs')
-    cleanupSegments.push(['users'], ['_session'])
-    await $root.users.u1.set({ title: 'admin' })
-    $root._session.ref('user', 'users.u1')
+    cleanupSegments.push(['_users'], ['_session'])
+    await $root._users.u1.set({ title: 'admin' })
+    $root._session.ref('user', '_users.u1')
 
     assert.equal($base.scope('_session.user.title').get(), 'admin')
   })
@@ -566,21 +566,21 @@ describe('SignalCompat.getCopy()/getDeepCopy()', () => {
 
   it('resolves refs in subpath for copy helpers', async () => {
     setup('refs')
-    cleanupSegments.push(['users'])
-    await $root.users.u1.set({
+    cleanupSegments.push(['_users'])
+    await $root._users.u1.set({
       profile: {
         flags: { active: true }
       }
     })
-    $base.ref('user', 'users.u1')
+    $base.ref('user', '_users.u1')
 
     const deepCopy = $base.getDeepCopy('user.profile')
     const shallowCopy = $base.getCopy('user.profile')
 
     assert.deepEqual(deepCopy, { flags: { active: true } })
     assert.deepEqual(shallowCopy, { flags: { active: true } })
-    assert.notEqual(deepCopy, $root.users.u1.get('profile'))
-    assert.notEqual(shallowCopy, $root.users.u1.get('profile'))
+    assert.notEqual(deepCopy, $root._users.u1.get('profile'))
+    assert.notEqual(shallowCopy, $root._users.u1.get('profile'))
   })
 
   it('throws on invalid arguments', () => {
@@ -1211,6 +1211,8 @@ describe('SignalCompat public mutators', () => {
       if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
       delete getConnection().collections?.compatGames?.[id]
     }
+    __resetRefLinksForTests()
+    _del(['_session'])
     assert.deepEqual(_get(['compatGames']), {}, 'compatGames collection is empty in signal\'s data tree')
     assert.equal(Object.keys(getConnection().collections?.compatGames || {}).length, 0, 'no games in ShareDB connection')
   })
@@ -1341,7 +1343,7 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.get(), undefined)
   })
 
-  it('injects _id/id into compat docs and ignores id changes', async () => {
+  it('injects _id/id into compat docs and protects top-level identity fields', async () => {
     const gameId = '_compat_public_ids'
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Compat' })
@@ -1354,6 +1356,61 @@ describe('SignalCompat public mutators', () => {
     await $game._id.set('other2')
     assert.equal($game.id.get(), gameId)
     assert.equal($game._id.get(), gameId)
+  })
+
+  it('allows nested id/_id mutations on compat docs', async () => {
+    const gameId = '_compat_public_nested_ids'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({
+      name: 'Compat Nested',
+      profile: {
+        id: 'profile-1',
+        _id: 'profile-1',
+        nested: { id: 'nested-1', _id: 'nested-1' }
+      }
+    })
+
+    await $game.profile.id.set('profile-2')
+    await $game.profile._id.set('profile-3')
+    await $game.setDiffDeep({
+      name: 'Compat Nested',
+      profile: {
+        id: 'profile-4',
+        _id: 'profile-5',
+        nested: { id: 'nested-2', _id: 'nested-3' }
+      }
+    })
+
+    assert.equal($game.id.get(), gameId)
+    assert.equal($game._id.get(), gameId)
+    assert.equal($game.profile.id.get(), 'profile-4')
+    assert.equal($game.profile._id.get(), 'profile-5')
+    assert.equal($game.profile.nested.id.get(), 'nested-2')
+    assert.equal($game.profile.nested._id.get(), 'nested-3')
+  })
+
+  it('ref forwards nested id/_id writes while preserving public doc identity', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+    const gameId = '_compat_public_ref_ids'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({
+      name: 'Compat Ref',
+      profile: { id: 'profile-1', _id: 'profile-1' }
+    })
+
+    $._session.ref('activeGame', $game)
+
+    await $._session.activeGame.id.set('other')
+    await $._session.activeGame._id.set('other2')
+    await $._session.activeGame.profile.id.set('profile-2')
+    await $._session.activeGame.profile._id.set('profile-3')
+
+    assert.equal($game.id.get(), gameId)
+    assert.equal($game._id.get(), gameId)
+    assert.equal($game.profile.id.get(), 'profile-2')
+    assert.equal($game.profile._id.get(), 'profile-3')
+    assert.equal($._session.activeGame.profile.id.get(), 'profile-2')
+    assert.equal($._session.activeGame.profile._id.get(), 'profile-3')
   })
 
   it('injects _id/id in compat queries', async () => {

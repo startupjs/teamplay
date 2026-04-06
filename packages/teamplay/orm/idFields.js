@@ -50,8 +50,17 @@ export function stripIdFields (value, idFields) {
   return next
 }
 
+export function isPublicDocPath (segments) {
+  if (!Array.isArray(segments) || segments.length !== 2) return false
+  const [collection, docId] = segments
+  if (typeof collection !== 'string' || !collection) return false
+  if (collection[0] === '_' || collection[0] === '$') return false
+  return docId != null
+}
+
 export function isIdFieldPath (segments, idFields) {
-  if (segments.length < 3) return false
-  const last = segments[segments.length - 1]
+  if (!Array.isArray(segments) || segments.length !== 3) return false
+  if (!isPublicDocPath(segments.slice(0, 2))) return false
+  const last = segments[2]
   return idFields.includes(last)
 }

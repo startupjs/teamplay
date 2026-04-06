@@ -127,6 +127,56 @@ describe('Id fields in docs, queries, aggregations', () => {
     assert.equal($doc.get()._id, id)
   })
 
+  it('public docs allow nested id/_id mutations while keeping top-level identity protected', async () => {
+    const collection = 'idTestPublicNested'
+    const id = '_1'
+    cleanup.push({ collection, id })
+    const $doc = await sub($[collection][id])
+    await $doc.set({
+      name: 'Doc',
+      profile: {
+        id: 'profile-1',
+        _id: 'profile-1',
+        nested: { id: 'nested-1', _id: 'nested-1' }
+      }
+    })
+
+    await $doc.profile.id.set('profile-2')
+    await $doc.profile._id.set('profile-3')
+    await $doc.profile.nested.id.set('nested-2')
+    await $doc.profile.nested._id.set('nested-3')
+    await $doc._id.set('other-top-level')
+
+    assert.equal($doc.get()._id, id)
+    assert.equal($doc.profile.id.get(), 'profile-2')
+    assert.equal($doc.profile._id.get(), 'profile-3')
+    assert.equal($doc.profile.nested.id.get(), 'nested-2')
+    assert.equal($doc.profile.nested._id.get(), 'nested-3')
+  })
+
+  it('local docs allow id/_id mutations on top-level and nested paths', async () => {
+    const collection = '_localMutableIds'
+    try {
+      await $[collection].doc1.set({
+        id: 'local-1',
+        _id: 'local-1',
+        profile: { id: 'profile-1', _id: 'profile-1' }
+      })
+
+      await $[collection].doc1.id.set('local-2')
+      await $[collection].doc1._id.set('local-3')
+      await $[collection].doc1.profile.id.set('profile-2')
+      await $[collection].doc1.profile._id.set('profile-3')
+
+      assert.equal($[collection].doc1.id.get(), 'local-2')
+      assert.equal($[collection].doc1._id.get(), 'local-3')
+      assert.equal($[collection].doc1.profile.id.get(), 'profile-2')
+      assert.equal($[collection].doc1.profile._id.get(), 'profile-3')
+    } finally {
+      $[collection].del()
+    }
+  })
+
   it('local add uses provided id and does not keep id field', async () => {
     const collection = '_localIdAdd'
     const createdId = await $[collection].add({ id: 'custom', name: 'Local' })

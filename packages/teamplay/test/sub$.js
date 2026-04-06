@@ -17,7 +17,7 @@ function cbPromise (fn) {
 
 function afterEachTestGcShareDb () {
   afterEach(() => {
-    assert.deepEqual(_get(['games']), {}, 'games collection is empty in signal\'s data tree')
+    assert.deepEqual(_get(['games']) || {}, {}, 'games collection is empty in signal\'s data tree')
     assert.equal(Object.keys(getConnection().collections?.games || {}).length, 0, 'no games in ShareDB\'s connection')
   })
 }
@@ -104,11 +104,12 @@ describe('$sub() function. Modifying documents', () => {
     const gameId = '_5'
     const doc = getConnection().get('games', gameId)
     assert.equal(doc.data, undefined, 'doc is initially undefined in sharedb')
-    assert.deepEqual($.games.get(), {}, 'games collection is empty')
+    assert.deepEqual($.games.get() || {}, {}, 'games collection is empty')
     const $game = await sub($.games[gameId])
-    assert.equal(doc.data, undefined, 'subscription itself does not create the doc in sharedb')
+    assert.ok(doc.data, 'subscription materializes an empty missing-doc placeholder in sharedb')
+    assert.deepEqual(doc.data, {}, 'missing-doc placeholder is empty')
     assert.equal($game.get(), undefined, 'signal is undefined')
-    assert.deepEqual($.games.get(), {}, 'games collection is still empty')
+    assert.deepEqual($.games.get() || {}, {}, 'games collection is still empty')
     await $game.set({ name: 'Game 5', players: 0 })
     assert.equal($game.name.get(), 'Game 5')
     assert.equal(doc.data.name, 'Game 5')

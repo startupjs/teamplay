@@ -3,7 +3,7 @@ import jsonDiff from 'json0-ot-diff'
 import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.js'
 import setDiffDeep from '../utils/setDiffDeep.js'
-import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject } from './idFields.js'
+import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isSilentContextActive } from './Compat/silentContext.js'
 import { isCompatEnv } from './compatEnv.js'
@@ -158,7 +158,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const idFields = getIdFieldsForSegments([collection, docId])
-  if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
+  if (isIdFieldPath(segments, idFields)) return
   const doc = getConnection().get(collection, docId)
   let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
   if (!docState.exists && segments.length > 2) {
@@ -247,7 +247,7 @@ export async function setPublicDocReplace (segments, value) {
   if (docId === 'undefined') throw Error(ERRORS.publicDocIdUndefined(segments))
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const idFields = getIdFieldsForSegments([collection, docId])
-  if (segments.length >= 3 && idFields.includes(segments[segments.length - 1])) return
+  if (isIdFieldPath(segments, idFields)) return
   const doc = getConnection().get(collection, docId)
   let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
   if (!docState.exists && segments.length > 2) {
