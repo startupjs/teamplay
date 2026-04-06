@@ -177,7 +177,10 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
     value = undefined
   } else {
     value = JSON.parse(JSON.stringify(value))
-    value = stripIdFields(value, idFields)
+    // Only strip doc identity fields when writing the whole doc.
+    // Nested payloads like `fields.fieldId.media = { id: ... }` must preserve
+    // their own `id/_id` keys.
+    if (segments.length === 2) value = stripIdFields(value, idFields)
   }
   if (segments.length === 2 && !docState.exists) {
     // > create a new doc. Full doc data is provided
@@ -263,7 +266,9 @@ export async function setPublicDocReplace (segments, value) {
   value = raw(value)
   if (value != null) {
     value = JSON.parse(JSON.stringify(value))
-    value = stripIdFields(value, idFields)
+    // Same contract as setPublicDoc(): only doc-root writes should strip the
+    // identity fields of the target document itself.
+    if (segments.length === 2) value = stripIdFields(value, idFields)
   }
 
   if (!docState.exists) {
@@ -296,7 +301,9 @@ export async function setPublicDocReplace (segments, value) {
 
   const relativePath = segments.slice(2)
   const previous = getRaw(segments)
-  const normalizedPrevious = normalizeUndefined(stripIdFields(previous, idFields))
+  const normalizedPrevious = normalizeUndefined(
+    relativePath.length === 0 ? stripIdFields(previous, idFields) : previous
+  )
   const normalizedValue = normalizeUndefined(value)
   let op
   if (relativePath.length === 0) {

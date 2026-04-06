@@ -154,6 +154,26 @@ describe('Id fields in docs, queries, aggregations', () => {
     assert.equal($doc.profile.nested._id.get(), 'nested-3')
   })
 
+  it('public nested subpath writes preserve nested id/_id payloads', async () => {
+    const collection = 'idTestPublicNestedSubpath'
+    const id = '_1'
+    cleanup.push({ collection, id })
+    const $doc = await sub($[collection][id])
+    await $doc.set({ name: 'Doc' })
+
+    await $doc.media.set({
+      id: 'media-1',
+      _id: 'media-2',
+      type: 'uploadedPDF'
+    })
+
+    assert.deepEqual($doc.media.get(), {
+      id: 'media-1',
+      _id: 'media-2',
+      type: 'uploadedPDF'
+    })
+  })
+
   it('local docs allow id/_id mutations on top-level and nested paths', async () => {
     const collection = '_localMutableIds'
     try {

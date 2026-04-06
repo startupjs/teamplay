@@ -1389,6 +1389,24 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.profile.nested._id.get(), 'nested-3')
   })
 
+  it('preserves nested id/_id on compat public subpath writes', async () => {
+    const gameId = '_compat_public_nested_subpath_ids'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'Compat Nested Subpath' })
+
+    await $game.set('media', {
+      id: 'media-1',
+      _id: 'media-2',
+      type: 'uploadedPDF'
+    })
+
+    assert.deepEqual($game.media.get(), {
+      id: 'media-1',
+      _id: 'media-2',
+      type: 'uploadedPDF'
+    })
+  })
+
   it('ref forwards nested id/_id writes while preserving public doc identity', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
     const gameId = '_compat_public_ref_ids'
