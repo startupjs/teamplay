@@ -146,7 +146,8 @@ describe('$sub() function. Modifying documents', () => {
     assert.deepEqual(doc.data, { _id: '_7', name: 'Game 7', players: 0 })
     await $game.del()
     assert.equal($game.get(), undefined)
-    assert.equal(doc.data, undefined)
+    assert.ok(doc.data, 'subscribed deleted docs must restore the empty missing-doc placeholder')
+    assert.deepEqual(doc.data, {})
   })
 
   it('.set(undefined) on document should delete it', async () => {
@@ -158,7 +159,8 @@ describe('$sub() function. Modifying documents', () => {
     assert.deepEqual(doc.data, { _id: '_8', name: 'Game 8', players: 0 })
     await $game.set(undefined)
     assert.equal($game.get(), undefined)
-    assert.equal(doc.data, undefined)
+    assert.ok(doc.data, 'subscribed deleted docs must restore the empty missing-doc placeholder')
+    assert.deepEqual(doc.data, {})
   })
 
   it('.del() on subpath should delete the subpath', async () => {

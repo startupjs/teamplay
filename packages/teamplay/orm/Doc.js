@@ -96,10 +96,16 @@ class Doc {
     this._refData()
     doc.on('load', () => this._refData())
     doc.on('create', () => this._refData())
-    doc.on('del', () => _del([this.collection, this.docId]))
+    doc.on('del', () => this._refMissingData())
     if (isModelEventsEnabled()) {
       doc.on('op', op => emitDocOp(this.collection, this.docId, op))
     }
+  }
+
+  _refMissingData () {
+    _del([this.collection, this.docId])
+    const doc = getConnection().get(this.collection, this.docId)
+    doc.data = observable(undefined)
   }
 
   _refData () {

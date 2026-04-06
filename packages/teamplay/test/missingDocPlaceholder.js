@@ -65,4 +65,37 @@ describe('Missing doc placeholder parity', () => {
 
     await docSubscriptions.unsubscribe($doc)
   })
+
+  it('restores an empty missing-doc placeholder after a subscribed doc gets deleted', async () => {
+    const id = `missing_delete_${Date.now()}`
+    const $doc = $[collection][id]
+
+    await sub($doc)
+    const shareDoc = getConnection().get(collection, id)
+
+    createdIds.push(id)
+    await new Promise((resolve, reject) => {
+      shareDoc.create({ name: 'Created then deleted' }, err => {
+        if (err) return reject(err)
+        resolve()
+      })
+    })
+
+    assert.equal($doc.get().name, 'Created then deleted')
+
+    await new Promise((resolve, reject) => {
+      shareDoc.del(err => {
+        if (err) return reject(err)
+        resolve()
+      })
+    })
+
+    assert.equal($doc.get(), undefined, 'model path must become unresolved again after delete')
+    assert.ok(shareDoc.data, 'shareDoc.data must stay truthy after delete')
+    assert.deepEqual(Object.keys(shareDoc.data), [], 'deleted doc placeholder must be empty')
+    assert.equal(shareDoc.type, null)
+    assert.ok(shareDoc.version > 0, 'deleted doc keeps its ShareDB version history')
+
+    await docSubscriptions.unsubscribe($doc)
+  })
 })
