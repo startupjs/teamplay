@@ -1452,6 +1452,61 @@ describe('SignalCompat public mutators', () => {
     assert.equal(data.id, id)
   })
 
+  it('compat local add injects both id fields for all accepted top-level variants', async () => {
+    const collection = '_compatLocalAdd'
+    addModel(`${collection}.*`, SignalCompat)
+    const $collection = $[collection]
+    try {
+      const generatedId = await $collection.add({ name: 'Generated' })
+      assert.equal($collection[generatedId]._id.get(), generatedId)
+      assert.equal($collection[generatedId].id.get(), generatedId)
+
+      const fromId = await $collection.add({ id: 'local-id', name: 'From Id' })
+      assert.equal($collection[fromId]._id.get(), 'local-id')
+      assert.equal($collection[fromId].id.get(), 'local-id')
+
+      const fromUnderscoreId = await $collection.add({ _id: 'local-underscore-id', name: 'From _id' })
+      assert.equal($collection[fromUnderscoreId]._id.get(), 'local-underscore-id')
+      assert.equal($collection[fromUnderscoreId].id.get(), 'local-underscore-id')
+
+      const fromBoth = await $collection.add({ id: 'local-both', _id: 'local-both', name: 'From Both' })
+      assert.equal($collection[fromBoth]._id.get(), 'local-both')
+      assert.equal($collection[fromBoth].id.get(), 'local-both')
+    } finally {
+      _del([collection])
+    }
+  })
+
+  it('compat local add does not normalize nested id/_id fields', async () => {
+    const collection = '_compatLocalNestedAdd'
+    addModel(`${collection}.*`, SignalCompat)
+    const $collection = $[collection]
+    try {
+      const createdId = await $collection.add({
+        name: 'Compat Nested Local',
+        profile: { id: 'profile-1', _id: 'profile-2' }
+      })
+      const data = $collection[createdId].get()
+      assert.equal(data._id, createdId)
+      assert.equal(data.id, createdId)
+      assert.equal(data.profile.id, 'profile-1')
+      assert.equal(data.profile._id, 'profile-2')
+    } finally {
+      _del([collection])
+    }
+  })
+
+  it('compat local add throws on conflicting id and _id', async () => {
+    const collection = '_compatLocalAddConflict'
+    addModel(`${collection}.*`, SignalCompat)
+    const $collection = $[collection]
+    await assert.rejects(
+      $collection.add({ id: 'custom', _id: 'other', name: 'Compat Local Add' }),
+      /conflicting "id".*"_id"/
+    )
+    assert.equal($collection.get(), undefined)
+  })
+
   it('compat add throws on conflicting id and _id', async () => {
     await assert.rejects(
       $.compatGames.add({ id: 'custom', _id: 'other', name: 'Compat Add' }),

@@ -45,7 +45,15 @@ import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
-import { DEFAULT_ID_FIELDS, getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields } from './idFields.js'
+import {
+  DEFAULT_ID_FIELDS,
+  getIdFieldsForSegments,
+  isIdFieldPath,
+  isPublicDocPath,
+  normalizeIdFields,
+  prepareAddPayload,
+  resolveAddDocId
+} from './idFields.js'
 import { isCompatEnv } from './compatEnv.js'
 import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
@@ -424,24 +432,9 @@ export class Signal extends Function {
 
   async add (value) {
     if (arguments.length > 1) throw Error('Signal.add() expects a single argument')
-    if (!value || typeof value !== 'object') throw Error('Signal.add() expects an object argument')
-    const hasId = value.id != null
-    const hasUnderscoreId = value._id != null
-    if (hasId && hasUnderscoreId && value.id !== value._id) {
-      throw Error(
-        `Signal.add() got conflicting "id" (${JSON.stringify(value.id)}) and "_id" (${JSON.stringify(value._id)})`
-      )
-    }
-    let id = value.id ?? value._id
-    id ??= uuid()
+    const id = resolveAddDocId(value, uuid)
     const idFields = getIdFieldsForSegments([this[SEGMENTS][0], id])
-    if (idFields.includes('_id')) value._id = id
-    if (idFields.includes('id')) {
-      value.id = id
-    } else if (value.id === id) {
-      delete value.id
-    }
-    await this[id].set(value)
+    await this[id].set(prepareAddPayload(value, idFields, id))
     return id
   }
 

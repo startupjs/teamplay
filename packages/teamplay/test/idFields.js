@@ -177,7 +177,7 @@ describe('Id fields in docs, queries, aggregations', () => {
     }
   })
 
-  it('local add uses provided id and does not keep id field', async () => {
+  it('local add mirrors public add when only id is provided', async () => {
     const collection = '_localIdAdd'
     const createdId = await $[collection].add({ id: 'custom', name: 'Local' })
     assert.equal(createdId, 'custom')
@@ -197,6 +197,32 @@ describe('Id fields in docs, queries, aggregations', () => {
     const createdId = await $[collection].add({ name: 'Added Local' })
     const added = $[collection][createdId].get()
     assert.equal(added._id, createdId)
+  })
+
+  it('local add accepts _id-only and equal id/_id payloads', async () => {
+    const collection = '_localIdAddVariants'
+
+    const underscoreId = await $[collection].add({ _id: 'custom-underscore', name: 'Underscore' })
+    assert.equal(underscoreId, 'custom-underscore')
+    assert.equal($[collection][underscoreId]._id.get(), 'custom-underscore')
+    assert.ok(!('id' in $[collection][underscoreId].get()))
+
+    const sameId = await $[collection].add({ id: 'custom-same', _id: 'custom-same', name: 'Same' })
+    assert.equal(sameId, 'custom-same')
+    assert.equal($[collection][sameId]._id.get(), 'custom-same')
+    assert.ok(!('id' in $[collection][sameId].get()))
+  })
+
+  it('local add does not normalize nested id/_id fields', async () => {
+    const collection = '_localNestedIdAdd'
+    const createdId = await $[collection].add({
+      name: 'Nested Local',
+      profile: { id: 'profile-1', _id: 'profile-2' }
+    })
+    const data = $[collection][createdId].get()
+    assert.equal(data._id, createdId)
+    assert.equal(data.profile.id, 'profile-1')
+    assert.equal(data.profile._id, 'profile-2')
   })
 
   it('local add throws on conflicting id and _id', async () => {

@@ -50,6 +50,28 @@ export function stripIdFields (value, idFields) {
   return next
 }
 
+export function resolveAddDocId (value, getDefaultId) {
+  if (!value || typeof value !== 'object') throw Error('Signal.add() expects an object argument')
+  const hasId = value.id != null
+  const hasUnderscoreId = value._id != null
+  if (hasId && hasUnderscoreId && value.id !== value._id) {
+    throw Error(
+      `Signal.add() got conflicting "id" (${JSON.stringify(value.id)}) and "_id" (${JSON.stringify(value._id)})`
+    )
+  }
+  return value.id ?? value._id ?? getDefaultId()
+}
+
+export function prepareAddPayload (value, idFields, docId) {
+  if (idFields.includes('_id')) value._id = docId
+  if (idFields.includes('id')) {
+    value.id = docId
+  } else if (value.id === docId) {
+    delete value.id
+  }
+  return value
+}
+
 export function isPublicDocPath (segments) {
   if (!Array.isArray(segments) || segments.length !== 2) return false
   const [collection, docId] = segments
