@@ -35,11 +35,11 @@ async function runDispose (rootId) {
   context.resetRefs()
   context.resetModelListeners()
 
-  for (const transportHash of Array.from(context.queryViewHashes)) {
-    await querySubscriptions.destroyByViewHash(transportHash, { rootId, force: true })
+  for (const transportHash of Array.from(context.queryRuntimeHashes)) {
+    await querySubscriptions.destroyByRuntimeHash(transportHash, { rootId, force: true })
   }
-  for (const transportHash of Array.from(context.aggregationViewHashes)) {
-    await aggregationSubscriptions.destroyByViewHash(transportHash, { rootId, force: true })
+  for (const transportHash of Array.from(context.aggregationRuntimeHashes)) {
+    await aggregationSubscriptions.destroyByRuntimeHash(transportHash, { rootId, force: true })
   }
 
   await docSubscriptions.releaseRootOwnedSubscriptions(rootId)

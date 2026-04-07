@@ -2,9 +2,9 @@ import { afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
 import RootContext, {
   getRootContext,
-  registerRootOwnedView,
-  unregisterRootOwnedView,
-  getRootOwnedViewHashes,
+  registerRootOwnedRuntime,
+  unregisterRootOwnedRuntime,
+  getRootOwnedRuntimeHashes,
   __getRootContextForTests,
   __resetRootContextsForTests
 } from '../orm/rootContext.js'
@@ -32,32 +32,32 @@ describe('RootContext runtime owner', () => {
     assert.equal(rootB.getModelEventStore('change').size, 0)
   })
 
-  it('tracks query and aggregation view ownership per root', () => {
-    registerRootOwnedView('root-A', 'query', 'query-view-a')
-    registerRootOwnedView('root-A', 'aggregation', 'agg-view-a')
-    registerRootOwnedView('root-B', 'query', 'query-view-b')
+  it('tracks query and aggregation runtime ownership per root', () => {
+    registerRootOwnedRuntime('root-A', 'query', 'query-runtime-a')
+    registerRootOwnedRuntime('root-A', 'aggregation', 'agg-runtime-a')
+    registerRootOwnedRuntime('root-B', 'query', 'query-runtime-b')
 
     assert.deepEqual(
-      Array.from(getRootOwnedViewHashes('root-A', 'query')),
-      ['query-view-a']
+      Array.from(getRootOwnedRuntimeHashes('root-A', 'query')),
+      ['query-runtime-a']
     )
     assert.deepEqual(
-      Array.from(getRootOwnedViewHashes('root-A', 'aggregation')),
-      ['agg-view-a']
+      Array.from(getRootOwnedRuntimeHashes('root-A', 'aggregation')),
+      ['agg-runtime-a']
     )
     assert.deepEqual(
-      Array.from(getRootOwnedViewHashes('root-B', 'query')),
-      ['query-view-b']
+      Array.from(getRootOwnedRuntimeHashes('root-B', 'query')),
+      ['query-runtime-b']
     )
 
-    unregisterRootOwnedView('root-A', 'query', 'query-view-a')
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('root-A', 'query')), [])
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('root-A', 'aggregation')), ['agg-view-a'])
+    unregisterRootOwnedRuntime('root-A', 'query', 'query-runtime-a')
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('root-A', 'query')), [])
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('root-A', 'aggregation')), ['agg-runtime-a'])
   })
 
   it('exposes contexts for future cleanup and test reset', () => {
     getRootContext('root-A').refLinks.set('_session.user', { toPath: 'users.a' })
-    registerRootOwnedView('root-A', 'query', 'query-view-a')
+    registerRootOwnedRuntime('root-A', 'query', 'query-runtime-a')
 
     assert.ok(__getRootContextForTests('root-A'))
     __resetRootContextsForTests()

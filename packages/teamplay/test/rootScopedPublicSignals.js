@@ -9,7 +9,7 @@ import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { getPrivateData } from '../orm/privateData.js'
 import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../orm/Query.js'
 import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
-import { getRootOwnedViewHashes } from '../orm/rootContext.js'
+import { getRootOwnedRuntimeHashes } from '../orm/rootContext.js'
 import connect from '../connect/test.js'
 
 before(connect)
@@ -89,7 +89,7 @@ describeCompat('root-scoped public signals', () => {
     await $queryB.unsubscribe()
   })
 
-  it('tracks query view ownership inside root contexts while transport stays shared', async () => {
+  it('tracks query runtime ownership inside root contexts while transport stays shared', async () => {
     const rootA = createRoot('query-view-root-A')
     const rootB = createRoot('query-view-root-B')
 
@@ -102,23 +102,23 @@ describeCompat('root-scoped public signals', () => {
     await $queryB.subscribe()
 
     assert.deepEqual(
-      Array.from(getRootOwnedViewHashes('query-view-root-A', 'query')),
+      Array.from(getRootOwnedRuntimeHashes('query-view-root-A', 'query')),
       [$queryA[QUERY_HASH]]
     )
     assert.deepEqual(
-      Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')),
+      Array.from(getRootOwnedRuntimeHashes('query-view-root-B', 'query')),
       [$queryB[QUERY_HASH]]
     )
 
     await $queryA.unsubscribe()
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('query-view-root-A', 'query')), [])
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('query-view-root-A', 'query')), [])
     assert.deepEqual(
-      Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')),
+      Array.from(getRootOwnedRuntimeHashes('query-view-root-B', 'query')),
       [$queryB[QUERY_HASH]]
     )
 
     await $queryB.unsubscribe()
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')), [])
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('query-view-root-B', 'query')), [])
   })
 
   it('shares doc transport across root-scoped public signals and keeps it alive until both roots unsubscribe', async () => {

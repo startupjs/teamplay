@@ -11,7 +11,7 @@ import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idField
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 import { getScopedSignalHash } from './rootScope.js'
 import { getRoot, ROOT_ID } from './Root.js'
-import { registerRootOwnedView, unregisterRootOwnedView } from './rootContext.js'
+import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.js'
 import {
   delPrivateData,
   getPrivateData,
@@ -263,7 +263,7 @@ export class Query {
 export class QuerySubscriptions {
   constructor (QueryClass = Query) {
     this.QueryClass = QueryClass
-    this.viewKind = 'query'
+    this.runtimeKind = 'query'
     this.subCount = new Map() // ownerKey -> count
     this.transportSubCount = new Map() // transportHash -> attached roots count
     this.queries = new Map()
@@ -316,7 +316,7 @@ export class QuerySubscriptions {
       }
       ownerKeys.add(ownerKey)
       attachQueryRoot(query, rootId)
-      registerRootOwnedView(rootId, this.viewKind, transportHash)
+      registerRootOwnedRuntime(rootId, this.runtimeKind, transportHash)
 
       const transportCount = (this.transportSubCount.get(transportHash) || 0) + 1
       this.transportSubCount.set(transportHash, transportCount)
@@ -434,7 +434,7 @@ export class QuerySubscriptions {
       if (!query) {
         this.subCount.delete(ownerKey)
         this.removeOwnerMeta(ownerKey, transportHash)
-        unregisterRootOwnedView(rootId, this.viewKind, transportHash)
+        unregisterRootOwnedRuntime(rootId, this.runtimeKind, transportHash)
         const nextTransportCount = Math.max((this.transportSubCount.get(transportHash) || 0) - 1, 0)
         if (nextTransportCount > 0) this.transportSubCount.set(transportHash, nextTransportCount)
         else this.transportSubCount.delete(transportHash)
@@ -444,7 +444,7 @@ export class QuerySubscriptions {
       this.subCount.delete(ownerKey)
       this.removeOwnerMeta(ownerKey, transportHash)
       detachQueryRoot(query, rootId)
-      unregisterRootOwnedView(rootId, this.viewKind, transportHash)
+      unregisterRootOwnedRuntime(rootId, this.runtimeKind, transportHash)
 
       const nextTransportCount = Math.max((this.transportSubCount.get(transportHash) || 0) - 1, 0)
       this.transportSubCount.set(transportHash, nextTransportCount)
@@ -470,9 +470,9 @@ export class QuerySubscriptions {
     }
   }
 
-  async destroyByViewHash (viewHash, options = {}) {
+  async destroyByRuntimeHash (runtimeHash, options = {}) {
     const rootId = options.rootId ?? options.root?.[ROOT_ID]
-    const ownerKey = getQueryOwnerKey(rootId, viewHash)
+    const ownerKey = getQueryOwnerKey(rootId, runtimeHash)
     return this.destroyByOwnerKey(ownerKey, options)
   }
 

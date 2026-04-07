@@ -18,7 +18,7 @@ import {
   __getRootContextForTests,
   __resetRootContextsForTests,
   getRootOwnedSignalHashes,
-  getRootOwnedViewHashes
+  getRootOwnedRuntimeHashes
 } from '../orm/rootContext.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 
@@ -140,10 +140,10 @@ describeCompat('root close()', () => {
 
     await closeSignal($rootA)
 
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-A', 'query')), [])
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-A', 'aggregation')), [])
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-B', 'query')), [$queryB[QUERY_HASH]])
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-B', 'aggregation')), [$aggB[QUERY_HASH]])
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('close-view-root-A', 'query')), [])
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('close-view-root-A', 'aggregation')), [])
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('close-view-root-B', 'query')), [$queryB[QUERY_HASH]])
+    assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('close-view-root-B', 'aggregation')), [$aggB[QUERY_HASH]])
     assert.equal(querySubscriptions.transportSubCount.get($queryA[QUERY_HASH]), 1)
     assert.equal(aggregationSubscriptions.transportSubCount.get($aggA[QUERY_HASH]), 1)
     assert.deepEqual(getPrivateData('close-view-root-B', [QUERIES, $queryB[QUERY_HASH], 'ids']).slice().sort(), ['_1', '_2'])

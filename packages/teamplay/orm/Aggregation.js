@@ -48,7 +48,7 @@ class Aggregation extends Query {
 }
 
 export const aggregationSubscriptions = new QuerySubscriptions(Aggregation)
-aggregationSubscriptions.viewKind = 'aggregation'
+aggregationSubscriptions.runtimeKind = 'aggregation'
 
 function injectAggregationIds (extra, collectionName) {
   if (!Array.isArray(extra)) return

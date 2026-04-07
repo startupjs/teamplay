@@ -5,8 +5,8 @@ const ROOT_CONTEXTS = new Map()
 const CLOSED_ROOT_CONTEXTS = new Set()
 const EMPTY_SET = new Set()
 const EMPTY_MAP = new Map()
-const VIEW_KIND_QUERY = 'query'
-const VIEW_KIND_AGGREGATION = 'aggregation'
+const RUNTIME_KIND_QUERY = 'query'
+const RUNTIME_KIND_AGGREGATION = 'aggregation'
 
 export default class RootContext {
   constructor (rootId) {
@@ -19,8 +19,8 @@ export default class RootContext {
       change: new Map(),
       all: new Map()
     }
-    this.queryViewHashes = new Set()
-    this.aggregationViewHashes = new Set()
+    this.queryRuntimeHashes = new Set()
+    this.aggregationRuntimeHashes = new Set()
     this.signalHashes = new Set()
     this.directDocSubscriptions = new Map()
   }
@@ -58,25 +58,25 @@ export default class RootContext {
     delPath(segments, this.privateData)
   }
 
-  getViewHashes (kind) {
+  getRuntimeHashes (kind) {
     switch (kind) {
-      case VIEW_KIND_QUERY:
-        return this.queryViewHashes
-      case VIEW_KIND_AGGREGATION:
-        return this.aggregationViewHashes
+      case RUNTIME_KIND_QUERY:
+        return this.queryRuntimeHashes
+      case RUNTIME_KIND_AGGREGATION:
+        return this.aggregationRuntimeHashes
       default:
-        throw Error(`Unsupported root-owned view kind: ${kind}`)
+        throw Error(`Unsupported root-owned runtime kind: ${kind}`)
     }
   }
 
-  registerView (kind, viewHash) {
-    if (viewHash == null) return
-    this.getViewHashes(kind).add(viewHash)
+  registerRuntime (kind, runtimeHash) {
+    if (runtimeHash == null) return
+    this.getRuntimeHashes(kind).add(runtimeHash)
   }
 
-  unregisterView (kind, viewHash) {
-    if (viewHash == null) return
-    this.getViewHashes(kind).delete(viewHash)
+  unregisterRuntime (kind, runtimeHash) {
+    if (runtimeHash == null) return
+    this.getRuntimeHashes(kind).delete(runtimeHash)
   }
 
   registerSignalHash (signalHash) {
@@ -132,9 +132,9 @@ export default class RootContext {
     }
   }
 
-  resetViews () {
-    this.queryViewHashes.clear()
-    this.aggregationViewHashes.clear()
+  resetRuntimeHashes () {
+    this.queryRuntimeHashes.clear()
+    this.aggregationRuntimeHashes.clear()
   }
 
   resetPrivateData () {
@@ -156,8 +156,8 @@ export default class RootContext {
       this.refLinks.size === 0 &&
       this.activeRefs.size === 0 &&
       Object.values(this.modelListeners).every(store => store.size === 0) &&
-      this.queryViewHashes.size === 0 &&
-      this.aggregationViewHashes.size === 0 &&
+      this.queryRuntimeHashes.size === 0 &&
+      this.aggregationRuntimeHashes.size === 0 &&
       this.signalHashes.size === 0 &&
       this.directDocSubscriptions.size === 0
     )
@@ -179,20 +179,20 @@ export function getRootContexts () {
   return ROOT_CONTEXTS.values()
 }
 
-export function registerRootOwnedView (rootId, kind, viewHash) {
-  getRootContext(rootId, true).registerView(kind, viewHash)
+export function registerRootOwnedRuntime (rootId, kind, runtimeHash) {
+  getRootContext(rootId, true).registerRuntime(kind, runtimeHash)
 }
 
-export function unregisterRootOwnedView (rootId, kind, viewHash) {
+export function unregisterRootOwnedRuntime (rootId, kind, runtimeHash) {
   const context = getRootContext(rootId, false)
   if (!context) return
-  context.unregisterView(kind, viewHash)
+  context.unregisterRuntime(kind, runtimeHash)
 }
 
-export function getRootOwnedViewHashes (rootId, kind) {
+export function getRootOwnedRuntimeHashes (rootId, kind) {
   const context = getRootContext(rootId, false)
   if (!context) return EMPTY_SET
-  return context.getViewHashes(kind)
+  return context.getRuntimeHashes(kind)
 }
 
 export function registerRootOwnedSignalHash (rootId, signalHash) {
