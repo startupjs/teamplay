@@ -8,7 +8,7 @@ import {
   isPublicCollectionSignal,
   isPublicDocumentSignal
 } from '../SignalBase.js'
-import { getRoot, ROOT, getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
+import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
 import { publicOnly, fetchOnly, setFetchOnly } from '../connection.js'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
@@ -100,10 +100,12 @@ class SignalCompat extends Signal {
     if (arguments.length < 1 || arguments.length > 3) throw Error('Signal.query() expects one to three arguments')
     if (typeof collection !== 'string') throw Error('Signal.query() expects collection to be a string')
     const normalized = normalizeQueryParams(collection, params)
+    const root = getRoot(this) || (this[ROOT_ID] ? this : undefined)
+    const scopedOptions = withQueryScopeOptions(options, root)
     if (isAggregationParams(normalized)) {
-      return getAggregationSignal(collection, normalized, options)
+      return getAggregationSignal(collection, normalized, scopedOptions)
     }
-    return getQuerySignal(collection, normalized, options)
+    return getQuerySignal(collection, normalized, scopedOptions)
   }
 
   subscribe (...items) {
@@ -1244,6 +1246,21 @@ function normalizeQueryParams (collection, params) {
 
 function isAggregationParams (params) {
   return Boolean(params?.$aggregate || params?.$aggregationName)
+}
+
+function withQueryScopeOptions (options, $root) {
+  const rootId = $root?.[ROOT_ID]
+  const scopeKey = rootId != null && rootId !== GLOBAL_ROOT_ID ? rootId : undefined
+
+  if (!options || typeof options !== 'object') {
+    if (!$root) return options
+    return { root: $root, scopeKey }
+  }
+
+  const nextOptions = { ...options }
+  if (nextOptions.root == null && $root) nextOptions.root = $root
+  if (nextOptions.scopeKey == null && scopeKey != null) nextOptions.scopeKey = scopeKey
+  return nextOptions
 }
 
 function withFetchOnly (fn) {

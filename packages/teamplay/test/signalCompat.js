@@ -13,7 +13,7 @@ import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetSilentContextForTests, isSilentContextActive } from '../orm/Compat/silentContext.js'
 import { isMissingShareDoc } from '../orm/missingDoc.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
-import { PARAMS, HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
+import { PARAMS, HASH as QUERY_HASH, VIEW_HASH as QUERY_VIEW_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
 import { AGGREGATIONS } from '../orm/Aggregation.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 import {
@@ -65,6 +65,14 @@ function createCompatRoot () {
   rootSignal[ROOT_ID] = '_compat_root_'
   cache.set('', rootProxy)
   return rootProxy
+}
+
+function getQueryRuntimeHash ($query) {
+  return $query[QUERY_VIEW_HASH] || $query[QUERY_HASH]
+}
+
+function getAggregationRuntimeHash ($aggregation) {
+  return $aggregation[QUERY_VIEW_HASH] || $aggregation[QUERY_HASH]
 }
 
 describe('SignalCompat.at()', () => {
@@ -1686,7 +1694,9 @@ class NonCompatRefUserModel extends BaseSignal {
 ;(isCompatMode ? describe : describe.skip)('SignalCompat query API', () => {
   const collection = 'compatQueryApi'
   let cleanupQueryHashes = []
+  let cleanupQueryRuntimeHashes = []
   let cleanupAggregationHashes = []
+  let cleanupAggregationRuntimeHashes = []
   let $compatRoot
   let prevSubscriptionGcDelay
 
@@ -1712,10 +1722,14 @@ class NonCompatRefUserModel extends BaseSignal {
       if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
       delete getConnection().collections?.[collection]?.[id]
     }
+    for (const hash of cleanupQueryRuntimeHashes) _del([QUERIES, hash])
     for (const hash of cleanupQueryHashes) _del([QUERIES, hash])
+    for (const hash of cleanupAggregationRuntimeHashes) _del([AGGREGATIONS, hash])
     for (const hash of cleanupAggregationHashes) _del([AGGREGATIONS, hash])
     cleanupQueryHashes = []
+    cleanupQueryRuntimeHashes = []
     cleanupAggregationHashes = []
+    cleanupAggregationRuntimeHashes = []
     __resetImperativeQueryReadyTimeoutForTests()
     _del([collection])
   })
@@ -1733,10 +1747,12 @@ class NonCompatRefUserModel extends BaseSignal {
   it('query() normalizes shorthand params', () => {
     const $byIds = $compatRoot.query(collection, ['a', 'b'])
     cleanupQueryHashes.push($byIds[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($byIds))
     assert.deepEqual($byIds[PARAMS], { _id: { $in: ['a', 'b'] } })
 
     const $byId = $compatRoot.query(collection, 'a')
     cleanupQueryHashes.push($byId[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($byId))
     assert.deepEqual($byId[PARAMS], { _id: 'a' })
   })
 
@@ -1750,17 +1766,19 @@ class NonCompatRefUserModel extends BaseSignal {
 
     const $query = $compatRoot.query(collection, { active: true })
     cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
     await $query.subscribe()
     assert.deepEqual($query.getIds().slice().sort(), [id1])
     await $query.unsubscribe()
     assert.equal($query.get(), undefined)
 
-    _set([QUERIES, $query[QUERY_HASH], 'extra'], { count: 3 })
+    _set([QUERIES, getQueryRuntimeHash($query), 'extra'], { count: 3 })
     assert.deepEqual($query.getExtra(), { count: 3 })
 
     const $agg = $compatRoot.query(collection, { $aggregate: [{ $match: { active: true } }] })
     cleanupAggregationHashes.push($agg[QUERY_HASH])
-    _set([AGGREGATIONS, $agg[QUERY_HASH]], [{ _id: 'a' }, { _id: 'b' }])
+    cleanupAggregationRuntimeHashes.push(getAggregationRuntimeHash($agg))
+    _set([AGGREGATIONS, getAggregationRuntimeHash($agg)], [{ _id: 'a' }, { _id: 'b' }])
     assert.deepEqual($agg.getExtra(), [{ _id: 'a' }, { _id: 'b' }])
   })
 
@@ -1771,6 +1789,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
     const $query = $compatRoot.query(collection, { active: true })
     cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
     await $compatRoot.subscribe([$query, null], undefined)
     assert.deepEqual($query.getIds(), [id])
     await $compatRoot.unsubscribe([$query, undefined])
@@ -1779,10 +1798,12 @@ class NonCompatRefUserModel extends BaseSignal {
   it('await query.subscribe waits for full materialization and returns dense docs', async () => {
     const $query = $compatRoot.query(collection, { active: true })
     cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
+    const queryRuntimeHash = getQueryRuntimeHash($query)
 
     querySubscriptions.subscribe = async () => {
-      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc1', 'doc2'])
-      _set([QUERIES, $query[QUERY_HASH], 'docs'], [{ _id: 'doc1', id: 'doc1', active: true }, undefined])
+      _set([QUERIES, queryRuntimeHash, 'ids'], ['doc1', 'doc2'])
+      _set([QUERIES, queryRuntimeHash, 'docs'], [{ _id: 'doc1', id: 'doc1', active: true }, undefined])
       setTimeout(() => {
         _set([collection, 'doc1'], { _id: 'doc1', id: 'doc1', active: true })
         _set([collection, 'doc2'], { _id: 'doc2', id: 'doc2', active: true })
@@ -1798,10 +1819,12 @@ class NonCompatRefUserModel extends BaseSignal {
   it('await root.subscribe($query) also waits for full materialization', async () => {
     const $query = $compatRoot.query(collection, { active: true })
     cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
+    const queryRuntimeHash = getQueryRuntimeHash($query)
 
     querySubscriptions.subscribe = async () => {
-      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc3', 'doc4'])
-      _set([QUERIES, $query[QUERY_HASH], 'docs'], [undefined, { _id: 'doc4', id: 'doc4', active: true }])
+      _set([QUERIES, queryRuntimeHash, 'ids'], ['doc3', 'doc4'])
+      _set([QUERIES, queryRuntimeHash, 'docs'], [undefined, { _id: 'doc4', id: 'doc4', active: true }])
       setTimeout(() => {
         _set([collection, 'doc3'], { _id: 'doc3', id: 'doc3', active: true })
         _set([collection, 'doc4'], { _id: 'doc4', id: 'doc4', active: true })
@@ -1816,10 +1839,12 @@ class NonCompatRefUserModel extends BaseSignal {
   it('await query.fetch also waits for full materialization', async () => {
     const $query = $compatRoot.query(collection, { active: true })
     cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
+    const queryRuntimeHash = getQueryRuntimeHash($query)
 
     querySubscriptions.subscribe = async () => {
-      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc6', 'doc7'])
-      _set([QUERIES, $query[QUERY_HASH], 'docs'], [{ _id: 'doc6', id: 'doc6', active: true }, undefined])
+      _set([QUERIES, queryRuntimeHash, 'ids'], ['doc6', 'doc7'])
+      _set([QUERIES, queryRuntimeHash, 'docs'], [{ _id: 'doc6', id: 'doc6', active: true }, undefined])
       setTimeout(() => {
         _set([collection, 'doc6'], { _id: 'doc6', id: 'doc6', active: true })
         _set([collection, 'doc7'], { _id: 'doc7', id: 'doc7', active: true })
@@ -1834,11 +1859,13 @@ class NonCompatRefUserModel extends BaseSignal {
   it('throws when imperative compat query never fully materializes', async () => {
     const $query = $compatRoot.query(collection, { active: true })
     cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
     __setImperativeQueryReadyTimeoutForTests(20)
+    const queryRuntimeHash = getQueryRuntimeHash($query)
 
     querySubscriptions.subscribe = async () => {
-      _set([QUERIES, $query[QUERY_HASH], 'ids'], ['doc5'])
-      _set([QUERIES, $query[QUERY_HASH], 'docs'], [undefined])
+      _set([QUERIES, queryRuntimeHash, 'ids'], ['doc5'])
+      _set([QUERIES, queryRuntimeHash, 'docs'], [undefined])
     }
 
     await assert.rejects(
@@ -1993,10 +2020,11 @@ class NonCompatRefUserModel extends BaseSignal {
       ]
     }
     const $agg = $root.query('courses', query)
-    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
+    cleanupSegments.push([AGGREGATIONS, aggregationRuntimeHash])
 
     const rows1 = [{ _id: 'row1', name: 'First' }, { _id: 'row2', name: 'Second' }]
-    _set([AGGREGATIONS, $agg[QUERY_HASH]], rows1)
+    _set([AGGREGATIONS, aggregationRuntimeHash], rows1)
     $agg.refExtra(`${$base.path()}.dataSource`)
 
     assert.deepEqual($base.dataSource.get(), rows1)
@@ -2004,7 +2032,7 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($root.get(`${$base.path()}.dataSource`), rows1)
 
     const rows2 = [{ _id: 'row3', name: 'Third' }]
-    _set([AGGREGATIONS, $agg[QUERY_HASH]], rows2)
+    _set([AGGREGATIONS, aggregationRuntimeHash], rows2)
 
     assert.deepEqual($base.dataSource.get(), rows2)
     assert.deepEqual($base.at('dataSource').get(), rows2)
@@ -2021,9 +2049,10 @@ class NonCompatRefUserModel extends BaseSignal {
         { $project: { _id: 1, description: 1 } }
       ]
     })
-    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
+    cleanupSegments.push([AGGREGATIONS, aggregationRuntimeHash])
 
-    _set([AGGREGATIONS, $agg[QUERY_HASH]], [
+    _set([AGGREGATIONS, aggregationRuntimeHash], [
       {
         _id: 'row-sync-at',
         description: { text: 'hello' }
@@ -2034,7 +2063,7 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal(typeof $fromAt, 'function')
     assert.equal(typeof $fromAt.get, 'function')
     assert.equal($fromAt.get(), 'hello')
-    assert.equal($fromAt.path(), `${AGGREGATIONS}.${$agg[QUERY_HASH]}.0.description.text`)
+    assert.equal($fromAt.path(), `${AGGREGATIONS}.${aggregationRuntimeHash}.0.description.text`)
   })
 
   it('scope() on aggregation rows is synchronous and does not return a promise', () => {
@@ -2045,9 +2074,10 @@ class NonCompatRefUserModel extends BaseSignal {
         { $limit: 1 }
       ]
     })
-    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
+    cleanupSegments.push([AGGREGATIONS, aggregationRuntimeHash])
 
-    _set([AGGREGATIONS, $agg[QUERY_HASH]], [
+    _set([AGGREGATIONS, aggregationRuntimeHash], [
       {
         _id: 'row-sync-scope',
         description: { text: 'world' }
@@ -2069,10 +2099,11 @@ class NonCompatRefUserModel extends BaseSignal {
         { $limit: 5 }
       ]
     })
-    cleanupSegments.push([AGGREGATIONS, $agg[QUERY_HASH]])
+    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
+    cleanupSegments.push([AGGREGATIONS, aggregationRuntimeHash])
 
     const sourceRows = [{ _id: 's1', name: 'Source' }]
-    _set([AGGREGATIONS, $agg[QUERY_HASH]], sourceRows)
+    _set([AGGREGATIONS, aggregationRuntimeHash], sourceRows)
     $agg.refExtra(`${$base.path()}.dataSource`)
     assert.deepEqual($base.dataSource.get(), sourceRows)
 

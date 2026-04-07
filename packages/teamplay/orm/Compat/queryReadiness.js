@@ -1,7 +1,7 @@
 import { getRaw, set as _set } from '../dataTree.js'
 import { getConnection } from '../connection.js'
 import { isMissingShareDoc } from '../missingDoc.js'
-import { QUERIES, HASH, PARAMS, COLLECTION_NAME } from '../Query.js'
+import { QUERIES, HASH, VIEW_HASH, PARAMS, COLLECTION_NAME } from '../Query.js'
 import { AGGREGATIONS, IS_AGGREGATION } from '../Aggregation.js'
 
 let imperativeQueryReadyTimeoutMs = 1000
@@ -68,24 +68,25 @@ export function __resetImperativeQueryReadyTimeoutForTests () {
 function isImperativeQueryReady ($query) {
   const collection = $query[COLLECTION_NAME]
   const hash = $query[HASH]
+  const viewHash = $query[VIEW_HASH] || hash
   const params = $query[PARAMS]
   const hasExtraResult = isExtraQuery(params)
-  if (hasExtraResult) return getRaw([QUERIES, hash, 'extra']) !== undefined
+  if (hasExtraResult) return getRaw([QUERIES, viewHash, 'extra']) !== undefined
 
   const isAggregate = !!$query[IS_AGGREGATION] || isAggregationQuery(params)
   if (isAggregate) {
     return isQueryReady(
       collection,
-      [QUERIES, hash, 'ids'],
-      [QUERIES, hash, 'docs'],
-      [QUERIES, hash, 'extra'],
-      [AGGREGATIONS, hash],
+      [QUERIES, viewHash, 'ids'],
+      [QUERIES, viewHash, 'docs'],
+      [QUERIES, viewHash, 'extra'],
+      [AGGREGATIONS, viewHash],
       true,
       false
     )
   }
 
-  const ids = getRaw([QUERIES, hash, 'ids'])
+  const ids = getRaw([QUERIES, viewHash, 'ids'])
   if (!Array.isArray(ids)) return false
   for (const id of ids) {
     if (id == null) continue
@@ -100,7 +101,8 @@ function syncQueryDocsFromCollection ($query) {
 
   const collection = $query[COLLECTION_NAME]
   const hash = $query[HASH]
-  const ids = getRaw([QUERIES, hash, 'ids'])
+  const viewHash = $query[VIEW_HASH] || hash
+  const ids = getRaw([QUERIES, viewHash, 'ids'])
   if (!Array.isArray(ids)) return
 
   const docs = []
@@ -113,14 +115,15 @@ function syncQueryDocsFromCollection ($query) {
     docs.push(doc)
   }
 
-  _set([QUERIES, hash, 'docs'], docs)
+  _set([QUERIES, viewHash, 'docs'], docs)
 }
 
 function createImperativeQueryReadinessError ($query, timeoutMs) {
   const collection = $query[COLLECTION_NAME]
   const hash = $query[HASH]
+  const viewHash = $query[VIEW_HASH] || hash
   const params = $query[PARAMS]
-  const ids = getRaw([QUERIES, hash, 'ids'])
+  const ids = getRaw([QUERIES, viewHash, 'ids'])
   const missingDocs = []
 
   if (Array.isArray(ids)) {
@@ -141,6 +144,7 @@ function createImperativeQueryReadinessError ($query, timeoutMs) {
       Collection: ${collection}
       Params: ${JSON.stringify(params)}
       Hash: ${hash}
+      View hash: ${viewHash}
       Ids: ${JSON.stringify(ids)}
       Missing docs: ${JSON.stringify(missingDocs)}
   `)

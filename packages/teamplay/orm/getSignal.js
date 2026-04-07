@@ -65,7 +65,9 @@ export default function getSignal ($root, segments = [], {
   if (segments.length > 2) {
     if (segments[0] === LOCAL) {
       dependencies.push(getSignal($root, segments.slice(0, 2)))
-    } else if (isPublicCollection(segments[0]) || segments[0] === QUERIES || segments[0] === AGGREGATIONS) {
+    } else if (segments[0] === QUERIES || segments[0] === AGGREGATIONS) {
+      dependencies.push(getSignal(signal[ROOT], segments.slice(0, 2)))
+    } else if (isPublicCollection(segments[0])) {
       dependencies.push(getSignal(undefined, segments.slice(0, 2)))
     }
   }

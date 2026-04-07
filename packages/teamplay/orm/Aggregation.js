@@ -1,7 +1,19 @@
 import { raw } from '@nx-js/observer-util'
 import { set as _set, del as _del, getRaw } from './dataTree.js'
 import getSignal from './getSignal.js'
-import { QuerySubscriptions, hashQuery, Query, HASH, PARAMS, COLLECTION_NAME, parseQueryHash } from './Query.js'
+import {
+  QuerySubscriptions,
+  hashQuery,
+  hashScopedSignalHash,
+  Query,
+  HASH,
+  VIEW_HASH,
+  PARAMS,
+  COLLECTION_NAME,
+  TRANSPORT_HASH,
+  SCOPED_SIGNAL_HASH,
+  parseQueryHash
+} from './Query.js'
 import Signal, { SEGMENTS } from './Signal.js'
 import { getIdFieldsForSegments, isPlainObject } from './idFields.js'
 
@@ -10,21 +22,31 @@ export const AGGREGATIONS = '$aggregations'
 
 class Aggregation extends Query {
   _initData () {
-    {
-      const extra = raw(this.shareQuery.extra)
-      injectAggregationIds(extra, this.collectionName)
-      _set([AGGREGATIONS, this.hash], extra)
-    }
+    this._syncAllViewsData()
 
     this.shareQuery.on('extra', extra => {
       extra = raw(extra)
       injectAggregationIds(extra, this.collectionName)
-      _set([AGGREGATIONS, this.hash], extra)
+      this._forEachView(viewHash => {
+        _set([AGGREGATIONS, viewHash], extra)
+      })
     })
   }
 
+  _syncViewData (viewHash) {
+    if (!this.shareQuery) return
+    const extra = raw(this.shareQuery.extra)
+    injectAggregationIds(extra, this.collectionName)
+    _set([AGGREGATIONS, viewHash], extra)
+  }
+
+  _removeViewData (viewHash) {
+    _del([AGGREGATIONS, viewHash])
+  }
+
   _removeData () {
-    _del([AGGREGATIONS, this.hash])
+    this._forEachView(viewHash => this._removeViewData(viewHash))
+    this.viewHashes.clear()
   }
 }
 
@@ -44,13 +66,20 @@ function injectAggregationIds (extra, collectionName) {
 
 export function getAggregationSignal (collectionName, params, options) {
   params = JSON.parse(JSON.stringify(params))
-  const hash = hashQuery(collectionName, params)
+  const transportHash = hashQuery(collectionName, params)
+  const { root, scopeKey, signalOptions } = parseAggregationSignalOptions(options)
+  const viewHash = hashScopedSignalHash(transportHash, scopeKey ?? signalOptions.rootId)
 
-  const $aggregation = getSignal(undefined, [AGGREGATIONS, hash], options)
+  const $aggregation = getSignal(root, [AGGREGATIONS, viewHash], signalOptions)
   $aggregation[IS_AGGREGATION] ??= true
   $aggregation[COLLECTION_NAME] ??= collectionName
   $aggregation[PARAMS] ??= params
-  $aggregation[HASH] ??= hash
+  // Backward compatible operational hash:
+  // - used by subscription managers and aggregation/query data storage.
+  $aggregation[HASH] ??= transportHash
+  $aggregation[VIEW_HASH] ??= viewHash
+  $aggregation[TRANSPORT_HASH] ??= transportHash
+  $aggregation[SCOPED_SIGNAL_HASH] ??= viewHash
   return $aggregation
 }
 
@@ -76,7 +105,27 @@ export function getAggregationDocId (segments, method = getRaw) {
 export function getAggregationCollectionName (segments) {
   if (!(segments.length >= 2)) return
   if (!(segments[0] === AGGREGATIONS)) return
-  const hash = segments[1]
+  const hash = resolveTransportHash(segments[1])
   const { collectionName } = parseQueryHash(hash)
   return collectionName
+}
+
+function parseAggregationSignalOptions (options) {
+  if (!options || typeof options !== 'object') {
+    return {
+      root: undefined,
+      scopeKey: undefined,
+      signalOptions: {}
+    }
+  }
+  const { root, scopeKey, ...signalOptions } = options
+  return { root, scopeKey, signalOptions }
+}
+
+function resolveTransportHash (hash) {
+  try {
+    const parsed = JSON.parse(hash)
+    if (parsed?.querySignal?.[1]) return parsed.querySignal[1]
+  } catch {}
+  return hash
 }

@@ -22,12 +22,17 @@ import {
   COLLECTION_NAME as QUERY_COLLECTION_NAME,
   PARAMS as QUERY_PARAMS,
   HASH as QUERY_HASH,
+  VIEW_HASH as QUERY_VIEW_HASH,
+  SCOPED_SIGNAL_HASH as QUERY_SCOPED_SIGNAL_HASH,
+  QUERIES,
   getQuerySignal,
   hashQuery
 } from '../orm/Query.js'
+import { getAggregationSignal, AGGREGATIONS, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { SEGMENTS } from '../orm/Signal.js'
 import { getConnection } from '../orm/connection.js'
 import { get as _get } from '../orm/dataTree.js'
+import { getRootSignal } from '../orm/Root.js'
 import connect from '../connect/test.js'
 import {
   getSubscriptionGcDelay,
@@ -520,6 +525,149 @@ describe('QuerySubscriptions', () => {
 
     assert.deepEqual($query[QUERY_PARAMS], expectedParams, 'stored params should match normalized shape')
     assert.equal(hash, JSON.stringify({ query: ['gamesQuery', expectedParams] }), 'query hash should match normalized params')
+  })
+
+  it('creates distinct query signals per non-global scope while keeping transport hash', () => {
+    const params = { active: true }
+    const $queryScopeA1 = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeA' })
+    const $queryScopeA2 = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeA' })
+    const $queryScopeB = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeB' })
+    const $queryGlobal = getQuerySignal('gamesQuery', params)
+
+    assert.equal($queryScopeA1, $queryScopeA2, 'same scope should reuse cached query signal')
+    assert.notEqual($queryScopeA1, $queryScopeB, 'different scope should get different query signal instance')
+    assert.notEqual($queryScopeA1, $queryGlobal, 'scoped and unscoped queries should not share signal instance')
+
+    assert.equal($queryScopeA1[QUERY_HASH], $queryScopeB[QUERY_HASH], 'transport hash should stay shared across scopes')
+    assert.notEqual(
+      $queryScopeA1[QUERY_SCOPED_SIGNAL_HASH],
+      $queryScopeB[QUERY_SCOPED_SIGNAL_HASH],
+      'scoped signal hash should differ across scopes'
+    )
+  })
+
+  it('shares QuerySubscriptions transport entry across scoped query signals', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const params = { active: true }
+    const $queryScopeA = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeA_transport' })
+    const $queryScopeB = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeB_transport' })
+    const transportHash = $queryScopeA[QUERY_HASH]
+    const viewHashA = $queryScopeA[QUERY_VIEW_HASH]
+    const viewHashB = $queryScopeB[QUERY_VIEW_HASH]
+
+    await manager.subscribe($queryScopeA)
+    await manager.subscribe($queryScopeB)
+    assert.equal(manager.subCount.get(viewHashA), 1, 'scope A should keep independent ref-count')
+    assert.equal(manager.subCount.get(viewHashB), 1, 'scope B should keep independent ref-count')
+    assert.equal(manager.transportSubCount.get(transportHash), 2, 'transport ref-count should aggregate across scopes')
+    assert.equal(manager.queries.size, 1, 'single transport query entry should be shared')
+
+    await manager.unsubscribe($queryScopeA)
+    assert.equal(manager.subCount.get(viewHashA), undefined, 'scope A ref-count should be fully cleaned after unsubscribe')
+    assert.equal(manager.subCount.get(viewHashB), 1, 'scope B ref-count should stay active')
+    assert.equal(manager.transportSubCount.get(transportHash), 1, 'first scoped unsubscribe should keep transport query alive')
+    await manager.unsubscribe($queryScopeB)
+    assert.equal(manager.subCount.get(viewHashB), undefined, 'last scoped unsubscribe should remove scope B ref-count')
+    assert.equal(manager.transportSubCount.get(transportHash), undefined, 'transport ref-count should be removed')
+    assert.equal(manager.queries.get(transportHash), undefined, 'transport query entry should be removed')
+  })
+
+  it('creates distinct aggregation signals per non-global scope while keeping transport hash', () => {
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const $rootScopeA = getRootSignal({ rootId: '_aggregationScopeA' })
+    const $rootScopeB = getRootSignal({ rootId: '_aggregationScopeB' })
+    const $aggregationScopeA1 = getAggregationSignal('gamesQuery', params, { root: $rootScopeA, scopeKey: '_aggregationScopeA' })
+    const $aggregationScopeA2 = getAggregationSignal('gamesQuery', params, { root: $rootScopeA, scopeKey: '_aggregationScopeA' })
+    const $aggregationScopeB = getAggregationSignal('gamesQuery', params, { root: $rootScopeB, scopeKey: '_aggregationScopeB' })
+    const $aggregationGlobal = getAggregationSignal('gamesQuery', params)
+
+    assert.equal($aggregationScopeA1, $aggregationScopeA2, 'same scope should reuse cached aggregation signal')
+    assert.notEqual($aggregationScopeA1, $aggregationScopeB, 'different scope should get different aggregation signal')
+    assert.notEqual($aggregationScopeA1, $aggregationGlobal, 'scoped and unscoped aggregations should not share signal')
+
+    assert.equal(
+      $aggregationScopeA1[QUERY_HASH],
+      $aggregationScopeB[QUERY_HASH],
+      'aggregation transport hash should stay shared across scopes'
+    )
+    assert.notEqual(
+      $aggregationScopeA1[QUERY_SCOPED_SIGNAL_HASH],
+      $aggregationScopeB[QUERY_SCOPED_SIGNAL_HASH],
+      'aggregation scoped signal hash should differ across scopes'
+    )
+  })
+
+  it('keeps query runtime materialized per root view while sharing transport subscription', async () => {
+    const collectionName = 'gamesScopedViews'
+    const doc1 = getConnection().get(collectionName, '_1')
+    const doc2 = getConnection().get(collectionName, '_2')
+    await cbPromise(cb => doc1.create({ name: 'Scoped 1', active: true }, cb))
+    await cbPromise(cb => doc2.create({ name: 'Scoped 2', active: true }, cb))
+
+    const $rootScopeA = getRootSignal({ rootId: '_queryScopeA' })
+    const $rootScopeB = getRootSignal({ rootId: '_queryScopeB' })
+    const $queryScopeA = getQuerySignal(collectionName, { active: true }, {
+      root: $rootScopeA,
+      scopeKey: '_queryScopeA'
+    })
+    const $queryScopeB = getQuerySignal(collectionName, { active: true }, {
+      root: $rootScopeB,
+      scopeKey: '_queryScopeB'
+    })
+    await querySubscriptions.subscribe($queryScopeA)
+    await querySubscriptions.subscribe($queryScopeB)
+
+    assert.equal($queryScopeA[QUERY_HASH], $queryScopeB[QUERY_HASH], 'transport hash should stay shared')
+    assert.notEqual($queryScopeA[QUERY_VIEW_HASH], $queryScopeB[QUERY_VIEW_HASH], 'view hash should differ')
+
+    const idsA = _get([QUERIES, $queryScopeA[QUERY_VIEW_HASH], 'ids'])
+    const idsB = _get([QUERIES, $queryScopeB[QUERY_VIEW_HASH], 'ids'])
+    assert.deepEqual(idsA.slice().sort(), ['_1', '_2'])
+    assert.deepEqual(idsB.slice().sort(), ['_1', '_2'])
+    assert.notEqual(idsA, idsB, 'per-root view state should use separate arrays')
+
+    await querySubscriptions.unsubscribe($queryScopeA)
+    assert.equal(_get([QUERIES, $queryScopeA[QUERY_VIEW_HASH]]), undefined, 'scope A runtime state should be removed')
+    assert.deepEqual(_get([QUERIES, $queryScopeB[QUERY_VIEW_HASH], 'ids']).slice().sort(), ['_1', '_2'], 'scope B should remain')
+
+    await querySubscriptions.unsubscribe($queryScopeB)
+    await cbPromise(cb => doc1.del(cb))
+    await cbPromise(cb => doc2.del(cb))
+  })
+
+  it('keeps aggregation runtime materialized per root view while sharing transport subscription', async () => {
+    const collectionName = 'gamesScopedAggregations'
+    const doc1 = getConnection().get(collectionName, '_1')
+    const doc2 = getConnection().get(collectionName, '_2')
+    await cbPromise(cb => doc1.create({ name: 'Agg 1', active: true }, cb))
+    await cbPromise(cb => doc2.create({ name: 'Agg 2', active: true }, cb))
+
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const $rootScopeA = getRootSignal({ rootId: '_aggregationViewScopeA' })
+    const $rootScopeB = getRootSignal({ rootId: '_aggregationViewScopeB' })
+    const $aggregationScopeA = getAggregationSignal(collectionName, params, { root: $rootScopeA, scopeKey: '_aggregationViewScopeA' })
+    const $aggregationScopeB = getAggregationSignal(collectionName, params, { root: $rootScopeB, scopeKey: '_aggregationViewScopeB' })
+
+    await aggregationSubscriptions.subscribe($aggregationScopeA)
+    await aggregationSubscriptions.subscribe($aggregationScopeB)
+
+    assert.equal($aggregationScopeA[QUERY_HASH], $aggregationScopeB[QUERY_HASH], 'transport hash should stay shared')
+    assert.notEqual($aggregationScopeA[QUERY_VIEW_HASH], $aggregationScopeB[QUERY_VIEW_HASH], 'view hash should differ')
+
+    const aggA = _get([AGGREGATIONS, $aggregationScopeA[QUERY_VIEW_HASH]])
+    const aggB = _get([AGGREGATIONS, $aggregationScopeB[QUERY_VIEW_HASH]])
+    assert.equal(Array.isArray(aggA), true)
+    assert.equal(Array.isArray(aggB), true)
+    assert.deepEqual(aggA.map(item => item._id).sort(), ['_1', '_2'])
+    assert.deepEqual(aggB.map(item => item._id).sort(), ['_1', '_2'])
+
+    await aggregationSubscriptions.unsubscribe($aggregationScopeA)
+    assert.equal(_get([AGGREGATIONS, $aggregationScopeA[QUERY_VIEW_HASH]]), undefined, 'scope A aggregation runtime should be removed')
+    assert.equal(Array.isArray(_get([AGGREGATIONS, $aggregationScopeB[QUERY_VIEW_HASH]])), true, 'scope B should remain')
+
+    await aggregationSubscriptions.unsubscribe($aggregationScopeB)
+    await cbPromise(cb => doc1.del(cb))
+    await cbPromise(cb => doc2.del(cb))
   })
 })
 

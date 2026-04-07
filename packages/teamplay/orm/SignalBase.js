@@ -41,7 +41,7 @@ import {
 } from './dataTree.js'
 import getSignal, { rawSignal } from './getSignal.js'
 import { docSubscriptions } from './Doc.js'
-import { IS_QUERY, HASH, QUERIES } from './Query.js'
+import { IS_QUERY, HASH, VIEW_HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
@@ -132,8 +132,8 @@ export class Signal extends Function {
   [GET] (method) {
     if (arguments.length > 1) throw Error('Signal[GET]() only accepts method as an argument')
     if (this[IS_QUERY]) {
-      const hash = this[HASH]
-      return method([QUERIES, hash, 'docs'])
+      const viewHash = this[VIEW_HASH] || this[HASH]
+      return method([QUERIES, viewHash, 'docs'])
     }
     return method(this[SEGMENTS])
   }
@@ -159,10 +159,11 @@ export class Signal extends Function {
   getIds () {
     if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
     if (this[IS_QUERY]) {
-      const ids = _get([QUERIES, this[HASH], 'ids'])
+      const viewHash = this[VIEW_HASH] || this[HASH]
+      const ids = _get([QUERIES, viewHash, 'ids'])
       if (!Array.isArray(ids)) {
         // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal.getIds() on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
+        console.warn('Signal.getIds() on Query didn\'t find ids', [QUERIES, viewHash, 'ids'])
         return []
       }
       return ids
@@ -218,10 +219,11 @@ export class Signal extends Function {
 
   * [Symbol.iterator] () {
     if (this[IS_QUERY]) {
-      const ids = _get([QUERIES, this[HASH], 'ids'])
+      const viewHash = this[VIEW_HASH] || this[HASH]
+      const ids = _get([QUERIES, viewHash, 'ids'])
       if (!Array.isArray(ids)) {
         // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal iterator on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
+        console.warn('Signal iterator on Query didn\'t find ids', [QUERIES, viewHash, 'ids'])
         return
       }
       for (const id of ids) yield getSignal(getRoot(this), [this[SEGMENTS][0], id])
@@ -235,11 +237,11 @@ export class Signal extends Function {
   [ARRAY_METHOD] (method, nonArrayReturnValue, ...args) {
     if (this[IS_QUERY]) {
       const collection = this[SEGMENTS][0]
-      const hash = this[HASH]
-      const ids = _get([QUERIES, hash, 'ids'])
+      const viewHash = this[VIEW_HASH] || this[HASH]
+      const ids = _get([QUERIES, viewHash, 'ids'])
       if (!Array.isArray(ids)) {
         // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal array method on Query didn\'t find ids', [QUERIES, hash, 'ids'], method)
+        console.warn('Signal array method on Query didn\'t find ids', [QUERIES, viewHash, 'ids'], method)
         return nonArrayReturnValue
       }
       return ids.map(
@@ -576,8 +578,9 @@ export const extremelyLateBindings = {
     key = transformAlias(signal[SEGMENTS], key)
     key = maybeTransformToArrayIndex(key)
     if (signal[IS_QUERY]) {
-      if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'ids'])
-      if (key === 'extra') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'extra'])
+      const viewHash = signal[VIEW_HASH] || signal[HASH]
+      if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, viewHash, 'ids'])
+      if (key === 'extra') return getSignal(getRoot(signal), [QUERIES, viewHash, 'extra'])
       if (QUERY_METHODS.includes(key)) return Reflect.get(signal, key, receiver)
     }
     return getSignal(getRoot(signal), [...signal[SEGMENTS], key])
