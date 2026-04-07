@@ -8,8 +8,12 @@ import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isSilentContextActive } from './Compat/silentContext.js'
 import { isCompatEnv } from './compatEnv.js'
 import { isMissingShareDoc } from './missingDoc.js'
+import { GLOBAL_ROOT_ID } from './Root.js'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
+export const ROOTS_BUCKET = '__roots'
+const REGEX_PRIVATE_COLLECTION = /^[_$]/
+const UNSCOPED_PRIVATE_COLLECTIONS = new Set(['$queries', '$aggregations'])
 
 export const dataTreeRaw = {}
 const dataTree = observable(dataTreeRaw)
@@ -26,7 +30,35 @@ function shouldEmitModelEvents (tree) {
 function emitModelEvent (segments, prevValue, meta, tree = dataTree) {
   if (!shouldEmitModelEvents(tree)) return
   const value = getRaw(segments)
-  emitModelChange(segments, value, prevValue, meta)
+  const logicalSegments = segments[0] === ROOTS_BUCKET ? segments.slice(2) : segments
+  emitModelChange(logicalSegments, value, prevValue, meta)
+}
+
+export function isPrivateCollectionSegments (segments) {
+  return Array.isArray(segments) &&
+    segments.length > 0 &&
+    REGEX_PRIVATE_COLLECTION.test(String(segments[0])) &&
+    !UNSCOPED_PRIVATE_COLLECTIONS.has(String(segments[0]))
+}
+
+export function resolveStorageSegments (rootId, logicalSegments) {
+  if (!rootId || rootId === GLOBAL_ROOT_ID || !isPrivateCollectionSegments(logicalSegments)) return logicalSegments
+  return [ROOTS_BUCKET, rootId, ...logicalSegments]
+}
+
+export function getLogicalRootSnapshot (rootId, tree = dataTree) {
+  const snapshot = {}
+  for (const key of Object.keys(tree)) {
+    if (key === ROOTS_BUCKET) continue
+    snapshot[key] = tree[key]
+  }
+  if (!rootId || rootId === GLOBAL_ROOT_ID) return snapshot
+  const privateRoot = get([ROOTS_BUCKET, rootId], tree)
+  if (!privateRoot || typeof privateRoot !== 'object') return snapshot
+  for (const key of Object.keys(privateRoot)) {
+    snapshot[key] = privateRoot[key]
+  }
+  return snapshot
 }
 
 export function get (segments, tree = dataTree) {

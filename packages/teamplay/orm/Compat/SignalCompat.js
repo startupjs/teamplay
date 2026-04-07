@@ -17,6 +17,7 @@ import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFiel
 import {
   del as _del,
   setReplace as _setReplace,
+  resolveStorageSegments,
   incrementPublic as _incrementPublic,
   arrayPush as _arrayPush,
   arrayUnshift as _arrayUnshift,
@@ -608,13 +609,21 @@ class SignalCompat extends Signal {
     const mirrorOnly = !!($to?.[IS_QUERY] || $to?.[IS_AGGREGATION])
     const { stop, onChange } = createRefLink($from, $to, { mirrorOnly, options })
     store.set(fromPath, { stop })
+    const fromRootId = (getRoot($from) || $from)?.[ROOT_ID]
+    const toRootId = (getRoot($to) || $to)?.[ROOT_ID]
     if (!mirrorOnly) {
       $from[REF_TARGET] = $to
-      setRefLink(fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], { mirrorOnly: false })
+      setRefLink(fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
+        mirrorOnly: false,
+        fromRootId,
+        toRootId
+      })
     } else {
       setRefLink(fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
         mirrorOnly: true,
-        onChange
+        onChange,
+        fromRootId,
+        toRootId
       })
       if ($from[REF_TARGET]) delete $from[REF_TARGET]
     }
@@ -807,7 +816,7 @@ function forwardRef ($signal, methodName, args) {
 function setDiffDeepBypassRef ($signal, value) {
   const segments = $signal[SEGMENTS]
   if (isPublicCollection(segments[0])) return Signal.prototype.set.call($signal, value)
-  return _setReplace(segments, value)
+  return _setReplace(getStorageSegmentsForSignal($signal, segments), value)
 }
 
 function mirrorRefMutationFromTarget (targetSegments, value) {
@@ -816,12 +825,19 @@ function mirrorRefMutationFromTarget (targetSegments, value) {
   for (const link of getRefLinks().values()) {
     if (!isPathPrefix(link.toSegments, targetSegments)) continue
     const suffix = targetSegments.slice(link.toSegments.length)
-    updates.push({ segments: link.fromSegments.concat(suffix), value: deepCopy(value) })
+    updates.push({
+      fromRootId: link.fromRootId,
+      segments: link.fromSegments.concat(suffix),
+      value: deepCopy(value)
+    })
   }
   if (!updates.length) return
-  const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
   runInModelEventsSilentContext(() => {
     for (const update of updates) {
+      const $root = getRootSignal({
+        rootId: update.fromRootId || GLOBAL_ROOT_ID,
+        rootFunction: universal$
+      })
       const $target = resolveSignal($root, update.segments)
       setDiffDeepBypassRef($target, update.value)
     }
@@ -1020,7 +1036,7 @@ function setReplacePrivateCompatSync ($signal, value) {
   if (isPublicDocPath(segments)) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
-  _setReplace(segments, value)
+  _setReplace(getStorageSegmentsForSignal($signal, segments), value)
   mirrorRefMutationFromTarget(segments, value)
 }
 
@@ -1029,7 +1045,7 @@ function delPrivateCompatSync ($signal) {
   if (segments.length === 0) throw Error('Can\'t delete the root signal data')
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
-  _del(segments)
+  _del(getStorageSegmentsForSignal($signal, segments))
 }
 
 function deepEqualCompat (left, right) {
@@ -1076,7 +1092,7 @@ async function setReplaceOnSignal ($signal, value) {
     return result
   }
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  const result = _setReplace(segments, value)
+  const result = _setReplace(getStorageSegmentsForSignal($signal, segments), value)
   mirrorRefMutationFromTarget(segments, value)
   return result
 }
@@ -1096,7 +1112,7 @@ async function incrementOnSignal ($signal, byNumber) {
     return currentValue + byNumber
   }
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  _setReplace(segments, currentValue + byNumber)
+  _setReplace(getStorageSegmentsForSignal($signal, segments), currentValue + byNumber)
   return currentValue + byNumber
 }
 
@@ -1129,7 +1145,7 @@ async function arrayPushOnSignal ($signal, value) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayPush(segments, value)
+  return _arrayPush(getStorageSegmentsForSignal($signal, segments), value)
 }
 
 async function arrayUnshiftOnSignal ($signal, value) {
@@ -1138,7 +1154,7 @@ async function arrayUnshiftOnSignal ($signal, value) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayUnshift(segments, value)
+  return _arrayUnshift(getStorageSegmentsForSignal($signal, segments), value)
 }
 
 async function arrayInsertOnSignal ($signal, index, values) {
@@ -1147,7 +1163,7 @@ async function arrayInsertOnSignal ($signal, index, values) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayInsert(segments, index, values)
+  return _arrayInsert(getStorageSegmentsForSignal($signal, segments), index, values)
 }
 
 async function arrayPopOnSignal ($signal) {
@@ -1156,7 +1172,7 @@ async function arrayPopOnSignal ($signal) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayPop(segments)
+  return _arrayPop(getStorageSegmentsForSignal($signal, segments))
 }
 
 async function arrayShiftOnSignal ($signal) {
@@ -1165,7 +1181,7 @@ async function arrayShiftOnSignal ($signal) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayShift(segments)
+  return _arrayShift(getStorageSegmentsForSignal($signal, segments))
 }
 
 async function arrayRemoveOnSignal ($signal, index, howMany) {
@@ -1174,7 +1190,7 @@ async function arrayRemoveOnSignal ($signal, index, howMany) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayRemove(segments, index, howMany)
+  return _arrayRemove(getStorageSegmentsForSignal($signal, segments), index, howMany)
 }
 
 async function arrayMoveOnSignal ($signal, from, to, howMany) {
@@ -1183,7 +1199,7 @@ async function arrayMoveOnSignal ($signal, from, to, howMany) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayMove(segments, from, to, howMany)
+  return _arrayMove(getStorageSegmentsForSignal($signal, segments), from, to, howMany)
 }
 
 async function stringInsertOnSignal ($signal, index, text) {
@@ -1192,7 +1208,7 @@ async function stringInsertOnSignal ($signal, index, text) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _stringInsertLocal(segments, index, text)
+  return _stringInsertLocal(getStorageSegmentsForSignal($signal, segments), index, text)
 }
 
 async function stringRemoveOnSignal ($signal, index, howMany) {
@@ -1201,7 +1217,12 @@ async function stringRemoveOnSignal ($signal, index, howMany) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _stringRemoveLocal(segments, index, howMany)
+  return _stringRemoveLocal(getStorageSegmentsForSignal($signal, segments), index, howMany)
+}
+
+function getStorageSegmentsForSignal ($signal, segments = $signal[SEGMENTS]) {
+  const $root = getRoot($signal) || $signal
+  return resolveStorageSegments($root?.[ROOT_ID], segments)
 }
 
 function shallowCopy (value) {

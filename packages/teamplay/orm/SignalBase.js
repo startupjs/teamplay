@@ -18,7 +18,10 @@ import {
   setReplace as _setReplace,
   del as _del,
   setPublicDoc as _setPublicDoc,
+  dataTreeRaw,
   getRaw,
+  getLogicalRootSnapshot,
+  resolveStorageSegments,
   incrementPublic as _incrementPublic,
   arrayPush as _arrayPush,
   arrayUnshift as _arrayUnshift,
@@ -43,7 +46,7 @@ import getSignal, { rawSignal } from './getSignal.js'
 import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, VIEW_HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
-import { ROOT_FUNCTION, getRoot } from './Root.js'
+import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
 import {
   DEFAULT_ID_FIELDS,
@@ -131,11 +134,15 @@ export class Signal extends Function {
 
   [GET] (method) {
     if (arguments.length > 1) throw Error('Signal[GET]() only accepts method as an argument')
+    if (this[SEGMENTS].length === 0) {
+      const $root = getRoot(this) || this
+      return getLogicalRootSnapshot($root?.[ROOT_ID], method === getRaw ? dataTreeRaw : undefined)
+    }
     if (this[IS_QUERY]) {
       const viewHash = this[VIEW_HASH] || this[HASH]
       return method([QUERIES, viewHash, 'docs'])
     }
-    return method(this[SEGMENTS])
+    return method(getStorageSegmentsForSignal(this))
   }
 
   get () {
@@ -228,7 +235,7 @@ export class Signal extends Function {
       }
       for (const id of ids) yield getSignal(getRoot(this), [this[SEGMENTS][0], id])
     } else {
-      const items = _get(this[SEGMENTS])
+      const items = _get(getStorageSegmentsForSignal(this))
       if (!Array.isArray(items)) return
       for (let i = 0; i < items.length; i++) yield getSignal(getRoot(this), [...this[SEGMENTS], i])
     }
@@ -248,7 +255,7 @@ export class Signal extends Function {
         id => getSignal(getRoot(this), [collection, id])
       )[method](...args)
     }
-    const items = _get(this[SEGMENTS])
+    const items = _get(getStorageSegmentsForSignal(this))
     if (!Array.isArray(items)) return nonArrayReturnValue
     return Array(items.length).fill().map(
       (_, index) => getSignal(getRoot(this), [...this[SEGMENTS], index])
@@ -279,7 +286,7 @@ export class Signal extends Function {
       await _setPublicDoc(this[SEGMENTS], value)
     } else {
       if (publicOnly) throw Error(ERRORS.publicOnly)
-      _set(this[SEGMENTS], value)
+      _set(getStorageSegmentsForSignal(this), value)
     }
   }
 
@@ -309,7 +316,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayPush(segments, value)
+    return _arrayPush(getStorageSegmentsForSignal(this, segments), value)
   }
 
   async pop () {
@@ -319,7 +326,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayPop(segments)
+    return _arrayPop(getStorageSegmentsForSignal(this, segments))
   }
 
   async unshift (value) {
@@ -329,7 +336,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayUnshift(segments, value)
+    return _arrayUnshift(getStorageSegmentsForSignal(this, segments), value)
   }
 
   async shift () {
@@ -339,7 +346,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayShift(segments)
+    return _arrayShift(getStorageSegmentsForSignal(this, segments))
   }
 
   async insert (index, values) {
@@ -353,7 +360,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayInsert(segments, index, values)
+    return _arrayInsert(getStorageSegmentsForSignal(this, segments), index, values)
   }
 
   async remove (index, howMany = 1) {
@@ -367,7 +374,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayRemove(segments, index, howMany)
+    return _arrayRemove(getStorageSegmentsForSignal(this, segments), index, howMany)
   }
 
   async move (from, to, howMany = 1) {
@@ -381,7 +388,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayMove(segments, from, to, howMany)
+    return _arrayMove(getStorageSegmentsForSignal(this, segments), from, to, howMany)
   }
 
   async stringInsert (index, text) {
@@ -395,7 +402,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _stringInsertLocal(segments, index, text)
+    return _stringInsertLocal(getStorageSegmentsForSignal(this, segments), index, text)
   }
 
   async stringRemove (index, howMany = 1) {
@@ -409,7 +416,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _stringRemoveLocal(segments, index, howMany)
+    return _stringRemoveLocal(getStorageSegmentsForSignal(this, segments), index, howMany)
   }
 
   async increment (value) {
@@ -428,7 +435,7 @@ export class Signal extends Function {
       return currentValue + value
     }
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    _setReplace(segments, currentValue + value)
+    _setReplace(getStorageSegmentsForSignal(this, segments), currentValue + value)
     return currentValue + value
   }
 
@@ -450,7 +457,7 @@ export class Signal extends Function {
       await _setPublicDoc(this[SEGMENTS], undefined, true)
     } else {
       if (publicOnly) throw Error(ERRORS.publicOnly)
-      _del(this[SEGMENTS])
+      _del(getStorageSegmentsForSignal(this))
     }
   }
 
@@ -469,6 +476,11 @@ function ensureValueTarget ($signal) {
   if ($signal[SEGMENTS].length < 2) throw Error('Can\'t mutate on a collection or root signal')
   if ($signal[IS_QUERY]) throw Error('Mutators can\'t be used on a query signal')
   return $signal[SEGMENTS]
+}
+
+function getStorageSegmentsForSignal ($signal, segments = $signal[SEGMENTS]) {
+  const $root = getRoot($signal) || $signal
+  return resolveStorageSegments($root?.[ROOT_ID], segments)
 }
 
 // dot syntax returns a child signal only if no such method or property exists

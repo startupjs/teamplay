@@ -32,6 +32,8 @@ function deepCopyCompat (value) {
   return JSON.parse(JSON.stringify(value))
 }
 
+let compatRootCounter = 0
+
 function createCompatSignal (segments = [], rootProxy, cache) {
   const cacheKey = segments.join('.')
   const existing = cache?.get(cacheKey)
@@ -50,7 +52,7 @@ function createCompatSignal (segments = [], rootProxy, cache) {
   return proxy
 }
 
-function createCompatRoot () {
+function createCompatRoot (rootId = `_compat_root_${compatRootCounter++}`) {
   const cache = new Map()
   const rootSignal = new SignalCompat([])
   const rootProxy = new Proxy(rootSignal, {
@@ -62,7 +64,7 @@ function createCompatRoot () {
     }
   })
   rootSignal[ROOT] = rootProxy
-  rootSignal[ROOT_ID] = '_compat_root_'
+  rootSignal[ROOT_ID] = rootId
   cache.set('', rootProxy)
   return rootProxy
 }
@@ -153,6 +155,7 @@ describe('SignalCompat.at()', () => {
 
     assert.equal($base.get('user.profile.title'), 'Alice')
     assert.equal($base.at('user.profile').get('title'), 'Alice')
+    assert.equal($base.user.profile.title.get(), 'Alice')
 
     await $base.at('user.profile').set('title', 'Bob')
     assert.equal($root._users.u1.get('profile.title'), 'Bob')
@@ -596,6 +599,57 @@ describe('SignalCompat.getCopy()/getDeepCopy()', () => {
     assert.throws(() => $base.getCopy(1, 2), /expects a single argument/)
     assert.throws(() => $base.getCopy(1.5), /expects a string or integer argument/)
     assert.throws(() => $base.getDeepCopy(null), /expects a string or integer argument/)
+  })
+})
+
+describe('SignalCompat root-scoped private storage', () => {
+  afterEach(() => {
+    _del(['__roots'])
+  })
+
+  it('isolates compat get/set on _session between roots', async () => {
+    const $rootA = createCompatRoot('_compat_private_A')
+    const $rootB = createCompatRoot('_compat_private_B')
+
+    await $rootA.set('_session.userId', 'a')
+    await $rootB.set('_session.userId', 'b')
+
+    assert.equal($rootA.get('_session.userId'), 'a')
+    assert.equal($rootB.get('_session.userId'), 'b')
+  })
+
+  it('isolates compat mutators on private paths between roots', async () => {
+    const $rootA = createCompatRoot('_compat_private_mut_A')
+    const $rootB = createCompatRoot('_compat_private_mut_B')
+
+    await $rootA.set('_session.items', [])
+    await $rootB.set('_session.items', [])
+    await $rootA.scope('_session.items').push('a1')
+    await $rootB.scope('_session.items').push('b1')
+    await $rootA.set('_session.count', 0)
+    await $rootB.set('_session.count', 0)
+    await $rootA.scope('_session.count').increment()
+    await $rootB.scope('_session.count').increment(2)
+
+    assert.deepEqual($rootA.get('_session.items'), ['a1'])
+    assert.deepEqual($rootB.get('_session.items'), ['b1'])
+    assert.equal($rootA.get('_session.count'), 1)
+    assert.equal($rootB.get('_session.count'), 2)
+  })
+
+  it('root get/peek expose only owning private data', async () => {
+    const $rootA = createCompatRoot('_compat_private_snapshot_A')
+    const $rootB = createCompatRoot('_compat_private_snapshot_B')
+
+    await $rootA.set('_session.userId', 'a')
+    await $rootB.set('_session.userId', 'b')
+    const snapshot = $rootA.get()
+    const rawSnapshot = $rootA.peek()
+
+    assert.equal(snapshot.__roots, undefined)
+    assert.equal(rawSnapshot.__roots, undefined)
+    assert.equal(snapshot._session.userId, 'a')
+    assert.equal(rawSnapshot._session.userId, 'a')
   })
 })
 

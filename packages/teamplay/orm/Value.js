@@ -1,5 +1,6 @@
 import { SEGMENTS } from './Signal.js'
-import { set as _set, del as _del } from './dataTree.js'
+import { set as _set, del as _del, resolveStorageSegments } from './dataTree.js'
+import { getRoot, ROOT_ID } from './Root.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 
 export const LOCAL = '$local'
@@ -14,14 +15,15 @@ class ValueSubscriptions {
     const id = $value[SEGMENTS][1]
     if (this.initialized.has(id)) return
 
-    _set([LOCAL, id], value)
+    const rootId = getRoot($value)?.[ROOT_ID] || $value?.[ROOT_ID]
+    _set(resolveStorageSegments(rootId, [LOCAL, id]), value)
     this.initialized.set(id, true)
-    this.fr.register($value, id)
+    this.fr.register($value, [rootId, id])
   }
 
-  destroy (id) {
+  destroy ([rootId, id]) {
     this.initialized.delete(id)
-    _del([LOCAL, id])
+    _del(resolveStorageSegments(rootId, [LOCAL, id]))
   }
 }
 

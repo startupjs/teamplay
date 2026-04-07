@@ -13,6 +13,8 @@ export function setRefLink (fromPath, toPath, fromSegments, toSegments, options 
     toPath,
     fromSegments: normalizedFromSegments,
     toSegments: normalizedToSegments,
+    fromRootId: options.fromRootId,
+    toRootId: options.toRootId,
     mirrorOnly: !!options.mirrorOnly,
     onChange: typeof options.onChange === 'function' ? options.onChange : undefined
   })
