@@ -8,8 +8,32 @@ import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idField
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 import { isMissingShareDoc } from './missingDoc.js'
+import { getRoot, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
+import {
+  registerRootOwnedDirectDocSubscription,
+  unregisterRootOwnedDirectDocSubscription,
+  getRootOwnedDirectDocSubscriptions,
+  clearRootOwnedDirectDocSubscriptions
+} from './rootContext.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
+const DOC_FINALIZATION_TOKENS = new WeakMap()
+
+function getDocFinalizationToken ($doc) {
+  let token = DOC_FINALIZATION_TOKENS.get($doc)
+  if (!token) {
+    token = {}
+    DOC_FINALIZATION_TOKENS.set($doc, token)
+  }
+  return token
+}
+
+function getOwningRootId ($doc) {
+  const $root = getRoot($doc)
+  const rootId = $root?.[ROOT_ID]
+  if (rootId == null || rootId === GLOBAL_ROOT_ID) return undefined
+  return rootId
+}
 
 class Doc {
   initialized
@@ -159,7 +183,7 @@ export class DocSubscriptions {
     } else {
       doc = new this.DocClass(...segments)
       this.docs.set(hash, doc)
-      this.fr.register($doc, segments, $doc)
+      this.fr.register($doc, segments, getDocFinalizationToken($doc))
       doc.init()
     }
   }
@@ -167,10 +191,14 @@ export class DocSubscriptions {
   subscribe ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
+    const rootId = getOwningRootId($doc)
     this.cancelDestroy(hash)
     let count = this.subCount.get(hash) || 0
     count += 1
     this.subCount.set(hash, count)
+    if (rootId) {
+      registerRootOwnedDirectDocSubscription(rootId, hash, segments, getDocFinalizationToken($doc))
+    }
     if (count > 1) {
       const existingDoc = this.docs.get(hash)
       if (existingDoc) return existingDoc._subscribing
@@ -197,6 +225,7 @@ export class DocSubscriptions {
   async unsubscribe ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
+    const rootId = getOwningRootId($doc)
     let count = this.subCount.get(hash) || 0
     count -= 1
     if (count < 0) {
@@ -208,7 +237,10 @@ export class DocSubscriptions {
       return
     }
     this.subCount.set(hash, 0)
-    this.fr.unregister($doc)
+    this.fr.unregister(getDocFinalizationToken($doc))
+    if (rootId) {
+      unregisterRootOwnedDirectDocSubscription(rootId, hash, getDocFinalizationToken($doc))
+    }
     await this.scheduleDestroy(segments)
   }
 
@@ -243,6 +275,25 @@ export class DocSubscriptions {
       await this.destroyByHash(hash, { force: true })
     }
     this.subCount.clear()
+  }
+
+  async releaseRootOwnedSubscriptions (rootId) {
+    const entries = Array.from(getRootOwnedDirectDocSubscriptions(rootId).entries())
+    if (entries.length === 0) return
+    for (const [hash, entry] of entries) {
+      for (const token of entry.tokenCounts.keys()) {
+        this.fr.unregister(token)
+      }
+      const currentCount = this.subCount.get(hash) || 0
+      const nextCount = Math.max(currentCount - entry.count, 0)
+      if (nextCount > 0) {
+        this.subCount.set(hash, nextCount)
+        continue
+      }
+      this.subCount.set(hash, 0)
+      await this.destroyByHash(hash, { force: true })
+    }
+    clearRootOwnedDirectDocSubscriptions(rootId)
   }
 
   async flushPendingDestroys () {

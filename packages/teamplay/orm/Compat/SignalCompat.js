@@ -46,6 +46,8 @@ import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refF
 import { runInBatch } from '../batchScheduler.js'
 import { runInSilentContext, runInModelEventsSilentContext } from './silentContext.js'
 import universal$ from '../../react/universal$.js'
+import { getRootContext } from '../rootContext.js'
+import disposeRootContext from '../disposeRootContext.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -143,9 +145,14 @@ class SignalCompat extends Signal {
     if (callback != null && typeof callback !== 'function') {
       throw Error('Signal.close() expects callback to be a function')
     }
-    // Compatibility shim for legacy `model.close()` calls.
-    // Teamplay uses a global root signal and does not have per-model instances to dispose.
-    if (callback) callback()
+    const $root = getRoot(this) || this
+    const rootId = $root?.[ROOT_ID]
+    disposeRootContext(rootId)
+      .then(() => callback?.())
+      .catch(err => {
+        if (callback) callback(err)
+        else console.error(err)
+      })
   }
 
   silent (value) {
@@ -739,11 +746,10 @@ function createSilentSignalWrapper ($signal, enabled = true) {
   return new Proxy($signal, handler)
 }
 
-const REFS = Symbol('compat refs')
 function getRefStore ($signal) {
   const $root = getRoot($signal) || $signal
-  $root[REFS] ??= new Map()
-  return $root[REFS]
+  const rootId = $root?.[ROOT_ID]
+  return getRootContext(rootId, true).activeRefs
 }
 
 function createRefLink ($from, $to, { mirrorOnly = false } = {}) {

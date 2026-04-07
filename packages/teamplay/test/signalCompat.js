@@ -407,11 +407,15 @@ describe('SignalCompat.root.connection', () => {
 })
 
 describe('SignalCompat.close()', () => {
-  it('is a no-op compat shim and supports optional callback', () => {
+  it('returns undefined and supports optional callback', async () => {
     const $root = createCompatRoot()
     let called = 0
-    const result = $root.close(() => { called++ })
+    const result = $root.close(err => {
+      assert.equal(err, undefined)
+      called++
+    })
     assert.equal(result, undefined)
+    await new Promise(resolve => setTimeout(resolve, 0))
     assert.equal(called, 1)
   })
 

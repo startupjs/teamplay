@@ -9,6 +9,7 @@ import { isCompatEnv } from './compatEnv.js'
 import { getConnection } from './connection.js'
 import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
 import { getSignalIdentityHash } from './rootScope.js'
+import { registerRootOwnedSignalHash } from './rootContext.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -57,6 +58,10 @@ export default function getSignal ($root, segments = [], {
     signal[ROOT] = proxy
   }
   PROXY_TO_SIGNAL.set(proxy, signal)
+  const owningRootId = $root?.[ROOT_ID] || rootId
+  if (owningRootId != null && owningRootId !== GLOBAL_ROOT_ID) {
+    registerRootOwnedSignalHash(owningRootId, signalHash)
+  }
   const dependencies = []
 
   // if the signal is a child of the local value created through the $() function,
@@ -113,6 +118,9 @@ export function rawSignal (proxy) {
 }
 
 export { PROXIES_CACHE as __DEBUG_SIGNALS_CACHE__ }
+export function purgeSignalHashes (hashes) {
+  for (const hash of hashes) PROXIES_CACHE.delete(hash)
+}
 
 const ERRORS = {
   rootIdRequired: 'Root signal must have a rootId specified',
