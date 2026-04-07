@@ -1,6 +1,6 @@
 import getSignal from './getSignal.js'
 import disposeRootContext from './disposeRootContext.js'
-import { reviveRootContext } from './rootContext.js'
+import { getRootContext, reviveRootContext } from './rootContext.js'
 import { isGlobalRootId, normalizeRootId } from './rootScope.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 
@@ -22,11 +22,13 @@ const REGISTERED_ROOT_SIGNALS = new WeakSet()
 // TODO: create a separate local root for private collections
 export function getRootSignal ({
   rootFunction,
+  fetchOnly,
   // connection,
   rootId = '_' + createRandomString(8),
   ...options
 }) {
   reviveRootContext(rootId)
+  getRootContext(rootId, true, { fetchOnly })
   const $root = getSignal(undefined, [], {
     rootId,
     ...options
@@ -42,6 +44,14 @@ export function getRoot (signal) {
   if (signal[ROOT]) return signal[ROOT]
   else if (signal[ROOT_ID]) return signal
   else return undefined
+}
+
+export function getRootFetchOnly (rootOrRootId) {
+  const rootId = typeof rootOrRootId === 'string'
+    ? rootOrRootId
+    : rootOrRootId?.[ROOT_ID]
+  const context = getRootContext(rootId, false)
+  return context?.getFetchOnly() ?? false
 }
 
 export function registerRootFinalizer ($root) {

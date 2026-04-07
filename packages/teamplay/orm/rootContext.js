@@ -1,5 +1,6 @@
 import { observable } from '@nx-js/observer-util'
 import { normalizeRootId } from './rootScope.js'
+import { getDefaultFetchOnly } from './connection.js'
 
 const ROOT_CONTEXTS = new Map()
 const CLOSED_ROOT_CONTEXTS = new Set()
@@ -9,8 +10,9 @@ const RUNTIME_KIND_QUERY = 'query'
 const RUNTIME_KIND_AGGREGATION = 'aggregation'
 
 export default class RootContext {
-  constructor (rootId) {
+  constructor (rootId, { fetchOnly } = {}) {
     this.rootId = normalizeRootId(rootId)
+    this.fetchOnly = fetchOnly == null ? getDefaultFetchOnly() : !!fetchOnly
     this.privateDataRaw = {}
     this.privateData = observable(this.privateDataRaw)
     this.refLinks = new Map()
@@ -32,6 +34,14 @@ export default class RootContext {
       this.modelListeners[eventName] = store
     }
     return store
+  }
+
+  getFetchOnly () {
+    return !!this.fetchOnly
+  }
+
+  setFetchOnly (value) {
+    this.fetchOnly = !!value
   }
 
   getPrivateDataRoot () {
@@ -164,12 +174,12 @@ export default class RootContext {
   }
 }
 
-export function getRootContext (rootId, create = true) {
+export function getRootContext (rootId, create = true, options = {}) {
   const normalizedRootId = normalizeRootId(rootId)
   if (create && CLOSED_ROOT_CONTEXTS.has(normalizedRootId)) return undefined
   let context = ROOT_CONTEXTS.get(normalizedRootId)
   if (!context && create) {
-    context = new RootContext(normalizedRootId)
+    context = new RootContext(normalizedRootId, options)
     ROOT_CONTEXTS.set(normalizedRootId, context)
   }
   return context

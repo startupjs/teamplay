@@ -1,6 +1,9 @@
 import { isCompatEnv } from './compatEnv.js'
 
 export let connection
+// Transitional note: this is the default fetchOnly mode used when a new root is
+// created without an explicit fetchOnly option. Runtime behavior will move to
+// RootContext ownership in follow-up commits.
 export let fetchOnly
 export let publicOnly
 
@@ -15,6 +18,10 @@ export function getConnection () {
 
 export function setFetchOnly (_fetchOnly) {
   fetchOnly = _fetchOnly
+}
+
+export function getDefaultFetchOnly () {
+  return !!fetchOnly
 }
 
 export function setPublicOnly (_publicOnly) {
