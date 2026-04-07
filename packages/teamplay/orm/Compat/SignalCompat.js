@@ -9,7 +9,7 @@ import {
   isPublicDocumentSignal
 } from '../SignalBase.js'
 import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.js'
-import { publicOnly, fetchOnly, setFetchOnly } from '../connection.js'
+import { isPrivateMutationForbidden, fetchOnly, setFetchOnly } from '../connection.js'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
@@ -1108,7 +1108,7 @@ async function setReplaceOnSignal ($signal, value) {
     mirrorRefMutationFromTarget(segments, value)
     return result
   }
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   const result = setReplacePrivateData(getOwningRootId($signal), segments, value)
   mirrorRefMutationFromTarget(segments, value)
   return result
@@ -1128,7 +1128,7 @@ async function incrementOnSignal ($signal, byNumber) {
     await _incrementPublic(segments, byNumber)
     return currentValue + byNumber
   }
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   setReplacePrivateData(getOwningRootId($signal), segments, currentValue + byNumber)
   return currentValue + byNumber
 }
@@ -1161,7 +1161,7 @@ async function arrayPushOnSignal ($signal, value) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return arrayPushPrivateData(getOwningRootId($signal), segments, value)
 }
 
@@ -1170,7 +1170,7 @@ async function arrayUnshiftOnSignal ($signal, value) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return arrayUnshiftPrivateData(getOwningRootId($signal), segments, value)
 }
 
@@ -1179,7 +1179,7 @@ async function arrayInsertOnSignal ($signal, index, values) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return arrayInsertPrivateData(getOwningRootId($signal), segments, index, values)
 }
 
@@ -1188,7 +1188,7 @@ async function arrayPopOnSignal ($signal) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return arrayPopPrivateData(getOwningRootId($signal), segments)
 }
 
@@ -1197,7 +1197,7 @@ async function arrayShiftOnSignal ($signal) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return arrayShiftPrivateData(getOwningRootId($signal), segments)
 }
 
@@ -1206,7 +1206,7 @@ async function arrayRemoveOnSignal ($signal, index, howMany) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return arrayRemovePrivateData(getOwningRootId($signal), segments, index, howMany)
 }
 
@@ -1215,7 +1215,7 @@ async function arrayMoveOnSignal ($signal, from, to, howMany) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return arrayMovePrivateData(getOwningRootId($signal), segments, from, to, howMany)
 }
 
@@ -1224,7 +1224,7 @@ async function stringInsertOnSignal ($signal, index, text) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return stringInsertPrivateData(getOwningRootId($signal), segments, index, text)
 }
 
@@ -1233,7 +1233,7 @@ async function stringRemoveOnSignal ($signal, index, howMany) {
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
-  if (publicOnly) throw Error(ERRORS.publicOnly)
+  if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   return stringRemovePrivateData(getOwningRootId($signal), segments, index, howMany)
 }
 

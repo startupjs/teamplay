@@ -34,7 +34,7 @@ import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.js'
-import { publicOnly } from './connection.js'
+import { isPrivateMutationForbidden } from './connection.js'
 import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
@@ -300,7 +300,7 @@ export class Signal extends Function {
     if (isPublicCollection(this[SEGMENTS][0])) {
       await _setPublicDoc(this[SEGMENTS], value)
     } else {
-      if (publicOnly) throw Error(ERRORS.publicOnly)
+      if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
       setPrivateData(getOwningRootId(this), this[SEGMENTS], value)
     }
   }
@@ -330,7 +330,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayPushPrivateData(getOwningRootId(this), segments, value)
   }
 
@@ -340,7 +340,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayPopPrivateData(getOwningRootId(this), segments)
   }
 
@@ -350,7 +350,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayUnshiftPrivateData(getOwningRootId(this), segments, value)
   }
 
@@ -360,7 +360,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayShiftPrivateData(getOwningRootId(this), segments)
   }
 
@@ -374,7 +374,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayInsertPrivateData(getOwningRootId(this), segments, index, values)
   }
 
@@ -388,7 +388,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
@@ -402,7 +402,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayMovePrivateData(getOwningRootId(this), segments, from, to, howMany)
   }
 
@@ -416,7 +416,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return stringInsertPrivateData(getOwningRootId(this), segments, index, text)
   }
 
@@ -430,7 +430,7 @@ export class Signal extends Function {
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return stringRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
@@ -449,7 +449,7 @@ export class Signal extends Function {
       await _incrementPublic(segments, value)
       return currentValue + value
     }
-    if (publicOnly) throw Error(ERRORS.publicOnly)
+    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     setReplacePrivateData(getOwningRootId(this), segments, currentValue + value)
     return currentValue + value
   }
@@ -471,7 +471,7 @@ export class Signal extends Function {
       if (this[SEGMENTS].length === 1) throw Error('Can\'t delete the whole collection')
       await _setPublicDoc(this[SEGMENTS], undefined, true)
     } else {
-      if (publicOnly) throw Error(ERRORS.publicOnly)
+      if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
       delPrivateData(getOwningRootId(this), this[SEGMENTS])
     }
   }

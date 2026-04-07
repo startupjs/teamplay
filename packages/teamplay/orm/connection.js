@@ -1,3 +1,5 @@
+import { isCompatEnv } from './compatEnv.js'
+
 export let connection
 export let fetchOnly
 export let publicOnly
@@ -17,6 +19,10 @@ export function setFetchOnly (_fetchOnly) {
 
 export function setPublicOnly (_publicOnly) {
   publicOnly = _publicOnly
+}
+
+export function isPrivateMutationForbidden () {
+  return !!publicOnly && !isCompatEnv()
 }
 
 const ERRORS = {
