@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { setFetchOnly, getDefaultFetchOnly } from '../orm/connection.js'
+import { setDefaultFetchOnly, getDefaultFetchOnly } from '../orm/connection.js'
 import { getRootFetchOnly, getRootSignal } from '../orm/Root.js'
 import { __getRootContextForTests, __resetRootContextsForTests } from '../orm/rootContext.js'
 
@@ -12,7 +12,7 @@ describe('root-level fetchOnly config', () => {
   })
 
   afterEach(() => {
-    setFetchOnly(previousDefaultFetchOnly)
+    setDefaultFetchOnly(previousDefaultFetchOnly)
     __resetRootContextsForTests()
   })
 
@@ -24,7 +24,7 @@ describe('root-level fetchOnly config', () => {
   })
 
   it('uses connection default fetchOnly for new roots', () => {
-    setFetchOnly(true)
+    setDefaultFetchOnly(true)
     const $root = getRootSignal({ rootId: 'fetch-root-default' })
 
     assert.equal(getRootFetchOnly($root), true)
@@ -32,7 +32,7 @@ describe('root-level fetchOnly config', () => {
   })
 
   it('allows roots to differ in fetchOnly', () => {
-    setFetchOnly(false)
+    setDefaultFetchOnly(false)
 
     const $rootA = getRootSignal({ rootId: 'fetch-root-a', fetchOnly: true })
     const $rootB = getRootSignal({ rootId: 'fetch-root-b', fetchOnly: false })
@@ -42,10 +42,10 @@ describe('root-level fetchOnly config', () => {
   })
 
   it('does not let later default changes affect existing roots', () => {
-    setFetchOnly(false)
+    setDefaultFetchOnly(false)
     const $root = getRootSignal({ rootId: 'fetch-root-stable' })
 
-    setFetchOnly(true)
+    setDefaultFetchOnly(true)
 
     assert.equal(getRootFetchOnly($root), false)
     assert.equal(__getRootContextForTests('fetch-root-stable')?.getFetchOnly(), false)

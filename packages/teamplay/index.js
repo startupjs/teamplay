@@ -65,7 +65,15 @@ export {
   useOnce,
   useSyncEffect
 } from './react/helpers.js'
-export { connection, setConnection, getConnection, fetchOnly, setFetchOnly, publicOnly, setPublicOnly } from './orm/connection.js'
+export {
+  connection,
+  setConnection,
+  getConnection,
+  getDefaultFetchOnly,
+  setDefaultFetchOnly,
+  publicOnly,
+  setPublicOnly
+} from './orm/connection.js'
 export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.js'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.js'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'

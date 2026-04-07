@@ -809,6 +809,78 @@ describe('QuerySubscriptions', () => {
     assert.equal($aggregationA1[QUERY_HASH], $aggregationB[QUERY_HASH], 'aggregation transport hash should stay shared')
   })
 
+  it('uses fetch transport for aggregation subscribe on fetchOnly roots', async () => {
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const manager = new QuerySubscriptions(MockQuery)
+    const $root = getRootSignal({ rootId: '_aggregation_fetch_root', fetchOnly: true })
+    const $aggregation = getAggregationSignal('gamesQuery', params, { root: $root })
+    const transportHash = $aggregation[QUERY_HASH]
+
+    await manager.subscribe($aggregation, { intent: 'subscribe' })
+
+    const aggregation = manager.queries.get(transportHash)
+    assert.deepEqual(aggregation.events, ['subscribe:fetch'])
+    assert.equal(aggregation.activeTransportMode, 'fetch')
+    assert.equal(aggregation.subscribed, false)
+
+    await manager.unsubscribe($aggregation, { intent: 'subscribe' })
+    await manager.clear()
+  })
+
+  it('uses subscribe transport for aggregation subscribe on live roots', async () => {
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const manager = new QuerySubscriptions(MockQuery)
+    const $root = getRootSignal({ rootId: '_aggregation_live_root', fetchOnly: false })
+    const $aggregation = getAggregationSignal('gamesQuery', params, { root: $root })
+    const transportHash = $aggregation[QUERY_HASH]
+
+    await manager.subscribe($aggregation, { intent: 'subscribe' })
+
+    const aggregation = manager.queries.get(transportHash)
+    assert.deepEqual(aggregation.events, ['subscribe:subscribe'])
+    assert.equal(aggregation.activeTransportMode, 'subscribe')
+    assert.equal(aggregation.subscribed, true)
+
+    await manager.unsubscribe($aggregation, { intent: 'subscribe' })
+    await manager.clear()
+  })
+
+  it('upgrades and downgrades aggregation transport for mixed root modes', async () => {
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const manager = new QuerySubscriptions(MockQuery)
+    const $fetchRoot = getRootSignal({ rootId: '_aggregation_mixed_fetch_root', fetchOnly: true })
+    const $liveRoot = getRootSignal({ rootId: '_aggregation_mixed_live_root', fetchOnly: false })
+    const $fetchAggregation = getAggregationSignal('gamesQuery', params, { root: $fetchRoot })
+    const $liveAggregation = getAggregationSignal('gamesQuery', params, { root: $liveRoot })
+    const transportHash = $fetchAggregation[QUERY_HASH]
+
+    await manager.subscribe($fetchAggregation, { intent: 'subscribe' })
+    let aggregation = manager.queries.get(transportHash)
+    assert.deepEqual(aggregation.events, ['subscribe:fetch'])
+    assert.equal(aggregation.activeTransportMode, 'fetch')
+
+    await manager.subscribe($liveAggregation, { intent: 'subscribe' })
+    aggregation = manager.queries.get(transportHash)
+    assert.deepEqual(aggregation.events, ['subscribe:fetch', 'unsubscribe:fetch', 'subscribe:subscribe'])
+    assert.equal(aggregation.activeTransportMode, 'subscribe')
+    assert.equal(aggregation.subscribed, true)
+
+    await manager.unsubscribe($liveAggregation, { intent: 'subscribe' })
+    aggregation = manager.queries.get(transportHash)
+    assert.deepEqual(aggregation.events, [
+      'subscribe:fetch',
+      'unsubscribe:fetch',
+      'subscribe:subscribe',
+      'unsubscribe:subscribe',
+      'subscribe:fetch'
+    ])
+    assert.equal(aggregation.activeTransportMode, 'fetch')
+    assert.equal(aggregation.subscribed, false)
+
+    await manager.unsubscribe($fetchAggregation, { intent: 'subscribe' })
+    await manager.clear()
+  })
+
   it('keeps query runtime materialized per root while sharing transport subscription', async () => {
     const collectionName = 'gamesScopedViews'
     const doc1 = getConnection().get(collectionName, '_1')

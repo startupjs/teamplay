@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
 import { $, sub, addModel, aggregation, getRootSignal } from '../index.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
-import { getConnection, setConnection, getDefaultFetchOnly, setFetchOnly } from '../orm/connection.js'
+import { getConnection, setConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../orm/connection.js'
 import connect from '../connect/test.js'
 import SignalCompat from '../orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../orm/SignalBase.js'
@@ -1856,7 +1856,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
   it('fetch() does not toggle the global fetchOnly default', async () => {
     const previousDefaultFetchOnly = getDefaultFetchOnly()
-    setFetchOnly(false)
+    setDefaultFetchOnly(false)
     try {
       const $query = $compatRoot.query(collection, { active: true })
       cleanupQueryHashes.push($query[QUERY_HASH])
@@ -1867,7 +1867,7 @@ class NonCompatRefUserModel extends BaseSignal {
       assert.equal(getDefaultFetchOnly(), false)
       await $query.unfetch()
     } finally {
-      setFetchOnly(previousDefaultFetchOnly)
+      setDefaultFetchOnly(previousDefaultFetchOnly)
     }
   })
 
