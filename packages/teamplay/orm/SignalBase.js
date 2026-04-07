@@ -14,22 +14,11 @@
 import uuid from '@teamplay/utils/uuid'
 import {
   get as _get,
-  set as _set,
-  setReplace as _setReplace,
-  del as _del,
   setPublicDoc as _setPublicDoc,
   dataTreeRaw,
   getRaw,
   getLogicalRootSnapshot,
-  resolveStorageSegments,
   incrementPublic as _incrementPublic,
-  arrayPush as _arrayPush,
-  arrayUnshift as _arrayUnshift,
-  arrayInsert as _arrayInsert,
-  arrayPop as _arrayPop,
-  arrayShift as _arrayShift,
-  arrayRemove as _arrayRemove,
-  arrayMove as _arrayMove,
   arrayPushPublic as _arrayPushPublic,
   arrayUnshiftPublic as _arrayUnshiftPublic,
   arrayInsertPublic as _arrayInsertPublic,
@@ -37,8 +26,6 @@ import {
   arrayShiftPublic as _arrayShiftPublic,
   arrayRemovePublic as _arrayRemovePublic,
   arrayMovePublic as _arrayMovePublic,
-  stringInsertLocal as _stringInsertLocal,
-  stringRemoveLocal as _stringRemoveLocal,
   stringInsertPublic as _stringInsertPublic,
   stringRemovePublic as _stringRemovePublic
 } from './dataTree.js'
@@ -61,6 +48,22 @@ import { isCompatEnv } from './compatEnv.js'
 import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
 import { runInBatch } from './batchScheduler.js'
+import { isPrivateCollectionSegments } from './rootScope.js'
+import {
+  arrayInsertPrivateData,
+  arrayMovePrivateData,
+  arrayPopPrivateData,
+  arrayPushPrivateData,
+  arrayRemovePrivateData,
+  arrayShiftPrivateData,
+  arrayUnshiftPrivateData,
+  delPrivateData,
+  getPrivateData,
+  setPrivateData,
+  setReplacePrivateData,
+  stringInsertPrivateData,
+  stringRemovePrivateData
+} from './privateData.js'
 
 export const SEGMENTS = Symbol('path segments targeting the particular node in the data tree')
 export const ARRAY_METHOD = Symbol('run array method on the signal')
@@ -141,6 +144,10 @@ export class Signal extends Function {
     if (this[IS_QUERY]) {
       const viewHash = this[VIEW_HASH] || this[HASH]
       return method([QUERIES, viewHash, 'docs'])
+    }
+    if (isPrivateSignalSegments(this[SEGMENTS])) {
+      const $root = getRoot(this) || this
+      return getPrivateData($root?.[ROOT_ID], this[SEGMENTS], method === getRaw)
     }
     return method(getStorageSegmentsForSignal(this))
   }
@@ -286,7 +293,7 @@ export class Signal extends Function {
       await _setPublicDoc(this[SEGMENTS], value)
     } else {
       if (publicOnly) throw Error(ERRORS.publicOnly)
-      _set(getStorageSegmentsForSignal(this), value)
+      setPrivateData(getOwningRootId(this), this[SEGMENTS], value)
     }
   }
 
@@ -316,7 +323,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayPush(getStorageSegmentsForSignal(this, segments), value)
+    return arrayPushPrivateData(getOwningRootId(this), segments, value)
   }
 
   async pop () {
@@ -326,7 +333,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayPop(getStorageSegmentsForSignal(this, segments))
+    return arrayPopPrivateData(getOwningRootId(this), segments)
   }
 
   async unshift (value) {
@@ -336,7 +343,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayUnshift(getStorageSegmentsForSignal(this, segments), value)
+    return arrayUnshiftPrivateData(getOwningRootId(this), segments, value)
   }
 
   async shift () {
@@ -346,7 +353,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayShift(getStorageSegmentsForSignal(this, segments))
+    return arrayShiftPrivateData(getOwningRootId(this), segments)
   }
 
   async insert (index, values) {
@@ -360,7 +367,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayInsert(getStorageSegmentsForSignal(this, segments), index, values)
+    return arrayInsertPrivateData(getOwningRootId(this), segments, index, values)
   }
 
   async remove (index, howMany = 1) {
@@ -374,7 +381,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayRemove(getStorageSegmentsForSignal(this, segments), index, howMany)
+    return arrayRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
   async move (from, to, howMany = 1) {
@@ -388,7 +395,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _arrayMove(getStorageSegmentsForSignal(this, segments), from, to, howMany)
+    return arrayMovePrivateData(getOwningRootId(this), segments, from, to, howMany)
   }
 
   async stringInsert (index, text) {
@@ -402,7 +409,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _stringInsertLocal(getStorageSegmentsForSignal(this, segments), index, text)
+    return stringInsertPrivateData(getOwningRootId(this), segments, index, text)
   }
 
   async stringRemove (index, howMany = 1) {
@@ -416,7 +423,7 @@ export class Signal extends Function {
     if (isIdFieldPath(segments, idFields)) return
     if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    return _stringRemoveLocal(getStorageSegmentsForSignal(this, segments), index, howMany)
+    return stringRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
   async increment (value) {
@@ -435,7 +442,7 @@ export class Signal extends Function {
       return currentValue + value
     }
     if (publicOnly) throw Error(ERRORS.publicOnly)
-    _setReplace(getStorageSegmentsForSignal(this, segments), currentValue + value)
+    setReplacePrivateData(getOwningRootId(this), segments, currentValue + value)
     return currentValue + value
   }
 
@@ -457,7 +464,7 @@ export class Signal extends Function {
       await _setPublicDoc(this[SEGMENTS], undefined, true)
     } else {
       if (publicOnly) throw Error(ERRORS.publicOnly)
-      _del(getStorageSegmentsForSignal(this))
+      delPrivateData(getOwningRootId(this), this[SEGMENTS])
     }
   }
 
@@ -479,8 +486,16 @@ function ensureValueTarget ($signal) {
 }
 
 function getStorageSegmentsForSignal ($signal, segments = $signal[SEGMENTS]) {
+  return segments
+}
+
+function getOwningRootId ($signal) {
   const $root = getRoot($signal) || $signal
-  return resolveStorageSegments($root?.[ROOT_ID], segments)
+  return $root?.[ROOT_ID]
+}
+
+function isPrivateSignalSegments (segments) {
+  return isPrivateCollectionSegments(segments)
 }
 
 // dot syntax returns a child signal only if no such method or property exists

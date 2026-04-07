@@ -9,7 +9,7 @@ import { isCompatEnv } from './compatEnv.js'
 import { getConnection } from './connection.js'
 import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
 import { getSignalIdentityHash } from './rootScope.js'
-import { registerRootOwnedSignalHash } from './rootContext.js'
+import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -38,8 +38,10 @@ export default function getSignal ($root, segments = [], {
       }
     }
   }
-  signalHash ??= getSignalIdentityHash($root?.[ROOT_ID] || rootId, segments)
-  let proxy = PROXIES_CACHE.get(signalHash)
+  const owningRootId = $root?.[ROOT_ID] || rootId
+  const rootClosed = owningRootId != null && owningRootId !== GLOBAL_ROOT_ID && isRootContextClosed(owningRootId)
+  signalHash ??= getSignalIdentityHash(owningRootId, segments)
+  let proxy = rootClosed ? undefined : PROXIES_CACHE.get(signalHash)
   if (proxy) return proxy
 
   const SignalClass = getSignalClass(segments, $root?.[ROOT_ID] || rootId)
@@ -58,8 +60,7 @@ export default function getSignal ($root, segments = [], {
     signal[ROOT] = proxy
   }
   PROXY_TO_SIGNAL.set(proxy, signal)
-  const owningRootId = $root?.[ROOT_ID] || rootId
-  if (owningRootId != null && owningRootId !== GLOBAL_ROOT_ID) {
+  if (!rootClosed && owningRootId != null && owningRootId !== GLOBAL_ROOT_ID) {
     registerRootOwnedSignalHash(owningRootId, signalHash)
   }
   const dependencies = []
@@ -78,7 +79,7 @@ export default function getSignal ($root, segments = [], {
     }
   }
 
-  PROXIES_CACHE.set(signalHash, proxy, dependencies)
+  if (!rootClosed) PROXIES_CACHE.set(signalHash, proxy, dependencies)
   return proxy
 }
 

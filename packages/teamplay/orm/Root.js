@@ -1,4 +1,5 @@
 import getSignal from './getSignal.js'
+import { reviveRootContext } from './rootContext.js'
 
 export const ROOT_FUNCTION = Symbol('root function')
 // TODO: in future make a connection spawnable instead of a singleton
@@ -15,6 +16,7 @@ export function getRootSignal ({
   rootId = '_' + createRandomString(8),
   ...options
 }) {
+  reviveRootContext(rootId)
   const $root = getSignal(undefined, [], {
     rootId,
     ...options

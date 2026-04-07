@@ -15,17 +15,7 @@ import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
 import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields, isPlainObject } from '../idFields.js'
 import {
-  del as _del,
-  setReplace as _setReplace,
-  resolveStorageSegments,
   incrementPublic as _incrementPublic,
-  arrayPush as _arrayPush,
-  arrayUnshift as _arrayUnshift,
-  arrayInsert as _arrayInsert,
-  arrayPop as _arrayPop,
-  arrayShift as _arrayShift,
-  arrayRemove as _arrayRemove,
-  arrayMove as _arrayMove,
   arrayPushPublic as _arrayPushPublic,
   arrayUnshiftPublic as _arrayUnshiftPublic,
   arrayInsertPublic as _arrayInsertPublic,
@@ -33,8 +23,6 @@ import {
   arrayShiftPublic as _arrayShiftPublic,
   arrayRemovePublic as _arrayRemovePublic,
   arrayMovePublic as _arrayMovePublic,
-  stringInsertLocal as _stringInsertLocal,
-  stringRemoveLocal as _stringRemoveLocal,
   stringInsertPublic as _stringInsertPublic,
   stringRemovePublic as _stringRemovePublic
 } from '../dataTree.js'
@@ -48,6 +36,19 @@ import { runInSilentContext, runInModelEventsSilentContext } from './silentConte
 import universal$ from '../../react/universal$.js'
 import { getRootContext } from '../rootContext.js'
 import disposeRootContext from '../disposeRootContext.js'
+import {
+  arrayInsertPrivateData,
+  arrayMovePrivateData,
+  arrayPopPrivateData,
+  arrayPushPrivateData,
+  arrayRemovePrivateData,
+  arrayShiftPrivateData,
+  arrayUnshiftPrivateData,
+  delPrivateData,
+  setReplacePrivateData,
+  stringInsertPrivateData,
+  stringRemovePrivateData
+} from '../privateData.js'
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
@@ -828,7 +829,7 @@ function forwardRef ($signal, methodName, args) {
 function setDiffDeepBypassRef ($signal, value) {
   const segments = $signal[SEGMENTS]
   if (isPublicCollection(segments[0])) return Signal.prototype.set.call($signal, value)
-  return _setReplace(getStorageSegmentsForSignal($signal, segments), value)
+  return setReplacePrivateData(getOwningRootId($signal), segments, value)
 }
 
 function mirrorRefMutationFromTarget (targetSegments, value) {
@@ -1051,7 +1052,7 @@ function setReplacePrivateCompatSync ($signal, value) {
   if (isPublicDocPath(segments)) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
-  _setReplace(getStorageSegmentsForSignal($signal, segments), value)
+  setReplacePrivateData(getOwningRootId($signal), segments, value)
   mirrorRefMutationFromTarget(segments, value)
 }
 
@@ -1060,7 +1061,7 @@ function delPrivateCompatSync ($signal) {
   if (segments.length === 0) throw Error('Can\'t delete the root signal data')
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
-  _del(getStorageSegmentsForSignal($signal, segments))
+  delPrivateData(getOwningRootId($signal), segments)
 }
 
 function deepEqualCompat (left, right) {
@@ -1107,7 +1108,7 @@ async function setReplaceOnSignal ($signal, value) {
     return result
   }
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  const result = _setReplace(getStorageSegmentsForSignal($signal, segments), value)
+  const result = setReplacePrivateData(getOwningRootId($signal), segments, value)
   mirrorRefMutationFromTarget(segments, value)
   return result
 }
@@ -1127,7 +1128,7 @@ async function incrementOnSignal ($signal, byNumber) {
     return currentValue + byNumber
   }
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  _setReplace(getStorageSegmentsForSignal($signal, segments), currentValue + byNumber)
+  setReplacePrivateData(getOwningRootId($signal), segments, currentValue + byNumber)
   return currentValue + byNumber
 }
 
@@ -1160,7 +1161,7 @@ async function arrayPushOnSignal ($signal, value) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayPush(getStorageSegmentsForSignal($signal, segments), value)
+  return arrayPushPrivateData(getOwningRootId($signal), segments, value)
 }
 
 async function arrayUnshiftOnSignal ($signal, value) {
@@ -1169,7 +1170,7 @@ async function arrayUnshiftOnSignal ($signal, value) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayUnshift(getStorageSegmentsForSignal($signal, segments), value)
+  return arrayUnshiftPrivateData(getOwningRootId($signal), segments, value)
 }
 
 async function arrayInsertOnSignal ($signal, index, values) {
@@ -1178,7 +1179,7 @@ async function arrayInsertOnSignal ($signal, index, values) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayInsert(getStorageSegmentsForSignal($signal, segments), index, values)
+  return arrayInsertPrivateData(getOwningRootId($signal), segments, index, values)
 }
 
 async function arrayPopOnSignal ($signal) {
@@ -1187,7 +1188,7 @@ async function arrayPopOnSignal ($signal) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayPop(getStorageSegmentsForSignal($signal, segments))
+  return arrayPopPrivateData(getOwningRootId($signal), segments)
 }
 
 async function arrayShiftOnSignal ($signal) {
@@ -1196,7 +1197,7 @@ async function arrayShiftOnSignal ($signal) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayShift(getStorageSegmentsForSignal($signal, segments))
+  return arrayShiftPrivateData(getOwningRootId($signal), segments)
 }
 
 async function arrayRemoveOnSignal ($signal, index, howMany) {
@@ -1205,7 +1206,7 @@ async function arrayRemoveOnSignal ($signal, index, howMany) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayRemove(getStorageSegmentsForSignal($signal, segments), index, howMany)
+  return arrayRemovePrivateData(getOwningRootId($signal), segments, index, howMany)
 }
 
 async function arrayMoveOnSignal ($signal, from, to, howMany) {
@@ -1214,7 +1215,7 @@ async function arrayMoveOnSignal ($signal, from, to, howMany) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _arrayMove(getStorageSegmentsForSignal($signal, segments), from, to, howMany)
+  return arrayMovePrivateData(getOwningRootId($signal), segments, from, to, howMany)
 }
 
 async function stringInsertOnSignal ($signal, index, text) {
@@ -1223,7 +1224,7 @@ async function stringInsertOnSignal ($signal, index, text) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _stringInsertLocal(getStorageSegmentsForSignal($signal, segments), index, text)
+  return stringInsertPrivateData(getOwningRootId($signal), segments, index, text)
 }
 
 async function stringRemoveOnSignal ($signal, index, howMany) {
@@ -1232,12 +1233,12 @@ async function stringRemoveOnSignal ($signal, index, howMany) {
   if (isIdFieldPath(segments, idFields)) return
   if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
   if (publicOnly) throw Error(ERRORS.publicOnly)
-  return _stringRemoveLocal(getStorageSegmentsForSignal($signal, segments), index, howMany)
+  return stringRemovePrivateData(getOwningRootId($signal), segments, index, howMany)
 }
 
-function getStorageSegmentsForSignal ($signal, segments = $signal[SEGMENTS]) {
+function getOwningRootId ($signal) {
   const $root = getRoot($signal) || $signal
-  return resolveStorageSegments($root?.[ROOT_ID], segments)
+  return $root?.[ROOT_ID]
 }
 
 function shallowCopy (value) {

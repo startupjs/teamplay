@@ -1,13 +1,12 @@
 import { aggregationSubscriptions } from './Aggregation.js'
 import { docSubscriptions } from './Doc.js'
-import { dataTreeRaw, del as _del } from './dataTree.js'
 import { purgeSignalHashes } from './getSignal.js'
 import { querySubscriptions } from './Query.js'
 import {
   deleteRootContext,
   getRootContext
 } from './rootContext.js'
-import { ROOTS_BUCKET, isGlobalRootId, normalizeRootId } from './rootScope.js'
+import { isGlobalRootId, normalizeRootId } from './rootScope.js'
 
 const PENDING_DISPOSES = new Map()
 
@@ -45,7 +44,7 @@ async function runDispose (rootId) {
 
   await docSubscriptions.releaseRootOwnedSubscriptions(rootId)
 
-  _del([ROOTS_BUCKET, rootId], dataTreeRaw)
+  context.resetPrivateData()
 
   purgeSignalHashes(context.signalHashes)
   context.resetSignalHashes()

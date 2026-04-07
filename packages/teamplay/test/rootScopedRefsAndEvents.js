@@ -1,10 +1,11 @@
 import { describe, it, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { getRootSignal } from '../index.js'
-import { del as _del, set as _set, ROOTS_BUCKET } from '../orm/dataTree.js'
+import { del as _del, set as _set } from '../orm/dataTree.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetSilentContextForTests } from '../orm/Compat/silentContext.js'
+import { __resetRootContextsForTests } from '../orm/rootContext.js'
 
 const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 
@@ -13,7 +14,7 @@ describeCompat('root-scoped refs and model events', () => {
     __resetModelEventsForTests()
     __resetRefLinksForTests()
     __resetSilentContextForTests()
-    _del([ROOTS_BUCKET])
+    __resetRootContextsForTests()
     _del(['users'])
   })
 

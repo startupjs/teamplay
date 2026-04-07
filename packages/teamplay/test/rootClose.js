@@ -8,9 +8,10 @@ import connect from '../connect/test.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { getConnection } from '../orm/connection.js'
-import { get as _get, del as _del, getRaw } from '../orm/dataTree.js'
+import { get as _get, del as _del } from '../orm/dataTree.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
+import { getPrivateDataRawRoot } from '../orm/privateData.js'
 import { HASH as QUERY_HASH, QUERIES, querySubscriptions, VIEW_HASH as QUERY_VIEW_HASH } from '../orm/Query.js'
 import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.js'
 import {
@@ -19,7 +20,6 @@ import {
   getRootOwnedSignalHashes,
   getRootOwnedViewHashes
 } from '../orm/rootContext.js'
-import { ROOTS_BUCKET } from '../orm/rootScope.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 
 before(connect)
@@ -44,7 +44,6 @@ describeCompat('root close()', () => {
     _del([DOC_COLLECTION])
     _del([QUERY_COLLECTION])
     _del([REFS_COLLECTION])
-    _del([ROOTS_BUCKET])
     await destroyConnectionCollection(DOC_COLLECTION)
     await destroyConnectionCollection(QUERY_COLLECTION)
     await destroyConnectionCollection(REFS_COLLECTION)
@@ -68,8 +67,20 @@ describeCompat('root close()', () => {
     assert.equal($rootA._session.userId.get(), undefined)
     assert.equal($rootA._page.lang.get(), undefined)
     assert.equal($rootB._session.userId.get(), 'user-b')
-    assert.equal(getRaw([ROOTS_BUCKET, 'close-private-A']), undefined)
-    assert.ok(getRaw([ROOTS_BUCKET, 'close-private-B']))
+    assert.equal(getPrivateDataRawRoot('close-private-A'), undefined)
+    assert.ok(getPrivateDataRawRoot('close-private-B'))
+  })
+
+  it('does not recreate a private root context when reading stale signals after close', async () => {
+    const $root = getRootSignal({ rootId: 'close-stale-read-root' })
+
+    await $root._session.userId.set('user-a')
+    await closeSignal($root)
+
+    assert.equal(__getRootContextForTests('close-stale-read-root'), undefined)
+    assert.equal($root._session.userId.get(), undefined)
+    assert.equal(getPrivateDataRawRoot('close-stale-read-root'), undefined)
+    assert.equal(__getRootContextForTests('close-stale-read-root'), undefined)
   })
 
   it('closes owning root even when called on a child signal', async () => {
@@ -80,7 +91,7 @@ describeCompat('root close()', () => {
     await closeSignal($child)
 
     assert.equal(__getRootContextForTests('close-child-root'), undefined)
-    assert.equal(getRaw([ROOTS_BUCKET, 'close-child-root']), undefined)
+    assert.equal(getPrivateDataRawRoot('close-child-root'), undefined)
     assert.equal($root._session.userId.get(), undefined)
   })
 

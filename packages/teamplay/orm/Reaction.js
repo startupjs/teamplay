@@ -1,10 +1,10 @@
 import { observe, unobserve } from '@nx-js/observer-util'
 import { SEGMENTS } from './Signal.js'
-import { set as _set, del as _del, resolveStorageSegments } from './dataTree.js'
 import { LOCAL } from './Value.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import { scheduleReaction } from './batchScheduler.js'
 import { getRoot, ROOT_ID } from './Root.js'
+import { delPrivateData, setPrivateData } from './privateData.js'
 
 // this is `let` to be able to directly change it if needed in tests or in the app
 export let DELETION_DELAY = 0 // eslint-disable-line prefer-const
@@ -32,7 +32,7 @@ class ReactionSubscriptions {
     unobserve(reaction)
     // don't delete data right away to prevent dependent reactions which are also going to be GC'ed
     // from triggering unnecessarily
-    setTimeout(() => _del(resolveStorageSegments(rootId, [LOCAL, id])), DELETION_DELAY)
+    setTimeout(() => delPrivateData(rootId, [LOCAL, id]), DELETION_DELAY)
   }
 }
 
@@ -40,7 +40,7 @@ export const reactionSubscriptions = new ReactionSubscriptions()
 
 function runReaction (rootId, id, reaction) {
   const newValue = reaction()
-  _set(resolveStorageSegments(rootId, [LOCAL, id]), newValue)
+  setPrivateData(rootId, [LOCAL, id], newValue)
 }
 
 export function setDeletionDelay (delayInMs) {

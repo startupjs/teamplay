@@ -1,17 +1,14 @@
 import { describe, it, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { getRootSignal } from '../index.js'
-import {
-  ROOTS_BUCKET,
-  del as _del,
-  getRaw as _getRaw,
-  set as _set
-} from '../orm/dataTree.js'
+import { del as _del, set as _set } from '../orm/dataTree.js'
+import { getPrivateData, getPrivateDataRawRoot } from '../orm/privateData.js'
+import { __resetRootContextsForTests } from '../orm/rootContext.js'
 
 describe('root-scoped private storage', () => {
   afterEach(() => {
-    _del([ROOTS_BUCKET])
     _del(['users'])
+    __resetRootContextsForTests()
   })
 
   it('isolates _session values by root', async () => {
@@ -23,9 +20,8 @@ describe('root-scoped private storage', () => {
 
     assert.equal($rootA._session.userId.get(), 'a')
     assert.equal($rootB._session.userId.get(), 'b')
-    assert.equal(_getRaw([ROOTS_BUCKET, '_private_root_A', '_session', 'userId']), 'a')
-    assert.equal(_getRaw([ROOTS_BUCKET, '_private_root_B', '_session', 'userId']), 'b')
-    assert.equal(_getRaw(['_session', 'userId']), undefined)
+    assert.equal(getPrivateData('_private_root_A', ['_session', 'userId'], true), 'a')
+    assert.equal(getPrivateData('_private_root_B', ['_session', 'userId'], true), 'b')
   })
 
   it('isolates _page values by root', async () => {
@@ -87,8 +83,8 @@ describe('root-scoped private storage', () => {
 
     assert.equal($rootA._session.userId.get(), undefined)
     assert.equal($rootB._session.userId.get(), 'b')
-    assert.equal(_getRaw([ROOTS_BUCKET, '_private_delete_A', '_session', 'userId']), undefined)
-    assert.equal(_getRaw([ROOTS_BUCKET, '_private_delete_B', '_session', 'userId']), 'b')
+    assert.equal(getPrivateData('_private_delete_A', ['_session', 'userId'], true), undefined)
+    assert.equal(getPrivateData('_private_delete_B', ['_session', 'userId'], true), 'b')
   })
 
   it('scopes increment and array/string mutators to the owning root', async () => {
@@ -112,5 +108,20 @@ describe('root-scoped private storage', () => {
     assert.deepEqual($rootB._session.items.get(), ['b1'])
     assert.equal($rootA._session.title.get(), 'fooA')
     assert.equal($rootB._session.title.get(), 'barB')
+  })
+
+  it('stores private collections outside the shared data tree', async () => {
+    const $rootA = getRootSignal({ rootId: '_private_storage_A' })
+    const $rootB = getRootSignal({ rootId: '_private_storage_B' })
+
+    await $rootA._session.userId.set('a')
+    await $rootB._page.lang.set('tr')
+
+    assert.deepEqual(getPrivateDataRawRoot('_private_storage_A'), {
+      _session: { userId: 'a' }
+    })
+    assert.deepEqual(getPrivateDataRawRoot('_private_storage_B'), {
+      _page: { lang: 'tr' }
+    })
   })
 })

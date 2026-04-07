@@ -16,6 +16,7 @@ import { ROOT, ROOT_ID } from '../orm/Root.js'
 import { PARAMS, HASH as QUERY_HASH, VIEW_HASH as QUERY_VIEW_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
 import { AGGREGATIONS } from '../orm/Aggregation.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+import { __resetRootContextsForTests } from '../orm/rootContext.js'
 import {
   __setImperativeQueryReadyTimeoutForTests,
   __resetImperativeQueryReadyTimeoutForTests
@@ -608,7 +609,7 @@ describe('SignalCompat.getCopy()/getDeepCopy()', () => {
 
 describe('SignalCompat root-scoped private storage', () => {
   afterEach(() => {
-    _del(['__roots'])
+    __resetRootContextsForTests()
   })
 
   it('isolates compat get/set on _session between roots', async () => {

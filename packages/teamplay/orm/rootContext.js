@@ -1,6 +1,8 @@
+import { observable } from '@nx-js/observer-util'
 import { normalizeRootId } from './rootScope.js'
 
 const ROOT_CONTEXTS = new Map()
+const CLOSED_ROOT_CONTEXTS = new Set()
 const EMPTY_SET = new Set()
 const EMPTY_MAP = new Map()
 const VIEW_KIND_QUERY = 'query'
@@ -9,7 +11,8 @@ const VIEW_KIND_AGGREGATION = 'aggregation'
 export default class RootContext {
   constructor (rootId) {
     this.rootId = normalizeRootId(rootId)
-    this.privateData = {}
+    this.privateDataRaw = {}
+    this.privateData = observable(this.privateDataRaw)
     this.refLinks = new Map()
     this.activeRefs = new Map()
     this.modelListeners = {
@@ -35,8 +38,16 @@ export default class RootContext {
     return this.privateData
   }
 
+  getPrivateDataRawRoot () {
+    return this.privateDataRaw
+  }
+
   getPrivateDataAt (segments) {
     return getPath(segments, this.privateData)
+  }
+
+  getPrivateDataRawAt (segments) {
+    return getPath(segments, this.privateDataRaw)
   }
 
   setPrivateDataAt (segments, value) {
@@ -127,7 +138,8 @@ export default class RootContext {
   }
 
   resetPrivateData () {
-    this.privateData = {}
+    this.privateDataRaw = {}
+    this.privateData = observable(this.privateDataRaw)
   }
 
   resetSignalHashes () {
@@ -154,6 +166,7 @@ export default class RootContext {
 
 export function getRootContext (rootId, create = true) {
   const normalizedRootId = normalizeRootId(rootId)
+  if (create && CLOSED_ROOT_CONTEXTS.has(normalizedRootId)) return undefined
   let context = ROOT_CONTEXTS.get(normalizedRootId)
   if (!context && create) {
     context = new RootContext(normalizedRootId)
@@ -221,7 +234,17 @@ export function clearRootOwnedDirectDocSubscriptions (rootId) {
 }
 
 export function deleteRootContext (rootId) {
-  ROOT_CONTEXTS.delete(normalizeRootId(rootId))
+  const normalizedRootId = normalizeRootId(rootId)
+  ROOT_CONTEXTS.delete(normalizedRootId)
+  CLOSED_ROOT_CONTEXTS.add(normalizedRootId)
+}
+
+export function reviveRootContext (rootId) {
+  CLOSED_ROOT_CONTEXTS.delete(normalizeRootId(rootId))
+}
+
+export function isRootContextClosed (rootId) {
+  return CLOSED_ROOT_CONTEXTS.has(normalizeRootId(rootId))
 }
 
 export function __getRootContextForTests (rootId) {
@@ -230,6 +253,7 @@ export function __getRootContextForTests (rootId) {
 
 export function __resetRootContextsForTests () {
   ROOT_CONTEXTS.clear()
+  CLOSED_ROOT_CONTEXTS.clear()
 }
 
 function getPath (segments, dataNode) {
@@ -247,7 +271,11 @@ function setPath (segments, value, tree) {
   let dataNode = tree
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
-    dataNode = dataNode[segment] ??= {}
+    const next = dataNode[segment]
+    if (next == null || typeof next !== 'object') {
+      dataNode[segment] = {}
+    }
+    dataNode = dataNode[segment]
   }
   dataNode[segments[segments.length - 1]] = value
 }

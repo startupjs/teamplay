@@ -3,15 +3,16 @@ import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
-import { get as _get } from '../orm/dataTree.js'
+import { GLOBAL_ROOT_ID } from '../orm/Root.js'
 import { LOCAL } from '../orm/$.js'
+import { getPrivateData } from '../orm/privateData.js'
 import connect from '../connect/test.js'
 
 before(connect)
 
 export function afterEachTestGcLocal () {
   afterEach(async () => {
-    assert.deepEqual(_get([LOCAL]), {}, 'all local data should be GC\'ed')
+    assert.deepEqual(getPrivateData(GLOBAL_ROOT_ID, [LOCAL]) || {}, {}, 'all local data should be GC\'ed')
   })
 }
 
@@ -20,13 +21,13 @@ describe('$() function. Values', () => {
   afterEachTestGcLocal()
 
   it('create local model. Test that data gets deleted after the signal is GC\'ed', async () => {
-    assert.equal(_get([LOCAL]), undefined, 'initially local model is undefined')
+    assert.equal(getPrivateData(GLOBAL_ROOT_ID, [LOCAL]), undefined, 'initially local model is undefined')
     const $value = $()
     $value.set(42)
     assert.equal($value.get(), 42)
     $value.set('hello')
     assert.equal($value.get(), 'hello')
-    assert.deepEqual(_get([LOCAL]), { _0: 'hello' })
+    assert.deepEqual(getPrivateData(GLOBAL_ROOT_ID, [LOCAL]), { _0: 'hello' })
     await runGc()
     assert.equal($value.get(), 'hello')
   })
@@ -434,7 +435,7 @@ describe('Signal.assign() function', () => {
   it('verify underlying data tree after assign', async () => {
     const $user = $()
     await $user.assign({ firstName: 'John', lastName: 'Smith' })
-    const localData = _get([LOCAL])
+    const localData = getPrivateData(GLOBAL_ROOT_ID, [LOCAL])
     assert.ok(localData, 'local data should exist')
     // Find the user data in the local tree
     const userKey = Object.keys(localData).find(key => {

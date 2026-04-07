@@ -2,13 +2,10 @@ import { describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { GLOBAL_ROOT_ID } from '../orm/Root.js'
 import {
-  ROOTS_BUCKET,
   normalizeRootId,
   isGlobalRootId,
   isPrivateCollectionSegments,
   getPrivateDataSegments,
-  scopeStorageSegments,
-  descopeStorageSegments,
   getLogicalRootSnapshot,
   getSignalIdentityHash,
   getScopedSignalHash,
@@ -47,48 +44,19 @@ describe('rootScope helpers', () => {
     assert.equal(getPrivateDataSegments(publicSegments), publicSegments)
   })
 
-  it('scopes and descopes private storage paths', () => {
-    assert.deepEqual(
-      scopeStorageSegments('_root_A', ['_session', 'userId']),
-      [ROOTS_BUCKET, '_root_A', '_session', 'userId']
-    )
-    assert.deepEqual(
-      scopeStorageSegments(undefined, ['_session', 'userId']),
-      ['_session', 'userId']
-    )
-    assert.deepEqual(
-      scopeStorageSegments(GLOBAL_ROOT_ID, ['_session', 'userId']),
-      ['_session', 'userId']
-    )
-    assert.deepEqual(
-      scopeStorageSegments('_root_A', ['users', 'u1']),
-      ['users', 'u1']
-    )
-    assert.deepEqual(
-      descopeStorageSegments([ROOTS_BUCKET, '_root_A', '_session', 'userId']),
-      ['_session', 'userId']
-    )
-    assert.deepEqual(
-      descopeStorageSegments(['users', 'u1']),
-      ['users', 'u1']
-    )
-  })
-
-  it('builds logical root snapshots without exposing __roots', () => {
+  it('builds logical root snapshots by merging root-owned private data', () => {
     const tree = {
-      users: { u1: { name: 'John' } },
-      [ROOTS_BUCKET]: {
-        _root_A: { _session: { userId: 'a' }, _page: { tab: 'home' } },
-        _root_B: { _session: { userId: 'b' } }
-      }
+      users: { u1: { name: 'John' } }
     }
+    const privateDataA = { _session: { userId: 'a' }, _page: { tab: 'home' } }
+    const privateDataB = { _session: { userId: 'b' } }
 
-    assert.deepEqual(getLogicalRootSnapshot('_root_A', tree), {
+    assert.deepEqual(getLogicalRootSnapshot('_root_A', tree, privateDataA), {
       users: { u1: { name: 'John' } },
       _session: { userId: 'a' },
       _page: { tab: 'home' }
     })
-    assert.deepEqual(getLogicalRootSnapshot('_root_B', tree), {
+    assert.deepEqual(getLogicalRootSnapshot('_root_B', tree, privateDataB), {
       users: { u1: { name: 'John' } },
       _session: { userId: 'b' }
     })
