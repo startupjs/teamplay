@@ -640,6 +640,67 @@ describe('QuerySubscriptions', () => {
     assert.equal(manager.subCount.get(ownerKey), undefined, 'stale sub count should be removed')
   })
 
+  it('unsubscribe handles stale owner transport metadata when query entry is already missing', async () => {
+    const manager = new QuerySubscriptions(class {
+      async subscribe () {}
+      async unsubscribe () {}
+    })
+    const $query = getQuerySignal('gamesQuery', { active: false })
+    const transportHash = $query[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($query)
+
+    manager.subCount.set(ownerKey, 1)
+    manager.ownerToTransport.set(ownerKey, transportHash)
+    manager.transportSubCount.set(transportHash, 0)
+
+    assert.equal(manager.queries.get(transportHash), undefined, 'query entry should be absent')
+
+    await assert.doesNotReject(async () => manager.unsubscribe($query))
+    assert.equal(manager.subCount.get(ownerKey), undefined, 'stale sub count should be removed')
+    assert.equal(manager.ownerToTransport.get(ownerKey), undefined, 'stale owner transport link should be removed')
+    assert.equal(manager.transportSubCount.get(transportHash), undefined, 'stale transport counter should be removed')
+  })
+
+  it('subscribe clears stale owner transport metadata when query entry is already missing', async () => {
+    const manager = new QuerySubscriptions(class {
+      async subscribe () {}
+      async unsubscribe () {}
+    })
+    const $query = getQuerySignal('gamesQuery', { active: false })
+    const transportHash = $query[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($query)
+
+    manager.subCount.set(ownerKey, 1)
+    manager.ownerFetchCount.set(ownerKey, 1)
+    manager.ownerToTransport.set(ownerKey, transportHash)
+    manager.transportSubCount.set(transportHash, 0)
+
+    await assert.doesNotReject(async () => manager.subscribe($query, { intent: 'fetch' }))
+    assert.equal(manager.subCount.get(ownerKey), 1, 'stale sub count should be normalized back to 1')
+    assert.equal(manager.ownerToTransport.get(ownerKey), transportHash, 'owner transport link should be reattached')
+    assert.equal(manager.transportSubCount.get(transportHash), 1, 'transport counter should be recreated')
+    assert.ok(manager.queries.get(transportHash), 'query entry should be recreated')
+  })
+
+  it('destroyByOwnerKey clears stale transport metadata when query entry is already missing', async () => {
+    const manager = new QuerySubscriptions(class {
+      async subscribe () {}
+      async unsubscribe () {}
+    })
+    const $query = getQuerySignal('gamesQuery', { active: false })
+    const transportHash = $query[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($query)
+
+    manager.subCount.set(ownerKey, 0)
+    manager.ownerToTransport.set(ownerKey, transportHash)
+    manager.transportSubCount.set(transportHash, 0)
+
+    await assert.doesNotReject(async () => manager.destroyByOwnerKey(ownerKey, { force: true }))
+    assert.equal(manager.ownerToTransport.get(ownerKey), undefined, 'owner transport link should be removed')
+    assert.equal(manager.transportSubCount.get(transportHash), undefined, 'stale transport counter should be removed')
+    assert.equal(manager.ownerKeysByTransport.get(transportHash), undefined, 'stale owner key bucket should be removed')
+  })
+
   it('normalizes undefined values in query params the same way as Racer in compat mode', () => {
     const rawParams = {
       $or: [

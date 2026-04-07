@@ -304,7 +304,10 @@ export class QuerySubscriptions {
       this.ownerFetchCount.delete(ownerKey)
       this.ownerSubscribeCount.delete(ownerKey)
       const staleTransportHash = this.ownerToTransport.get(ownerKey)
-      if (staleTransportHash) this.removeOwnerMeta(ownerKey, staleTransportHash)
+      if (staleTransportHash) {
+        this.removeOwnerMeta(ownerKey, staleTransportHash)
+        this.cleanupStaleTransportState(staleTransportHash)
+      }
       previousCount = 0
     }
 
@@ -321,7 +324,10 @@ export class QuerySubscriptions {
     const isAttached = existingTransportHash != null
 
     if (!isAttached || existingTransportHash !== transportHash) {
-      if (isAttached) this.removeOwnerMeta(ownerKey, existingTransportHash)
+      if (isAttached) {
+        this.removeOwnerMeta(ownerKey, existingTransportHash)
+        this.cleanupStaleTransportState(existingTransportHash)
+      }
       this.ownerToTransport.set(ownerKey, transportHash)
       this.ownerMeta.set(ownerKey, { collectionName, params, transportHash, rootId })
       let ownerKeys = this.ownerKeysByTransport.get(transportHash)
@@ -353,10 +359,12 @@ export class QuerySubscriptions {
     const currentIntentCount = this.getOwnerIntentCount(ownerKey, intent)
     if (currentIntentCount <= 0) {
       if ((this.subCount.get(ownerKey) || 0) > 0 && !this.queries.get($query[HASH])) {
+        const staleTransportHash = this.ownerToTransport.get(ownerKey)
         this.subCount.delete(ownerKey)
         this.ownerFetchCount.delete(ownerKey)
         this.ownerSubscribeCount.delete(ownerKey)
         this.removeOwnerMeta(ownerKey)
+        if (staleTransportHash) this.cleanupStaleTransportState(staleTransportHash)
       }
       if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw Error(ERRORS.notSubscribed($query))
       return
@@ -567,12 +575,15 @@ export class QuerySubscriptions {
         const query = this.queries.get(transportHash)
         await this.reconcileTransport(transportHash)
         if ((this.transportSubCount.get(transportHash) || 0) <= 0) {
-          if (query?.activeTransportMode !== 'idle') await unsubscribeQueryTransport(query, { keepRoots: true })
+          if (query && query.activeTransportMode !== 'idle') {
+            await unsubscribeQueryTransport(query, { keepRoots: true })
+          }
           query?._detachTransportData?.({ keepRoots: false })
           this.transportSubCount.delete(transportHash)
           this.ownerKeysByTransport.delete(transportHash)
           this.queries.delete(transportHash)
         }
+        this.cleanupStaleTransportState(transportHash)
         settlePending()
         return
       }
@@ -595,6 +606,8 @@ export class QuerySubscriptions {
       }
       if (!query) {
         this.transportSubCount.delete(transportHash)
+        this.ownerKeysByTransport.delete(transportHash)
+        this.cleanupStaleTransportState(transportHash)
         settlePending()
         return
       }
@@ -637,6 +650,17 @@ export class QuerySubscriptions {
     if (!ownerKeys) return
     ownerKeys.delete(ownerKey)
     if (ownerKeys.size === 0) this.ownerKeysByTransport.delete(knownTransportHash)
+  }
+
+  cleanupStaleTransportState (transportHash) {
+    if (!transportHash) return
+    if (this.queries.has(transportHash)) return
+    const ownerKeys = this.ownerKeysByTransport.get(transportHash)
+    if (ownerKeys?.size) return
+    const transportCount = this.transportSubCount.get(transportHash)
+    if (transportCount == null || transportCount <= 0) {
+      this.transportSubCount.delete(transportHash)
+    }
   }
 }
 
