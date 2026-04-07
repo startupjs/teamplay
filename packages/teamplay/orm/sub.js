@@ -3,7 +3,7 @@ import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } fr
 import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
-import { getRoot, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
+import { getRoot } from './Root.js'
 import isServer from '../utils/isServer.js'
 
 export default function sub ($signal, params) {
@@ -101,12 +101,7 @@ function sanitizeAggregationParams (params) {
 function getQuerySignalOptions ($collection) {
   const $root = getRoot($collection)
   if (!$root) return undefined
-  const rootId = $root[ROOT_ID]
-  const scopeKey = rootId != null && rootId !== GLOBAL_ROOT_ID ? rootId : undefined
-  return {
-    root: $root,
-    scopeKey
-  }
+  return { root: $root }
 }
 
 const ERRORS = {

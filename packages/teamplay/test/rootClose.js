@@ -8,11 +8,11 @@ import connect from '../connect/test.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { getConnection } from '../orm/connection.js'
-import { get as _get, del as _del } from '../orm/dataTree.js'
+import { del as _del } from '../orm/dataTree.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
-import { getPrivateDataRawRoot } from '../orm/privateData.js'
-import { HASH as QUERY_HASH, QUERIES, querySubscriptions, VIEW_HASH as QUERY_VIEW_HASH } from '../orm/Query.js'
+import { getPrivateData, getPrivateDataRawRoot } from '../orm/privateData.js'
+import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
 import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.js'
 import {
   __getRootContextForTests,
@@ -142,11 +142,11 @@ describeCompat('root close()', () => {
 
     assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-A', 'query')), [])
     assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-A', 'aggregation')), [])
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-B', 'query')), [$queryB[QUERY_VIEW_HASH]])
-    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-B', 'aggregation')), [$aggB[QUERY_VIEW_HASH]])
+    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-B', 'query')), [$queryB[QUERY_HASH]])
+    assert.deepEqual(Array.from(getRootOwnedViewHashes('close-view-root-B', 'aggregation')), [$aggB[QUERY_HASH]])
     assert.equal(querySubscriptions.transportSubCount.get($queryA[QUERY_HASH]), 1)
     assert.equal(aggregationSubscriptions.transportSubCount.get($aggA[QUERY_HASH]), 1)
-    assert.deepEqual(_get([QUERIES, $queryB[QUERY_VIEW_HASH], 'ids']).slice().sort(), ['_1', '_2'])
+    assert.deepEqual(getPrivateData('close-view-root-B', [QUERIES, $queryB[QUERY_HASH], 'ids']).slice().sort(), ['_1', '_2'])
 
     await closeSignal($rootB)
 

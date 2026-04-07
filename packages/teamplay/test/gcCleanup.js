@@ -6,6 +6,8 @@ import { getConnection } from '../orm/connection.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
+import { getRoot, ROOT_ID } from '../orm/Root.js'
+import { getScopedSignalHash } from '../orm/rootScope.js'
 import connect from '../connect/test.js'
 
 before(connect)
@@ -141,7 +143,8 @@ describe('GC Cleanup Tests', () => {
   describe('Query GC cleanup', () => {
     it('query subscription is cleaned up when signal is garbage collected', async () => {
       const collection = 'games_gc_query_1'
-      const hash = JSON.stringify({ query: [collection, { active: true }] })
+      const transportHash = JSON.stringify({ query: [collection, { active: true }] })
+      let ownerKey
 
       // Create some docs first
       const doc1 = getConnection().get(collection, 'q1_1')
@@ -152,19 +155,21 @@ describe('GC Cleanup Tests', () => {
       // Create query in a scope
       await (async () => {
         const $activeGames = await sub($[collection], { active: true })
+        const rootId = getRoot($activeGames)?.[ROOT_ID]
+        ownerKey = getScopedSignalHash(rootId, transportHash, 'queryOwner')
         assert.equal($activeGames.get().length, 2, 'query returns 2 docs')
 
         // Verify subscription exists
-        assert.ok(querySubscriptions.queries.has(hash), 'query is in querySubscriptions.queries')
-        assert.ok(querySubscriptions.subCount.has(hash), 'query is in querySubscriptions.subCount')
+        assert.ok(querySubscriptions.queries.has(transportHash), 'query is in querySubscriptions.queries')
+        assert.ok(querySubscriptions.subCount.has(ownerKey), 'query is in querySubscriptions.subCount')
       })()
 
       // Signal is now out of scope, run GC
       await runGc()
 
       // Verify cleanup
-      assert.ok(!querySubscriptions.queries.has(hash), 'query removed from querySubscriptions.queries')
-      assert.ok(!querySubscriptions.subCount.has(hash), 'query removed from querySubscriptions.subCount')
+      assert.ok(!querySubscriptions.queries.has(transportHash), 'query removed from querySubscriptions.queries')
+      assert.ok(!querySubscriptions.subCount.has(ownerKey), 'query removed from querySubscriptions.subCount')
 
       // Clean up docs
       await cbPromise(cb => doc1.del(cb))
@@ -173,7 +178,8 @@ describe('GC Cleanup Tests', () => {
 
     it('query signal kept alive keeps docs accessible', async () => {
       const collection = 'games_gc_query_2'
-      const hash = JSON.stringify({ query: [collection, { active: true }] })
+      const transportHash = JSON.stringify({ query: [collection, { active: true }] })
+      let ownerKey
 
       // Create some docs first
       const doc1 = getConnection().get(collection, 'q2_1')
@@ -184,7 +190,7 @@ describe('GC Cleanup Tests', () => {
       let $activeGames = await sub($[collection], { active: true })
       assert.equal($activeGames.get().length, 2, 'query returns 2 docs')
 
-      assert.ok(querySubscriptions.queries.has(hash), 'query exists')
+      assert.ok(querySubscriptions.queries.has(transportHash), 'query exists')
 
       // Access docs through query - use indexed access
       assert.equal($activeGames.get()[0].name, 'Query Game 1', 'doc accessible through query')
@@ -194,8 +200,8 @@ describe('GC Cleanup Tests', () => {
       await runGc()
 
       // Verify cleanup
-      assert.ok(!querySubscriptions.queries.has(hash), 'query removed')
-      assert.ok(!querySubscriptions.subCount.has(hash), 'subCount removed')
+      assert.ok(!querySubscriptions.queries.has(transportHash), 'query removed')
+      assert.ok(!querySubscriptions.subCount.has(ownerKey), 'subCount removed')
 
       // Clean up docs
       await cbPromise(cb => doc1.del(cb))
@@ -206,7 +212,8 @@ describe('GC Cleanup Tests', () => {
   describe('Aggregation GC cleanup', () => {
     it('aggregation subscription is cleaned up when signal is garbage collected', async () => {
       const collection = 'games_gc_agg_1'
-      const hash = JSON.stringify({ query: [collection, { $aggregate: [{ $match: { active: true } }] }] })
+      const transportHash = JSON.stringify({ query: [collection, { $aggregate: [{ $match: { active: true } }] }] })
+      let ownerKey
 
       // Create some docs first
       const doc1 = getConnection().get(collection, 'a1_1')
@@ -220,19 +227,20 @@ describe('GC Cleanup Tests', () => {
           return [{ $match: { active } }]
         })
         const $activeGames = await sub($$activeGames, { $collection: collection, active: true })
+        ownerKey = getScopedSignalHash(getRoot($activeGames)?.[ROOT_ID], transportHash, 'queryOwner')
         assert.equal($activeGames.get().length, 2, 'aggregation returns 2 docs')
 
         // Verify subscription exists
-        assert.ok(aggregationSubscriptions.queries.has(hash), 'aggregation is in aggregationSubscriptions.queries')
-        assert.ok(aggregationSubscriptions.subCount.has(hash), 'aggregation is in aggregationSubscriptions.subCount')
+        assert.ok(aggregationSubscriptions.queries.has(transportHash), 'aggregation is in aggregationSubscriptions.queries')
+        assert.ok(aggregationSubscriptions.subCount.has(ownerKey), 'aggregation is in aggregationSubscriptions.subCount')
       })()
 
       // Signal is now out of scope, run GC
       await runGc()
 
       // Verify cleanup
-      assert.ok(!aggregationSubscriptions.queries.has(hash), 'aggregation removed from queries')
-      assert.ok(!aggregationSubscriptions.subCount.has(hash), 'aggregation removed from subCount')
+      assert.ok(!aggregationSubscriptions.queries.has(transportHash), 'aggregation removed from queries')
+      assert.ok(!aggregationSubscriptions.subCount.has(ownerKey), 'aggregation removed from subCount')
 
       // Clean up docs
       await cbPromise(cb => doc1.del(cb))

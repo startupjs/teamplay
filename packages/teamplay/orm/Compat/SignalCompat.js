@@ -1286,17 +1286,13 @@ function isAggregationParams (params) {
 }
 
 function withQueryScopeOptions (options, $root) {
-  const rootId = $root?.[ROOT_ID]
-  const scopeKey = rootId != null && rootId !== GLOBAL_ROOT_ID ? rootId : undefined
-
   if (!options || typeof options !== 'object') {
     if (!$root) return options
-    return { root: $root, scopeKey }
+    return { root: $root }
   }
 
   const nextOptions = { ...options }
   if (nextOptions.root == null && $root) nextOptions.root = $root
-  if (nextOptions.scopeKey == null && scopeKey != null) nextOptions.scopeKey = scopeKey
   return nextOptions
 }
 

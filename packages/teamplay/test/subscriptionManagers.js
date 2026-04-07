@@ -22,8 +22,6 @@ import {
   COLLECTION_NAME as QUERY_COLLECTION_NAME,
   PARAMS as QUERY_PARAMS,
   HASH as QUERY_HASH,
-  VIEW_HASH as QUERY_VIEW_HASH,
-  SCOPED_SIGNAL_HASH as QUERY_SCOPED_SIGNAL_HASH,
   QUERIES,
   getQuerySignal,
   hashQuery
@@ -32,7 +30,9 @@ import { getAggregationSignal, AGGREGATIONS, aggregationSubscriptions } from '..
 import { SEGMENTS } from '../orm/Signal.js'
 import { getConnection } from '../orm/connection.js'
 import { get as _get } from '../orm/dataTree.js'
-import { getRootSignal } from '../orm/Root.js'
+import { getRootSignal, ROOT_ID } from '../orm/Root.js'
+import { getPrivateData } from '../orm/privateData.js'
+import { getScopedSignalHash } from '../orm/rootScope.js'
 import connect from '../connect/test.js'
 import {
   getSubscriptionGcDelay,
@@ -77,6 +77,10 @@ function createMockQuerySignal (collectionName, params) {
     [QUERY_COLLECTION_NAME]: collectionName,
     [QUERY_PARAMS]: clonedParams
   }
+}
+
+function getQueryOwnerKeyForTest ($query, rootId) {
+  return getScopedSignalHash(rootId, $query[QUERY_HASH], 'queryOwner')
 }
 
 class MockDoc {
@@ -356,21 +360,22 @@ describe('QuerySubscriptions', () => {
     const $activeGames = await sub($.gamesQuery, params)
 
     const hash = $activeGames[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($activeGames)
 
     // Verify query is subscribed
-    assert.equal(querySubscriptions.subCount.get(hash), 1, 'sub count should be 1 after first subscribe')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), 1, 'sub count should be 1 after first subscribe')
     assert.ok(querySubscriptions.queries.get(hash), 'query should exist in queries map')
     assert.ok(querySubscriptions.queries.get(hash).subscribed, 'query should be subscribed')
     assert.equal($activeGames.get().length, 2, 'should have 2 active games')
 
     // Subscribe second time to same query using querySubscriptions API
     await querySubscriptions.subscribe($activeGames)
-    assert.equal(querySubscriptions.subCount.get(hash), 2, 'sub count should be 2 after second subscribe')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), 2, 'sub count should be 2 after second subscribe')
     assert.ok(querySubscriptions.queries.get(hash).subscribed, 'query should still be subscribed')
 
     // Unsubscribe once
     await querySubscriptions.unsubscribe($activeGames)
-    assert.equal(querySubscriptions.subCount.get(hash), 1, 'sub count should be 1 after first unsubscribe')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), 1, 'sub count should be 1 after first unsubscribe')
     assert.ok(querySubscriptions.queries.get(hash).subscribed, 'query should still be subscribed')
     assert.equal($activeGames.get().length, 2, 'should still have 2 active games')
 
@@ -384,21 +389,22 @@ describe('QuerySubscriptions', () => {
     // Subscribe once first
     const $activeGames = await sub($.gamesQuery, params)
     const hash = $activeGames[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($activeGames)
 
     // Subscribe second time using querySubscriptions API
     await querySubscriptions.subscribe($activeGames)
 
-    assert.equal(querySubscriptions.subCount.get(hash), 2, 'sub count should be 2')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), 2, 'sub count should be 2')
     assert.ok(querySubscriptions.queries.get(hash).subscribed, 'query should be subscribed')
 
     // Unsubscribe first time
     await querySubscriptions.unsubscribe($activeGames)
-    assert.equal(querySubscriptions.subCount.get(hash), 1, 'sub count should be 1')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), 1, 'sub count should be 1')
     assert.ok(querySubscriptions.queries.get(hash).subscribed, 'query should still be subscribed')
 
     // Unsubscribe second time - should fully unsubscribe
     await querySubscriptions.unsubscribe($activeGames)
-    assert.equal(querySubscriptions.subCount.get(hash), undefined, 'sub count should be removed')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), undefined, 'sub count should be removed')
     assert.equal(querySubscriptions.queries.get(hash), undefined, 'query should be removed from queries map')
   })
 
@@ -407,11 +413,11 @@ describe('QuerySubscriptions', () => {
 
     // Subscribe once
     const $inactiveGames = await sub($.gamesQuery, params)
-    const hash = $inactiveGames[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($inactiveGames)
 
     // Unsubscribe once (valid)
     await querySubscriptions.unsubscribe($inactiveGames)
-    assert.equal(querySubscriptions.subCount.get(hash), undefined, 'sub count should be removed')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), undefined, 'sub count should be removed')
 
     // Unsubscribe again (excessive) - should not throw
     await assert.doesNotReject(
@@ -424,6 +430,7 @@ describe('QuerySubscriptions', () => {
     const params = { active: true }
     const $activeGames = await sub($.gamesQuery, params)
     const hash = $activeGames[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($activeGames)
 
     assert.ok(querySubscriptions.queries.get(hash), 'query should exist before destroy')
     assert.ok(querySubscriptions.queries.get(hash).subscribed, 'query should be subscribed before destroy')
@@ -431,14 +438,14 @@ describe('QuerySubscriptions', () => {
     // Destroy
     await querySubscriptions.destroy('gamesQuery', params)
 
-    assert.equal(querySubscriptions.subCount.get(hash), undefined, 'sub count should be removed after destroy')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), undefined, 'sub count should be removed after destroy')
     assert.equal(querySubscriptions.queries.get(hash), undefined, 'query should be removed from queries map after destroy')
   })
 
   it('query retains materialized docs after an unrelated doc subscription unsubscribes', async () => {
     const params = { active: true }
     const $activeGames = await sub($.gamesQuery, params)
-    const hash = $activeGames[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($activeGames)
     const $game = $.gamesQuery._q1
 
     assert.deepEqual(_get(['gamesQuery', '_q1']), { name: 'Game 1', active: true, _id: '_q1' })
@@ -446,7 +453,7 @@ describe('QuerySubscriptions', () => {
     await docSubscriptions.subscribe($game)
     await docSubscriptions.unsubscribe($game)
 
-    assert.equal(querySubscriptions.subCount.get(hash), 1, 'query should still be subscribed')
+    assert.equal(querySubscriptions.subCount.get(ownerKey), 1, 'query should still be subscribed')
     assert.deepEqual(_get(['gamesQuery', '_q1']), { name: 'Game 1', active: true, _id: '_q1' })
 
     await querySubscriptions.unsubscribe($activeGames)
@@ -472,12 +479,13 @@ describe('QuerySubscriptions', () => {
     const manager = new QuerySubscriptions(MockQuery)
     const $query = getQuerySignal('gamesQuery', { active: true })
     const hash = $query[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($query)
 
     // Simulate race: ref-count says "already subscribed", but query map has been cleaned.
-    manager.subCount.set(hash, 1)
+    manager.subCount.set(ownerKey, 1)
 
     await assert.doesNotReject(async () => manager.subscribe($query))
-    assert.equal(manager.subCount.get(hash), 1, 'sub count should be normalized back to 1')
+    assert.equal(manager.subCount.get(ownerKey), 1, 'sub count should be normalized back to 1')
     assert.ok(manager.queries.get(hash), 'query should be re-created')
     assert.equal(manager.queries.get(hash).subscribed, true, 'query should be subscribed after recovery')
 
@@ -490,13 +498,13 @@ describe('QuerySubscriptions', () => {
       async unsubscribe () {}
     })
     const $query = getQuerySignal('gamesQuery', { active: false })
-    const hash = $query[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($query)
 
-    manager.subCount.set(hash, 1)
-    assert.equal(manager.queries.get(hash), undefined, 'query entry should be absent')
+    manager.subCount.set(ownerKey, 1)
+    assert.equal(manager.queries.get($query[QUERY_HASH]), undefined, 'query entry should be absent')
 
     await assert.doesNotReject(async () => manager.unsubscribe($query))
-    assert.equal(manager.subCount.get(hash), undefined, 'stale sub count should be removed')
+    assert.equal(manager.subCount.get(ownerKey), undefined, 'stale sub count should be removed')
   })
 
   it('normalizes undefined values in query params the same way as Racer in compat mode', () => {
@@ -527,115 +535,92 @@ describe('QuerySubscriptions', () => {
     assert.equal(hash, JSON.stringify({ query: ['gamesQuery', expectedParams] }), 'query hash should match normalized params')
   })
 
-  it('creates distinct query signals per non-global scope while keeping transport hash', () => {
+  it('creates distinct query signals per root while keeping transport hash shared', () => {
     const params = { active: true }
-    const $queryScopeA1 = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeA' })
-    const $queryScopeA2 = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeA' })
-    const $queryScopeB = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeB' })
+    const $rootA = getRootSignal({ rootId: '_queryRootA' })
+    const $rootB = getRootSignal({ rootId: '_queryRootB' })
+    const $queryA1 = getQuerySignal('gamesQuery', params, { root: $rootA })
+    const $queryA2 = getQuerySignal('gamesQuery', params, { root: $rootA })
+    const $queryB = getQuerySignal('gamesQuery', params, { root: $rootB })
     const $queryGlobal = getQuerySignal('gamesQuery', params)
 
-    assert.equal($queryScopeA1, $queryScopeA2, 'same scope should reuse cached query signal')
-    assert.notEqual($queryScopeA1, $queryScopeB, 'different scope should get different query signal instance')
-    assert.notEqual($queryScopeA1, $queryGlobal, 'scoped and unscoped queries should not share signal instance')
-
-    assert.equal($queryScopeA1[QUERY_HASH], $queryScopeB[QUERY_HASH], 'transport hash should stay shared across scopes')
-    assert.notEqual(
-      $queryScopeA1[QUERY_SCOPED_SIGNAL_HASH],
-      $queryScopeB[QUERY_SCOPED_SIGNAL_HASH],
-      'scoped signal hash should differ across scopes'
-    )
+    assert.equal($queryA1, $queryA2, 'same root should reuse cached query signal')
+    assert.notEqual($queryA1, $queryB, 'different roots should get different query signal instances')
+    assert.notEqual($queryA1, $queryGlobal, 'root-scoped and global query signals should not share identity')
+    assert.equal($queryA1[QUERY_HASH], $queryB[QUERY_HASH], 'transport hash should stay shared across roots')
   })
 
-  it('shares QuerySubscriptions transport entry across scoped query signals', async () => {
+  it('shares QuerySubscriptions transport entry across root-scoped query signals', async () => {
     const manager = new QuerySubscriptions(MockQuery)
     const params = { active: true }
-    const $queryScopeA = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeA_transport' })
-    const $queryScopeB = getQuerySignal('gamesQuery', params, { scopeKey: '_scopeB_transport' })
-    const transportHash = $queryScopeA[QUERY_HASH]
-    const viewHashA = $queryScopeA[QUERY_VIEW_HASH]
-    const viewHashB = $queryScopeB[QUERY_VIEW_HASH]
+    const $rootA = getRootSignal({ rootId: '_scopeA_transport' })
+    const $rootB = getRootSignal({ rootId: '_scopeB_transport' })
+    const $queryA = getQuerySignal('gamesQuery', params, { root: $rootA })
+    const $queryB = getQuerySignal('gamesQuery', params, { root: $rootB })
+    const transportHash = $queryA[QUERY_HASH]
 
-    await manager.subscribe($queryScopeA)
-    await manager.subscribe($queryScopeB)
-    assert.equal(manager.subCount.get(viewHashA), 1, 'scope A should keep independent ref-count')
-    assert.equal(manager.subCount.get(viewHashB), 1, 'scope B should keep independent ref-count')
-    assert.equal(manager.transportSubCount.get(transportHash), 2, 'transport ref-count should aggregate across scopes')
+    await manager.subscribe($queryA)
+    await manager.subscribe($queryB)
+    assert.equal(manager.subCount.size, 2, 'two root-owned counters should exist')
+    assert.equal(manager.transportSubCount.get(transportHash), 2, 'transport ref-count should aggregate across roots')
     assert.equal(manager.queries.size, 1, 'single transport query entry should be shared')
 
-    await manager.unsubscribe($queryScopeA)
-    assert.equal(manager.subCount.get(viewHashA), undefined, 'scope A ref-count should be fully cleaned after unsubscribe')
-    assert.equal(manager.subCount.get(viewHashB), 1, 'scope B ref-count should stay active')
-    assert.equal(manager.transportSubCount.get(transportHash), 1, 'first scoped unsubscribe should keep transport query alive')
-    await manager.unsubscribe($queryScopeB)
-    assert.equal(manager.subCount.get(viewHashB), undefined, 'last scoped unsubscribe should remove scope B ref-count')
+    await manager.unsubscribe($queryA)
+    assert.equal(manager.subCount.size, 1, 'first root counter should be removed')
+    assert.equal(manager.transportSubCount.get(transportHash), 1, 'first root unsubscribe should keep transport query alive')
+    await manager.unsubscribe($queryB)
+    assert.equal(manager.subCount.size, 0, 'last root counter should be removed')
     assert.equal(manager.transportSubCount.get(transportHash), undefined, 'transport ref-count should be removed')
     assert.equal(manager.queries.get(transportHash), undefined, 'transport query entry should be removed')
   })
 
-  it('creates distinct aggregation signals per non-global scope while keeping transport hash', () => {
+  it('creates distinct aggregation signals per root while keeping transport hash shared', () => {
     const params = { $aggregate: [{ $match: { active: true } }] }
-    const $rootScopeA = getRootSignal({ rootId: '_aggregationScopeA' })
-    const $rootScopeB = getRootSignal({ rootId: '_aggregationScopeB' })
-    const $aggregationScopeA1 = getAggregationSignal('gamesQuery', params, { root: $rootScopeA, scopeKey: '_aggregationScopeA' })
-    const $aggregationScopeA2 = getAggregationSignal('gamesQuery', params, { root: $rootScopeA, scopeKey: '_aggregationScopeA' })
-    const $aggregationScopeB = getAggregationSignal('gamesQuery', params, { root: $rootScopeB, scopeKey: '_aggregationScopeB' })
+    const $rootA = getRootSignal({ rootId: '_aggregationRootA' })
+    const $rootB = getRootSignal({ rootId: '_aggregationRootB' })
+    const $aggregationA1 = getAggregationSignal('gamesQuery', params, { root: $rootA })
+    const $aggregationA2 = getAggregationSignal('gamesQuery', params, { root: $rootA })
+    const $aggregationB = getAggregationSignal('gamesQuery', params, { root: $rootB })
     const $aggregationGlobal = getAggregationSignal('gamesQuery', params)
 
-    assert.equal($aggregationScopeA1, $aggregationScopeA2, 'same scope should reuse cached aggregation signal')
-    assert.notEqual($aggregationScopeA1, $aggregationScopeB, 'different scope should get different aggregation signal')
-    assert.notEqual($aggregationScopeA1, $aggregationGlobal, 'scoped and unscoped aggregations should not share signal')
-
-    assert.equal(
-      $aggregationScopeA1[QUERY_HASH],
-      $aggregationScopeB[QUERY_HASH],
-      'aggregation transport hash should stay shared across scopes'
-    )
-    assert.notEqual(
-      $aggregationScopeA1[QUERY_SCOPED_SIGNAL_HASH],
-      $aggregationScopeB[QUERY_SCOPED_SIGNAL_HASH],
-      'aggregation scoped signal hash should differ across scopes'
-    )
+    assert.equal($aggregationA1, $aggregationA2, 'same root should reuse cached aggregation signal')
+    assert.notEqual($aggregationA1, $aggregationB, 'different roots should get different aggregation signal')
+    assert.notEqual($aggregationA1, $aggregationGlobal, 'root-scoped and global aggregations should not share signal')
+    assert.equal($aggregationA1[QUERY_HASH], $aggregationB[QUERY_HASH], 'aggregation transport hash should stay shared')
   })
 
-  it('keeps query runtime materialized per root view while sharing transport subscription', async () => {
+  it('keeps query runtime materialized per root while sharing transport subscription', async () => {
     const collectionName = 'gamesScopedViews'
     const doc1 = getConnection().get(collectionName, '_1')
     const doc2 = getConnection().get(collectionName, '_2')
     await cbPromise(cb => doc1.create({ name: 'Scoped 1', active: true }, cb))
     await cbPromise(cb => doc2.create({ name: 'Scoped 2', active: true }, cb))
 
-    const $rootScopeA = getRootSignal({ rootId: '_queryScopeA' })
-    const $rootScopeB = getRootSignal({ rootId: '_queryScopeB' })
-    const $queryScopeA = getQuerySignal(collectionName, { active: true }, {
-      root: $rootScopeA,
-      scopeKey: '_queryScopeA'
-    })
-    const $queryScopeB = getQuerySignal(collectionName, { active: true }, {
-      root: $rootScopeB,
-      scopeKey: '_queryScopeB'
-    })
-    await querySubscriptions.subscribe($queryScopeA)
-    await querySubscriptions.subscribe($queryScopeB)
+    const $rootA = getRootSignal({ rootId: '_queryScopeA' })
+    const $rootB = getRootSignal({ rootId: '_queryScopeB' })
+    const $queryA = getQuerySignal(collectionName, { active: true }, { root: $rootA })
+    const $queryB = getQuerySignal(collectionName, { active: true }, { root: $rootB })
+    await querySubscriptions.subscribe($queryA)
+    await querySubscriptions.subscribe($queryB)
 
-    assert.equal($queryScopeA[QUERY_HASH], $queryScopeB[QUERY_HASH], 'transport hash should stay shared')
-    assert.notEqual($queryScopeA[QUERY_VIEW_HASH], $queryScopeB[QUERY_VIEW_HASH], 'view hash should differ')
+    assert.equal($queryA[QUERY_HASH], $queryB[QUERY_HASH], 'transport hash should stay shared')
 
-    const idsA = _get([QUERIES, $queryScopeA[QUERY_VIEW_HASH], 'ids'])
-    const idsB = _get([QUERIES, $queryScopeB[QUERY_VIEW_HASH], 'ids'])
+    const idsA = getPrivateData($rootA[ROOT_ID], [QUERIES, $queryA[QUERY_HASH], 'ids'])
+    const idsB = getPrivateData($rootB[ROOT_ID], [QUERIES, $queryB[QUERY_HASH], 'ids'])
     assert.deepEqual(idsA.slice().sort(), ['_1', '_2'])
     assert.deepEqual(idsB.slice().sort(), ['_1', '_2'])
-    assert.notEqual(idsA, idsB, 'per-root view state should use separate arrays')
+    assert.notEqual(idsA, idsB, 'per-root runtime state should use separate arrays')
 
-    await querySubscriptions.unsubscribe($queryScopeA)
-    assert.equal(_get([QUERIES, $queryScopeA[QUERY_VIEW_HASH]]), undefined, 'scope A runtime state should be removed')
-    assert.deepEqual(_get([QUERIES, $queryScopeB[QUERY_VIEW_HASH], 'ids']).slice().sort(), ['_1', '_2'], 'scope B should remain')
+    await querySubscriptions.unsubscribe($queryA)
+    assert.equal(getPrivateData($rootA[ROOT_ID], [QUERIES, $queryA[QUERY_HASH]]), undefined, 'root A runtime state should be removed')
+    assert.deepEqual(getPrivateData($rootB[ROOT_ID], [QUERIES, $queryB[QUERY_HASH], 'ids']).slice().sort(), ['_1', '_2'], 'root B should remain')
 
-    await querySubscriptions.unsubscribe($queryScopeB)
+    await querySubscriptions.unsubscribe($queryB)
     await cbPromise(cb => doc1.del(cb))
     await cbPromise(cb => doc2.del(cb))
   })
 
-  it('keeps aggregation runtime materialized per root view while sharing transport subscription', async () => {
+  it('keeps aggregation runtime materialized per root while sharing transport subscription', async () => {
     const collectionName = 'gamesScopedAggregations'
     const doc1 = getConnection().get(collectionName, '_1')
     const doc2 = getConnection().get(collectionName, '_2')
@@ -643,29 +628,28 @@ describe('QuerySubscriptions', () => {
     await cbPromise(cb => doc2.create({ name: 'Agg 2', active: true }, cb))
 
     const params = { $aggregate: [{ $match: { active: true } }] }
-    const $rootScopeA = getRootSignal({ rootId: '_aggregationViewScopeA' })
-    const $rootScopeB = getRootSignal({ rootId: '_aggregationViewScopeB' })
-    const $aggregationScopeA = getAggregationSignal(collectionName, params, { root: $rootScopeA, scopeKey: '_aggregationViewScopeA' })
-    const $aggregationScopeB = getAggregationSignal(collectionName, params, { root: $rootScopeB, scopeKey: '_aggregationViewScopeB' })
+    const $rootA = getRootSignal({ rootId: '_aggregationViewScopeA' })
+    const $rootB = getRootSignal({ rootId: '_aggregationViewScopeB' })
+    const $aggregationA = getAggregationSignal(collectionName, params, { root: $rootA })
+    const $aggregationB = getAggregationSignal(collectionName, params, { root: $rootB })
 
-    await aggregationSubscriptions.subscribe($aggregationScopeA)
-    await aggregationSubscriptions.subscribe($aggregationScopeB)
+    await aggregationSubscriptions.subscribe($aggregationA)
+    await aggregationSubscriptions.subscribe($aggregationB)
 
-    assert.equal($aggregationScopeA[QUERY_HASH], $aggregationScopeB[QUERY_HASH], 'transport hash should stay shared')
-    assert.notEqual($aggregationScopeA[QUERY_VIEW_HASH], $aggregationScopeB[QUERY_VIEW_HASH], 'view hash should differ')
+    assert.equal($aggregationA[QUERY_HASH], $aggregationB[QUERY_HASH], 'transport hash should stay shared')
 
-    const aggA = _get([AGGREGATIONS, $aggregationScopeA[QUERY_VIEW_HASH]])
-    const aggB = _get([AGGREGATIONS, $aggregationScopeB[QUERY_VIEW_HASH]])
+    const aggA = getPrivateData($rootA[ROOT_ID], [AGGREGATIONS, $aggregationA[QUERY_HASH]])
+    const aggB = getPrivateData($rootB[ROOT_ID], [AGGREGATIONS, $aggregationB[QUERY_HASH]])
     assert.equal(Array.isArray(aggA), true)
     assert.equal(Array.isArray(aggB), true)
     assert.deepEqual(aggA.map(item => item._id).sort(), ['_1', '_2'])
     assert.deepEqual(aggB.map(item => item._id).sort(), ['_1', '_2'])
 
-    await aggregationSubscriptions.unsubscribe($aggregationScopeA)
-    assert.equal(_get([AGGREGATIONS, $aggregationScopeA[QUERY_VIEW_HASH]]), undefined, 'scope A aggregation runtime should be removed')
-    assert.equal(Array.isArray(_get([AGGREGATIONS, $aggregationScopeB[QUERY_VIEW_HASH]])), true, 'scope B should remain')
+    await aggregationSubscriptions.unsubscribe($aggregationA)
+    assert.equal(getPrivateData($rootA[ROOT_ID], [AGGREGATIONS, $aggregationA[QUERY_HASH]]), undefined, 'root A aggregation runtime should be removed')
+    assert.equal(Array.isArray(getPrivateData($rootB[ROOT_ID], [AGGREGATIONS, $aggregationB[QUERY_HASH]])), true, 'root B should remain')
 
-    await aggregationSubscriptions.unsubscribe($aggregationScopeB)
+    await aggregationSubscriptions.unsubscribe($aggregationB)
     await cbPromise(cb => doc1.del(cb))
     await cbPromise(cb => doc2.del(cb))
   })
@@ -786,7 +770,7 @@ describe('Subscription GC grace delay', () => {
     await manager.subscribe($query)
     const unsubscribePromise = manager.unsubscribe($query)
 
-    assert.equal(manager.subCount.get(hash), 0, 'count stays at 0 during grace delay')
+    assert.deepEqual(Array.from(manager.subCount.values()), [0], 'count stays at 0 during grace delay')
     assert.ok(manager.queries.get(hash), 'query should still exist before delay expires')
     await unsubscribePromise
     assert.equal(manager.subCount.get(hash), undefined, 'count should be removed after delayed cleanup')

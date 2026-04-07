@@ -1,7 +1,6 @@
 import { GLOBAL_ROOT_ID } from './Root.js'
 
 const REGEX_PRIVATE_COLLECTION = /^[_$]/
-const UNSCOPED_PRIVATE_COLLECTIONS = new Set(['$queries', '$aggregations'])
 
 export function normalizeRootId (rootId) {
   return rootId ?? GLOBAL_ROOT_ID
@@ -14,8 +13,7 @@ export function isGlobalRootId (rootId) {
 export function isPrivateCollectionSegments (segments) {
   return Array.isArray(segments) &&
     segments.length > 0 &&
-    REGEX_PRIVATE_COLLECTION.test(String(segments[0])) &&
-    !UNSCOPED_PRIVATE_COLLECTIONS.has(String(segments[0]))
+    REGEX_PRIVATE_COLLECTION.test(String(segments[0]))
 }
 
 export function getPrivateDataSegments (logicalSegments) {
@@ -45,9 +43,8 @@ export function getSignalIdentityHash (rootId, segments) {
   return JSON.stringify({ public: [normalizedRootId, segments] })
 }
 
-export function getScopedSignalHash (scopeKey, transportHash, kind = 'querySignal') {
-  if (scopeKey == null) return transportHash
-  return JSON.stringify({ [kind]: [scopeKey, transportHash] })
+export function getScopedSignalHash (rootId, transportHash, kind = 'querySignal') {
+  return JSON.stringify({ [kind]: [normalizeRootId(rootId), transportHash] })
 }
 
 export function getRootScopedRegistryKey (rootId, key) {

@@ -3,10 +3,11 @@ import { before, beforeEach, afterEach, describe, it } from 'mocha'
 import { addModel, getRootSignal } from '../index.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { getConnection } from '../orm/connection.js'
-import { del as _del, set as _set, get as _get } from '../orm/dataTree.js'
+import { del as _del, set as _set } from '../orm/dataTree.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
-import { querySubscriptions, QUERIES, VIEW_HASH } from '../orm/Query.js'
+import { getPrivateData } from '../orm/privateData.js'
+import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../orm/Query.js'
 import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 import { getRootOwnedViewHashes } from '../orm/rootContext.js'
 import connect from '../connect/test.js'
@@ -78,11 +79,11 @@ describeCompat('root-scoped public signals', () => {
     await $queryB.subscribe()
 
     assert.notStrictEqual($queryA, $queryB)
-    assert.notEqual($queryA[VIEW_HASH], $queryB[VIEW_HASH])
+    assert.equal($queryA[QUERY_HASH], $queryB[QUERY_HASH])
     assert.deepEqual($queryA.getIds().slice().sort(), ['_1', '_2'])
     assert.deepEqual($queryB.getIds().slice().sort(), ['_1', '_2'])
-    assert.ok(_get([QUERIES, $queryA[VIEW_HASH], 'ids']))
-    assert.ok(_get([QUERIES, $queryB[VIEW_HASH], 'ids']))
+    assert.ok(getPrivateData('query-public-root-A', [QUERIES, $queryA[QUERY_HASH], 'ids']))
+    assert.ok(getPrivateData('query-public-root-B', [QUERIES, $queryB[QUERY_HASH], 'ids']))
 
     await $queryA.unsubscribe()
     await $queryB.unsubscribe()
@@ -102,18 +103,18 @@ describeCompat('root-scoped public signals', () => {
 
     assert.deepEqual(
       Array.from(getRootOwnedViewHashes('query-view-root-A', 'query')),
-      [$queryA[VIEW_HASH]]
+      [$queryA[QUERY_HASH]]
     )
     assert.deepEqual(
       Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')),
-      [$queryB[VIEW_HASH]]
+      [$queryB[QUERY_HASH]]
     )
 
     await $queryA.unsubscribe()
     assert.deepEqual(Array.from(getRootOwnedViewHashes('query-view-root-A', 'query')), [])
     assert.deepEqual(
       Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')),
-      [$queryB[VIEW_HASH]]
+      [$queryB[QUERY_HASH]]
     )
 
     await $queryB.unsubscribe()

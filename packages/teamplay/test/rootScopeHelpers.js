@@ -26,8 +26,8 @@ describe('rootScope helpers', () => {
     assert.equal(isPrivateCollectionSegments(['_session', 'userId']), true)
     assert.equal(isPrivateCollectionSegments(['_page', 'tab']), true)
     assert.equal(isPrivateCollectionSegments(['$render', 'foo']), true)
-    assert.equal(isPrivateCollectionSegments(['$queries', 'hash']), false)
-    assert.equal(isPrivateCollectionSegments(['$aggregations', 'hash']), false)
+    assert.equal(isPrivateCollectionSegments(['$queries', 'hash']), true)
+    assert.equal(isPrivateCollectionSegments(['$aggregations', 'hash']), true)
     assert.equal(isPrivateCollectionSegments(['users', 'u1']), false)
   })
 

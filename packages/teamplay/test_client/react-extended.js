@@ -54,6 +54,7 @@ import connect from '../connect/test.js'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions, AGGREGATIONS } from '../orm/Aggregation.js'
+import { setPrivateData } from '../orm/privateData.js'
 import {
   on as onCompatEvent,
   removeListener as removeCompatListener,
@@ -1718,7 +1719,9 @@ describe('useBatchQuery / useBatchQuery$', () => {
     const originalInitData = queryProto._initData
     queryProto._initData = function (...args) {
       if (this.collectionName === collection && Array.isArray(this.params?.$aggregate)) {
-        _set([AGGREGATIONS, this.hash], [{ _id: null, startedStageIds: ['s1', 's2'] }])
+        for (const rootId of this.rootIds || []) {
+          setPrivateData(rootId, [AGGREGATIONS, this.hash], [{ _id: null, startedStageIds: ['s1', 's2'] }])
+        }
         return
       }
       return originalInitData.apply(this, args)

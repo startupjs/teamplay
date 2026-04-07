@@ -31,7 +31,7 @@ import {
 } from './dataTree.js'
 import getSignal, { rawSignal } from './getSignal.js'
 import { docSubscriptions } from './Doc.js'
-import { IS_QUERY, HASH, VIEW_HASH, QUERIES } from './Query.js'
+import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.js'
 import { publicOnly } from './connection.js'
@@ -142,8 +142,8 @@ export class Signal extends Function {
       return getLogicalRootSnapshot($root?.[ROOT_ID], method === getRaw ? dataTreeRaw : undefined)
     }
     if (this[IS_QUERY]) {
-      const viewHash = this[VIEW_HASH] || this[HASH]
-      return method([QUERIES, viewHash, 'docs'])
+      const $root = getRoot(this) || this
+      return getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'docs'], method === getRaw)
     }
     if (isPrivateSignalSegments(this[SEGMENTS])) {
       const $root = getRoot(this) || this
@@ -173,16 +173,17 @@ export class Signal extends Function {
   getIds () {
     if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
     if (this[IS_QUERY]) {
-      const viewHash = this[VIEW_HASH] || this[HASH]
-      const ids = _get([QUERIES, viewHash, 'ids'])
+      const $root = getRoot(this) || this
+      const ids = getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'ids'])
       if (!Array.isArray(ids)) {
         // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal.getIds() on Query didn\'t find ids', [QUERIES, viewHash, 'ids'])
+        console.warn('Signal.getIds() on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
         return []
       }
       return ids
     } else if (this[IS_AGGREGATION]) {
-      const docs = _get(this[SEGMENTS])
+      const $root = getRoot(this) || this
+      const docs = getPrivateData($root?.[ROOT_ID], this[SEGMENTS])
       if (!Array.isArray(docs)) return []
       return docs.map(doc => doc._id || doc.id)
     } else {
@@ -206,7 +207,8 @@ export class Signal extends Function {
     if (this[SEGMENTS][0] === AGGREGATIONS && this[SEGMENTS].length === 3) {
       // use get() instead of the default getRaw() to trigger observability on changes
       // This is required since within aggregation array results docs can change their position
-      return getAggregationDocId(this[SEGMENTS], _get)
+      const $root = getRoot(this) || this
+      return getAggregationDocId(this[SEGMENTS], $root?.[ROOT_ID])
     }
     return this[SEGMENTS][this[SEGMENTS].length - 1]
   }
@@ -233,16 +235,19 @@ export class Signal extends Function {
 
   * [Symbol.iterator] () {
     if (this[IS_QUERY]) {
-      const viewHash = this[VIEW_HASH] || this[HASH]
-      const ids = _get([QUERIES, viewHash, 'ids'])
+      const $root = getRoot(this) || this
+      const ids = getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'ids'])
       if (!Array.isArray(ids)) {
         // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal iterator on Query didn\'t find ids', [QUERIES, viewHash, 'ids'])
+        console.warn('Signal iterator on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
         return
       }
       for (const id of ids) yield getSignal(getRoot(this), [this[SEGMENTS][0], id])
     } else {
-      const items = _get(getStorageSegmentsForSignal(this))
+      const $root = getRoot(this) || this
+      const items = isPrivateSignalSegments(this[SEGMENTS])
+        ? getPrivateData($root?.[ROOT_ID], this[SEGMENTS])
+        : _get(getStorageSegmentsForSignal(this))
       if (!Array.isArray(items)) return
       for (let i = 0; i < items.length; i++) yield getSignal(getRoot(this), [...this[SEGMENTS], i])
     }
@@ -251,18 +256,21 @@ export class Signal extends Function {
   [ARRAY_METHOD] (method, nonArrayReturnValue, ...args) {
     if (this[IS_QUERY]) {
       const collection = this[SEGMENTS][0]
-      const viewHash = this[VIEW_HASH] || this[HASH]
-      const ids = _get([QUERIES, viewHash, 'ids'])
+      const $root = getRoot(this) || this
+      const ids = getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'ids'])
       if (!Array.isArray(ids)) {
         // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal array method on Query didn\'t find ids', [QUERIES, viewHash, 'ids'], method)
+        console.warn('Signal array method on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'], method)
         return nonArrayReturnValue
       }
       return ids.map(
         id => getSignal(getRoot(this), [collection, id])
       )[method](...args)
     }
-    const items = _get(getStorageSegmentsForSignal(this))
+    const $root = getRoot(this) || this
+    const items = isPrivateSignalSegments(this[SEGMENTS])
+      ? getPrivateData($root?.[ROOT_ID], this[SEGMENTS])
+      : _get(getStorageSegmentsForSignal(this))
     if (!Array.isArray(items)) return nonArrayReturnValue
     return Array(items.length).fill().map(
       (_, index) => getSignal(getRoot(this), [...this[SEGMENTS], index])
@@ -528,7 +536,7 @@ export const extremelyLateBindings = {
     const key = signal[SEGMENTS][signal[SEGMENTS].length - 1]
     const segments = signal[SEGMENTS].slice(0, -1)
     if (segments[0] === AGGREGATIONS) {
-      const aggregationDocId = getAggregationDocId(segments)
+      const aggregationDocId = getAggregationDocId(segments, getRoot(signal)?.[ROOT_ID])
       if (aggregationDocId) {
         if (segments.length === 3 && key === 'set') throw Error(ERRORS.setAggregationDoc(segments, key))
         const collectionName = getAggregationCollectionName(segments)
@@ -608,9 +616,8 @@ export const extremelyLateBindings = {
     key = transformAlias(signal[SEGMENTS], key)
     key = maybeTransformToArrayIndex(key)
     if (signal[IS_QUERY]) {
-      const viewHash = signal[VIEW_HASH] || signal[HASH]
-      if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, viewHash, 'ids'])
-      if (key === 'extra') return getSignal(getRoot(signal), [QUERIES, viewHash, 'extra'])
+      if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'ids'])
+      if (key === 'extra') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'extra'])
       if (QUERY_METHODS.includes(key)) return Reflect.get(signal, key, receiver)
     }
     return getSignal(getRoot(signal), [...signal[SEGMENTS], key])

@@ -5,6 +5,8 @@ import { $, sub, aggregation } from '../index.js'
 import { get as _get, del as _del } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import { hashQuery } from '../orm/Query.js'
+import { getPrivateData } from '../orm/privateData.js'
+import { getRoot, ROOT_ID } from '../orm/Root.js'
 import connect from '../connect/test.js'
 
 before(connect)
@@ -368,8 +370,9 @@ describe('$sub() function. Queries', () => {
 
   it('subscribe to query, modify it', async () => {
     const $activeGames = await sub($.games, { active: true })
+    const rootId = getRoot($activeGames)?.[ROOT_ID]
     assert.equal($activeGames.get().length, 2)
-    assert.deepEqual(_get(['$queries']), {
+    assert.deepEqual(getPrivateData(rootId, ['$queries']), {
       [hashQuery('games', { active: true })]: {
         docs: [
           { _id: '_1', name: 'Game 1', active: true },
@@ -426,9 +429,10 @@ describe('$sub() function. Aggregations', () => {
       return [{ $match: { active } }]
     })
     const $activeGames = await sub($$activeGames, { $collection: gamesCollection, active: true })
+    const rootId = getRoot($activeGames)?.[ROOT_ID]
     assert.equal($activeGames.get().length, 2)
     assert.deepEqual(
-      sanitizeAggregations(_get(['$aggregations'])),
+      sanitizeAggregations(getPrivateData(rootId, ['$aggregations']) || {}),
       {
         [hashQuery(gamesCollection, { $aggregate: [{ $match: { active: true } }] })]: [
           { _id: '_1', name: 'Game 1', active: true },

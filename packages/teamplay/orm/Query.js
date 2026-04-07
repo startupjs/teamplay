@@ -1,5 +1,5 @@
 import { raw } from '@nx-js/observer-util'
-import { get as _get, set as _set, del as _del, getRaw } from './dataTree.js'
+import { set as _set, getRaw } from './dataTree.js'
 import getSignal from './getSignal.js'
 import { getConnection, fetchOnly } from './connection.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
@@ -12,14 +12,16 @@ import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 import { getScopedSignalHash } from './rootScope.js'
 import { getRoot, ROOT_ID } from './Root.js'
 import { registerRootOwnedView, unregisterRootOwnedView } from './rootContext.js'
+import {
+  delPrivateData,
+  getPrivateData,
+  setPrivateData
+} from './privateData.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 export const COLLECTION_NAME = Symbol('query collection name')
 export const PARAMS = Symbol('query params')
 export const HASH = Symbol('query hash')
-export const VIEW_HASH = Symbol('query view hash')
-export const TRANSPORT_HASH = Symbol('query transport hash')
-export const SCOPED_SIGNAL_HASH = Symbol('query scoped signal hash')
 export const IS_QUERY = Symbol('is query signal')
 export const QUERIES = '$queries'
 
@@ -31,7 +33,7 @@ export class Query {
     this.collectionName = collectionName
     this.params = params
     this.hash = hash
-    this.viewHashes = new Set()
+    this.rootIds = new Set()
     this.docSignals = new Set()
     this.lifecycle = new SubscriptionState({
       onSubscribe: () => this._subscribe(),
@@ -62,17 +64,17 @@ export class Query {
     }
   }
 
-  attachView (viewHash) {
-    if (viewHash == null) return
-    if (this.viewHashes.has(viewHash)) return
-    this.viewHashes.add(viewHash)
-    if (this.initialized) this._syncViewData(viewHash)
+  attachRoot (rootId) {
+    if (rootId == null) return
+    if (this.rootIds.has(rootId)) return
+    this.rootIds.add(rootId)
+    if (this.initialized) this._syncRootData(rootId)
   }
 
-  detachView (viewHash) {
-    if (viewHash == null) return
-    if (!this.viewHashes.delete(viewHash)) return
-    this._removeViewData(viewHash)
+  detachRoot (rootId) {
+    if (rootId == null) return
+    if (!this.rootIds.delete(rootId)) return
+    this._removeRootData(rootId)
   }
 
   async _subscribe () {
@@ -105,7 +107,7 @@ export class Query {
       docSubscriptions.retain($doc)
       this.docSignals.add($doc)
     }
-    this._syncAllViewsData()
+    this._syncAllRootsData()
 
     this.shareQuery.on('insert', (shareDocs, index) => {
       maybeMaterializeQueryDocsToCollection(this.collectionName, shareDocs)
@@ -116,24 +118,24 @@ export class Query {
         docSubscriptions.retain($doc)
         this.docSignals.add($doc)
       }
-      this._forEachView(viewHash => {
-        const docs = _get([QUERIES, viewHash, 'docs'])
-        const idsState = _get([QUERIES, viewHash, 'ids'])
+      this._forEachRoot(rootId => {
+        const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
+        const idsState = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
         if (!Array.isArray(docs) || !Array.isArray(idsState)) return
         docs.splice(index, 0, ...newDocs)
         idsState.splice(index, 0, ...ids)
 
         if (!isModelEventsEnabled()) return
-        const docsPath = [QUERIES, viewHash, 'docs']
-        const idsPath = [QUERIES, viewHash, 'ids']
+        const docsPath = [QUERIES, this.hash, 'docs']
+        const idsPath = [QUERIES, this.hash, 'ids']
         for (let i = 0; i < newDocs.length; i++) {
-          emitModelChange(docsPath.concat(index + i), newDocs[i], undefined, {
+          emitModelChange(rootId, docsPath.concat(index + i), newDocs[i], undefined, {
             op: 'queryInsert',
             index: index + i
           })
         }
         for (let i = 0; i < ids.length; i++) {
-          emitModelChange(idsPath.concat(index + i), ids[i], undefined, {
+          emitModelChange(rootId, idsPath.concat(index + i), ids[i], undefined, {
             op: 'queryInsert',
             index: index + i
           })
@@ -143,9 +145,9 @@ export class Query {
     this.shareQuery.on('move', (shareDocs, from, to) => {
       const movedDocs = this._mapShareDocsToRaw(shareDocs)
       const movedIds = shareDocs.map(doc => doc.id)
-      this._forEachView(viewHash => {
-        const docs = _get([QUERIES, viewHash, 'docs'])
-        const ids = _get([QUERIES, viewHash, 'ids'])
+      this._forEachRoot(rootId => {
+        const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
+        const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
         if (!Array.isArray(docs) || !Array.isArray(ids)) return
         const prevDocs = isModelEventsEnabled() ? docs.slice() : undefined
         docs.splice(from, shareDocs.length)
@@ -156,13 +158,13 @@ export class Query {
         ids.splice(to, 0, ...movedIds)
 
         if (!isModelEventsEnabled()) return
-        emitModelChange([QUERIES, viewHash, 'docs'], docs, prevDocs, {
+        emitModelChange(rootId, [QUERIES, this.hash, 'docs'], docs, prevDocs, {
           op: 'queryMove',
           from,
           to,
           howMany: shareDocs.length
         })
-        emitModelChange([QUERIES, viewHash, 'ids'], ids, prevIds, {
+        emitModelChange(rootId, [QUERIES, this.hash, 'ids'], ids, prevIds, {
           op: 'queryMove',
           from,
           to,
@@ -177,9 +179,9 @@ export class Query {
         docSubscriptions.release($doc).catch(ignoreDestroyError)
         this.docSignals.delete($doc)
       }
-      this._forEachView(viewHash => {
-        const docs = _get([QUERIES, viewHash, 'docs'])
-        const ids = _get([QUERIES, viewHash, 'ids'])
+      this._forEachRoot(rootId => {
+        const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
+        const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
         if (!Array.isArray(docs) || !Array.isArray(ids)) return
         const removedDocs = isModelEventsEnabled() ? docs.slice(index, index + shareDocs.length) : undefined
         docs.splice(index, shareDocs.length)
@@ -188,16 +190,16 @@ export class Query {
         ids.splice(index, docIds.length)
 
         if (!isModelEventsEnabled()) return
-        const docsPath = [QUERIES, viewHash, 'docs']
-        const idsPath = [QUERIES, viewHash, 'ids']
+        const docsPath = [QUERIES, this.hash, 'docs']
+        const idsPath = [QUERIES, this.hash, 'ids']
         for (let i = 0; i < removedDocs.length; i++) {
-          emitModelChange(docsPath.concat(index + i), undefined, removedDocs[i], {
+          emitModelChange(rootId, docsPath.concat(index + i), undefined, removedDocs[i], {
             op: 'queryRemove',
             index: index + i
           })
         }
         for (let i = 0; i < removedIds.length; i++) {
-          emitModelChange(idsPath.concat(index + i), undefined, removedIds[i], {
+          emitModelChange(rootId, idsPath.concat(index + i), undefined, removedIds[i], {
             op: 'queryRemove',
             index: index + i
           })
@@ -206,38 +208,38 @@ export class Query {
     })
     this.shareQuery.on('extra', extra => {
       extra = raw(extra)
-      this._forEachView(viewHash => {
-        if (_get([QUERIES, viewHash]) == null) return
-        _set([QUERIES, viewHash, 'extra'], extra)
+      this._forEachRoot(rootId => {
+        if (getPrivateData(rootId, [QUERIES, this.hash]) == null) return
+        setPrivateData(rootId, [QUERIES, this.hash, 'extra'], extra)
       })
     })
   }
 
-  _syncAllViewsData () {
-    this._forEachView(viewHash => this._syncViewData(viewHash))
+  _syncAllRootsData () {
+    this._forEachRoot(rootId => this._syncRootData(rootId))
   }
 
-  _syncViewData (viewHash) {
+  _syncRootData (rootId) {
     if (!this.shareQuery) return
     maybeMaterializeQueryDocsToCollection(this.collectionName, this.shareQuery.results)
     const docs = this._mapShareDocsToRaw(this.shareQuery.results)
-    _set([QUERIES, viewHash, 'docs'], docs)
+    setPrivateData(rootId, [QUERIES, this.hash, 'docs'], docs)
 
     const ids = this.shareQuery.results.map(doc => doc.id)
-    _set([QUERIES, viewHash, 'ids'], ids)
+    setPrivateData(rootId, [QUERIES, this.hash, 'ids'], ids)
 
     if (this.shareQuery.extra !== undefined) {
       const extra = raw(this.shareQuery.extra)
-      _set([QUERIES, viewHash, 'extra'], extra)
+      setPrivateData(rootId, [QUERIES, this.hash, 'extra'], extra)
     }
   }
 
-  _removeViewData (viewHash) {
-    _del([QUERIES, viewHash])
+  _removeRootData (rootId) {
+    delPrivateData(rootId, [QUERIES, this.hash])
   }
 
-  _forEachView (fn) {
-    for (const viewHash of this.viewHashes) fn(viewHash)
+  _forEachRoot (fn) {
+    for (const rootId of this.rootIds) fn(rootId)
   }
 
   _mapShareDocsToRaw (shareDocs) {
@@ -253,8 +255,8 @@ export class Query {
       docSubscriptions.release($doc).catch(ignoreDestroyError)
     }
     this.docSignals.clear()
-    this._forEachView(viewHash => this._removeViewData(viewHash))
-    this.viewHashes.clear()
+    this._forEachRoot(rootId => this._removeRootData(rootId))
+    this.rootIds.clear()
   }
 }
 
@@ -262,15 +264,15 @@ export class QuerySubscriptions {
   constructor (QueryClass = Query) {
     this.QueryClass = QueryClass
     this.viewKind = 'query'
-    this.subCount = new Map() // viewHash -> count
-    this.transportSubCount = new Map() // transportHash -> attached views count
+    this.subCount = new Map() // ownerKey -> count
+    this.transportSubCount = new Map() // transportHash -> attached roots count
     this.queries = new Map()
-    this.viewToTransport = new Map() // viewHash -> transportHash
-    this.viewMeta = new Map() // viewHash -> { collectionName, params, transportHash }
-    this.viewHashesByTransport = new Map() // transportHash -> Set(viewHash)
+    this.ownerToTransport = new Map() // ownerKey -> transportHash
+    this.ownerMeta = new Map() // ownerKey -> { collectionName, params, transportHash, rootId }
+    this.ownerKeysByTransport = new Map() // transportHash -> Set(ownerKey)
     this.pendingDestroyTimers = new Map()
-    this.fr = new FinalizationRegistry(({ collectionName, params, viewHash }) => {
-      this.scheduleDestroy(collectionName, params, viewHash, { force: true })
+    this.fr = new FinalizationRegistry(({ collectionName, params, ownerKey }) => {
+      this.scheduleDestroy(collectionName, params, ownerKey, { force: true })
     })
   }
 
@@ -278,21 +280,21 @@ export class QuerySubscriptions {
     const collectionName = $query[COLLECTION_NAME]
     const params = cloneQueryParams($query[PARAMS])
     const transportHash = $query[HASH]
-    const viewHash = getQueryViewHash($query)
-    const rootId = getRoot($query)?.[ROOT_ID]
-    this.cancelDestroy(viewHash)
-    let count = this.subCount.get(viewHash) || 0
+    const rootId = getOwningRootId($query)
+    const ownerKey = getQueryOwnerKey(rootId, transportHash)
+    this.cancelDestroy(ownerKey)
+    let count = this.subCount.get(ownerKey) || 0
     count += 1
-    this.subCount.set(viewHash, count)
+    this.subCount.set(ownerKey, count)
     if (count > 1) {
       const existingQuery = this.queries.get(transportHash)
       if (existingQuery) return existingQuery._subscribing
       // Recover from stale ref-count state when query was already cleaned up.
       count = 1
-      this.subCount.set(viewHash, count)
+      this.subCount.set(ownerKey, count)
     }
 
-    this.fr.register($query, { collectionName, params, viewHash }, $query)
+    this.fr.register($query, { collectionName, params, ownerKey }, $query)
 
     let query = this.queries.get(transportHash)
     if (!query) {
@@ -300,21 +302,21 @@ export class QuerySubscriptions {
       this.queries.set(transportHash, query)
     }
 
-    const existingTransportHash = this.viewToTransport.get(viewHash)
+    const existingTransportHash = this.ownerToTransport.get(ownerKey)
     const isAttached = existingTransportHash != null
 
     if (!isAttached || existingTransportHash !== transportHash) {
-      if (isAttached) this.removeViewMeta(viewHash, existingTransportHash)
-      this.viewToTransport.set(viewHash, transportHash)
-      this.viewMeta.set(viewHash, { collectionName, params, transportHash, rootId })
-      let viewHashes = this.viewHashesByTransport.get(transportHash)
-      if (!viewHashes) {
-        viewHashes = new Set()
-        this.viewHashesByTransport.set(transportHash, viewHashes)
+      if (isAttached) this.removeOwnerMeta(ownerKey, existingTransportHash)
+      this.ownerToTransport.set(ownerKey, transportHash)
+      this.ownerMeta.set(ownerKey, { collectionName, params, transportHash, rootId })
+      let ownerKeys = this.ownerKeysByTransport.get(transportHash)
+      if (!ownerKeys) {
+        ownerKeys = new Set()
+        this.ownerKeysByTransport.set(transportHash, ownerKeys)
       }
-      viewHashes.add(viewHash)
-      attachQueryView(query, viewHash)
-      registerRootOwnedView(rootId, this.viewKind, viewHash)
+      ownerKeys.add(ownerKey)
+      attachQueryRoot(query, rootId)
+      registerRootOwnedView(rootId, this.viewKind, transportHash)
 
       const transportCount = (this.transportSubCount.get(transportHash) || 0) + 1
       this.transportSubCount.set(transportHash, transportCount)
@@ -327,35 +329,27 @@ export class QuerySubscriptions {
   }
 
   async unsubscribe ($query) {
-    const viewHash = getQueryViewHash($query)
-    let count = this.subCount.get(viewHash) || 0
+    const ownerKey = getQueryOwnerKey(getOwningRootId($query), $query[HASH])
+    let count = this.subCount.get(ownerKey) || 0
     count -= 1
     if (count < 0) {
       if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw Error(ERRORS.notSubscribed($query))
       return
     }
     if (count > 0) {
-      this.subCount.set(viewHash, count)
+      this.subCount.set(ownerKey, count)
       return
     }
-    this.subCount.set(viewHash, 0)
+    this.subCount.set(ownerKey, 0)
     this.fr.unregister($query)
-    await this.scheduleDestroy($query[COLLECTION_NAME], $query[PARAMS], viewHash)
+    await this.scheduleDestroy($query[COLLECTION_NAME], $query[PARAMS], ownerKey)
   }
 
   async destroy (collectionName, params, options = {}) {
     const transportHash = hashQuery(collectionName, params)
-    const viewHashes = Array.from(this.viewHashesByTransport.get(transportHash) || [])
-    if (viewHashes.length === 0) {
-      await this.destroyByViewHash(transportHash, {
-        collectionName,
-        params,
-        force: options.force ?? true
-      })
-      return
-    }
-    for (const viewHash of viewHashes) {
-      await this.destroyByViewHash(viewHash, {
+    const ownerKeys = Array.from(this.ownerKeysByTransport.get(transportHash) || [])
+    for (const ownerKey of ownerKeys) {
+      await this.destroyByOwnerKey(ownerKey, {
         collectionName,
         params,
         force: options.force ?? true
@@ -364,34 +358,35 @@ export class QuerySubscriptions {
   }
 
   async clear () {
-    const viewHashes = new Set([
+    const ownerKeys = new Set([
       ...this.pendingDestroyTimers.keys(),
-      ...this.viewMeta.keys()
+      ...this.ownerMeta.keys()
     ])
-    for (const viewHash of viewHashes) {
-      await this.destroyByViewHash(viewHash, { force: true })
+    for (const ownerKey of ownerKeys) {
+      await this.destroyByOwnerKey(ownerKey, { force: true })
     }
     this.subCount.clear()
     this.transportSubCount.clear()
-    this.viewToTransport.clear()
-    this.viewMeta.clear()
-    this.viewHashesByTransport.clear()
+    this.ownerToTransport.clear()
+    this.ownerMeta.clear()
+    this.ownerKeysByTransport.clear()
   }
 
   async flushPendingDestroys () {
-    const viewHashes = Array.from(this.pendingDestroyTimers.keys())
-    for (const viewHash of viewHashes) {
-      await this.destroyByViewHash(viewHash)
+    const ownerKeys = Array.from(this.pendingDestroyTimers.keys())
+    for (const ownerKey of ownerKeys) {
+      await this.destroyByOwnerKey(ownerKey)
     }
   }
 
-  async scheduleDestroy (collectionName, params, viewHash = hashQuery(collectionName, params), options = {}) {
+  async scheduleDestroy (collectionName, params, ownerKey, options = {}) {
+    const fallbackOwnerKey = ownerKey ?? getQueryOwnerKey(undefined, hashQuery(collectionName, params))
     const delay = getSubscriptionGcDelay()
     if (delay <= 0) {
-      await this.destroyByViewHash(viewHash, { collectionName, params, force: !!options.force })
+      await this.destroyByOwnerKey(fallbackOwnerKey, { collectionName, params, force: !!options.force })
       return
     }
-    const existing = this.pendingDestroyTimers.get(viewHash)
+    const existing = this.pendingDestroyTimers.get(fallbackOwnerKey)
     if (existing) {
       if (options.force) existing.force = true
       return existing.promise
@@ -399,21 +394,21 @@ export class QuerySubscriptions {
     const entry = createPendingDestroyEntry()
     if (options.force) entry.force = true
     entry.timer = setTimeout(() => {
-      this.destroyByViewHash(viewHash, { collectionName, params, force: entry.force })
+      this.destroyByOwnerKey(fallbackOwnerKey, { collectionName, params, force: entry.force })
         .catch(ignoreDestroyError)
     }, delay)
-    this.pendingDestroyTimers.set(viewHash, entry)
+    this.pendingDestroyTimers.set(fallbackOwnerKey, entry)
     return entry.promise
   }
 
-  cancelDestroy (viewHash) {
-    const entry = this.takePendingDestroy(viewHash)
+  cancelDestroy (ownerKey) {
+    const entry = this.takePendingDestroy(ownerKey)
     if (!entry) return
     entry.resolve()
   }
 
-  async destroyByViewHash (viewHash, options = {}) {
-    const pendingDestroy = this.takePendingDestroy(viewHash)
+  async destroyByOwnerKey (ownerKey, options = {}) {
+    const pendingDestroy = this.takePendingDestroy(ownerKey)
     if (pendingDestroy?.force) options.force = true
 
     const settlePending = err => {
@@ -423,33 +418,33 @@ export class QuerySubscriptions {
     }
 
     try {
-      const count = this.subCount.get(viewHash) || 0
+      const count = this.subCount.get(ownerKey) || 0
       if (!options.force && count > 0) {
         settlePending()
         return
       }
-      const meta = this.viewMeta.get(viewHash)
+      const meta = this.ownerMeta.get(ownerKey)
       if (!meta) {
-        this.subCount.delete(viewHash)
+        this.subCount.delete(ownerKey)
         settlePending()
         return
       }
       const { transportHash, rootId } = meta
       const query = this.queries.get(transportHash)
       if (!query) {
-        this.subCount.delete(viewHash)
-        this.removeViewMeta(viewHash, transportHash)
-        unregisterRootOwnedView(rootId, this.viewKind, viewHash)
+        this.subCount.delete(ownerKey)
+        this.removeOwnerMeta(ownerKey, transportHash)
+        unregisterRootOwnedView(rootId, this.viewKind, transportHash)
         const nextTransportCount = Math.max((this.transportSubCount.get(transportHash) || 0) - 1, 0)
         if (nextTransportCount > 0) this.transportSubCount.set(transportHash, nextTransportCount)
         else this.transportSubCount.delete(transportHash)
         settlePending()
         return
       }
-      this.subCount.delete(viewHash)
-      this.removeViewMeta(viewHash, transportHash)
-      detachQueryView(query, viewHash)
-      unregisterRootOwnedView(rootId, this.viewKind, viewHash)
+      this.subCount.delete(ownerKey)
+      this.removeOwnerMeta(ownerKey, transportHash)
+      detachQueryRoot(query, rootId)
+      unregisterRootOwnedView(rootId, this.viewKind, transportHash)
 
       const nextTransportCount = Math.max((this.transportSubCount.get(transportHash) || 0) - 1, 0)
       this.transportSubCount.set(transportHash, nextTransportCount)
@@ -475,23 +470,29 @@ export class QuerySubscriptions {
     }
   }
 
-  takePendingDestroy (viewHash) {
-    const entry = this.pendingDestroyTimers.get(viewHash)
+  async destroyByViewHash (viewHash, options = {}) {
+    const rootId = options.rootId ?? options.root?.[ROOT_ID]
+    const ownerKey = getQueryOwnerKey(rootId, viewHash)
+    return this.destroyByOwnerKey(ownerKey, options)
+  }
+
+  takePendingDestroy (ownerKey) {
+    const entry = this.pendingDestroyTimers.get(ownerKey)
     if (!entry) return
     clearTimeout(entry.timer)
-    this.pendingDestroyTimers.delete(viewHash)
+    this.pendingDestroyTimers.delete(ownerKey)
     return entry
   }
 
-  removeViewMeta (viewHash, transportHash) {
-    const knownTransportHash = transportHash ?? this.viewToTransport.get(viewHash)
-    this.viewToTransport.delete(viewHash)
-    this.viewMeta.delete(viewHash)
+  removeOwnerMeta (ownerKey, transportHash) {
+    const knownTransportHash = transportHash ?? this.ownerToTransport.get(ownerKey)
+    this.ownerToTransport.delete(ownerKey)
+    this.ownerMeta.delete(ownerKey)
     if (!knownTransportHash) return
-    const viewHashes = this.viewHashesByTransport.get(knownTransportHash)
-    if (!viewHashes) return
-    viewHashes.delete(viewHash)
-    if (viewHashes.size === 0) this.viewHashesByTransport.delete(knownTransportHash)
+    const ownerKeys = this.ownerKeysByTransport.get(knownTransportHash)
+    if (!ownerKeys) return
+    ownerKeys.delete(ownerKey)
+    if (ownerKeys.size === 0) this.ownerKeysByTransport.delete(knownTransportHash)
   }
 }
 
@@ -524,30 +525,20 @@ export function parseQueryHash (hash) {
   }
 }
 
-export function hashScopedSignalHash (transportHash, scopeKey) {
-  return getScopedSignalHash(scopeKey, transportHash, 'querySignal')
-}
-
 export function getQuerySignal (collectionName, params, options) {
   params = cloneQueryParams(params)
   const transportHash = hashQuery(collectionName, params)
-  const { root, scopeKey, signalOptions } = parseQuerySignalOptions(options)
-  const viewHash = hashScopedSignalHash(transportHash, scopeKey ?? signalOptions.rootId)
+  const { root, signalOptions } = parseQuerySignalOptions(options)
+  const signalHash = getScopedSignalHash(root?.[ROOT_ID] ?? signalOptions.rootId, transportHash, 'querySignal')
 
   const $query = getSignal(root, [collectionName], {
-    signalHash: viewHash,
+    signalHash,
     ...signalOptions
   })
   $query[IS_QUERY] ??= true
   $query[COLLECTION_NAME] ??= collectionName
   $query[PARAMS] ??= params
-  // Backward compatible operational hash:
-  // - used by subscription managers and query data storage ($queries.<hash>.*)
   $query[HASH] ??= transportHash
-  $query[VIEW_HASH] ??= viewHash
-  // Explicit metadata for incremental migration.
-  $query[TRANSPORT_HASH] ??= transportHash
-  $query[SCOPED_SIGNAL_HASH] ??= viewHash
   return $query
 }
 
@@ -561,22 +552,30 @@ const ERRORS = {
 
 function ignoreDestroyError () {}
 
-function attachQueryView (query, viewHash) {
-  if (viewHash == null || !query) return
-  if (typeof query.attachView === 'function') {
-    query.attachView(viewHash)
+function attachQueryRoot (query, rootId) {
+  if (rootId == null || !query) return
+  if (typeof query.attachRoot === 'function') {
+    query.attachRoot(rootId)
     return
   }
-  if (query.viewHashes?.add) query.viewHashes.add(viewHash)
+  if (query.rootIds?.add) query.rootIds.add(rootId)
 }
 
-function detachQueryView (query, viewHash) {
-  if (viewHash == null || !query) return
-  if (typeof query.detachView === 'function') {
-    query.detachView(viewHash)
+function detachQueryRoot (query, rootId) {
+  if (rootId == null || !query) return
+  if (typeof query.detachRoot === 'function') {
+    query.detachRoot(rootId)
     return
   }
-  if (query.viewHashes?.delete) query.viewHashes.delete(viewHash)
+  if (query.rootIds?.delete) query.rootIds.delete(rootId)
+}
+
+function getOwningRootId ($query) {
+  return getRoot($query)?.[ROOT_ID]
+}
+
+function getQueryOwnerKey (rootId, transportHash) {
+  return getScopedSignalHash(rootId, transportHash, 'queryOwner')
 }
 
 function cloneQueryParams (params) {
@@ -588,16 +587,11 @@ function parseQuerySignalOptions (options) {
   if (!options || typeof options !== 'object') {
     return {
       root: undefined,
-      scopeKey: undefined,
       signalOptions: {}
     }
   }
-  const { root, scopeKey, ...signalOptions } = options
-  return { root, scopeKey, signalOptions }
-}
-
-function getQueryViewHash ($query) {
-  return $query[VIEW_HASH] || $query[HASH]
+  const { root, ...signalOptions } = options
+  return { root, signalOptions }
 }
 
 function normalizeQueryParamsForHash (params) {
