@@ -9,6 +9,7 @@ import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
+import { getScopedSignalHash } from './rootScope.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 export const COLLECTION_NAME = Symbol('query collection name')
@@ -517,8 +518,7 @@ export function parseQueryHash (hash) {
 }
 
 export function hashScopedSignalHash (transportHash, scopeKey) {
-  if (scopeKey == null) return transportHash
-  return JSON.stringify({ querySignal: [scopeKey, transportHash] })
+  return getScopedSignalHash(scopeKey, transportHash, 'querySignal')
 }
 
 export function getQuerySignal (collectionName, params, options) {

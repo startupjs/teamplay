@@ -1,4 +1,5 @@
 import { GLOBAL_ROOT_ID } from '../Root.js'
+import { normalizeRootId } from '../rootScope.js'
 
 const refLinksByRoot = new Map()
 const EMPTY_MAP = new Map()
@@ -60,8 +61,4 @@ function getRefStore (rootId, create = false) {
     refLinksByRoot.set(normalizedRootId, store)
   }
   return store
-}
-
-function normalizeRootId (rootId) {
-  return rootId ?? GLOBAL_ROOT_ID
 }

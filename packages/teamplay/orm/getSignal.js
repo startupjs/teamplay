@@ -8,6 +8,7 @@ import { AGGREGATIONS } from './Aggregation.js'
 import { isCompatEnv } from './compatEnv.js'
 import { getConnection } from './connection.js'
 import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
+import { getSignalIdentityHash } from './rootScope.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -36,7 +37,7 @@ export default function getSignal ($root, segments = [], {
       }
     }
   }
-  signalHash ??= hashSegments(segments, $root?.[ROOT_ID] || rootId)
+  signalHash ??= getSignalIdentityHash($root?.[ROOT_ID] || rootId, segments)
   let proxy = PROXIES_CACHE.get(signalHash)
   if (proxy) return proxy
 
@@ -92,18 +93,6 @@ function getDefaultProxyHandlers ({ useExtremelyLateBindings } = {}) {
       if (key === 'root') return Reflect.get(signal, key, receiver)
       return baseHandlers.get(signal, key, receiver)
     }
-  }
-}
-
-function hashSegments (segments, rootId) {
-  if (segments.length === 0) {
-    if (!rootId) throw Error(ERRORS.rootIdRequired)
-    return JSON.stringify({ root: rootId })
-  } else if (isPrivateCollection(segments[0])) {
-    if (!rootId) throw Error(ERRORS.privateCollectionRootIdRequired(segments))
-    return JSON.stringify({ private: [rootId, segments] })
-  } else {
-    return JSON.stringify({ public: [rootId ?? GLOBAL_ROOT_ID, segments] })
   }
 }
 

@@ -1,7 +1,7 @@
 import { getRefLinks, getRefRootIds } from './refRegistry.js'
 import { isCompatEnv } from '../compatEnv.js'
 import { isSilentContextActive, isModelEventsSilentContextActive } from './silentContext.js'
-import { GLOBAL_ROOT_ID } from '../Root.js'
+import { normalizeRootId } from '../rootScope.js'
 
 const modelListeners = {
   change: new Map(),
@@ -138,10 +138,6 @@ function getTargetRootIds (rootId) {
     ...getRefRootIds()
   ])
   return rootIds
-}
-
-function normalizeRootId (rootId) {
-  return rootId ?? GLOBAL_ROOT_ID
 }
 
 function splitPath (path) {
