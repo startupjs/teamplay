@@ -40,7 +40,7 @@ export default function getSignal ($root, segments = [], {
   let proxy = PROXIES_CACHE.get(signalHash)
   if (proxy) return proxy
 
-  const SignalClass = getSignalClass(segments)
+  const SignalClass = getSignalClass(segments, $root?.[ROOT_ID] || rootId)
   const signal = new SignalClass(segments)
   proxy = new Proxy(signal, proxyHandlers)
   if (segments.length >= 1) {
@@ -68,7 +68,7 @@ export default function getSignal ($root, segments = [], {
     } else if (segments[0] === QUERIES || segments[0] === AGGREGATIONS) {
       dependencies.push(getSignal(signal[ROOT], segments.slice(0, 2)))
     } else if (isPublicCollection(segments[0])) {
-      dependencies.push(getSignal(undefined, segments.slice(0, 2)))
+      dependencies.push(getSignal(signal[ROOT], segments.slice(0, 2)))
     }
   }
 
@@ -103,15 +103,15 @@ function hashSegments (segments, rootId) {
     if (!rootId) throw Error(ERRORS.privateCollectionRootIdRequired(segments))
     return JSON.stringify({ private: [rootId, segments] })
   } else {
-    return JSON.stringify(segments)
+    return JSON.stringify({ public: [rootId ?? GLOBAL_ROOT_ID, segments] })
   }
 }
 
-export function getSignalClass (segments) {
+export function getSignalClass (segments, rootId = GLOBAL_ROOT_ID) {
   let Model = findModel(segments)
   if (Model) return Model
   if (!isCompatEnv()) return Signal
-  const dereferencedSegments = resolveRefSegmentsSafe(segments)
+  const dereferencedSegments = resolveRefSegmentsSafe(segments, rootId)
   if (dereferencedSegments) {
     Model = findModel(dereferencedSegments)
     if (Model) return Model

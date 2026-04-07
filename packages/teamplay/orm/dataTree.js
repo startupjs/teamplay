@@ -31,7 +31,10 @@ function emitModelEvent (segments, prevValue, meta, tree = dataTree) {
   if (!shouldEmitModelEvents(tree)) return
   const value = getRaw(segments)
   const logicalSegments = segments[0] === ROOTS_BUCKET ? segments.slice(2) : segments
-  emitModelChange(logicalSegments, value, prevValue, meta)
+  const modelEventMeta = segments[0] === ROOTS_BUCKET
+    ? { ...meta, rootId: segments[1] }
+    : meta
+  emitModelChange(logicalSegments, value, prevValue, modelEventMeta)
 }
 
 export function isPrivateCollectionSegments (segments) {

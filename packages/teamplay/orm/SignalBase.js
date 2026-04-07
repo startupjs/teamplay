@@ -554,7 +554,10 @@ export const extremelyLateBindings = {
           return Reflect.apply(rawResolvedParent[key], $resolvedParent, argumentsList)
         }
       } else {
-        const resolvedSegments = resolveRefSegmentsSafe(segments)
+        const resolvedSegments = resolveRefSegmentsSafe(
+          segments,
+          (getRoot(signal) || signal)?.[ROOT_ID]
+        )
         if (resolvedSegments) {
           const $resolvedByPath = getSignal(getRoot(signal), resolvedSegments)
           const rawResolvedByPath = rawSignal($resolvedByPath)

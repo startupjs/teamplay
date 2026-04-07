@@ -54,9 +54,9 @@ export function useOn (eventName, patternOrHandler, handler, deps) {
       return
     }
     if (!isModelEventsEnabled()) return
-    const listener = onModelEvent(eventName, normalizedPattern, handler)
+    const listener = onModelEvent(undefined, eventName, normalizedPattern, handler)
     return () => {
-      removeModelListener(eventName, listener)
+      removeModelListener(undefined, eventName, listener)
     }
   }, [eventName, patternOrHandler, handler, deps, normalizedPattern, isCustom])
 }

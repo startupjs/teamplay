@@ -1,6 +1,7 @@
-import { getRefLinks } from './refRegistry.js'
+import { getRefLinks, getRefRootIds } from './refRegistry.js'
 import { isCompatEnv } from '../compatEnv.js'
 import { isSilentContextActive, isModelEventsSilentContextActive } from './silentContext.js'
+import { GLOBAL_ROOT_ID } from '../Root.js'
 
 const modelListeners = {
   change: new Map(),
@@ -20,10 +21,10 @@ export function normalizePattern (pattern, methodName) {
   return pattern.split('.').filter(Boolean).join('.')
 }
 
-export function onModelEvent (eventName, pattern, handler) {
+export function onModelEvent (rootId, eventName, pattern, handler) {
   if (typeof handler !== 'function') throw Error('Model event handler must be a function')
   if (!modelListeners[eventName]) throw Error(`Unsupported model event: ${eventName}`)
-  const store = modelListeners[eventName]
+  const store = getModelEventRootStore(eventName, rootId, true)
   const normalized = normalizePattern(pattern)
   let entry = store.get(normalized)
   if (!entry) {
@@ -38,41 +39,46 @@ export function onModelEvent (eventName, pattern, handler) {
   return handler
 }
 
-export function removeModelListener (eventName, handler) {
-  const store = modelListeners[eventName]
+export function removeModelListener (rootId, eventName, handler) {
+  const store = getModelEventRootStore(eventName, rootId)
   if (!store) return
   for (const [pattern, entry] of store) {
     entry.handlers.delete(handler)
     if (!entry.handlers.size) store.delete(pattern)
   }
+  if (!store.size) modelListeners[eventName].delete(normalizeRootId(rootId))
 }
 
 export function emitModelChange (path, value, prevValue, meta) {
   if (!isModelEventsEnabled()) return
   if (isSilentContextActive() || isModelEventsSilentContextActive()) return
   const initialSegments = splitPath(path)
-  const visited = new Set()
-  const queue = [initialSegments]
   const eventName = meta?.eventName || 'change'
+  const rootIds = getTargetRootIds(meta?.rootId)
 
-  while (queue.length) {
-    const segments = queue.shift()
-    const key = segments.join('.')
-    if (visited.has(key)) continue
-    visited.add(key)
+  for (const rootId of rootIds) {
+    const visited = new Set()
+    const queue = [initialSegments]
 
-    emitForEvent('change', segments, value, prevValue, meta)
-    emitForEvent('all', segments, value, prevValue, meta, eventName)
+    while (queue.length) {
+      const segments = queue.shift()
+      const key = segments.join('.')
+      if (visited.has(key)) continue
+      visited.add(key)
 
-    for (const link of getRefLinks().values()) {
-      if (!isPathPrefix(link.toSegments, segments)) continue
-      if (link.mirrorOnly && typeof link.onChange === 'function') {
-        link.onChange()
+      emitForEvent(rootId, 'change', segments, value, prevValue, meta)
+      emitForEvent(rootId, 'all', segments, value, prevValue, meta, eventName)
+
+      for (const link of getRefLinks(rootId).values()) {
+        if (!isPathPrefix(link.toSegments, segments)) continue
+        if (link.mirrorOnly && typeof link.onChange === 'function') {
+          link.onChange()
+        }
+        const suffix = segments.slice(link.toSegments.length)
+        const nextSegments = link.fromSegments.concat(suffix)
+        const nextKey = nextSegments.join('.')
+        if (!visited.has(nextKey)) queue.push(nextSegments)
       }
-      const suffix = segments.slice(link.toSegments.length)
-      const nextSegments = link.fromSegments.concat(suffix)
-      const nextKey = nextSegments.join('.')
-      if (!visited.has(nextKey)) queue.push(nextSegments)
     }
   }
 }
@@ -82,8 +88,8 @@ export function __resetModelEventsForTests () {
   modelListeners.all.clear()
 }
 
-function emitForEvent (eventName, pathSegments, value, prevValue, meta, resolvedEventName = eventName) {
-  const store = modelListeners[eventName]
+function emitForEvent (rootId, eventName, pathSegments, value, prevValue, meta, resolvedEventName = eventName) {
+  const store = getModelEventRootStore(eventName, rootId)
   if (!store || store.size === 0) return
   for (const entry of store.values()) {
     const captures = matchPattern(entry.segments, pathSegments)
@@ -101,6 +107,41 @@ function emitForEvent (eventName, pathSegments, value, prevValue, meta, resolved
 function splitPattern (pattern) {
   if (!pattern) return []
   return pattern.split('.').filter(Boolean)
+}
+
+function getModelEventRootStore (eventName, rootId, create = false) {
+  const perRoot = modelListeners[eventName]
+  if (!perRoot) return
+  const normalizedRootId = normalizeRootId(rootId)
+  let store = perRoot.get(normalizedRootId)
+  if (!store && create) {
+    store = new Map()
+    perRoot.set(normalizedRootId, store)
+  }
+  return store
+}
+
+function getModelEventRootIds () {
+  const rootIds = new Set()
+  for (const perRoot of Object.values(modelListeners)) {
+    for (const [rootId, store] of perRoot) {
+      if (store.size) rootIds.add(rootId)
+    }
+  }
+  return rootIds
+}
+
+function getTargetRootIds (rootId) {
+  if (rootId != null) return [normalizeRootId(rootId)]
+  const rootIds = new Set([
+    ...getModelEventRootIds(),
+    ...getRefRootIds()
+  ])
+  return rootIds
+}
+
+function normalizeRootId (rootId) {
+  return rootId ?? GLOBAL_ROOT_ID
 }
 
 function splitPath (path) {

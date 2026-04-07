@@ -41,7 +41,7 @@ import {
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
 import { waitForImperativeQueryReady } from './queryReadiness.js'
 import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
-import { setRefLink, removeRefLink, getRefLinks } from './refRegistry.js'
+import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
 import { runInBatch } from '../batchScheduler.js'
 import { runInSilentContext, runInModelEventsSilentContext } from './silentContext.js'
@@ -545,7 +545,8 @@ class SignalCompat extends Signal {
       }
       if (typeof handler !== 'function') throw Error('Signal.on() expects a handler function')
       const normalized = normalizePattern(pattern, 'Signal.on()')
-      return onModelEvent(eventName, normalized, handler)
+      const rootId = (getRoot(this) || this)?.[ROOT_ID]
+      return onModelEvent(rootId, eventName, normalized, handler)
     }
     if (typeof pattern !== 'function') throw Error('Signal.on() expects a handler function')
     return onCustomEvent(eventName, pattern)
@@ -575,7 +576,8 @@ class SignalCompat extends Signal {
   removeListener (eventName, handler) {
     if (arguments.length !== 2) throw Error('Signal.removeListener() expects two arguments')
     if (eventName === 'change' || eventName === 'all') {
-      return removeModelListener(eventName, handler)
+      const rootId = (getRoot(this) || this)?.[ROOT_ID]
+      return removeModelListener(rootId, eventName, handler)
     }
     return removeCustomEventListener(eventName, handler)
   }
@@ -613,13 +615,13 @@ class SignalCompat extends Signal {
     const toRootId = (getRoot($to) || $to)?.[ROOT_ID]
     if (!mirrorOnly) {
       $from[REF_TARGET] = $to
-      setRefLink(fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
+      setRefLink(fromRootId, fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
         mirrorOnly: false,
         fromRootId,
         toRootId
       })
     } else {
-      setRefLink(fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
+      setRefLink(fromRootId, fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
         mirrorOnly: true,
         onChange,
         fromRootId,
@@ -669,7 +671,8 @@ class SignalCompat extends Signal {
       existing.stop()
       store.delete(fromPath)
     }
-    removeRefLink(fromPath)
+    const fromRootId = (getRoot($from) || $from)?.[ROOT_ID]
+    removeRefLink(fromRootId, fromPath)
     const $target = resolveRefSignal($from)
     if ($target !== $from) {
       setDiffDeepBypassRef($from, deepCopy($target.get()))
@@ -801,7 +804,10 @@ function readRefValue ($signal) {
 function resolveRefSignal ($signal) {
   const directTarget = resolveRefSignalSafe($signal)
   if (directTarget && directTarget !== $signal) return directTarget
-  const resolvedSegments = resolveRefSegmentsSafe($signal[SEGMENTS])
+  const resolvedSegments = resolveRefSegmentsSafe(
+    $signal[SEGMENTS],
+    (getRoot($signal) || $signal)?.[ROOT_ID]
+  )
   if (!resolvedSegments) return $signal
   const $root = getRoot($signal) || $signal
   return resolveSignal($root, resolvedSegments)
@@ -822,7 +828,7 @@ function setDiffDeepBypassRef ($signal, value) {
 function mirrorRefMutationFromTarget (targetSegments, value) {
   if (!Array.isArray(targetSegments) || targetSegments.length === 0) return
   const updates = []
-  for (const link of getRefLinks().values()) {
+  for (const link of getAllRefLinks()) {
     if (!isPathPrefix(link.toSegments, targetSegments)) continue
     const suffix = targetSegments.slice(link.toSegments.length)
     updates.push({
@@ -909,7 +915,10 @@ function resolveSignal ($signal, segments) {
 function resolveSignalWithRefs ($signal, relativeSegments) {
   const baseSegments = Array.isArray($signal?.[SEGMENTS]) ? $signal[SEGMENTS] : []
   const absoluteSegments = baseSegments.concat(relativeSegments)
-  const resolvedSegments = resolveRefSegmentsSafe(absoluteSegments)
+  const resolvedSegments = resolveRefSegmentsSafe(
+    absoluteSegments,
+    (getRoot($signal) || $signal)?.[ROOT_ID]
+  )
   if (!resolvedSegments) return resolveSignal($signal, relativeSegments)
 
   // Signals created through root functions can carry a raw root in [ROOT].

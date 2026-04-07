@@ -1,4 +1,5 @@
 import { getRefLinks } from './refRegistry.js'
+import { GLOBAL_ROOT_ID } from '../Root.js'
 
 export const REF_TARGET = Symbol.for('teamplay.compat.refTarget')
 
@@ -16,14 +17,14 @@ export function resolveRefSignalSafe ($signal, maxDepth = 32) {
   return undefined
 }
 
-export function resolveRefSegmentsSafe (segments, maxDepth = 32) {
+export function resolveRefSegmentsSafe (segments, rootId = GLOBAL_ROOT_ID, maxDepth = 32) {
   if (!Array.isArray(segments) || segments.length === 0) return undefined
   let current = [...segments]
   const visited = new Set([toPathKey(current)])
   let changed = false
 
   for (let i = 0; i < maxDepth; i++) {
-    const link = findBestMatchingLink(current)
+    const link = findBestMatchingLink(current, rootId)
     if (!link) return changed ? current : undefined
     const suffix = current.slice(link.fromSegments.length)
     const next = link.toSegments.concat(suffix)
@@ -36,9 +37,9 @@ export function resolveRefSegmentsSafe (segments, maxDepth = 32) {
   return undefined
 }
 
-function findBestMatchingLink (segments) {
+function findBestMatchingLink (segments, rootId) {
   let best
-  for (const link of getRefLinks().values()) {
+  for (const link of getRefLinks(rootId).values()) {
     if (link.mirrorOnly) continue
     if (!isPathPrefix(link.fromSegments, segments)) continue
     if (!best || link.fromSegments.length > best.fromSegments.length) {
