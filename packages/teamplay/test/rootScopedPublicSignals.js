@@ -8,6 +8,7 @@ import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { querySubscriptions, QUERIES, VIEW_HASH } from '../orm/Query.js'
 import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+import { getRootOwnedViewHashes } from '../orm/rootContext.js'
 import connect from '../connect/test.js'
 
 before(connect)
@@ -15,6 +16,7 @@ before(connect)
 const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const PUBLIC_COLLECTION = 'rootScopedGamesPublic'
 const PUBLIC_MODEL_COLLECTION = 'rootScopedUsersPublic'
+const PUBLIC_VIEW_COLLECTION = 'rootScopedGamesPublicViews'
 
 describeCompat('root-scoped public signals', () => {
   let prevSubscriptionGcDelay
@@ -31,8 +33,10 @@ describeCompat('root-scoped public signals', () => {
 
   afterEach(async () => {
     _del([PUBLIC_COLLECTION])
+    _del([PUBLIC_VIEW_COLLECTION])
     _del([PUBLIC_MODEL_COLLECTION])
     await destroyConnectionCollection(PUBLIC_COLLECTION)
+    await destroyConnectionCollection(PUBLIC_VIEW_COLLECTION)
     await destroyConnectionCollection(PUBLIC_MODEL_COLLECTION)
     await docSubscriptions.flushPendingDestroys()
     await querySubscriptions.flushPendingDestroys()
@@ -82,6 +86,38 @@ describeCompat('root-scoped public signals', () => {
 
     await $queryA.unsubscribe()
     await $queryB.unsubscribe()
+  })
+
+  it('tracks query view ownership inside root contexts while transport stays shared', async () => {
+    const rootA = createRoot('query-view-root-A')
+    const rootB = createRoot('query-view-root-B')
+
+    await rootA[PUBLIC_VIEW_COLLECTION]._1.set({ name: 'Game 1', active: true })
+
+    const $queryA = rootA.query(PUBLIC_VIEW_COLLECTION, { active: true })
+    const $queryB = rootB.query(PUBLIC_VIEW_COLLECTION, { active: true })
+
+    await $queryA.subscribe()
+    await $queryB.subscribe()
+
+    assert.deepEqual(
+      Array.from(getRootOwnedViewHashes('query-view-root-A', 'query')),
+      [$queryA[VIEW_HASH]]
+    )
+    assert.deepEqual(
+      Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')),
+      [$queryB[VIEW_HASH]]
+    )
+
+    await $queryA.unsubscribe()
+    assert.deepEqual(Array.from(getRootOwnedViewHashes('query-view-root-A', 'query')), [])
+    assert.deepEqual(
+      Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')),
+      [$queryB[VIEW_HASH]]
+    )
+
+    await $queryB.unsubscribe()
+    assert.deepEqual(Array.from(getRootOwnedViewHashes('query-view-root-B', 'query')), [])
   })
 
   it('shares doc transport across root-scoped public signals and keeps it alive until both roots unsubscribe', async () => {

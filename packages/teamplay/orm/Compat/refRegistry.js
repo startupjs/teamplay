@@ -1,7 +1,7 @@
 import { GLOBAL_ROOT_ID } from '../Root.js'
 import { normalizeRootId } from '../rootScope.js'
+import { getRootContext, getRootContexts } from '../rootContext.js'
 
-const refLinksByRoot = new Map()
 const EMPTY_MAP = new Map()
 
 export function setRefLink (rootId, fromPath, toPath, fromSegments, toSegments, options = {}) {
@@ -28,7 +28,6 @@ export function removeRefLink (rootId, fromPath) {
   const store = getRefStore(rootId)
   if (!store) return
   store.delete(fromPath)
-  if (!store.size) refLinksByRoot.delete(normalizeRootId(rootId))
 }
 
 export function getRefLinks (rootId = GLOBAL_ROOT_ID) {
@@ -36,17 +35,21 @@ export function getRefLinks (rootId = GLOBAL_ROOT_ID) {
 }
 
 export function * getAllRefLinks () {
-  for (const store of refLinksByRoot.values()) {
-    yield * store.values()
+  for (const context of getRootContexts()) {
+    yield * context.refLinks.values()
   }
 }
 
 export function getRefRootIds () {
-  return refLinksByRoot.keys()
+  return Array.from(getRootContexts())
+    .filter(context => context.refLinks.size > 0)
+    .map(context => context.rootId)
 }
 
 export function __resetRefLinksForTests () {
-  refLinksByRoot.clear()
+  for (const context of getRootContexts()) {
+    context.resetRefs()
+  }
 }
 
 function splitPath (path) {
@@ -54,11 +57,5 @@ function splitPath (path) {
 }
 
 function getRefStore (rootId, create = false) {
-  const normalizedRootId = normalizeRootId(rootId)
-  let store = refLinksByRoot.get(normalizedRootId)
-  if (!store && create) {
-    store = new Map()
-    refLinksByRoot.set(normalizedRootId, store)
-  }
-  return store
+  return getRootContext(normalizeRootId(rootId), create)?.refLinks
 }

@@ -2,11 +2,9 @@ import { getRefLinks, getRefRootIds } from './refRegistry.js'
 import { isCompatEnv } from '../compatEnv.js'
 import { isSilentContextActive, isModelEventsSilentContextActive } from './silentContext.js'
 import { normalizeRootId } from '../rootScope.js'
+import { getRootContext, getRootContexts } from '../rootContext.js'
 
-const modelListeners = {
-  change: new Map(),
-  all: new Map()
-}
+const MODEL_EVENT_NAMES = ['change', 'all']
 
 export function isModelEventsEnabled () {
   return isCompatEnv()
@@ -23,7 +21,7 @@ export function normalizePattern (pattern, methodName) {
 
 export function onModelEvent (rootId, eventName, pattern, handler) {
   if (typeof handler !== 'function') throw Error('Model event handler must be a function')
-  if (!modelListeners[eventName]) throw Error(`Unsupported model event: ${eventName}`)
+  if (!MODEL_EVENT_NAMES.includes(eventName)) throw Error(`Unsupported model event: ${eventName}`)
   const store = getModelEventRootStore(eventName, rootId, true)
   const normalized = normalizePattern(pattern)
   let entry = store.get(normalized)
@@ -46,7 +44,6 @@ export function removeModelListener (rootId, eventName, handler) {
     entry.handlers.delete(handler)
     if (!entry.handlers.size) store.delete(pattern)
   }
-  if (!store.size) modelListeners[eventName].delete(normalizeRootId(rootId))
 }
 
 export function emitModelChange (path, value, prevValue, meta) {
@@ -84,8 +81,9 @@ export function emitModelChange (path, value, prevValue, meta) {
 }
 
 export function __resetModelEventsForTests () {
-  modelListeners.change.clear()
-  modelListeners.all.clear()
+  for (const context of getRootContexts()) {
+    context.resetModelListeners()
+  }
 }
 
 function emitForEvent (rootId, eventName, pathSegments, value, prevValue, meta, resolvedEventName = eventName) {
@@ -110,22 +108,14 @@ function splitPattern (pattern) {
 }
 
 function getModelEventRootStore (eventName, rootId, create = false) {
-  const perRoot = modelListeners[eventName]
-  if (!perRoot) return
-  const normalizedRootId = normalizeRootId(rootId)
-  let store = perRoot.get(normalizedRootId)
-  if (!store && create) {
-    store = new Map()
-    perRoot.set(normalizedRootId, store)
-  }
-  return store
+  return getRootContext(normalizeRootId(rootId), create)?.getModelEventStore(eventName, create)
 }
 
 function getModelEventRootIds () {
   const rootIds = new Set()
-  for (const perRoot of Object.values(modelListeners)) {
-    for (const [rootId, store] of perRoot) {
-      if (store.size) rootIds.add(rootId)
+  for (const context of getRootContexts()) {
+    for (const store of Object.values(context.modelListeners)) {
+      if (store.size) rootIds.add(context.rootId)
     }
   }
   return rootIds

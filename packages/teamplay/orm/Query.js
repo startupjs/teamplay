@@ -10,6 +10,8 @@ import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 import { getScopedSignalHash } from './rootScope.js'
+import { getRoot, ROOT_ID } from './Root.js'
+import { registerRootOwnedView, unregisterRootOwnedView } from './rootContext.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 export const COLLECTION_NAME = Symbol('query collection name')
@@ -259,6 +261,7 @@ export class Query {
 export class QuerySubscriptions {
   constructor (QueryClass = Query) {
     this.QueryClass = QueryClass
+    this.viewKind = 'query'
     this.subCount = new Map() // viewHash -> count
     this.transportSubCount = new Map() // transportHash -> attached views count
     this.queries = new Map()
@@ -276,6 +279,7 @@ export class QuerySubscriptions {
     const params = cloneQueryParams($query[PARAMS])
     const transportHash = $query[HASH]
     const viewHash = getQueryViewHash($query)
+    const rootId = getRoot($query)?.[ROOT_ID]
     this.cancelDestroy(viewHash)
     let count = this.subCount.get(viewHash) || 0
     count += 1
@@ -302,7 +306,7 @@ export class QuerySubscriptions {
     if (!isAttached || existingTransportHash !== transportHash) {
       if (isAttached) this.removeViewMeta(viewHash, existingTransportHash)
       this.viewToTransport.set(viewHash, transportHash)
-      this.viewMeta.set(viewHash, { collectionName, params, transportHash })
+      this.viewMeta.set(viewHash, { collectionName, params, transportHash, rootId })
       let viewHashes = this.viewHashesByTransport.get(transportHash)
       if (!viewHashes) {
         viewHashes = new Set()
@@ -310,6 +314,7 @@ export class QuerySubscriptions {
       }
       viewHashes.add(viewHash)
       attachQueryView(query, viewHash)
+      registerRootOwnedView(rootId, this.viewKind, viewHash)
 
       const transportCount = (this.transportSubCount.get(transportHash) || 0) + 1
       this.transportSubCount.set(transportHash, transportCount)
@@ -429,11 +434,12 @@ export class QuerySubscriptions {
         settlePending()
         return
       }
-      const { transportHash } = meta
+      const { transportHash, rootId } = meta
       const query = this.queries.get(transportHash)
       if (!query) {
         this.subCount.delete(viewHash)
         this.removeViewMeta(viewHash, transportHash)
+        unregisterRootOwnedView(rootId, this.viewKind, viewHash)
         const nextTransportCount = Math.max((this.transportSubCount.get(transportHash) || 0) - 1, 0)
         if (nextTransportCount > 0) this.transportSubCount.set(transportHash, nextTransportCount)
         else this.transportSubCount.delete(transportHash)
@@ -443,6 +449,7 @@ export class QuerySubscriptions {
       this.subCount.delete(viewHash)
       this.removeViewMeta(viewHash, transportHash)
       detachQueryView(query, viewHash)
+      unregisterRootOwnedView(rootId, this.viewKind, viewHash)
 
       const nextTransportCount = Math.max((this.transportSubCount.get(transportHash) || 0) - 1, 0)
       this.transportSubCount.set(transportHash, nextTransportCount)
