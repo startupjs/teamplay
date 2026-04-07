@@ -93,7 +93,10 @@ export class Query {
   }
 
   async _unsubscribe () {
-    if (!this.shareQuery) throw Error('this.shareQuery is not defined. This should never happen')
+    if (!this.shareQuery) {
+      this.activeTransportMode = 'idle'
+      return
+    }
     await new Promise((resolve, reject) => {
       this.shareQuery.destroy(err => {
         if (err) return reject(err)
@@ -824,6 +827,7 @@ async function subscribeQueryTransport (query, mode) {
 }
 
 async function unsubscribeQueryTransport (query, { keepRoots = true } = {}) {
+  if (!query) return
   if (query.initialized) {
     query.initialized = undefined
     query._detachTransportData?.({ keepRoots })

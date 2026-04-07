@@ -19,6 +19,7 @@ import { isMissingShareDoc } from '../orm/missingDoc.js'
 import {
   querySubscriptions,
   QuerySubscriptions,
+  Query,
   COLLECTION_NAME as QUERY_COLLECTION_NAME,
   PARAMS as QUERY_PARAMS,
   HASH as QUERY_HASH,
@@ -699,6 +700,35 @@ describe('QuerySubscriptions', () => {
     assert.equal(manager.ownerToTransport.get(ownerKey), undefined, 'owner transport link should be removed')
     assert.equal(manager.transportSubCount.get(transportHash), undefined, 'stale transport counter should be removed')
     assert.equal(manager.ownerKeysByTransport.get(transportHash), undefined, 'stale owner key bucket should be removed')
+  })
+
+  it('_unsubscribe is a no-op when shareQuery is already missing', async () => {
+    const query = new Query('gamesQuery', { active: false })
+
+    query.activeTransportMode = 'fetch'
+    query.shareQuery = undefined
+
+    await assert.doesNotReject(async () => query._unsubscribe())
+    assert.equal(query.activeTransportMode, 'idle')
+  })
+
+  it('reconcileTransportNow tolerates stale active mode when shareQuery is already missing', async () => {
+    const manager = new QuerySubscriptions(class {
+      async subscribe () {}
+      async unsubscribe () {}
+    })
+    const $query = getQuerySignal('gamesQuery', { active: false })
+    const transportHash = $query[QUERY_HASH]
+    const query = new Query('gamesQuery', { active: false }, { hash: transportHash })
+
+    query.activeTransportMode = 'fetch'
+    query.shareQuery = undefined
+    query.initialized = true
+
+    manager.queries.set(transportHash, query)
+
+    await assert.doesNotReject(async () => manager.reconcileTransportNow(transportHash))
+    assert.equal(query.activeTransportMode, 'idle')
   })
 
   it('normalizes undefined values in query params the same way as Racer in compat mode', () => {
