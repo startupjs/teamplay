@@ -22,6 +22,7 @@ before(connect)
 
 const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const QUERY_COLLECTION = 'rootFinalizationQueries'
+const DOC_COLLECTION = 'rootFinalizationDocs'
 
 describe('root finalization', () => {
   let prevSubscriptionGcDelay
@@ -36,7 +37,9 @@ describe('root finalization', () => {
     await querySubscriptions.clear()
     await aggregationSubscriptions.clear()
     _del([QUERY_COLLECTION])
+    _del([DOC_COLLECTION])
     await destroyConnectionCollection(QUERY_COLLECTION)
+    await destroyConnectionCollection(DOC_COLLECTION)
     __resetRefLinksForTests()
     __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
@@ -150,6 +153,71 @@ describe('root finalization', () => {
       assert.equal(querySubscriptions.transportSubCount.get(transportHash), 1)
       assert.deepEqual($queryB.getIds(), ['_1'])
       assert.ok(__getRootContextForTests(rootIdB))
+
+      await closeSignal($rootB)
+    })
+
+    it('keeps live query transport alive when a fetchOnly sibling root is GC cleaned', async () => {
+      const rootIdA = 'fr-query-fetch-root-A'
+      const rootIdB = 'fr-query-live-root-B'
+      const docId = '_fetchOnlySibling'
+      const marker = 'fetch-only-finalization'
+      let $rootA = getRootSignal({ rootId: rootIdA, fetchOnly: true })
+      const $rootB = getRootSignal({ rootId: rootIdB, fetchOnly: false })
+
+      await $rootA[QUERY_COLLECTION][docId].set({ name: 'One', marker })
+
+      let $queryA = $rootA.query(QUERY_COLLECTION, { marker })
+      const $queryB = $rootB.query(QUERY_COLLECTION, { marker })
+
+      await $queryA.subscribe()
+      await $queryB.subscribe()
+
+      const transportHash = $queryA[QUERY_HASH]
+      assert.equal(querySubscriptions.transportSubCount.get(transportHash), 2)
+      assert.equal(querySubscriptions.queries.get(transportHash)?.activeTransportMode, 'subscribe')
+
+      $queryA = undefined
+      $rootA = undefined
+
+      await waitForDisposed(rootIdA)
+
+      assert.equal(__getRootContextForTests(rootIdA), undefined)
+      assert.equal(querySubscriptions.transportSubCount.get(transportHash), 1)
+      assert.equal(querySubscriptions.queries.get(transportHash)?.activeTransportMode, 'subscribe')
+      assert.deepEqual($queryB.getIds(), [docId])
+
+      await closeSignal($rootB)
+    })
+
+    it('keeps direct doc transport alive for sibling root when one root is GC cleaned', async () => {
+      const rootIdA = 'fr-doc-root-A'
+      const rootIdB = 'fr-doc-root-B'
+      const docId = '_doc1'
+      const docHash = JSON.stringify([DOC_COLLECTION, docId])
+      let $rootA = getRootSignal({ rootId: rootIdA, fetchOnly: true })
+      const $rootB = getRootSignal({ rootId: rootIdB, fetchOnly: false })
+
+      await $rootA[DOC_COLLECTION][docId].set({ name: 'One' })
+
+      let $docA = $rootA[DOC_COLLECTION][docId]
+      const $docB = $rootB[DOC_COLLECTION][docId]
+
+      await $docA.subscribe()
+      await $docB.subscribe()
+
+      assert.equal(docSubscriptions.subCount.get(docHash), 2)
+      assert.equal(docSubscriptions.docs.get(docHash)?.activeTransportMode, 'subscribe')
+
+      $docA = undefined
+      $rootA = undefined
+
+      await waitForDisposed(rootIdA)
+
+      assert.equal(__getRootContextForTests(rootIdA), undefined)
+      assert.equal(docSubscriptions.subCount.get(docHash), 1)
+      assert.equal(docSubscriptions.docs.get(docHash)?.activeTransportMode, 'subscribe')
+      assert.equal($docB.get('name'), 'One')
 
       await closeSignal($rootB)
     })
