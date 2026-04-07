@@ -9,6 +9,7 @@ const VIEW_KIND_AGGREGATION = 'aggregation'
 export default class RootContext {
   constructor (rootId) {
     this.rootId = normalizeRootId(rootId)
+    this.privateData = {}
     this.refLinks = new Map()
     this.activeRefs = new Map()
     this.modelListeners = {
@@ -28,6 +29,22 @@ export default class RootContext {
       this.modelListeners[eventName] = store
     }
     return store
+  }
+
+  getPrivateDataRoot () {
+    return this.privateData
+  }
+
+  getPrivateDataAt (segments) {
+    return getPath(segments, this.privateData)
+  }
+
+  setPrivateDataAt (segments, value) {
+    setPath(segments, value, this.privateData)
+  }
+
+  delPrivateDataAt (segments) {
+    delPath(segments, this.privateData)
   }
 
   getViewHashes (kind) {
@@ -109,6 +126,10 @@ export default class RootContext {
     this.aggregationViewHashes.clear()
   }
 
+  resetPrivateData () {
+    this.privateData = {}
+  }
+
   resetSignalHashes () {
     this.signalHashes.clear()
   }
@@ -119,6 +140,7 @@ export default class RootContext {
 
   isRuntimeEmpty () {
     return (
+      isPlainObjectEmpty(this.privateData) &&
       this.refLinks.size === 0 &&
       this.activeRefs.size === 0 &&
       Object.values(this.modelListeners).every(store => store.size === 0) &&
@@ -208,4 +230,46 @@ export function __getRootContextForTests (rootId) {
 
 export function __resetRootContextsForTests () {
   ROOT_CONTEXTS.clear()
+}
+
+function getPath (segments, dataNode) {
+  for (const segment of segments) {
+    if (dataNode == null) return dataNode
+    dataNode = dataNode[segment]
+  }
+  return dataNode
+}
+
+function setPath (segments, value, tree) {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    throw Error('setPrivateDataAt requires a non-empty segments array')
+  }
+  let dataNode = tree
+  for (let i = 0; i < segments.length - 1; i++) {
+    const segment = segments[i]
+    dataNode = dataNode[segment] ??= {}
+  }
+  dataNode[segments[segments.length - 1]] = value
+}
+
+function delPath (segments, tree) {
+  if (!Array.isArray(segments) || segments.length === 0) return
+  const parents = []
+  let dataNode = tree
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (dataNode == null) return
+    parents.push([dataNode, segments[i]])
+    dataNode = dataNode[segments[i]]
+  }
+  if (dataNode == null) return
+  delete dataNode[segments[segments.length - 1]]
+  for (let i = parents.length - 1; i >= 0; i--) {
+    const [parent, segment] = parents[i]
+    if (!isPlainObjectEmpty(parent[segment])) break
+    delete parent[segment]
+  }
+}
+
+function isPlainObjectEmpty (value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0
 }

@@ -6,6 +6,7 @@ import {
   normalizeRootId,
   isGlobalRootId,
   isPrivateCollectionSegments,
+  getPrivateDataSegments,
   scopeStorageSegments,
   descopeStorageSegments,
   getLogicalRootSnapshot,
@@ -31,6 +32,19 @@ describe('rootScope helpers', () => {
     assert.equal(isPrivateCollectionSegments(['$queries', 'hash']), false)
     assert.equal(isPrivateCollectionSegments(['$aggregations', 'hash']), false)
     assert.equal(isPrivateCollectionSegments(['users', 'u1']), false)
+  })
+
+  it('builds private data segments for private collections only', () => {
+    assert.deepEqual(
+      getPrivateDataSegments(['_session', 'userId']),
+      ['_session', 'userId']
+    )
+    assert.deepEqual(
+      getPrivateDataSegments(['$queries', 'hash']),
+      ['$queries', 'hash']
+    )
+    const publicSegments = ['users', 'u1']
+    assert.equal(getPrivateDataSegments(publicSegments), publicSegments)
   })
 
   it('scopes and descopes private storage paths', () => {

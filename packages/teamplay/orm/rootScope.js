@@ -26,6 +26,11 @@ export function scopeStorageSegments (rootId, logicalSegments) {
   return [ROOTS_BUCKET, normalizeRootId(rootId), ...logicalSegments]
 }
 
+export function getPrivateDataSegments (logicalSegments) {
+  if (!isPrivateCollectionSegments(logicalSegments)) return logicalSegments
+  return [...logicalSegments]
+}
+
 export function descopeStorageSegments (physicalSegments) {
   if (!Array.isArray(physicalSegments)) return physicalSegments
   return physicalSegments[0] === ROOTS_BUCKET ? physicalSegments.slice(2) : physicalSegments
