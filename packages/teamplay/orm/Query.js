@@ -1,7 +1,7 @@
 import { raw } from '@nx-js/observer-util'
 import { set as _set, getRaw } from './dataTree.js'
 import getSignal from './getSignal.js'
-import { getConnection, fetchOnly } from './connection.js'
+import { getConnection } from './connection.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isCompatEnv } from './compatEnv.js'
 import { docSubscriptions } from './Doc.js'
@@ -10,7 +10,7 @@ import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 import { getScopedSignalHash } from './rootScope.js'
-import { getRoot, ROOT_ID } from './Root.js'
+import { getRoot, ROOT_ID, getRootTransportMode } from './Root.js'
 import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.js'
 import {
   delPrivateData,
@@ -39,6 +39,7 @@ export class Query {
       onSubscribe: () => this._subscribe(),
       onUnsubscribe: () => this._unsubscribe()
     })
+    this.transportMode = 'subscribe'
   }
 
   get subscribed () {
@@ -51,7 +52,8 @@ export class Query {
     this._initData()
   }
 
-  async subscribe () {
+  async subscribe ({ mode } = {}) {
+    if (mode) this.transportMode = mode
     await this.lifecycle.subscribe()
     this.init()
   }
@@ -79,7 +81,7 @@ export class Query {
 
   async _subscribe () {
     await new Promise((resolve, reject) => {
-      const method = fetchOnly ? 'createFetchQuery' : 'createSubscribeQuery'
+      const method = this.transportMode === 'fetch' ? 'createFetchQuery' : 'createSubscribeQuery'
       this.shareQuery = getConnection()[method](this.collectionName, this.params, {}, err => {
         if (err) return reject(err)
         resolve()
@@ -276,7 +278,7 @@ export class QuerySubscriptions {
     })
   }
 
-  subscribe ($query) {
+  subscribe ($query, { intent = 'subscribe' } = {}) {
     const collectionName = $query[COLLECTION_NAME]
     const params = cloneQueryParams($query[PARAMS])
     const transportHash = $query[HASH]
@@ -321,7 +323,8 @@ export class QuerySubscriptions {
       const transportCount = (this.transportSubCount.get(transportHash) || 0) + 1
       this.transportSubCount.set(transportHash, transportCount)
       if (transportCount === 1) {
-        query._subscribing = query.subscribe().then(() => { query._subscribing = undefined })
+        const mode = getRootTransportMode($query, intent)
+        query._subscribing = query.subscribe({ mode }).then(() => { query._subscribing = undefined })
       }
     }
 

@@ -47,11 +47,19 @@ export function getRoot (signal) {
 }
 
 export function getRootFetchOnly (rootOrRootId) {
+  const $root = typeof rootOrRootId === 'string'
+    ? undefined
+    : (getRoot(rootOrRootId) || rootOrRootId)
   const rootId = typeof rootOrRootId === 'string'
     ? rootOrRootId
-    : rootOrRootId?.[ROOT_ID]
+    : $root?.[ROOT_ID]
   const context = getRootContext(rootId, false)
   return context?.getFetchOnly() ?? false
+}
+
+export function getRootTransportMode (rootOrRootId, intent = 'subscribe') {
+  if (intent === 'fetch') return 'fetch'
+  return getRootFetchOnly(rootOrRootId) ? 'fetch' : 'subscribe'
 }
 
 export function registerRootFinalizer ($root) {

@@ -9,7 +9,7 @@ import {
   isPublicDocumentSignal
 } from '../SignalBase.js'
 import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.js'
-import { isPrivateMutationForbidden, fetchOnly, setFetchOnly } from '../connection.js'
+import { isPrivateMutationForbidden } from '../connection.js'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
@@ -123,10 +123,8 @@ class SignalCompat extends Signal {
   }
 
   fetch (...items) {
-    return withFetchOnly(() => {
-      if (items.length > 0) return subscribeMany(items, 'subscribe')
-      return subscribeSelf(this)
-    })
+    if (items.length > 0) return subscribeMany(items, 'subscribe', 'fetch')
+    return subscribeSelf(this, 'fetch')
   }
 
   unfetch (...items) {
@@ -1297,17 +1295,7 @@ function withQueryScopeOptions (options, $root) {
   return nextOptions
 }
 
-function withFetchOnly (fn) {
-  const prevFetchOnly = fetchOnly
-  setFetchOnly(true)
-  try {
-    return fn()
-  } finally {
-    setFetchOnly(prevFetchOnly)
-  }
-}
-
-function subscribeMany (items, action) {
+function subscribeMany (items, action, intent = 'subscribe') {
   const targets = flattenItems(items)
   const promises = []
   for (const target of targets) {
@@ -1316,7 +1304,7 @@ function subscribeMany (items, action) {
       throw Error(`Signal.${action}() accepts only Signal instances. Got: ${target}`)
     }
     const result = action === 'subscribe'
-      ? subscribeSelf(target)
+      ? subscribeSelf(target, intent)
       : unsubscribeSelf(target)
     if (result?.then) promises.push(result)
   }
@@ -1335,20 +1323,20 @@ function flattenItems (items, result = []) {
   return result
 }
 
-function subscribeSelf ($signal) {
+function subscribeSelf ($signal, intent = 'subscribe') {
   if ($signal[IS_QUERY]) {
     return (async () => {
-      await querySubscriptions.subscribe($signal)
+      await querySubscriptions.subscribe($signal, { intent })
       await waitForImperativeQueryReady($signal)
     })()
   }
   if ($signal[IS_AGGREGATION]) {
     return (async () => {
-      await aggregationSubscriptions.subscribe($signal)
+      await aggregationSubscriptions.subscribe($signal, { intent })
       await waitForImperativeQueryReady($signal)
     })()
   }
-  if (isPublicDocumentSignal($signal)) return docSubscriptions.subscribe($signal)
+  if (isPublicDocumentSignal($signal)) return docSubscriptions.subscribe($signal, { intent })
   if (isPublicCollectionSignal($signal)) {
     throw Error('Signal.subscribe() expects a query signal. Use .query() for collections.')
   }

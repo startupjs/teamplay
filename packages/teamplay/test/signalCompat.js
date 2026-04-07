@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
 import { $, sub, addModel, aggregation, getRootSignal } from '../index.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
-import { getConnection, setConnection } from '../orm/connection.js'
+import { getConnection, setConnection, getDefaultFetchOnly, setFetchOnly } from '../orm/connection.js'
 import connect from '../connect/test.js'
 import SignalCompat from '../orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../orm/SignalBase.js'
@@ -17,7 +17,7 @@ import { PARAMS, HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/
 import { AGGREGATIONS } from '../orm/Aggregation.js'
 import { delPrivateData, setPrivateData } from '../orm/privateData.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.js'
+import { __resetRootContextsForTests, getRootContext } from '../orm/rootContext.js'
 import {
   __setImperativeQueryReadyTimeoutForTests,
   __resetImperativeQueryReadyTimeoutForTests
@@ -1852,6 +1852,62 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupAggregationRuntimeHashes.push(getAggregationRuntimeHash($agg))
     setAggregationRuntime($agg, [{ _id: 'a' }, { _id: 'b' }])
     assert.deepEqual($agg.getExtra(), [{ _id: 'a' }, { _id: 'b' }])
+  })
+
+  it('fetch() does not toggle the global fetchOnly default', async () => {
+    const previousDefaultFetchOnly = getDefaultFetchOnly()
+    setFetchOnly(false)
+    try {
+      const $query = $compatRoot.query(collection, { active: true })
+      cleanupQueryHashes.push($query[QUERY_HASH])
+      cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
+
+      await $query.fetch()
+
+      assert.equal(getDefaultFetchOnly(), false)
+      await $query.unfetch()
+    } finally {
+      setFetchOnly(previousDefaultFetchOnly)
+    }
+  })
+
+  it('uses root-level fetchOnly to choose query transport method', async () => {
+    const connection = getConnection()
+    const originalCreateFetchQuery = connection.createFetchQuery.bind(connection)
+    const originalCreateSubscribeQuery = connection.createSubscribeQuery.bind(connection)
+    const calls = []
+
+    connection.createFetchQuery = function (...args) {
+      calls.push('fetch')
+      return originalCreateFetchQuery(...args)
+    }
+    connection.createSubscribeQuery = function (...args) {
+      calls.push('subscribe')
+      return originalCreateSubscribeQuery(...args)
+    }
+
+    try {
+      getRootContext('compat-fetch-root', true, { fetchOnly: true })
+      getRootContext('compat-live-root', true, { fetchOnly: false })
+      const $fetchRoot = createCompatRoot('compat-fetch-root')
+      const $liveRoot = createCompatRoot('compat-live-root')
+
+      const $fetchQuery = $fetchRoot.query(collection, { mode: 'fetchOnly' })
+      const $liveQuery = $liveRoot.query(collection, { mode: 'live' })
+      cleanupQueryHashes.push($fetchQuery[QUERY_HASH], $liveQuery[QUERY_HASH])
+      cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($fetchQuery), getQueryRuntimeHash($liveQuery))
+
+      await $fetchQuery.subscribe()
+      await $liveQuery.subscribe()
+
+      assert.deepEqual(calls, ['fetch', 'subscribe'])
+
+      await $fetchQuery.unsubscribe()
+      await $liveQuery.unsubscribe()
+    } finally {
+      connection.createFetchQuery = originalCreateFetchQuery
+      connection.createSubscribeQuery = originalCreateSubscribeQuery
+    }
   })
 
   it('root subscribe/unsubscribe flattens arrays and ignores falsy values', async () => {

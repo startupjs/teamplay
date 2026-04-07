@@ -1,14 +1,14 @@
 import { isObservable, observable, raw } from '@nx-js/observer-util'
 import { set as _set, del as _del, getRaw as _getRaw } from './dataTree.js'
 import { SEGMENTS } from './Signal.js'
-import { getConnection, fetchOnly } from './connection.js'
+import { getConnection } from './connection.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 import { isMissingShareDoc } from './missingDoc.js'
-import { getRoot, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
+import { getRoot, ROOT_ID, GLOBAL_ROOT_ID, getRootTransportMode } from './Root.js'
 import {
   registerRootOwnedDirectDocSubscription,
   unregisterRootOwnedDirectDocSubscription,
@@ -45,6 +45,7 @@ class Doc {
       onSubscribe: () => this._subscribe(),
       onUnsubscribe: () => this._unsubscribe()
     })
+    this.transportMode = 'subscribe'
     this.init()
   }
 
@@ -58,7 +59,8 @@ class Doc {
     this._initData()
   }
 
-  async subscribe () {
+  async subscribe ({ mode } = {}) {
+    if (mode) this.transportMode = mode
     await this.lifecycle.subscribe()
     this.init()
   }
@@ -70,7 +72,7 @@ class Doc {
   async _subscribe () {
     const doc = getConnection().get(this.collection, this.docId)
     await new Promise((resolve, reject) => {
-      const method = fetchOnly ? 'fetch' : 'subscribe'
+      const method = this.transportMode === 'fetch' ? 'fetch' : 'subscribe'
       doc[method](err => {
         if (err) return reject(err)
         resolve()
@@ -188,7 +190,7 @@ export class DocSubscriptions {
     }
   }
 
-  subscribe ($doc) {
+  subscribe ($doc, { intent = 'subscribe' } = {}) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
     const rootId = getOwningRootId($doc)
@@ -209,7 +211,8 @@ export class DocSubscriptions {
 
     this.init($doc)
     const doc = this.docs.get(hash)
-    doc._subscribing = doc.subscribe().then(() => { doc._subscribing = undefined })
+    const mode = getRootTransportMode($doc, intent)
+    doc._subscribing = doc.subscribe({ mode }).then(() => { doc._subscribing = undefined })
     return doc._subscribing
   }
 
