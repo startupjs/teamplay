@@ -128,8 +128,8 @@ class SignalCompat extends Signal {
   }
 
   unfetch (...items) {
-    if (items.length > 0) return subscribeMany(items, 'unsubscribe')
-    return unsubscribeSelf(this)
+    if (items.length > 0) return subscribeMany(items, 'unsubscribe', 'fetch')
+    return unsubscribeSelf(this, 'fetch')
   }
 
   getExtra () {
@@ -1305,7 +1305,7 @@ function subscribeMany (items, action, intent = 'subscribe') {
     }
     const result = action === 'subscribe'
       ? subscribeSelf(target, intent)
-      : unsubscribeSelf(target)
+      : unsubscribeSelf(target, intent)
     if (result?.then) promises.push(result)
   }
   if (promises.length) return Promise.all(promises)
@@ -1346,10 +1346,10 @@ function subscribeSelf ($signal, intent = 'subscribe') {
   throw Error('Signal.subscribe() expects a document or query signal')
 }
 
-function unsubscribeSelf ($signal) {
-  if ($signal[IS_QUERY]) return querySubscriptions.unsubscribe($signal)
-  if ($signal[IS_AGGREGATION]) return aggregationSubscriptions.unsubscribe($signal)
-  if (isPublicDocumentSignal($signal)) return docSubscriptions.unsubscribe($signal)
+function unsubscribeSelf ($signal, intent = 'subscribe') {
+  if ($signal[IS_QUERY]) return querySubscriptions.unsubscribe($signal, { intent })
+  if ($signal[IS_AGGREGATION]) return aggregationSubscriptions.unsubscribe($signal, { intent })
+  if (isPublicDocumentSignal($signal)) return docSubscriptions.unsubscribe($signal, { intent })
   if (isPublicCollectionSignal($signal)) {
     throw Error('Signal.unsubscribe() expects a query signal. Use .query() for collections.')
   }

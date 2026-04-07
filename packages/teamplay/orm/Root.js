@@ -41,6 +41,7 @@ export function getRootSignal ({
 }
 
 export function getRoot (signal) {
+  if (!signal) return undefined
   if (signal[ROOT]) return signal[ROOT]
   else if (signal[ROOT_ID]) return signal
   else return undefined

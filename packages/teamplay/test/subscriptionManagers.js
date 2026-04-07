@@ -89,17 +89,26 @@ class MockDoc {
     this.docId = docId
     this.subscribed = false
     this.initialized = false
+    this.activeTransportMode = 'idle'
+    this.requestedTransportMode = 'subscribe'
+    this.events = []
   }
 
   init () {
     this.initialized = true
   }
 
-  async subscribe () {
-    this.subscribed = true
+  async subscribe ({ mode } = {}) {
+    const nextMode = mode || 'subscribe'
+    this.requestedTransportMode = nextMode
+    this.activeTransportMode = nextMode
+    this.subscribed = nextMode === 'subscribe'
+    this.events.push(`subscribe:${nextMode}`)
   }
 
   async unsubscribe () {
+    this.events.push(`unsubscribe:${this.activeTransportMode}`)
+    this.activeTransportMode = 'idle'
     this.subscribed = false
   }
 }
@@ -139,14 +148,52 @@ class PendingMockDoc extends MockDoc {
 class MockQuery {
   constructor () {
     this.subscribed = false
+    this.initialized = false
+    this.requestedTransportMode = 'subscribe'
+    this.activeTransportMode = 'idle'
+    this.events = []
+    this.rootIds = new Set()
   }
 
-  async subscribe () {
-    this.subscribed = true
+  init () {
+    this.initialized = true
+  }
+
+  attachRoot (rootId) {
+    if (rootId == null) return
+    this.rootIds.add(rootId)
+  }
+
+  detachRoot (rootId) {
+    if (rootId == null) return
+    this.rootIds.delete(rootId)
+  }
+
+  _detachTransportData ({ keepRoots = true } = {}) {
+    if (!keepRoots) this.rootIds.clear()
+  }
+
+  async _subscribe () {
+    const mode = this.requestedTransportMode || 'subscribe'
+    this.events.push(`subscribe:${mode}`)
+    this.activeTransportMode = mode
+    this.subscribed = mode === 'subscribe'
+  }
+
+  async _unsubscribe () {
+    this.events.push(`unsubscribe:${this.activeTransportMode}`)
+    this.activeTransportMode = 'idle'
+    this.subscribed = false
+  }
+
+  async subscribe ({ mode } = {}) {
+    if (mode) this.requestedTransportMode = mode
+    await this._subscribe()
+    this.init()
   }
 
   async unsubscribe () {
-    this.subscribed = false
+    await this._unsubscribe()
   }
 }
 
@@ -338,6 +385,92 @@ describe('DocSubscriptions', () => {
     await docSubscriptions.unsubscribe($game)
     const shareDoc = getConnection().get('games', gameId)
     if (shareDoc.data && !isMissingShareDoc(shareDoc)) await cbPromise(cb => shareDoc.del(cb))
+  })
+
+  it('uses fetch transport for subscribe on fetchOnly roots', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_fetch_root', fetchOnly: true })
+    const $doc = $root.games._fetchOnlyDoc
+    const hash = JSON.stringify(['games', '_fetchOnlyDoc'])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+
+    const doc = manager.docs.get(hash)
+    assert.deepEqual(doc.events, ['subscribe:fetch'])
+    assert.equal(doc.activeTransportMode, 'fetch')
+    assert.equal(doc.subscribed, false)
+
+    await manager.unsubscribe($doc, { intent: 'subscribe' })
+    await manager.clear()
+  })
+
+  it('uses subscribe transport for subscribe on live roots', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_live_root', fetchOnly: false })
+    const $doc = $root.games._liveDoc
+    const hash = JSON.stringify(['games', '_liveDoc'])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+
+    const doc = manager.docs.get(hash)
+    assert.deepEqual(doc.events, ['subscribe:subscribe'])
+    assert.equal(doc.activeTransportMode, 'subscribe')
+    assert.equal(doc.subscribed, true)
+
+    await manager.unsubscribe($doc, { intent: 'subscribe' })
+    await manager.clear()
+  })
+
+  it('uses fetch transport for explicit fetch intent on live roots', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_fetch_intent_root', fetchOnly: false })
+    const $doc = $root.games._fetchIntentDoc
+    const hash = JSON.stringify(['games', '_fetchIntentDoc'])
+
+    await manager.subscribe($doc, { intent: 'fetch' })
+
+    const doc = manager.docs.get(hash)
+    assert.deepEqual(doc.events, ['subscribe:fetch'])
+    assert.equal(doc.activeTransportMode, 'fetch')
+    assert.equal(doc.subscribed, false)
+
+    await manager.unsubscribe($doc, { intent: 'fetch' })
+    await manager.clear()
+  })
+
+  it('upgrades and downgrades doc transport for mixed root modes', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $fetchRoot = getRootSignal({ rootId: '_doc_mixed_fetch_root', fetchOnly: true })
+    const $liveRoot = getRootSignal({ rootId: '_doc_mixed_live_root', fetchOnly: false })
+    const $fetchDoc = $fetchRoot.games._mixedDoc
+    const $liveDoc = $liveRoot.games._mixedDoc
+    const hash = JSON.stringify(['games', '_mixedDoc'])
+
+    await manager.subscribe($fetchDoc, { intent: 'subscribe' })
+    let doc = manager.docs.get(hash)
+    assert.deepEqual(doc.events, ['subscribe:fetch'])
+    assert.equal(doc.activeTransportMode, 'fetch')
+
+    await manager.subscribe($liveDoc, { intent: 'subscribe' })
+    doc = manager.docs.get(hash)
+    assert.deepEqual(doc.events, ['subscribe:fetch', 'unsubscribe:fetch', 'subscribe:subscribe'])
+    assert.equal(doc.activeTransportMode, 'subscribe')
+    assert.equal(doc.subscribed, true)
+
+    await manager.unsubscribe($liveDoc, { intent: 'subscribe' })
+    doc = manager.docs.get(hash)
+    assert.deepEqual(doc.events, [
+      'subscribe:fetch',
+      'unsubscribe:fetch',
+      'subscribe:subscribe',
+      'unsubscribe:subscribe',
+      'subscribe:fetch'
+    ])
+    assert.equal(doc.activeTransportMode, 'fetch')
+    assert.equal(doc.subscribed, false)
+
+    await manager.unsubscribe($fetchDoc, { intent: 'subscribe' })
+    await manager.clear()
   })
 })
 
@@ -572,6 +705,93 @@ describe('QuerySubscriptions', () => {
     assert.equal(manager.subCount.size, 0, 'last root counter should be removed')
     assert.equal(manager.transportSubCount.get(transportHash), undefined, 'transport ref-count should be removed')
     assert.equal(manager.queries.get(transportHash), undefined, 'transport query entry should be removed')
+  })
+
+  it('uses fetch transport for query subscribe on fetchOnly roots', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const $root = getRootSignal({ rootId: '_query_fetch_root', fetchOnly: true })
+    const $query = getQuerySignal('gamesQuery', { active: true }, { root: $root })
+    const transportHash = $query[QUERY_HASH]
+
+    await manager.subscribe($query, { intent: 'subscribe' })
+
+    const query = manager.queries.get(transportHash)
+    assert.deepEqual(query.events, ['subscribe:fetch'])
+    assert.equal(query.activeTransportMode, 'fetch')
+    assert.equal(query.subscribed, false)
+
+    await manager.unsubscribe($query, { intent: 'subscribe' })
+    await manager.clear()
+  })
+
+  it('uses subscribe transport for query subscribe on live roots', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const $root = getRootSignal({ rootId: '_query_live_root', fetchOnly: false })
+    const $query = getQuerySignal('gamesQuery', { active: true }, { root: $root })
+    const transportHash = $query[QUERY_HASH]
+
+    await manager.subscribe($query, { intent: 'subscribe' })
+
+    const query = manager.queries.get(transportHash)
+    assert.deepEqual(query.events, ['subscribe:subscribe'])
+    assert.equal(query.activeTransportMode, 'subscribe')
+    assert.equal(query.subscribed, true)
+
+    await manager.unsubscribe($query, { intent: 'subscribe' })
+    await manager.clear()
+  })
+
+  it('uses fetch transport for explicit fetch intent on live query roots', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const $root = getRootSignal({ rootId: '_query_fetch_intent_root', fetchOnly: false })
+    const $query = getQuerySignal('gamesQuery', { active: true }, { root: $root })
+    const transportHash = $query[QUERY_HASH]
+
+    await manager.subscribe($query, { intent: 'fetch' })
+
+    const query = manager.queries.get(transportHash)
+    assert.deepEqual(query.events, ['subscribe:fetch'])
+    assert.equal(query.activeTransportMode, 'fetch')
+    assert.equal(query.subscribed, false)
+
+    await manager.unsubscribe($query, { intent: 'fetch' })
+    await manager.clear()
+  })
+
+  it('upgrades and downgrades query transport for mixed root modes', async () => {
+    const manager = new QuerySubscriptions(MockQuery)
+    const $fetchRoot = getRootSignal({ rootId: '_query_mixed_fetch_root', fetchOnly: true })
+    const $liveRoot = getRootSignal({ rootId: '_query_mixed_live_root', fetchOnly: false })
+    const params = { active: true }
+    const $fetchQuery = getQuerySignal('gamesQuery', params, { root: $fetchRoot })
+    const $liveQuery = getQuerySignal('gamesQuery', params, { root: $liveRoot })
+    const transportHash = $fetchQuery[QUERY_HASH]
+
+    await manager.subscribe($fetchQuery, { intent: 'subscribe' })
+    let query = manager.queries.get(transportHash)
+    assert.deepEqual(query.events, ['subscribe:fetch'])
+    assert.equal(query.activeTransportMode, 'fetch')
+
+    await manager.subscribe($liveQuery, { intent: 'subscribe' })
+    query = manager.queries.get(transportHash)
+    assert.deepEqual(query.events, ['subscribe:fetch', 'unsubscribe:fetch', 'subscribe:subscribe'])
+    assert.equal(query.activeTransportMode, 'subscribe')
+    assert.equal(query.subscribed, true)
+
+    await manager.unsubscribe($liveQuery, { intent: 'subscribe' })
+    query = manager.queries.get(transportHash)
+    assert.deepEqual(query.events, [
+      'subscribe:fetch',
+      'unsubscribe:fetch',
+      'subscribe:subscribe',
+      'unsubscribe:subscribe',
+      'subscribe:fetch'
+    ])
+    assert.equal(query.activeTransportMode, 'fetch')
+    assert.equal(query.subscribed, false)
+
+    await manager.unsubscribe($fetchQuery, { intent: 'subscribe' })
+    await manager.clear()
   })
 
   it('creates distinct aggregation signals per root while keeping transport hash shared', () => {

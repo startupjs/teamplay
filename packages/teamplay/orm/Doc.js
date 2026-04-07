@@ -45,7 +45,8 @@ class Doc {
       onSubscribe: () => this._subscribe(),
       onUnsubscribe: () => this._unsubscribe()
     })
-    this.transportMode = 'subscribe'
+    this.requestedTransportMode = 'subscribe'
+    this.activeTransportMode = 'idle'
     this.init()
   }
 
@@ -60,7 +61,7 @@ class Doc {
   }
 
   async subscribe ({ mode } = {}) {
-    if (mode) this.transportMode = mode
+    if (mode) this.requestedTransportMode = mode
     await this.lifecycle.subscribe()
     this.init()
   }
@@ -71,10 +72,12 @@ class Doc {
 
   async _subscribe () {
     const doc = getConnection().get(this.collection, this.docId)
+    const mode = this.requestedTransportMode
     await new Promise((resolve, reject) => {
-      const method = this.transportMode === 'fetch' ? 'fetch' : 'subscribe'
+      const method = mode === 'fetch' ? 'fetch' : 'subscribe'
       doc[method](err => {
         if (err) return reject(err)
+        this.activeTransportMode = mode
         resolve()
       })
     })
@@ -83,8 +86,12 @@ class Doc {
   async _unsubscribe () {
     const doc = getConnection().get(this.collection, this.docId)
     await new Promise((resolve, reject) => {
-      doc.unsubscribe(err => {
+      const method = this.activeTransportMode === 'fetch' && typeof doc.unfetch === 'function'
+        ? 'unfetch'
+        : 'unsubscribe'
+      doc[method](err => {
         if (err) return reject(err)
+        this.activeTransportMode = 'idle'
         resolve()
       })
     })
@@ -169,10 +176,15 @@ class Doc {
 export class DocSubscriptions {
   constructor (DocClass = Doc) {
     this.DocClass = DocClass
-    this.subCount = new Map()
+    this.subCount = new Map() // transportHash -> total ref count (owners + retained docs)
+    this.ownerFetchCount = new Map() // ownerKey -> fetch intent count
+    this.ownerSubscribeCount = new Map() // ownerKey -> subscribe intent count
+    this.ownerMeta = new Map() // ownerKey -> { hash, segments, rootId }
+    this.ownerKeysByHash = new Map() // transportHash -> Set(ownerKey)
     this.docs = new Map()
     this.pendingDestroyTimers = new Map()
-    this.fr = new FinalizationRegistry(segments => this.scheduleDestroy(segments, { force: true }))
+    this.transportTasks = new Map()
+    this.fr = new FinalizationRegistry(({ hash, ownerKey }) => this.destroyByOwnerKey(ownerKey, { hash, force: true }))
   }
 
   init ($doc) {
@@ -185,7 +197,6 @@ export class DocSubscriptions {
     } else {
       doc = new this.DocClass(...segments)
       this.docs.set(hash, doc)
-      this.fr.register($doc, segments, getDocFinalizationToken($doc))
       doc.init()
     }
   }
@@ -194,26 +205,28 @@ export class DocSubscriptions {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
     const rootId = getOwningRootId($doc)
+    const ownerKey = getDocOwnerKey(rootId, hash)
+    const token = getDocFinalizationToken($doc)
+    const previousCount = this.subCount.get(hash) || 0
     this.cancelDestroy(hash)
-    let count = this.subCount.get(hash) || 0
-    count += 1
-    this.subCount.set(hash, count)
+    this.incrementOwnerIntent(ownerKey, intent)
+    this.addOwnerMeta(ownerKey, hash, segments, rootId)
+    this.subCount.set(hash, previousCount + 1)
     if (rootId) {
-      registerRootOwnedDirectDocSubscription(rootId, hash, segments, getDocFinalizationToken($doc))
+      registerRootOwnedDirectDocSubscription(rootId, hash, segments, token)
     }
-    if (count > 1) {
-      const existingDoc = this.docs.get(hash)
-      if (existingDoc) return existingDoc._subscribing
-      // Recover from stale ref-count state when doc entry was already cleaned up.
-      count = 1
-      this.subCount.set(hash, count)
-    }
+    this.fr.register($doc, { hash, ownerKey }, token)
 
     this.init($doc)
     const doc = this.docs.get(hash)
-    const mode = getRootTransportMode($doc, intent)
-    doc._subscribing = doc.subscribe({ mode }).then(() => { doc._subscribing = undefined })
-    return doc._subscribing
+    if (
+      previousCount > 0 &&
+      doc &&
+      !doc._subscribing &&
+      !this.transportTasks.get(hash) &&
+      this.getDesiredTransportMode(hash) === doc.activeTransportMode
+    ) return
+    return this.reconcileTransport(hash)
   }
 
   retain ($doc) {
@@ -225,26 +238,33 @@ export class DocSubscriptions {
     this.init($doc)
   }
 
-  async unsubscribe ($doc) {
+  async unsubscribe ($doc, { intent = 'subscribe' } = {}) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
     const rootId = getOwningRootId($doc)
-    let count = this.subCount.get(hash) || 0
-    count -= 1
-    if (count < 0) {
+    const ownerKey = getDocOwnerKey(rootId, hash)
+    const token = getDocFinalizationToken($doc)
+    const currentIntentCount = this.getOwnerIntentCount(ownerKey, intent)
+    if (currentIntentCount <= 0) {
       if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw ERRORS.notSubscribed($doc)
       return
     }
-    if (count > 0) {
-      this.subCount.set(hash, count)
-      return
-    }
-    this.subCount.set(hash, 0)
-    this.fr.unregister(getDocFinalizationToken($doc))
+    this.setOwnerIntentCount(ownerKey, intent, currentIntentCount - 1)
+    const nextOwnerCount = this.getOwnerTotalCount(ownerKey)
+    const count = Math.max((this.subCount.get(hash) || 0) - 1, 0)
+    if (count > 0) this.subCount.set(hash, count)
+    else this.subCount.set(hash, 0)
     if (rootId) {
-      unregisterRootOwnedDirectDocSubscription(rootId, hash, getDocFinalizationToken($doc))
+      unregisterRootOwnedDirectDocSubscription(rootId, hash, token)
     }
-    await this.scheduleDestroy(segments)
+    if (nextOwnerCount === 0) {
+      this.fr.unregister(token)
+      this.removeOwnerMeta(ownerKey, hash)
+    }
+    const destroyPromise = count === 0 ? this.scheduleDestroy(segments) : undefined
+    await this.reconcileTransport(hash)
+    if (count > 0) return
+    await destroyPromise
   }
 
   async release ($doc) {
@@ -278,6 +298,10 @@ export class DocSubscriptions {
       await this.destroyByHash(hash, { force: true })
     }
     this.subCount.clear()
+    this.ownerFetchCount.clear()
+    this.ownerSubscribeCount.clear()
+    this.ownerMeta.clear()
+    this.ownerKeysByHash.clear()
   }
 
   async releaseRootOwnedSubscriptions (rootId) {
@@ -287,14 +311,7 @@ export class DocSubscriptions {
       for (const token of entry.tokenCounts.keys()) {
         this.fr.unregister(token)
       }
-      const currentCount = this.subCount.get(hash) || 0
-      const nextCount = Math.max(currentCount - entry.count, 0)
-      if (nextCount > 0) {
-        this.subCount.set(hash, nextCount)
-        continue
-      }
-      this.subCount.set(hash, 0)
-      await this.destroyByHash(hash, { force: true })
+      await this.destroyByOwnerKey(getDocOwnerKey(rootId, hash), { hash, force: true })
     }
     clearRootOwnedDirectDocSubscriptions(rootId)
   }
@@ -333,6 +350,40 @@ export class DocSubscriptions {
     entry.resolve()
   }
 
+  async reconcileTransport (hash) {
+    const previous = this.transportTasks.get(hash) || Promise.resolve()
+    const next = previous
+      .catch(ignoreDestroyError)
+      .then(() => this.reconcileTransportNow(hash))
+    this.transportTasks.set(hash, next)
+    try {
+      await next
+    } finally {
+      if (this.transportTasks.get(hash) === next) this.transportTasks.delete(hash)
+    }
+  }
+
+  async reconcileTransportNow (hash) {
+    const doc = this.docs.get(hash)
+    if (!doc) return
+    while (true) {
+      const desiredMode = this.getDesiredTransportMode(hash)
+      const currentMode = doc.activeTransportMode
+      if (desiredMode === currentMode) return
+      if (desiredMode === 'idle') {
+        if (currentMode === 'idle') return
+        await doc.unsubscribe()
+        continue
+      }
+      if (currentMode !== 'idle') {
+        await doc.unsubscribe()
+        continue
+      }
+      doc._subscribing = doc.subscribe({ mode: desiredMode }).then(() => { doc._subscribing = undefined })
+      await doc._subscribing
+    }
+  }
+
   async destroyByHash (hash, options = {}) {
     let pendingDestroy = options._pendingDestroy
     if (pendingDestroy) this.takePendingDestroy(hash, pendingDestroy)
@@ -357,12 +408,13 @@ export class DocSubscriptions {
         settlePending()
         return
       }
-      // Always call unsubscribe() - if doc is in SUBSCRIBING state, the state machine
-      // will queue a pending unsubscribe to execute after subscribe completes
-      await doc.unsubscribe()
-      if (doc.subscribed) {
+      await this.reconcileTransport(hash)
+      if (!options.force && (this.subCount.get(hash) || 0) > 0) {
         settlePending()
-        return // Subscribed again while unsubscribing
+        return
+      }
+      if (doc.activeTransportMode !== 'idle') {
+        await doc.unsubscribe()
       }
       if (!options.force && (this.subCount.get(hash) || 0) > 0) {
         settlePending()
@@ -384,6 +436,7 @@ export class DocSubscriptions {
       if (typeof doc.dispose === 'function') doc.dispose()
       this.docs.delete(hash)
       this.subCount.delete(hash)
+      this.ownerKeysByHash.delete(hash)
       settlePending()
     } catch (err) {
       settlePending(err)
@@ -399,12 +452,93 @@ export class DocSubscriptions {
     this.pendingDestroyTimers.delete(hash)
     return entry
   }
+
+  getOwnerIntentCount (ownerKey, intent) {
+    const store = intent === 'fetch' ? this.ownerFetchCount : this.ownerSubscribeCount
+    return store.get(ownerKey) || 0
+  }
+
+  setOwnerIntentCount (ownerKey, intent, count) {
+    const store = intent === 'fetch' ? this.ownerFetchCount : this.ownerSubscribeCount
+    if (count > 0) store.set(ownerKey, count)
+    else store.delete(ownerKey)
+  }
+
+  incrementOwnerIntent (ownerKey, intent) {
+    this.setOwnerIntentCount(ownerKey, intent, this.getOwnerIntentCount(ownerKey, intent) + 1)
+  }
+
+  getOwnerTotalCount (ownerKey) {
+    return (this.ownerFetchCount.get(ownerKey) || 0) + (this.ownerSubscribeCount.get(ownerKey) || 0)
+  }
+
+  addOwnerMeta (ownerKey, hash, segments, rootId) {
+    if (this.ownerMeta.has(ownerKey)) return
+    this.ownerMeta.set(ownerKey, { hash, segments: [...segments], rootId })
+    let ownerKeys = this.ownerKeysByHash.get(hash)
+    if (!ownerKeys) {
+      ownerKeys = new Set()
+      this.ownerKeysByHash.set(hash, ownerKeys)
+    }
+    ownerKeys.add(ownerKey)
+  }
+
+  removeOwnerMeta (ownerKey, hash) {
+    const meta = this.ownerMeta.get(ownerKey)
+    const knownHash = hash ?? meta?.hash
+    this.ownerMeta.delete(ownerKey)
+    this.ownerFetchCount.delete(ownerKey)
+    this.ownerSubscribeCount.delete(ownerKey)
+    if (!knownHash) return
+    const ownerKeys = this.ownerKeysByHash.get(knownHash)
+    if (!ownerKeys) return
+    ownerKeys.delete(ownerKey)
+    if (ownerKeys.size === 0) this.ownerKeysByHash.delete(knownHash)
+  }
+
+  getDesiredTransportMode (hash) {
+    const ownerKeys = this.ownerKeysByHash.get(hash)
+    if (!ownerKeys || ownerKeys.size === 0) return 'idle'
+    let hasFetchBackedOwner = false
+    for (const ownerKey of ownerKeys) {
+      const subscribeCount = this.ownerSubscribeCount.get(ownerKey) || 0
+      const fetchCount = this.ownerFetchCount.get(ownerKey) || 0
+      const rootId = this.ownerMeta.get(ownerKey)?.rootId
+      const subscribeMode = getRootTransportMode(rootId, 'subscribe')
+      if (subscribeCount > 0 && subscribeMode === 'subscribe') return 'subscribe'
+      if (fetchCount > 0 || (subscribeCount > 0 && subscribeMode === 'fetch')) {
+        hasFetchBackedOwner = true
+      }
+    }
+    return hasFetchBackedOwner ? 'fetch' : 'idle'
+  }
+
+  async destroyByOwnerKey (ownerKey, options = {}) {
+    const meta = this.ownerMeta.get(ownerKey)
+    if (!meta) return
+    const { hash, segments } = meta
+    const ownerCount = this.getOwnerTotalCount(ownerKey)
+    if (!options.force && ownerCount > 0) return
+
+    const currentCount = this.subCount.get(hash) || 0
+    const nextCount = Math.max(currentCount - ownerCount, 0)
+    if (nextCount > 0) this.subCount.set(hash, nextCount)
+    else this.subCount.set(hash, 0)
+    this.removeOwnerMeta(ownerKey, hash)
+    await this.reconcileTransport(hash)
+    if (nextCount > 0) return
+    await this.scheduleDestroy(segments, { force: !!options.force })
+  }
 }
 
 export const docSubscriptions = new DocSubscriptions()
 
 function hashDoc (segments) {
   return JSON.stringify(segments)
+}
+
+function getDocOwnerKey (rootId, hash) {
+  return JSON.stringify({ owner: [rootId, hash] })
 }
 
 function ignoreDestroyError () {}
