@@ -8,7 +8,7 @@ import {
   isPublicCollectionSignal,
   isPublicDocumentSignal
 } from '../SignalBase.js'
-import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
+import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.js'
 import { publicOnly, fetchOnly, setFetchOnly } from '../connection.js'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
@@ -148,6 +148,7 @@ class SignalCompat extends Signal {
     }
     const $root = getRoot(this) || this
     const rootId = $root?.[ROOT_ID]
+    unregisterRootFinalizer($root)
     disposeRootContext(rootId)
       .then(() => callback?.())
       .catch(err => {
