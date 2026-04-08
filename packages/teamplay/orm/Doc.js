@@ -544,10 +544,7 @@ export class DocSubscriptions {
     try {
       const entry = this.entries.get(hash)
       if (options.force && entry?.owners.size) {
-        for (const ownerKey of Array.from(entry.owners)) {
-          this.ownerRecords.delete(ownerKey)
-        }
-        entry.owners.clear()
+        this.removeAllOwnersFromEntry(hash)
       }
       const count = entry ? this.getEntryTotalCount(entry) : (this.getTrackedCount(hash) || 0)
       if (!options.force && count > 0) {
@@ -689,6 +686,47 @@ export class DocSubscriptions {
     return hasFetchBackedOwner ? 'fetch' : 'idle'
   }
 
+  removeAllOwnersFromEntry (hash) {
+    const entry = this.entries.get(hash)
+    if (!entry) return
+    for (const ownerKey of Array.from(entry.owners)) {
+      const record = this.ownerRecords.get(ownerKey)
+      if (record) this.removeOwnerFromEntry(record)
+      else entry.owners.delete(ownerKey)
+      this.ownerRecords.delete(ownerKey)
+    }
+  }
+
+  async destroyTransportEntry (hash, runtime) {
+    const activeDoc = this.entries.get(hash)?.runtime || runtime
+    if (!activeDoc) {
+      const entry = this.entries.get(hash)
+      if (entry) {
+        entry.runtime = null
+        entry.mode = 'idle'
+      }
+      this.deleteEntryIfEmpty(hash)
+      return
+    }
+    if (activeDoc.activeTransportMode !== 'idle') {
+      await activeDoc.unsubscribe()
+    }
+    if (typeof activeDoc.hasPending === 'function' && activeDoc.hasPending()) {
+      if (typeof activeDoc.whenNothingPending === 'function') {
+        await new Promise(resolve => activeDoc.whenNothingPending(resolve))
+      }
+    }
+    if (typeof activeDoc.destroy === 'function') await activeDoc.destroy()
+    if (typeof activeDoc.dispose === 'function') activeDoc.dispose()
+    const finalEntry = this.entries.get(hash)
+    if (finalEntry && finalEntry.owners.size > 0) return
+    if (finalEntry) {
+      finalEntry.runtime = null
+      finalEntry.mode = 'idle'
+    }
+    this.deleteEntryIfEmpty(hash)
+  }
+
   async destroyByOwnerKey (ownerKey, options = {}) {
     const record = this.ownerRecords.get(ownerKey)
     const hash = record?.hash ?? options.hash
@@ -717,7 +755,7 @@ export class DocSubscriptions {
       return
     }
     if (options.force) {
-      await this.destroyByHash(hash, { force: true })
+      await this.destroyTransportEntry(hash, nextEntry?.runtime || entry?.runtime)
       return
     }
     await this.scheduleDestroy(segments, { force: false })

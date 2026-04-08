@@ -545,6 +545,23 @@ describe('DocSubscriptions', () => {
     assert.equal(manager.docs.get(hash), undefined, 'stale doc should be removed')
     assert.equal(manager.subCount.get(hash), undefined, 'stale sub count should be removed')
   })
+
+  it('destroyByOwnerKey and destroyByHash remain idempotent on the same doc transport', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_destroy_idempotent_root', fetchOnly: false })
+    const $doc = $root.games._destroyIdempotent
+    const hash = JSON.stringify(['games', '_destroyIdempotent'])
+    const ownerKey = getDocOwnerKeyForTest($doc, $root[ROOT_ID])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+
+    await assert.doesNotReject(async () => manager.destroyByOwnerKey(ownerKey, { hash, force: true }))
+    await assert.doesNotReject(async () => manager.destroyByHash(hash, { force: true }))
+
+    assert.equal(manager.docs.get(hash), undefined)
+    assert.equal(manager.subCount.get(hash), undefined)
+    assert.equal(manager.ownerMeta.get(ownerKey), undefined)
+  })
 })
 
 describe('QuerySubscriptions', () => {
@@ -782,6 +799,25 @@ describe('QuerySubscriptions', () => {
     assert.equal(manager.ownerToTransport.get(ownerKey), undefined, 'owner transport link should be removed')
     assert.equal(manager.transportSubCount.get(transportHash), undefined, 'stale transport counter should be removed')
     assert.equal(manager.ownerKeysByTransport.get(transportHash), undefined, 'stale owner key bucket should be removed')
+  })
+
+  it('destroyByOwnerKey and destroyByRuntimeHash remain idempotent on the same query transport', async () => {
+    const manager = new QuerySubscriptions(class {
+      async subscribe () {}
+      async unsubscribe () {}
+    })
+    const $query = getQuerySignal('gamesQuery', { active: false })
+    const transportHash = $query[QUERY_HASH]
+    const ownerKey = getQueryOwnerKeyForTest($query)
+
+    await manager.subscribe($query, { intent: 'fetch' })
+
+    await assert.doesNotReject(async () => manager.destroyByOwnerKey(ownerKey, { force: true }))
+    await assert.doesNotReject(async () => manager.destroyByRuntimeHash(transportHash, { force: true }))
+
+    assert.equal(manager.queries.get(transportHash), undefined)
+    assert.equal(manager.subCount.get(ownerKey), undefined)
+    assert.equal(manager.ownerMeta.get(ownerKey), undefined)
   })
 
   it('_unsubscribe is a no-op when shareQuery is already missing', async () => {

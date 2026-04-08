@@ -700,6 +700,30 @@ export class QuerySubscriptions {
     return hasFetchBackedOwner ? 'fetch' : 'idle'
   }
 
+  async destroyTransportEntry (transportHash, runtime) {
+    const activeRuntime = this.entries.get(transportHash)?.runtime || runtime
+    if (!activeRuntime) {
+      const entry = this.entries.get(transportHash)
+      if (entry) {
+        entry.runtime = null
+        entry.mode = 'idle'
+      }
+      this.deleteEntryIfEmpty(transportHash)
+      return
+    }
+    if (activeRuntime.activeTransportMode !== 'idle') {
+      await unsubscribeQueryTransport(activeRuntime, { keepRoots: true })
+    }
+    activeRuntime._detachTransportData?.({ keepRoots: false })
+    const finalEntry = this.entries.get(transportHash)
+    if (finalEntry && finalEntry.owners.size > 0) return
+    if (finalEntry) {
+      finalEntry.runtime = null
+      finalEntry.mode = 'idle'
+    }
+    this.deleteEntryIfEmpty(transportHash)
+  }
+
   async destroyByOwnerKey (ownerKey, options = {}) {
     const pendingDestroy = this.takePendingDestroy(ownerKey, options.transportHash)
     if (pendingDestroy?.force) options.force = true
@@ -739,12 +763,7 @@ export class QuerySubscriptions {
         await this.reconcileTransport(transportHash)
         const nextEntry = this.entries.get(transportHash)
         if (!nextEntry || nextEntry.owners.size === 0) {
-          if (query?.activeTransportMode !== 'idle') {
-            await unsubscribeQueryTransport(query, { keepRoots: true })
-          }
-          query?._detachTransportData?.({ keepRoots: false })
-          if (nextEntry) nextEntry.runtime = null
-          this.deleteEntryIfEmpty(transportHash)
+          await this.destroyTransportEntry(transportHash, query)
         }
         settlePending()
         return
@@ -761,20 +780,7 @@ export class QuerySubscriptions {
         settlePending()
         return
       }
-      if (!query) {
-        this.deleteEntryIfEmpty(transportHash)
-        settlePending()
-        return
-      }
-      if (query.activeTransportMode !== 'idle') await unsubscribeQueryTransport(query, { keepRoots: true })
-      query._detachTransportData?.({ keepRoots: false })
-      const finalEntry = this.entries.get(transportHash)
-      if (finalEntry && finalEntry.owners.size > 0) {
-        settlePending()
-        return
-      }
-      if (finalEntry) finalEntry.runtime = null
-      this.deleteEntryIfEmpty(transportHash)
+      await this.destroyTransportEntry(transportHash, query)
       settlePending()
     } catch (err) {
       settlePending(err)
