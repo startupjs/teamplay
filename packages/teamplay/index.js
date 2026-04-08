@@ -23,6 +23,10 @@ export {
   setUseDeferredValue as __setUseDeferredValue,
   setDefaultDefer as __setDefaultDefer
 } from './react/useSub.js'
+export {
+  default as useSuspendMemo,
+  useSuspendMemoByKey
+} from './react/useSuspendMemo.js'
 export { default as observer } from './react/observer.js'
 export {
   useValue,

@@ -42,6 +42,8 @@ export {
   setUseDeferredValue as __setUseDeferredValue,
   setDefaultDefer as __setDefaultDefer
 } from './react/useSub.js'
+export function useSuspendMemo<T = any> (factory: () => T, deps?: any[]): T
+export function useSuspendMemoByKey<T = any> (key: any, factory: () => T, deps?: any[]): T
 export function useValue (defaultValue?: any): [any, any]
 export function useValue$ (defaultValue?: any): any
 export function useModel (path?: any): any

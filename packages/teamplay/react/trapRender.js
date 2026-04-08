@@ -3,6 +3,7 @@
 import executionContextTracker from './executionContextTracker.js'
 import * as promiseBatcher from './promiseBatcher.js'
 import renderAttemptDestroyer from './renderAttemptDestroyer.js'
+import { isCompatComponent } from './compatComponentRegistry.js'
 
 export default function trapRender ({ render, cache, destroy, componentId }) {
   return (...args) => {
@@ -25,7 +26,9 @@ export default function trapRender ({ render, cache, destroy, componentId }) {
         throw err
       }
       const destroyAttempt = renderAttemptDestroyer.getDestructor()
-      if (destroyAttempt) throw err.then(destroyAttempt)
+      if (destroyAttempt || isCompatComponent(componentId)) {
+        throw Promise.resolve(err).then(() => destroyAttempt?.())
+      }
 
       // TODO: this might only be needed only if promise is thrown
       //       (check if useUnmount in convertToObserver is called if a regular error is thrown)

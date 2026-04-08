@@ -977,3 +977,81 @@ const [latest, $latest] = useQueryDoc('events', { type: 'webinar' })
 if (!latest) return null
 return <span>{latest.title}</span>
 ```
+
+### Suspense Gates for Thrown Thenables
+
+If you use the legacy pattern "throw a promise from render and stop rendering
+below this point", prefer `useSuspendMemo()` or `useSuspendMemoByKey()` over
+plain `useMemo()`.
+
+Why:
+
+- React may restart a suspended initial render.
+- `useMemo()` is not a reliable semantic gate for thenables.
+- Side-effectful async work like `join()` may start again during retry.
+
+#### When to use `useSuspendMemo()`
+
+Use `useSuspendMemo()` when the gate is local to one observer component
+instance.
+
+```js
+import { observer, useSuspendMemo } from 'teamplay'
+
+const PStage = observer(({ $stage, $user, stageId, stageUserStore }) => {
+  useSuspendMemo(() => {
+    if (!stageUserStore?.startedAt) {
+      throw $stage.join($user.id.get())
+    }
+  }, [stageId])
+
+  return <span>Ready</span>
+})
+```
+
+This gives you the old "suspend here until ready" shape, but keeps the same
+pending thenable for the same hook slot while this component instance is alive.
+
+#### When to use `useSuspendMemoByKey()`
+
+Use `useSuspendMemoByKey()` when dedupe should follow the business operation
+itself, not the current component instance.
+
+```js
+import { observer, useSuspendMemoByKey } from 'teamplay'
+
+const PStage = observer(({ $stage, $user, stageId, stageUserStore }) => {
+  useSuspendMemoByKey(
+    `stage.join:${stageId}:${$user.id.get()}`,
+    () => {
+      if (!stageUserStore?.startedAt) {
+        throw $stage.join($user.id.get())
+      }
+    },
+    [stageId, !!stageUserStore?.startedAt]
+  )
+
+  return <span>Ready</span>
+})
+```
+
+This is the right choice when:
+
+- the component may remount while `join()` is still pending;
+- two different components may try to start the same `join()`;
+- you want one in-flight task per business key like
+  `stage.join:${stageId}:${userId}`.
+
+#### Practical difference
+
+Suppose `stage.join(userId)` is pending:
+
+- `useSuspendMemo()`
+  Keeps one pending thenable for this exact hook slot in this exact component
+  instance.
+- `useSuspendMemoByKey()`
+  Keeps one pending thenable for the whole business operation, even across
+  remounts or different components that use the same key.
+
+For mutation-like operations such as `join()`, `ensure*()`, `create*()` or
+`validate*()`, `useSuspendMemoByKey()` is usually the safer choice.

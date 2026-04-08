@@ -39,15 +39,21 @@ import {
   useOn,
   useEmit,
   useApi,
+  useSuspendMemo,
+  useSuspendMemoByKey,
   useDidUpdate,
   useOnce,
   useSyncEffect
 } from '../index.js'
 import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.js'
+import { __resetSuspendMemoForTests } from '../react/useSuspendMemo.js'
 import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.js'
 import trapRender from '../react/trapRender.js'
 import renderAttemptDestroyer from '../react/renderAttemptDestroyer.js'
-import { __resetCompatComponentRegistryForTests } from '../react/compatComponentRegistry.js'
+import {
+  __resetCompatComponentRegistryForTests,
+  markCompatComponent
+} from '../react/compatComponentRegistry.js'
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
@@ -72,6 +78,7 @@ afterEach(() => {
   __resetCompatComponentRegistryForTests()
   __resetEventsForTests()
   __resetCompatWarningsForTests()
+  __resetSuspendMemoForTests()
 })
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
@@ -374,6 +381,172 @@ describe('useSub edge cases', () => {
       'deactivate',
       'attempt-cleanup'
     ])
+  })
+
+  it('trapRender keeps compat observer shell alive for thrown promises without attempt cleanup', async () => {
+    const events = []
+    let resolvePromise
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+    markCompatComponent('compatTrapRenderNoCleanup')
+    const wrapped = trapRender({
+      componentId: 'compatTrapRenderNoCleanup',
+      render: () => {
+        throw pending
+      },
+      cache: {
+        activate: () => events.push('activate'),
+        deactivate: () => events.push('deactivate')
+      },
+      destroy: where => events.push(`destroy:${where}`)
+    })
+
+    let thrown
+    try {
+      wrapped()
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(events).toEqual([
+      'activate',
+      'deactivate'
+    ])
+    expect(typeof thrown?.then).toBe('function')
+
+    resolvePromise()
+    await thrown
+
+    expect(events).toEqual([
+      'activate',
+      'deactivate'
+    ])
+  })
+
+  it('useSuspendMemo keeps the same pending thenable across rerenders of one component instance', async () => {
+    let resolvePromise
+    let ready = false
+    let startCalls = 0
+    let forceRerender
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+
+    const Component = observer(() => {
+      useSuspendMemo(() => {
+        if (!ready) {
+          startCalls++
+          throw pending
+        }
+      }, [])
+
+      return el('span', { id: 'suspendMemoLocal' }, 'ready')
+    })
+
+    function Wrapper () {
+      const [, setTick] = React.useState(0)
+      forceRerender = () => setTick(tick => tick + 1)
+      return el(Component)
+    }
+
+    const { container } = render(el(Wrapper))
+    expect(startCalls).toBe(1)
+    expect(container.textContent).toBe('')
+
+    act(() => {
+      forceRerender()
+    })
+    expect(startCalls).toBe(1)
+
+    ready = true
+    resolvePromise()
+    await wait()
+
+    expect(startCalls).toBe(1)
+    expect(container.querySelector('#suspendMemoLocal').textContent).toBe('ready')
+  })
+
+  it('useSuspendMemoByKey dedupes one pending operation across two components', async () => {
+    let resolvePromise
+    let ready = false
+    let startCalls = 0
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+
+    const Component = observer(({ testId }) => {
+      useSuspendMemoByKey('shared-join-key', () => {
+        if (!ready) {
+          startCalls++
+          throw pending
+        }
+      }, [])
+
+      return el('span', { id: testId }, 'ready')
+    })
+
+    const { container } = render(fr(
+      el(Component, { testId: 'suspendMemoByKeyA' }),
+      el(Component, { testId: 'suspendMemoByKeyB' })
+    ))
+
+    expect(startCalls).toBe(1)
+    expect(container.textContent).toBe('')
+
+    ready = true
+    resolvePromise()
+    await wait()
+
+    expect(startCalls).toBe(1)
+    expect(container.querySelector('#suspendMemoByKeyA').textContent).toBe('ready')
+    expect(container.querySelector('#suspendMemoByKeyB').textContent).toBe('ready')
+  })
+
+  it('useSuspendMemoByKey keeps the same pending operation across remount', async () => {
+    let resolvePromise
+    let ready = false
+    let startCalls = 0
+    let setMounted
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+
+    const Component = observer(() => {
+      useSuspendMemoByKey('shared-remount-key', () => {
+        if (!ready) {
+          startCalls++
+          throw pending
+        }
+      }, [])
+
+      return el('span', { id: 'suspendMemoByKeyRemount' }, 'ready')
+    })
+
+    function Wrapper () {
+      const [mounted, _setMounted] = React.useState(true)
+      setMounted = _setMounted
+      return mounted ? el(Component) : null
+    }
+
+    const { container } = render(el(Wrapper))
+    expect(startCalls).toBe(1)
+    expect(container.textContent).toBe('')
+
+    act(() => {
+      setMounted(false)
+    })
+    act(() => {
+      setMounted(true)
+    })
+    expect(startCalls).toBe(1)
+
+    ready = true
+    resolvePromise()
+    await wait()
+
+    expect(startCalls).toBe(1)
+    expect(container.querySelector('#suspendMemoByKeyRemount').textContent).toBe('ready')
   })
 
   it('useSub with doc subscription that starts loading (Suspense)', async () => {
