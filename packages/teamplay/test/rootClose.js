@@ -20,6 +20,7 @@ import {
   getRootOwnedSignalHashes,
   getRootOwnedRuntimeHashes
 } from '../orm/rootContext.js'
+import { getScopedSignalHash } from '../orm/rootScope.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 
 before(connect)
@@ -117,6 +118,33 @@ describeCompat('root close()', () => {
     assert.ok(!docSubscriptions.docs.has(hash))
   })
 
+  it('close tolerates stale direct doc ownership and preserves sibling transport', async () => {
+    const rootIdA = 'close-stale-doc-root-A'
+    const rootIdB = 'close-stale-doc-root-B'
+    const $rootA = getRootSignal({ rootId: rootIdA })
+    const $rootB = getRootSignal({ rootId: rootIdB })
+    const $docA = $rootA[DOC_COLLECTION]._stale
+    const $docB = $rootB[DOC_COLLECTION]._stale
+    const hash = JSON.stringify([DOC_COLLECTION, '_stale'])
+    const ownerKeyA = JSON.stringify({ owner: [rootIdA, hash] })
+
+    await $docA.set({ title: 'Doc stale' })
+    await $docA.subscribe()
+    await $docB.subscribe()
+
+    docSubscriptions.ownerMeta.delete(ownerKeyA)
+    docSubscriptions.ownerKeysByHash.get(hash)?.delete(ownerKeyA)
+
+    await assert.doesNotReject(async () => closeSignal($rootA))
+
+    assert.equal(__getRootContextForTests(rootIdA), undefined)
+    assert.equal(docSubscriptions.subCount.get(hash), 1)
+    assert.equal(docSubscriptions.docs.get(hash)?.activeTransportMode, 'subscribe')
+    assert.equal($docB.get('title'), 'Doc stale')
+
+    await closeSignal($rootB)
+  })
+
   it('destroys root-owned query and aggregation views while keeping shared transport alive for other roots', async () => {
     const $rootA = getRootSignal({ rootId: 'close-view-root-A' })
     const $rootB = getRootSignal({ rootId: 'close-view-root-B' })
@@ -152,6 +180,28 @@ describeCompat('root close()', () => {
 
     assert.equal(querySubscriptions.transportSubCount.get($queryA[QUERY_HASH]), undefined)
     assert.equal(aggregationSubscriptions.transportSubCount.get($aggA[QUERY_HASH]), undefined)
+  })
+
+  it('close tolerates stale query ownership when transport entry is already missing', async () => {
+    const rootId = 'close-stale-query-root'
+    const $root = getRootSignal({ rootId })
+
+    await $root[QUERY_COLLECTION]._stale1.set({ title: 'One', active: true })
+    const $query = $root.query(QUERY_COLLECTION, { active: true })
+    await $query.subscribe()
+
+    const transportHash = $query[QUERY_HASH]
+    const ownerKey = getScopedSignalHash(rootId, transportHash, 'queryOwner')
+
+    querySubscriptions.queries.delete(transportHash)
+    querySubscriptions.ownerMeta.delete(ownerKey)
+    querySubscriptions.ownerKeysByTransport.get(transportHash)?.delete(ownerKey)
+
+    await assert.doesNotReject(async () => closeSignal($root))
+
+    assert.equal(__getRootContextForTests(rootId), undefined)
+    assert.equal(querySubscriptions.transportSubCount.get(transportHash), undefined)
+    assert.equal(querySubscriptions.ownerToTransport.get(ownerKey), undefined)
   })
 
   it('stops active refs and removes root-owned runtime state', async () => {

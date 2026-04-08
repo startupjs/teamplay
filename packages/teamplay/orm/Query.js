@@ -564,6 +564,7 @@ export class QuerySubscriptions {
       }
       const meta = this.ownerMeta.get(ownerKey)
       if (!meta) {
+        const ownerCount = this.subCount.get(ownerKey) || 0
         const transportHash = options.collectionName && options.params
           ? hashQuery(options.collectionName, options.params)
           : this.ownerToTransport.get(ownerKey)
@@ -575,6 +576,9 @@ export class QuerySubscriptions {
           settlePending()
           return
         }
+        const nextTransportCount = Math.max((this.transportSubCount.get(transportHash) || 0) - ownerCount, 0)
+        if (nextTransportCount > 0) this.transportSubCount.set(transportHash, nextTransportCount)
+        else this.transportSubCount.set(transportHash, 0)
         const query = this.queries.get(transportHash)
         await this.reconcileTransport(transportHash)
         if ((this.transportSubCount.get(transportHash) || 0) <= 0) {
