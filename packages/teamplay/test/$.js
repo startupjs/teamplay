@@ -5,7 +5,8 @@ import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
 import { GLOBAL_ROOT_ID } from '../orm/Root.js'
 import { LOCAL } from '../orm/$.js'
-import { getPrivateData } from '../orm/privateData.js'
+import { delPrivateData, getPrivateData } from '../orm/privateData.js'
+import { del as _del, set as _set } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
 
 before(connect)
@@ -531,6 +532,31 @@ describe('initLocalCollection()', () => {
     $collection.set({ a: 1 })
     const again = initLocalCollection('_localTest')
     assert.deepEqual(again.get(), { a: 1 })
+  })
+
+  it('global root get/peek include public and local collections', async () => {
+    _set(['users', 'u1'], { name: 'John' })
+    $('hello')
+    await $._session.userId.set('u1')
+    const $collection = initLocalCollection('_localTest')
+    await $collection.sample.set(123)
+
+    const snapshot = $.get()
+    const rawSnapshot = $.peek()
+
+    assert.equal(snapshot.users.u1.name, 'John')
+    assert.equal(rawSnapshot.users.u1.name, 'John')
+    assert.equal(snapshot._session.userId, 'u1')
+    assert.equal(rawSnapshot._session.userId, 'u1')
+    assert.equal(snapshot.$local._0, 'hello')
+    assert.equal(rawSnapshot.$local._0, 'hello')
+    assert.equal(snapshot._localTest.sample, 123)
+    assert.equal(rawSnapshot._localTest.sample, 123)
+
+    _del(['users'])
+    delPrivateData(GLOBAL_ROOT_ID, ['_session'])
+    delPrivateData(GLOBAL_ROOT_ID, ['_localTest'])
+    delPrivateData(GLOBAL_ROOT_ID, [LOCAL])
   })
 })
 

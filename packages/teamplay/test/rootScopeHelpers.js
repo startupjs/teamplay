@@ -50,6 +50,7 @@ describe('rootScope helpers', () => {
     }
     const privateDataA = { _session: { userId: 'a' }, _page: { tab: 'home' } }
     const privateDataB = { _session: { userId: 'b' } }
+    const globalPrivateData = { _session: { userId: 'global' }, $local: { _0: 'draft' } }
 
     assert.deepEqual(getLogicalRootSnapshot('_root_A', tree, privateDataA), {
       users: { u1: { name: 'John' } },
@@ -59,6 +60,11 @@ describe('rootScope helpers', () => {
     assert.deepEqual(getLogicalRootSnapshot('_root_B', tree, privateDataB), {
       users: { u1: { name: 'John' } },
       _session: { userId: 'b' }
+    })
+    assert.deepEqual(getLogicalRootSnapshot(undefined, tree, globalPrivateData), {
+      users: { u1: { name: 'John' } },
+      _session: { userId: 'global' },
+      $local: { _0: 'draft' }
     })
     assert.deepEqual(getLogicalRootSnapshot(undefined, tree), {
       users: { u1: { name: 'John' } }

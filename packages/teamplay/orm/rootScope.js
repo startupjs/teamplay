@@ -26,7 +26,6 @@ export function getLogicalRootSnapshot (rootId, tree, privateDataRoot) {
   for (const key of Object.keys(tree)) {
     snapshot[key] = tree[key]
   }
-  if (!rootId || isGlobalRootId(rootId)) return snapshot
   if (!privateDataRoot || typeof privateDataRoot !== 'object') return snapshot
   for (const key of Object.keys(privateDataRoot)) {
     snapshot[key] = privateDataRoot[key]
