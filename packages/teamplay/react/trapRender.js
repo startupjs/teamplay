@@ -3,7 +3,6 @@
 import executionContextTracker from './executionContextTracker.js'
 import * as promiseBatcher from './promiseBatcher.js'
 import renderAttemptDestroyer from './renderAttemptDestroyer.js'
-import { isCompatComponent } from './compatComponentRegistry.js'
 
 export default function trapRender ({ render, cache, destroy, componentId }) {
   return (...args) => {
@@ -26,7 +25,7 @@ export default function trapRender ({ render, cache, destroy, componentId }) {
         throw err
       }
       const destroyAttempt = renderAttemptDestroyer.getDestructor()
-      if (destroyAttempt || isCompatComponent(componentId)) {
+      if (destroyAttempt) {
         throw Promise.resolve(err).then(() => destroyAttempt?.())
       }
 

@@ -1,6 +1,7 @@
 import executionContextTracker from './executionContextTracker.js'
 import { useCache, useId } from './helpers.js'
 import { markCompatComponent } from './compatComponentRegistry.js'
+import renderAttemptDestroyer from './renderAttemptDestroyer.js'
 
 const IN_FLIGHT_BY_KEY = new Map()
 
@@ -27,6 +28,7 @@ export default function useSuspendMemo (factory, deps) {
   if (entry.status === 'done') return entry.value
   if (entry.status === 'pending') {
     markCompatComponent(componentId)
+    renderAttemptDestroyer.armCompat()
     throw entry.promise
   }
 
@@ -45,6 +47,7 @@ export default function useSuspendMemo (factory, deps) {
     entry.status = 'pending'
     entry.promise = promise
     markCompatComponent(componentId)
+    renderAttemptDestroyer.armCompat()
     throw promise
   }
 }

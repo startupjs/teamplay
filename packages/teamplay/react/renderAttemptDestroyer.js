@@ -15,7 +15,7 @@ class RenderAttemptDestroyer {
   }
 
   getDestructor () {
-    if (!this.compatArmed || this.fns.length === 0) {
+    if (!this.compatArmed) {
       this.reset()
       return undefined
     }
@@ -23,6 +23,7 @@ class RenderAttemptDestroyer {
     const fns = [...this.fns]
     this.reset()
     return async () => {
+      if (fns.length === 0) return
       await Promise.allSettled(fns.map(fn => fn()))
       fns.length = 0
     }

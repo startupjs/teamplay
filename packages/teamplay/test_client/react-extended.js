@@ -383,16 +383,16 @@ describe('useSub edge cases', () => {
     ])
   })
 
-  it('trapRender keeps compat observer shell alive for thrown promises without attempt cleanup', async () => {
+  it('trapRender keeps observer shell alive only when compat path is explicitly armed', async () => {
     const events = []
     let resolvePromise
     const pending = new Promise(resolve => {
       resolvePromise = resolve
     })
-    markCompatComponent('compatTrapRenderNoCleanup')
     const wrapped = trapRender({
-      componentId: 'compatTrapRenderNoCleanup',
+      componentId: 'compatTrapRenderArmed',
       render: () => {
+        renderAttemptDestroyer.armCompat()
         throw pending
       },
       cache: {
@@ -421,6 +421,47 @@ describe('useSub edge cases', () => {
     expect(events).toEqual([
       'activate',
       'deactivate'
+    ])
+  })
+
+  it('trapRender still destroys plain compat shell for thrown promises without compat arming', async () => {
+    const events = []
+    let resolvePromise
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+    markCompatComponent('compatTrapRenderNoCleanup')
+    const wrapped = trapRender({
+      componentId: 'compatTrapRenderNoCleanup',
+      render: () => {
+        throw pending
+      },
+      cache: {
+        activate: () => events.push('activate'),
+        deactivate: () => events.push('deactivate')
+      },
+      destroy: where => events.push(`destroy:${where}`)
+    })
+
+    let thrown
+    try {
+      wrapped()
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(events).toEqual([
+      'activate',
+      'destroy:trapRender.js'
+    ])
+    expect(thrown).toBe(pending)
+
+    resolvePromise()
+    await thrown
+
+    expect(events).toEqual([
+      'activate',
+      'destroy:trapRender.js'
     ])
   })
 
