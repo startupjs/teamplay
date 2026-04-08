@@ -178,13 +178,12 @@ export class DocSubscriptions {
     this.DocClass = DocClass
     this.ownerRecords = new Map() // ownerKey -> owner record
     this.entries = new Map() // transportHash -> transport entry
-    this.pendingDestroyTimers = new Map()
     this.fr = new FinalizationRegistry(({ hash, ownerKey }) => this.destroyByOwnerKey(ownerKey, { hash, force: true }))
     this.subCount = createReadonlyMapView({
       get: hash => this.getTrackedCount(hash),
       has: hash => this.getTrackedCount(hash) !== undefined,
       size: () => this.getTrackedHashCountSize(),
-      keys: () => getTrackedHashes(this.entries, this.pendingDestroyTimers)
+      keys: () => getTrackedHashes(this.entries)
     })
     this.ownerFetchCount = createReadonlyMapView({
       get: ownerKey => {
@@ -222,6 +221,12 @@ export class DocSubscriptions {
       size: () => this.getRuntimeCount(),
       keys: () => filterMapKeys(this.entries, entry => !!entry.runtime)
     })
+    this.pendingDestroyTimers = createReadonlyMapView({
+      get: hash => this.entries.get(hash)?.pendingDestroy,
+      has: hash => !!this.entries.get(hash)?.pendingDestroy,
+      size: () => countMapLike(this.entries, entry => !!entry.pendingDestroy),
+      keys: () => filterMapKeys(this.entries, entry => !!entry.pendingDestroy)
+    })
   }
 
   getOrCreateOwnerRecord (ownerKey, meta) {
@@ -256,6 +261,7 @@ export class DocSubscriptions {
         runtime: null,
         owners: new Set(),
         retainCount: 0,
+        pendingDestroy: null,
         reconcilePromise: null
       }
       this.entries.set(hash, entry)
@@ -289,6 +295,7 @@ export class DocSubscriptions {
     if (!entry) return
     if (entry.owners.size > 0) return
     if (entry.retainCount > 0) return
+    if (entry.pendingDestroy) return
     if (entry.runtime) return
     if (entry.phase === 'transition') return
     this.entries.delete(hash)
@@ -419,16 +426,12 @@ export class DocSubscriptions {
   }
 
   async clear () {
-    const hashes = new Set([
-      ...this.pendingDestroyTimers.keys(),
-      ...this.entries.keys()
-    ])
+    const hashes = new Set(this.entries.keys())
     for (const hash of hashes) {
       await this.destroyByHash(hash, { force: true })
     }
     this.entries.clear()
     this.ownerRecords.clear()
-    this.pendingDestroyTimers.clear()
   }
 
   async releaseRootOwnedSubscriptions (rootId) {
@@ -444,7 +447,7 @@ export class DocSubscriptions {
   }
 
   async flushPendingDestroys () {
-    const hashes = Array.from(this.pendingDestroyTimers.keys())
+    const hashes = Array.from(filterMapKeys(this.entries, entry => !!entry.pendingDestroy))
     for (const hash of hashes) {
       await this.destroyByHash(hash)
     }
@@ -457,18 +460,19 @@ export class DocSubscriptions {
       await this.destroyByHash(hash, options)
       return
     }
-    const existing = this.pendingDestroyTimers.get(hash)
+    const entry = this.getOrCreateEntry(hash, segments)
+    const existing = entry.pendingDestroy
     if (existing) {
       if (options.force) existing.force = true
       return existing.promise
     }
-    const entry = createPendingDestroyEntry()
-    if (options.force) entry.force = true
-    entry.timer = setTimeout(() => {
-      this.destroyByHash(hash, { force: entry.force }).catch(ignoreDestroyError)
+    const pendingDestroy = createPendingDestroyEntry()
+    if (options.force) pendingDestroy.force = true
+    pendingDestroy.timer = setTimeout(() => {
+      this.destroyByHash(hash, { force: pendingDestroy.force }).catch(ignoreDestroyError)
     }, delay)
-    this.pendingDestroyTimers.set(hash, entry)
-    return entry.promise
+    entry.pendingDestroy = pendingDestroy
+    return pendingDestroy.promise
   }
 
   cancelDestroy (hash) {
@@ -581,7 +585,10 @@ export class DocSubscriptions {
       }
       if (typeof activeDoc.hasPending === 'function' && activeDoc.hasPending()) {
         if (typeof activeDoc.whenNothingPending === 'function') {
-          if (pendingDestroy) this.pendingDestroyTimers.set(hash, pendingDestroy)
+          if (pendingDestroy) {
+            const nextEntry = this.getOrCreateEntry(hash)
+            nextEntry.pendingDestroy = pendingDestroy
+          }
           activeDoc.whenNothingPending(() => {
             const nextOptions = pendingDestroy ? { ...options, _pendingDestroy: pendingDestroy } : options
             this.destroyByHash(hash, nextOptions).catch(ignoreDestroyError)
@@ -607,12 +614,14 @@ export class DocSubscriptions {
   }
 
   takePendingDestroy (hash, expectedEntry) {
-    const entry = this.pendingDestroyTimers.get(hash)
-    if (!entry) return
-    if (expectedEntry && entry !== expectedEntry) return
-    clearTimeout(entry.timer)
-    this.pendingDestroyTimers.delete(hash)
-    return entry
+    const transportEntry = this.entries.get(hash)
+    const pendingDestroy = transportEntry?.pendingDestroy
+    if (!pendingDestroy) return
+    if (expectedEntry && pendingDestroy !== expectedEntry) return
+    clearTimeout(pendingDestroy.timer)
+    transportEntry.pendingDestroy = null
+    this.deleteEntryIfEmpty(hash)
+    return pendingDestroy
   }
 
   getOwnerIntentCount (recordOrOwnerKey, intent) {
@@ -730,21 +739,16 @@ export class DocSubscriptions {
     const entry = this.entries.get(hash)
     if (entry) {
       const total = this.getEntryTotalCount(entry)
-      if (total > 0 || this.pendingDestroyTimers.has(hash)) return total
-    } else if (this.pendingDestroyTimers.has(hash)) {
-      return 0
+      if (total > 0 || entry.pendingDestroy) return total
     }
     return undefined
   }
 
   getTrackedHashCountSize () {
-    let count = 0
-    const hashes = new Set(this.entries.keys())
-    for (const hash of this.pendingDestroyTimers.keys()) hashes.add(hash)
-    for (const hash of hashes) {
-      if (this.getTrackedCount(hash) !== undefined) count++
-    }
-    return count
+    return countMapLike(this.entries, entry => {
+      const total = this.getEntryTotalCount(entry)
+      return total > 0 || !!entry.pendingDestroy
+    })
   }
 
   getOwnerMeta (ownerKey) {
@@ -885,8 +889,6 @@ function * filterMapKeys (iterableMap, predicate) {
   }
 }
 
-function * getTrackedHashes (entries, pendingDestroyTimers) {
-  const hashes = new Set(entries.keys())
-  for (const hash of pendingDestroyTimers.keys()) hashes.add(hash)
-  yield * hashes
+function * getTrackedHashes (entries) {
+  yield * entries.keys()
 }
