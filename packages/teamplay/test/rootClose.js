@@ -4,6 +4,7 @@ import {
   __DEBUG_SIGNALS_CACHE__ as signalsCache,
   getRootSignal
 } from '../index.js'
+import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 import connect from '../connect/test.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import { docSubscriptions } from '../orm/Doc.js'
@@ -30,6 +31,12 @@ const DOC_COLLECTION = 'rootCloseDocs'
 const QUERY_COLLECTION = 'rootCloseQueries'
 const REFS_COLLECTION = 'rootCloseRefs'
 
+function assertGlobalSubscriptionManagersConsistent () {
+  assertDocSubscriptionsConsistent(docSubscriptions)
+  assertQuerySubscriptionsConsistent(querySubscriptions)
+  assertQuerySubscriptionsConsistent(aggregationSubscriptions)
+}
+
 describeCompat('root close()', () => {
   let prevSubscriptionGcDelay
 
@@ -39,9 +46,11 @@ describeCompat('root close()', () => {
   })
 
   afterEach(async () => {
+    assertGlobalSubscriptionManagersConsistent()
     await docSubscriptions.clear()
     await querySubscriptions.clear()
     await aggregationSubscriptions.clear()
+    assertGlobalSubscriptionManagersConsistent()
     _del([DOC_COLLECTION])
     _del([QUERY_COLLECTION])
     _del([REFS_COLLECTION])

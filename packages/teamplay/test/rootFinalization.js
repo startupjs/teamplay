@@ -1,6 +1,7 @@
 import { before, beforeEach, afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { getRootSignal } from '../index.js'
+import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 import connect from '../connect/test.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import { docSubscriptions } from '../orm/Doc.js'
@@ -24,6 +25,12 @@ const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe
 const QUERY_COLLECTION = 'rootFinalizationQueries'
 const DOC_COLLECTION = 'rootFinalizationDocs'
 
+function assertGlobalSubscriptionManagersConsistent () {
+  assertDocSubscriptionsConsistent(docSubscriptions)
+  assertQuerySubscriptionsConsistent(querySubscriptions)
+  assertQuerySubscriptionsConsistent(aggregationSubscriptions)
+}
+
 describe('root finalization', () => {
   let prevSubscriptionGcDelay
 
@@ -33,9 +40,11 @@ describe('root finalization', () => {
   })
 
   afterEach(async () => {
+    assertGlobalSubscriptionManagersConsistent()
     await docSubscriptions.clear()
     await querySubscriptions.clear()
     await aggregationSubscriptions.clear()
+    assertGlobalSubscriptionManagersConsistent()
     _del([QUERY_COLLECTION])
     _del([DOC_COLLECTION])
     await destroyConnectionCollection(QUERY_COLLECTION)
