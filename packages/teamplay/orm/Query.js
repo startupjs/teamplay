@@ -279,17 +279,63 @@ export class QuerySubscriptions {
     this.runtimeKind = 'query'
     this.ownerRecords = new Map() // ownerKey -> owner record
     this.entries = new Map() // transportHash -> transport entry
-    this.subCount = new Map() // ownerKey -> total ref count
-    this.transportSubCount = new Map() // transportHash -> attached owner count (mirror)
-    this.ownerFetchCount = new Map() // ownerKey -> fetch intent count (mirror)
-    this.ownerSubscribeCount = new Map() // ownerKey -> subscribe intent count (mirror)
-    this.queries = new Map() // transportHash -> runtime (mirror)
-    this.ownerToTransport = new Map() // ownerKey -> transportHash (mirror)
-    this.ownerMeta = new Map() // ownerKey -> { collectionName, params, transportHash, rootId } (mirror)
-    this.ownerKeysByTransport = new Map() // transportHash -> Set(ownerKey) (mirror)
     this.pendingDestroyTimers = new Map()
     this.fr = new FinalizationRegistry(({ collectionName, params, ownerKey }) => {
       this.scheduleDestroy(collectionName, params, ownerKey, { force: true })
+    })
+    this.subCount = createReadonlyMapView({
+      get: ownerKey => this.getTrackedOwnerCount(ownerKey),
+      has: ownerKey => this.getTrackedOwnerCount(ownerKey) !== undefined,
+      size: () => this.getTrackedOwnerCountSize(),
+      keys: () => getUnionKeys(this.ownerRecords.keys(), this.pendingDestroyTimers.keys())
+    })
+    this.transportSubCount = createReadonlyMapView({
+      get: transportHash => this.getTransportOwnerCount(transportHash),
+      has: transportHash => this.getTransportOwnerCount(transportHash) !== undefined,
+      size: () => this.getTrackedTransportCountSize(),
+      keys: () => filterMapKeys(this.entries, entry => entry.owners.size > 0 || !!entry.runtime)
+    })
+    this.ownerFetchCount = createReadonlyMapView({
+      get: ownerKey => {
+        const count = this.ownerRecords.get(ownerKey)?.fetchCount
+        return count > 0 ? count : undefined
+      },
+      has: ownerKey => !!this.ownerRecords.get(ownerKey)?.fetchCount,
+      size: () => countMapLike(this.ownerRecords, record => record.fetchCount > 0),
+      keys: () => filterMapKeys(this.ownerRecords, record => record.fetchCount > 0)
+    })
+    this.ownerSubscribeCount = createReadonlyMapView({
+      get: ownerKey => {
+        const count = this.ownerRecords.get(ownerKey)?.subscribeCount
+        return count > 0 ? count : undefined
+      },
+      has: ownerKey => !!this.ownerRecords.get(ownerKey)?.subscribeCount,
+      size: () => countMapLike(this.ownerRecords, record => record.subscribeCount > 0),
+      keys: () => filterMapKeys(this.ownerRecords, record => record.subscribeCount > 0)
+    })
+    this.queries = createReadonlyMapView({
+      get: transportHash => this.getRuntime(transportHash),
+      has: transportHash => this.hasRuntime(transportHash),
+      size: () => this.getRuntimeCount(),
+      keys: () => filterMapKeys(this.entries, entry => !!entry.runtime)
+    })
+    this.ownerToTransport = createReadonlyMapView({
+      get: ownerKey => this.ownerRecords.get(ownerKey)?.transportHash,
+      has: ownerKey => this.ownerRecords.has(ownerKey),
+      size: () => this.ownerRecords.size,
+      keys: () => this.ownerRecords.keys()
+    })
+    this.ownerMeta = createReadonlyMapView({
+      get: ownerKey => this.getOwnerMeta(ownerKey),
+      has: ownerKey => this.ownerRecords.has(ownerKey),
+      size: () => this.ownerRecords.size,
+      keys: () => this.ownerRecords.keys()
+    })
+    this.ownerKeysByTransport = createReadonlyMapView({
+      get: transportHash => this.getOwnerKeys(transportHash),
+      has: transportHash => !!this.getOwnerKeys(transportHash),
+      size: () => countMapLike(this.entries, entry => entry.owners.size > 0),
+      keys: () => filterMapKeys(this.entries, entry => entry.owners.size > 0)
     })
   }
 
@@ -313,7 +359,6 @@ export class QuerySubscriptions {
       if (meta.params != null) record.params = meta.params
       if (meta.transportHash != null) record.transportHash = meta.transportHash
     }
-    this.syncOwnerMirror(record)
     return record
   }
 
@@ -338,39 +383,11 @@ export class QuerySubscriptions {
     return this.entries.get(transportHash)
   }
 
-  syncOwnerMirror (record) {
-    if (!record) return
-    this.ownerToTransport.set(record.ownerKey, record.transportHash)
-    this.ownerMeta.set(record.ownerKey, {
-      collectionName: record.collectionName,
-      params: record.params,
-      transportHash: record.transportHash,
-      rootId: record.rootId
-    })
-    if (record.fetchCount > 0) this.ownerFetchCount.set(record.ownerKey, record.fetchCount)
-    else this.ownerFetchCount.delete(record.ownerKey)
-    if (record.subscribeCount > 0) this.ownerSubscribeCount.set(record.ownerKey, record.subscribeCount)
-    else this.ownerSubscribeCount.delete(record.ownerKey)
-  }
+  syncOwnerMirror () {}
 
-  clearOwnerMirror (ownerKey) {
-    this.ownerToTransport.delete(ownerKey)
-    this.ownerMeta.delete(ownerKey)
-    this.ownerFetchCount.delete(ownerKey)
-    this.ownerSubscribeCount.delete(ownerKey)
-  }
+  clearOwnerMirror () {}
 
-  syncEntryMirror (entry) {
-    if (!entry) return
-    if (entry.runtime) this.queries.set(entry.transportHash, entry.runtime)
-    else this.queries.delete(entry.transportHash)
-
-    if (entry.owners.size > 0) this.ownerKeysByTransport.set(entry.transportHash, new Set(entry.owners))
-    else this.ownerKeysByTransport.delete(entry.transportHash)
-
-    if (entry.owners.size > 0 || entry.runtime) this.transportSubCount.set(entry.transportHash, entry.owners.size)
-    else this.transportSubCount.delete(entry.transportHash)
-  }
+  syncEntryMirror () {}
 
   deleteEntryIfEmpty (transportHash) {
     const entry = this.entries.get(transportHash)
@@ -379,9 +396,6 @@ export class QuerySubscriptions {
     if (entry.runtime) return
     if (entry.phase === 'transition') return
     this.entries.delete(transportHash)
-    this.queries.delete(transportHash)
-    this.transportSubCount.delete(transportHash)
-    this.ownerKeysByTransport.delete(transportHash)
   }
 
   addOwnerToEntry (record) {
@@ -462,17 +476,8 @@ export class QuerySubscriptions {
     const ownerKey = getQueryOwnerKey(rootId, transportHash)
     this.cancelDestroy(ownerKey)
 
-    let previousCount = this.subCount.get(ownerKey) || 0
+    const previousCount = this.getOwnerTotalCount(ownerKey)
     let record = this.ownerRecords.get(ownerKey)
-    if (previousCount > 0 && !record) {
-      this.subCount.delete(ownerKey)
-      const staleTransportHash = this.ownerToTransport.get(ownerKey)
-      if (staleTransportHash) {
-        this.clearOwnerMirror(ownerKey)
-        this.cleanupStaleTransportState(staleTransportHash)
-      }
-      previousCount = 0
-    }
 
     record = this.getOrCreateOwnerRecord(ownerKey, {
       rootId,
@@ -483,10 +488,7 @@ export class QuerySubscriptions {
     record.pendingDestroy = false
     const entry = this.addOwnerToEntry(record)
     this.incrementOwnerIntent(record, intent)
-    this.subCount.set(ownerKey, previousCount + 1)
     this.fr.register($query, { collectionName, params, ownerKey }, $query)
-    this.syncOwnerMirror(record)
-    this.syncEntryMirror(entry)
 
     if (
       previousCount > 0 &&
@@ -503,31 +505,19 @@ export class QuerySubscriptions {
     const record = this.ownerRecords.get(ownerKey)
     const currentIntentCount = this.getOwnerIntentCount(record, intent)
     if (currentIntentCount <= 0) {
-      if ((this.subCount.get(ownerKey) || 0) > 0 && !record) {
-        const staleTransportHash = this.ownerToTransport.get(ownerKey) || $query[HASH]
-        this.subCount.delete(ownerKey)
-        this.clearOwnerMirror(ownerKey)
-        if (staleTransportHash) this.cleanupStaleTransportState(staleTransportHash)
-      }
       if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw Error(ERRORS.notSubscribed($query))
       return
     }
     const transportHash = record?.transportHash ?? $query[HASH]
     this.setOwnerIntentCount(record, intent, currentIntentCount - 1)
 
-    const count = Math.max((this.subCount.get(ownerKey) || 0) - 1, 0)
-    if (count > 0) {
-      this.subCount.set(ownerKey, count)
-    } else {
-      this.subCount.set(ownerKey, 0)
-    }
+    const count = this.getOwnerTotalCount(record)
 
     if (count === 0) {
       this.fr.unregister($query)
       if (record) {
         record.pendingDestroy = true
         this.removeOwnerFromEntry(record)
-        this.syncOwnerMirror(record)
       }
     }
 
@@ -542,7 +532,7 @@ export class QuerySubscriptions {
 
   async destroy (collectionName, params, options = {}) {
     const transportHash = hashQuery(collectionName, params)
-    const ownerKeys = Array.from(this.ownerKeysByTransport.get(transportHash) || [])
+    const ownerKeys = Array.from(this.getOwnerKeys(transportHash) || [])
     for (const ownerKey of ownerKeys) {
       await this.destroyByOwnerKey(ownerKey, {
         collectionName,
@@ -555,21 +545,13 @@ export class QuerySubscriptions {
   async clear () {
     const ownerKeys = new Set([
       ...this.pendingDestroyTimers.keys(),
-      ...this.ownerRecords.keys(),
-      ...this.ownerMeta.keys()
+      ...this.ownerRecords.keys()
     ])
     for (const ownerKey of ownerKeys) {
       await this.destroyByOwnerKey(ownerKey, { force: true })
     }
     this.entries.clear()
     this.ownerRecords.clear()
-    this.subCount.clear()
-    this.transportSubCount.clear()
-    this.ownerFetchCount.clear()
-    this.ownerSubscribeCount.clear()
-    this.ownerToTransport.clear()
-    this.ownerMeta.clear()
-    this.ownerKeysByTransport.clear()
   }
 
   async flushPendingDestroys () {
@@ -642,16 +624,9 @@ export class QuerySubscriptions {
   }
 
   async reconcileTransportNow (transportHash) {
-    const existingQuery = this.queries.get(transportHash)
     const entry = this.getOrCreateEntry(transportHash)
-    if (existingQuery && !entry.runtime) {
-      entry.runtime = existingQuery
-      entry.mode = existingQuery.activeTransportMode || entry.mode
-      this.syncEntryMirror(entry)
-    }
     while (true) {
-      let query = entry.runtime || this.queries.get(transportHash)
-      if (query && entry.runtime !== query) entry.runtime = query
+      let query = entry.runtime
       const desiredMode = entry.targetMode = this.getDesiredTransportMode(transportHash)
       const currentMode = query?.activeTransportMode ?? entry.mode
       entry.mode = currentMode
@@ -692,6 +667,14 @@ export class QuerySubscriptions {
     this.setOwnerIntentCount(record, intent, this.getOwnerIntentCount(record, intent) + 1)
   }
 
+  getOwnerTotalCount (recordOrOwnerKey) {
+    const record = typeof recordOrOwnerKey === 'string'
+      ? this.ownerRecords.get(recordOrOwnerKey)
+      : recordOrOwnerKey
+    if (!record) return 0
+    return record.fetchCount + record.subscribeCount
+  }
+
   getDesiredTransportMode (transportHash) {
     const entry = this.entries.get(transportHash)
     if (!entry || entry.owners.size === 0) return 'idle'
@@ -728,18 +711,16 @@ export class QuerySubscriptions {
     }
 
     try {
-      const count = this.subCount.get(ownerKey) || 0
+      const count = this.getTrackedOwnerCount(ownerKey) || 0
       if (!options.force && count > 0) {
         settlePending()
         return
       }
       const record = this.ownerRecords.get(ownerKey)
       if (!record) {
-        const ownerCount = this.subCount.get(ownerKey) || 0
+        const ownerCount = this.getTrackedOwnerCount(ownerKey) || 0
         const transportHash = options.transportHash ||
-          (options.collectionName && options.params ? hashQuery(options.collectionName, options.params) : this.ownerToTransport.get(ownerKey))
-        this.subCount.delete(ownerKey)
-        this.clearOwnerMirror(ownerKey)
+          (options.collectionName && options.params ? hashQuery(options.collectionName, options.params) : undefined)
         if (!transportHash) {
           settlePending()
           return
@@ -747,9 +728,8 @@ export class QuerySubscriptions {
         const entry = this.entries.get(transportHash)
         if (entry && ownerCount > 0) {
           entry.owners.delete(ownerKey)
-          this.syncEntryMirror(entry)
         }
-        const query = entry?.runtime || this.queries.get(transportHash)
+        const query = entry?.runtime
         await this.reconcileTransport(transportHash)
         const nextEntry = this.entries.get(transportHash)
         if (!nextEntry || nextEntry.owners.size === 0) {
@@ -760,18 +740,14 @@ export class QuerySubscriptions {
           if (nextEntry) nextEntry.runtime = null
           this.deleteEntryIfEmpty(transportHash)
         }
-        this.cleanupStaleTransportState(transportHash)
         settlePending()
         return
       }
       const { transportHash } = record
       const entry = this.entries.get(transportHash)
-      const query = entry?.runtime || this.queries.get(transportHash)
-
-      this.subCount.delete(ownerKey)
+      const query = entry?.runtime
       if (entry?.owners.has(ownerKey)) this.removeOwnerFromEntry(record)
       this.ownerRecords.delete(ownerKey)
-      this.clearOwnerMirror(ownerKey)
 
       await this.reconcileTransport(transportHash)
       const nextEntry = this.entries.get(transportHash)
@@ -781,7 +757,6 @@ export class QuerySubscriptions {
       }
       if (!query) {
         this.deleteEntryIfEmpty(transportHash)
-        this.cleanupStaleTransportState(transportHash)
         settlePending()
         return
       }
@@ -819,13 +794,11 @@ export class QuerySubscriptions {
   }
 
   removeOwnerMeta (ownerKey, transportHash) {
-    const knownTransportHash = transportHash ?? this.ownerToTransport.get(ownerKey)
-    this.clearOwnerMirror(ownerKey)
-    if (!knownTransportHash) return
-    const ownerKeys = this.ownerKeysByTransport.get(knownTransportHash)
-    if (!ownerKeys) return
-    ownerKeys.delete(ownerKey)
-    if (ownerKeys.size === 0) this.ownerKeysByTransport.delete(knownTransportHash)
+    const knownTransportHash = transportHash ?? this.ownerRecords.get(ownerKey)?.transportHash
+    const entry = knownTransportHash ? this.entries.get(knownTransportHash) : undefined
+    if (!entry) return
+    entry.owners.delete(ownerKey)
+    this.deleteEntryIfEmpty(knownTransportHash)
   }
 
   cleanupStaleTransportState (transportHash) {
@@ -833,16 +806,58 @@ export class QuerySubscriptions {
     const entry = this.entries.get(transportHash)
     if (entry) {
       if (!entry.runtime && entry.owners.size === 0) this.entries.delete(transportHash)
-      else this.syncEntryMirror(entry)
     }
-    if (this.queries.has(transportHash)) return
-    const ownerKeys = this.ownerKeysByTransport.get(transportHash)
-    if (ownerKeys?.size) return
-    const transportCount = this.transportSubCount.get(transportHash)
-    if (transportCount == null || transportCount <= 0) {
-      this.transportSubCount.delete(transportHash)
-      this.ownerKeysByTransport.delete(transportHash)
+  }
+
+  getRuntime (transportHash) {
+    return this.entries.get(transportHash)?.runtime
+  }
+
+  hasRuntime (transportHash) {
+    return !!this.getRuntime(transportHash)
+  }
+
+  getRuntimeCount () {
+    return countMapLike(this.entries, entry => !!entry.runtime)
+  }
+
+  getTrackedOwnerCount (ownerKey) {
+    const record = this.ownerRecords.get(ownerKey)
+    if (record) return record.fetchCount + record.subscribeCount
+    if (this.pendingDestroyTimers.has(ownerKey)) return 0
+    return undefined
+  }
+
+  getTrackedOwnerCountSize () {
+    return getUnionSize(this.ownerRecords.keys(), this.pendingDestroyTimers.keys())
+  }
+
+  getTransportOwnerCount (transportHash) {
+    const entry = this.entries.get(transportHash)
+    if (!entry) return undefined
+    if (entry.owners.size > 0 || entry.runtime) return entry.owners.size
+    return undefined
+  }
+
+  getTrackedTransportCountSize () {
+    return countMapLike(this.entries, entry => entry.owners.size > 0 || !!entry.runtime)
+  }
+
+  getOwnerMeta (ownerKey) {
+    const record = this.ownerRecords.get(ownerKey)
+    if (!record) return undefined
+    return {
+      collectionName: record.collectionName,
+      params: record.params,
+      transportHash: record.transportHash,
+      rootId: record.rootId
     }
+  }
+
+  getOwnerKeys (transportHash) {
+    const owners = this.entries.get(transportHash)?.owners
+    if (!owners?.size) return undefined
+    return new Set(owners)
   }
 }
 
@@ -980,6 +995,54 @@ function createPendingDestroyEntry () {
     promise,
     resolve: resolvePending,
     reject: rejectPending
+  }
+}
+
+function createReadonlyMapView ({ get, has, size, keys }) {
+  return {
+    get,
+    has,
+    get size () {
+      return size()
+    },
+    * keys () {
+      yield * keys()
+    },
+    * values () {
+      for (const key of keys()) yield get(key)
+    },
+    * entries () {
+      for (const key of keys()) yield [key, get(key)]
+    },
+    [Symbol.iterator] () {
+      return this.entries()
+    }
+  }
+}
+
+function countMapLike (iterableMap, predicate) {
+  let count = 0
+  for (const value of iterableMap.values()) {
+    if (predicate(value)) count++
+  }
+  return count
+}
+
+function getUnionSize (aKeys, bKeys) {
+  const keys = new Set(aKeys)
+  for (const key of bKeys) keys.add(key)
+  return keys.size
+}
+
+function * getUnionKeys (aKeys, bKeys) {
+  const keys = new Set(aKeys)
+  for (const key of bKeys) keys.add(key)
+  yield * keys
+}
+
+function * filterMapKeys (iterableMap, predicate) {
+  for (const [key, value] of iterableMap.entries()) {
+    if (predicate(value)) yield key
   }
 }
 

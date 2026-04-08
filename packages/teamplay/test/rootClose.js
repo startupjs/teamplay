@@ -132,8 +132,8 @@ describeCompat('root close()', () => {
     await $docA.subscribe()
     await $docB.subscribe()
 
-    docSubscriptions.ownerMeta.delete(ownerKeyA)
-    docSubscriptions.ownerKeysByHash.get(hash)?.delete(ownerKeyA)
+    docSubscriptions.ownerRecords.delete(ownerKeyA)
+    docSubscriptions.entries.get(hash)?.owners.delete(ownerKeyA)
 
     await assert.doesNotReject(async () => closeSignal($rootA))
 
@@ -193,15 +193,15 @@ describeCompat('root close()', () => {
     const transportHash = $query[QUERY_HASH]
     const ownerKey = getScopedSignalHash(rootId, transportHash, 'queryOwner')
 
-    querySubscriptions.queries.delete(transportHash)
-    querySubscriptions.ownerMeta.delete(ownerKey)
-    querySubscriptions.ownerKeysByTransport.get(transportHash)?.delete(ownerKey)
+    querySubscriptions.entries.get(transportHash).runtime = null
+    querySubscriptions.ownerRecords.delete(ownerKey)
+    querySubscriptions.entries.get(transportHash)?.owners.delete(ownerKey)
 
     await assert.doesNotReject(async () => closeSignal($root))
 
     assert.equal(__getRootContextForTests(rootId), undefined)
     assert.equal(querySubscriptions.transportSubCount.get(transportHash), undefined)
-    assert.equal(querySubscriptions.ownerToTransport.get(ownerKey), undefined)
+    assert.equal(querySubscriptions.ownerMeta.get(ownerKey), undefined)
   })
 
   it('stops active refs and removes root-owned runtime state', async () => {

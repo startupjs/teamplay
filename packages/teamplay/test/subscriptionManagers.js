@@ -478,7 +478,7 @@ describe('DocSubscriptions', () => {
     await manager.clear()
   })
 
-  it('unsubscribe handles stale owner metadata when doc entry is already missing', async () => {
+  it('unsubscribe handles stale canonical owner state when doc runtime is already missing', async () => {
     const manager = new DocSubscriptions(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_stale_owner_root', fetchOnly: false })
     const $doc = $root.games._staleOwner
@@ -487,9 +487,11 @@ describe('DocSubscriptions', () => {
 
     await manager.subscribe($doc, { intent: 'subscribe' })
 
-    manager.docs.delete(hash)
-    manager.ownerMeta.delete(ownerKey)
-    manager.ownerKeysByHash.get(hash)?.delete(ownerKey)
+    const entry = manager.entries.get(hash)
+    entry.runtime = null
+    entry.mode = 'idle'
+    manager.ownerRecords.delete(ownerKey)
+    entry.owners.delete(ownerKey)
 
     await assert.doesNotReject(async () => manager.destroyByOwnerKey(ownerKey, { hash, force: true }))
 
@@ -499,7 +501,7 @@ describe('DocSubscriptions', () => {
     assert.equal(manager.ownerKeysByHash.get(hash), undefined, 'stale owner key bucket should be removed')
   })
 
-  it('subscribe clears stale sub count when doc entry is already missing', async () => {
+  it('subscribe recreates missing doc runtime from canonical owner state', async () => {
     const manager = new DocSubscriptions(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_stale_subcount_root', fetchOnly: false })
     const $doc = $root.games._staleSubCount
@@ -507,15 +509,19 @@ describe('DocSubscriptions', () => {
 
     await manager.subscribe($doc, { intent: 'subscribe' })
 
-    manager.docs.delete(hash)
-    manager.subCount.set(hash, 0)
+    const entry = manager.entries.get(hash)
+    entry.runtime = null
+    entry.mode = 'idle'
 
     await assert.doesNotReject(async () => manager.subscribe($doc, { intent: 'subscribe' }))
 
     const doc = manager.docs.get(hash)
-    assert.equal(manager.subCount.get(hash), 1, 'stale sub count should be normalized back to 1')
+    assert.equal(manager.subCount.get(hash), 2, 'owner count should remain canonical after runtime recreation')
     assert.ok(doc, 'doc entry should be recreated')
     assert.equal(doc.activeTransportMode, 'subscribe')
+
+    await manager.unsubscribe($doc, { intent: 'subscribe' })
+    await manager.unsubscribe($doc, { intent: 'subscribe' })
   })
 
   it('destroyByHash tolerates stale active mode when doc entry was already detached from transport state', async () => {
@@ -528,11 +534,11 @@ describe('DocSubscriptions', () => {
 
     const doc = manager.docs.get(hash)
     doc.activeTransportMode = 'subscribe'
-    manager.subCount.set(hash, 0)
-    manager.ownerFetchCount.clear()
-    manager.ownerSubscribeCount.clear()
-    manager.ownerMeta.clear()
-    manager.ownerKeysByHash.clear()
+    const entry = manager.entries.get(hash)
+    entry.runtime = doc
+    entry.mode = 'subscribe'
+    manager.ownerRecords.clear()
+    entry.owners.clear()
 
     await assert.doesNotReject(async () => manager.destroyByHash(hash, { force: true }))
 
@@ -659,7 +665,7 @@ describe('QuerySubscriptions', () => {
     await querySubscriptions.unsubscribe($activeGames)
   })
 
-  it('recovers from stale subCount state when query entry is missing', async () => {
+  it('recreates query runtime when canonical owner state remains but runtime is missing', async () => {
     class MockQuery {
       constructor (collectionName, params) {
         this.collectionName = collectionName
@@ -681,14 +687,17 @@ describe('QuerySubscriptions', () => {
     const hash = $query[QUERY_HASH]
     const ownerKey = getQueryOwnerKeyForTest($query)
 
-    // Simulate race: ref-count says "already subscribed", but query map has been cleaned.
-    manager.subCount.set(ownerKey, 1)
+    await manager.subscribe($query)
+    const entry = manager.entries.get(hash)
+    entry.runtime = null
+    entry.mode = 'idle'
 
     await assert.doesNotReject(async () => manager.subscribe($query))
-    assert.equal(manager.subCount.get(ownerKey), 1, 'sub count should be normalized back to 1')
+    assert.equal(manager.subCount.get(ownerKey), 2, 'owner count should remain canonical after runtime recreation')
     assert.ok(manager.queries.get(hash), 'query should be re-created')
     assert.equal(manager.queries.get(hash).subscribed, true, 'query should be subscribed after recovery')
 
+    await assert.doesNotReject(async () => manager.unsubscribe($query))
     await assert.doesNotReject(async () => manager.unsubscribe($query))
   })
 
@@ -700,14 +709,13 @@ describe('QuerySubscriptions', () => {
     const $query = getQuerySignal('gamesQuery', { active: false })
     const ownerKey = getQueryOwnerKeyForTest($query)
 
-    manager.subCount.set(ownerKey, 1)
     assert.equal(manager.queries.get($query[QUERY_HASH]), undefined, 'query entry should be absent')
 
     await assert.doesNotReject(async () => manager.unsubscribe($query))
     assert.equal(manager.subCount.get(ownerKey), undefined, 'stale sub count should be removed')
   })
 
-  it('unsubscribe handles stale owner transport metadata when query entry is already missing', async () => {
+  it('unsubscribe handles stale canonical owner state when query entry is already missing', async () => {
     const manager = new QuerySubscriptions(class {
       async subscribe () {}
       async unsubscribe () {}
@@ -716,9 +724,10 @@ describe('QuerySubscriptions', () => {
     const transportHash = $query[QUERY_HASH]
     const ownerKey = getQueryOwnerKeyForTest($query)
 
-    manager.subCount.set(ownerKey, 1)
-    manager.ownerToTransport.set(ownerKey, transportHash)
-    manager.transportSubCount.set(transportHash, 0)
+    await manager.subscribe($query)
+    const entry = manager.entries.get(transportHash)
+    entry.runtime = null
+    manager.entries.delete(transportHash)
 
     assert.equal(manager.queries.get(transportHash), undefined, 'query entry should be absent')
 
@@ -728,7 +737,7 @@ describe('QuerySubscriptions', () => {
     assert.equal(manager.transportSubCount.get(transportHash), undefined, 'stale transport counter should be removed')
   })
 
-  it('subscribe clears stale owner transport metadata when query entry is already missing', async () => {
+  it('subscribe recreates stale canonical query entry when owner state already exists', async () => {
     const manager = new QuerySubscriptions(class {
       async subscribe () {}
       async unsubscribe () {}
@@ -737,19 +746,22 @@ describe('QuerySubscriptions', () => {
     const transportHash = $query[QUERY_HASH]
     const ownerKey = getQueryOwnerKeyForTest($query)
 
-    manager.subCount.set(ownerKey, 1)
-    manager.ownerFetchCount.set(ownerKey, 1)
-    manager.ownerToTransport.set(ownerKey, transportHash)
-    manager.transportSubCount.set(transportHash, 0)
+    await manager.subscribe($query, { intent: 'fetch' })
+    const entry = manager.entries.get(transportHash)
+    entry.runtime = null
+    entry.mode = 'idle'
 
     await assert.doesNotReject(async () => manager.subscribe($query, { intent: 'fetch' }))
-    assert.equal(manager.subCount.get(ownerKey), 1, 'stale sub count should be normalized back to 1')
+    assert.equal(manager.subCount.get(ownerKey), 2, 'owner count should remain canonical after runtime recreation')
     assert.equal(manager.ownerToTransport.get(ownerKey), transportHash, 'owner transport link should be reattached')
     assert.equal(manager.transportSubCount.get(transportHash), 1, 'transport counter should be recreated')
     assert.ok(manager.queries.get(transportHash), 'query entry should be recreated')
+
+    await manager.unsubscribe($query, { intent: 'fetch' })
+    await manager.unsubscribe($query, { intent: 'fetch' })
   })
 
-  it('destroyByOwnerKey clears stale transport metadata when query entry is already missing', async () => {
+  it('destroyByOwnerKey clears stale canonical transport state when query entry is already missing', async () => {
     const manager = new QuerySubscriptions(class {
       async subscribe () {}
       async unsubscribe () {}
@@ -758,9 +770,13 @@ describe('QuerySubscriptions', () => {
     const transportHash = $query[QUERY_HASH]
     const ownerKey = getQueryOwnerKeyForTest($query)
 
-    manager.subCount.set(ownerKey, 0)
-    manager.ownerToTransport.set(ownerKey, transportHash)
-    manager.transportSubCount.set(transportHash, 0)
+    await manager.subscribe($query, { intent: 'fetch' })
+    const record = manager.ownerRecords.get(ownerKey)
+    record.fetchCount = 0
+    record.subscribeCount = 0
+    const entry = manager.entries.get(transportHash)
+    entry.runtime = null
+    manager.entries.delete(transportHash)
 
     await assert.doesNotReject(async () => manager.destroyByOwnerKey(ownerKey, { force: true }))
     assert.equal(manager.ownerToTransport.get(ownerKey), undefined, 'owner transport link should be removed')
@@ -791,7 +807,9 @@ describe('QuerySubscriptions', () => {
     query.shareQuery = undefined
     query.initialized = true
 
-    manager.queries.set(transportHash, query)
+    const entry = manager.getOrCreateEntry(transportHash)
+    entry.runtime = query
+    entry.mode = 'fetch'
 
     await assert.doesNotReject(async () => manager.reconcileTransportNow(transportHash))
     assert.equal(query.activeTransportMode, 'idle')
