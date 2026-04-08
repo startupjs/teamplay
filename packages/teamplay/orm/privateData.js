@@ -50,13 +50,13 @@ export function setReplacePrivateData (rootId, logicalSegments, value) {
   _setReplace(segments, value, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
-export function delPrivateData (rootId, logicalSegments) {
+export function delPrivateData (rootId, logicalSegments, options = {}) {
   if (!isPrivateCollectionSegments(logicalSegments)) return
   const context = getRootContext(rootId, false)
   if (!context) return
   const segments = getPrivateDataSegments(logicalSegments)
   _del(segments, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
-  pruneEmptyPrivateParents(context.getPrivateDataRoot(), context.getPrivateDataRawRoot(), segments)
+  pruneEmptyPrivateParents(context.getPrivateDataRoot(), context.getPrivateDataRawRoot(), segments, options)
 }
 
 export function arrayPushPrivateData (rootId, logicalSegments, value) {
@@ -132,8 +132,11 @@ function cloneValue (value) {
   return value
 }
 
-function pruneEmptyPrivateParents (tree, treeRaw, segments) {
+function pruneEmptyPrivateParents (tree, treeRaw, segments, options = {}) {
   if (!Array.isArray(segments) || segments.length < 2) return
+  const preservePath = Array.isArray(options.preservePath)
+    ? getPrivateDataSegments(options.preservePath)
+    : null
   const parents = []
   let node = tree
   let nodeRaw = treeRaw
@@ -145,6 +148,8 @@ function pruneEmptyPrivateParents (tree, treeRaw, segments) {
   }
   for (let i = parents.length - 1; i >= 0; i--) {
     const [parent, parentRaw, segment] = parents[i]
+    const currentPath = segments.slice(0, i + 1)
+    if (segmentsEqual(currentPath, preservePath)) break
     const valueRaw = parentRaw?.[segment]
     if (!isPlainObjectEmpty(valueRaw)) break
     delete parent[segment]
@@ -153,4 +158,13 @@ function pruneEmptyPrivateParents (tree, treeRaw, segments) {
 
 function isPlainObjectEmpty (value) {
   return value != null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0
+}
+
+function segmentsEqual (left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false
+  if (left.length !== right.length) return false
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) return false
+  }
+  return true
 }

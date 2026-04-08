@@ -793,6 +793,13 @@ describe('SignalCompat mutators with path', () => {
     })
   })
 
+  it('setDiffDeep keeps empty top-level target objects materialized', async () => {
+    setup('setdiffdeep-empty-top')
+    await $base.set({ tab: 'home' })
+    await $base.setDiffDeep({})
+    assert.deepEqual($base.get(), {})
+  })
+
   it('setDiffDeep handles nested arrays in object branches', async () => {
     setup('setdiffdeep-arrays')
     await $base.set({
@@ -826,6 +833,20 @@ describe('SignalCompat mutators with path', () => {
     await $base.setDiffDeep('profile', { name: 'Bob' })
     assert.deepEqual($base.profile.get(), { name: 'Bob' })
     assert.deepEqual($base.get(), { profile: { name: 'Bob' } })
+  })
+
+  it('setDiffDeep(path, value) keeps empty target objects materialized', async () => {
+    setup('setdiffdeep-empty-path')
+    await $base.set({
+      filters: { tab: 'home' },
+      other: 1
+    })
+    await $base.setDiffDeep('filters', {})
+    assert.deepEqual($base.at('filters').get(), {})
+    assert.deepEqual($base.get(), {
+      filters: {},
+      other: 1
+    })
   })
 
   it('setDiff(value) is an alias to compat set(value)', async () => {
@@ -930,6 +951,29 @@ describe('SignalCompat mutators with path', () => {
 
     assert.deepEqual(snapshots[snapshots.length - 1], { name: 'Kate' })
     assert.equal(snapshots.some(s => s && s.name === 'Ann' && !('role' in s)), false)
+  })
+
+  it('setDiffDeep does not expose undefined when target object becomes empty', async () => {
+    setup('setdiffdeep-empty-atomic')
+    await $base.set({
+      filters: { tab: 'home' }
+    })
+
+    const snapshots = []
+    const reaction = observe(
+      () => {
+        const value = $base.at('filters').get()
+        return value == null ? value : deepCopyCompat(value)
+      },
+      { lazy: true, scheduler: reaction => scheduleReaction(() => snapshots.push(reaction())) }
+    )
+    snapshots.push(reaction())
+
+    await $base.setDiffDeep('filters', {})
+    unobserve(reaction)
+
+    assert.deepEqual(snapshots[snapshots.length - 1], {})
+    assert.equal(snapshots.some(s => s === undefined), false)
   })
 
   it('set fully replaces react-like values without crashing', async () => {

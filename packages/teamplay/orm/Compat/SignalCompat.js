@@ -1007,9 +1007,10 @@ function diffDeepCompatSync ($signal, before, after) {
   }
 
   if (isDiffableObject(before, after)) {
+    const preservePath = $signal[SEGMENTS]
     for (const key of Object.keys(before)) {
       if (Object.prototype.hasOwnProperty.call(after, key)) continue
-      delPrivateCompatSync(getChildSignal($signal, key))
+      delPrivateCompatSync(getChildSignal($signal, key), { preservePath })
     }
     for (const key of Object.keys(after)) {
       diffDeepCompatSync(getChildSignal($signal, key), before[key], after[key])
@@ -1055,12 +1056,12 @@ function setReplacePrivateCompatSync ($signal, value) {
   mirrorRefMutationFromTarget(segments, value)
 }
 
-function delPrivateCompatSync ($signal) {
+function delPrivateCompatSync ($signal, options) {
   const segments = $signal[SEGMENTS]
   if (segments.length === 0) throw Error('Can\'t delete the root signal data')
   const idFields = getIdFieldsForSegments(segments)
   if (isIdFieldPath(segments, idFields)) return
-  delPrivateData(getOwningRootId($signal), segments)
+  delPrivateData(getOwningRootId($signal), segments, options)
 }
 
 function deepEqualCompat (left, right) {
