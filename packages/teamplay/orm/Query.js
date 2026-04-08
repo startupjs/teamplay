@@ -279,7 +279,6 @@ export class QuerySubscriptions {
     this.runtimeKind = 'query'
     this.ownerRecords = new Map() // ownerKey -> owner record
     this.entries = new Map() // transportHash -> transport entry
-    this.pendingDestroyTimers = new Map()
     this.fr = new FinalizationRegistry(({ collectionName, params, ownerKey }) => {
       this.scheduleDestroy(collectionName, params, ownerKey, { force: true })
     })
@@ -287,7 +286,7 @@ export class QuerySubscriptions {
       get: ownerKey => this.getTrackedOwnerCount(ownerKey),
       has: ownerKey => this.getTrackedOwnerCount(ownerKey) !== undefined,
       size: () => this.getTrackedOwnerCountSize(),
-      keys: () => getUnionKeys(this.ownerRecords.keys(), this.pendingDestroyTimers.keys())
+      keys: () => getUnionKeys(this.ownerRecords.keys(), this.getPendingDestroyOwnerKeys())
     })
     this.transportSubCount = createReadonlyMapView({
       get: transportHash => this.getTransportOwnerCount(transportHash),
@@ -337,6 +336,12 @@ export class QuerySubscriptions {
       size: () => countMapLike(this.entries, entry => entry.owners.size > 0),
       keys: () => filterMapKeys(this.entries, entry => entry.owners.size > 0)
     })
+    this.pendingDestroyTimers = createReadonlyMapView({
+      get: ownerKey => this.getPendingDestroy(ownerKey),
+      has: ownerKey => this.hasPendingDestroy(ownerKey),
+      size: () => this.getPendingDestroyCount(),
+      keys: () => this.getPendingDestroyOwnerKeys()
+    })
   }
 
   getOrCreateOwnerRecord (ownerKey, meta) {
@@ -349,8 +354,7 @@ export class QuerySubscriptions {
         params: meta.params,
         transportHash: meta.transportHash,
         fetchCount: 0,
-        subscribeCount: 0,
-        pendingDestroy: false
+        subscribeCount: 0
       }
       this.ownerRecords.set(ownerKey, record)
     } else {
@@ -372,6 +376,7 @@ export class QuerySubscriptions {
         phase: 'stable',
         runtime: null,
         owners: new Set(),
+        pendingDestroyByOwner: new Map(),
         reconcilePromise: null
       }
       this.entries.set(transportHash, entry)
@@ -393,6 +398,7 @@ export class QuerySubscriptions {
     const entry = this.entries.get(transportHash)
     if (!entry) return
     if (entry.owners.size > 0) return
+    if (entry.pendingDestroyByOwner.size > 0) return
     if (entry.runtime) return
     if (entry.phase === 'transition') return
     this.entries.delete(transportHash)
@@ -474,7 +480,7 @@ export class QuerySubscriptions {
     const transportHash = $query[HASH]
     const rootId = getOwningRootId($query)
     const ownerKey = getQueryOwnerKey(rootId, transportHash)
-    this.cancelDestroy(ownerKey)
+    this.cancelDestroy(ownerKey, transportHash)
 
     const previousCount = this.getOwnerTotalCount(ownerKey)
     let record = this.ownerRecords.get(ownerKey)
@@ -485,7 +491,6 @@ export class QuerySubscriptions {
       params,
       transportHash
     })
-    record.pendingDestroy = false
     const entry = this.addOwnerToEntry(record)
     this.incrementOwnerIntent(record, intent)
     this.fr.register($query, { collectionName, params, ownerKey }, $query)
@@ -516,7 +521,6 @@ export class QuerySubscriptions {
     if (count === 0) {
       this.fr.unregister($query)
       if (record) {
-        record.pendingDestroy = true
         this.removeOwnerFromEntry(record)
       }
     }
@@ -544,7 +548,7 @@ export class QuerySubscriptions {
 
   async clear () {
     const ownerKeys = new Set([
-      ...this.pendingDestroyTimers.keys(),
+      ...this.getPendingDestroyOwnerKeys(),
       ...this.ownerRecords.keys()
     ])
     for (const ownerKey of ownerKeys) {
@@ -555,51 +559,53 @@ export class QuerySubscriptions {
   }
 
   async flushPendingDestroys () {
-    const ownerKeys = Array.from(this.pendingDestroyTimers.keys())
+    const ownerKeys = Array.from(this.getPendingDestroyOwnerKeys())
     for (const ownerKey of ownerKeys) {
       await this.destroyByOwnerKey(ownerKey)
     }
   }
 
   async scheduleDestroy (collectionName, params, ownerKey, options = {}) {
-    const fallbackOwnerKey = ownerKey ?? getQueryOwnerKey(undefined, hashQuery(collectionName, params))
+    const transportHash = options.transportHash ?? hashQuery(collectionName, params)
+    const fallbackOwnerKey = ownerKey ?? getQueryOwnerKey(undefined, transportHash)
     const delay = getSubscriptionGcDelay()
     if (delay <= 0) {
       await this.destroyByOwnerKey(fallbackOwnerKey, {
         collectionName,
         params,
-        transportHash: options.transportHash,
+        transportHash,
         force: !!options.force
       })
       return
     }
-    const existing = this.pendingDestroyTimers.get(fallbackOwnerKey)
+    const entry = this.getOrCreateEntry(transportHash)
+    const existing = entry.pendingDestroyByOwner.get(fallbackOwnerKey)
     if (existing) {
       if (options.force) existing.force = true
       return existing.promise
     }
-    const entry = createPendingDestroyEntry()
-    if (options.force) entry.force = true
-    entry.collectionName = collectionName
-    entry.params = params
-    entry.transportHash = options.transportHash
-    entry.timer = setTimeout(() => {
+    const pendingDestroy = createPendingDestroyEntry()
+    if (options.force) pendingDestroy.force = true
+    pendingDestroy.collectionName = collectionName
+    pendingDestroy.params = params
+    pendingDestroy.transportHash = transportHash
+    pendingDestroy.timer = setTimeout(() => {
       this.destroyByOwnerKey(fallbackOwnerKey, {
         collectionName,
         params,
-        transportHash: entry.transportHash,
-        force: entry.force
+        transportHash: pendingDestroy.transportHash,
+        force: pendingDestroy.force
       })
         .catch(ignoreDestroyError)
     }, delay)
-    this.pendingDestroyTimers.set(fallbackOwnerKey, entry)
-    return entry.promise
+    entry.pendingDestroyByOwner.set(fallbackOwnerKey, pendingDestroy)
+    return pendingDestroy.promise
   }
 
-  cancelDestroy (ownerKey) {
-    const entry = this.takePendingDestroy(ownerKey)
-    if (!entry) return
-    entry.resolve()
+  cancelDestroy (ownerKey, transportHash) {
+    const pendingDestroy = this.takePendingDestroy(ownerKey, transportHash)
+    if (!pendingDestroy) return
+    pendingDestroy.resolve()
   }
 
   async reconcileTransport (transportHash) {
@@ -695,7 +701,7 @@ export class QuerySubscriptions {
   }
 
   async destroyByOwnerKey (ownerKey, options = {}) {
-    const pendingDestroy = this.takePendingDestroy(ownerKey)
+    const pendingDestroy = this.takePendingDestroy(ownerKey, options.transportHash)
     if (pendingDestroy?.force) options.force = true
     if (options.collectionName == null && pendingDestroy?.collectionName != null) {
       options.collectionName = pendingDestroy.collectionName
@@ -785,12 +791,14 @@ export class QuerySubscriptions {
     })
   }
 
-  takePendingDestroy (ownerKey) {
-    const entry = this.pendingDestroyTimers.get(ownerKey)
-    if (!entry) return
-    clearTimeout(entry.timer)
-    this.pendingDestroyTimers.delete(ownerKey)
-    return entry
+  takePendingDestroy (ownerKey, transportHash) {
+    const entry = this.getEntryForPendingDestroy(ownerKey, transportHash)
+    const pendingDestroy = entry?.pendingDestroyByOwner.get(ownerKey)
+    if (!pendingDestroy) return
+    clearTimeout(pendingDestroy.timer)
+    entry.pendingDestroyByOwner.delete(ownerKey)
+    this.deleteEntryIfEmpty(entry.transportHash)
+    return pendingDestroy
   }
 
   removeOwnerMeta (ownerKey, transportHash) {
@@ -824,12 +832,12 @@ export class QuerySubscriptions {
   getTrackedOwnerCount (ownerKey) {
     const record = this.ownerRecords.get(ownerKey)
     if (record) return record.fetchCount + record.subscribeCount
-    if (this.pendingDestroyTimers.has(ownerKey)) return 0
+    if (this.hasPendingDestroy(ownerKey)) return 0
     return undefined
   }
 
   getTrackedOwnerCountSize () {
-    return getUnionSize(this.ownerRecords.keys(), this.pendingDestroyTimers.keys())
+    return getUnionSize(this.ownerRecords.keys(), this.getPendingDestroyOwnerKeys())
   }
 
   getTransportOwnerCount (transportHash) {
@@ -858,6 +866,36 @@ export class QuerySubscriptions {
     const owners = this.entries.get(transportHash)?.owners
     if (!owners?.size) return undefined
     return new Set(owners)
+  }
+
+  getPendingDestroy (ownerKey, transportHash) {
+    const entry = this.getEntryForPendingDestroy(ownerKey, transportHash)
+    return entry?.pendingDestroyByOwner.get(ownerKey)
+  }
+
+  hasPendingDestroy (ownerKey, transportHash) {
+    return !!this.getPendingDestroy(ownerKey, transportHash)
+  }
+
+  getPendingDestroyCount () {
+    let count = 0
+    for (const entry of this.entries.values()) count += entry.pendingDestroyByOwner.size
+    return count
+  }
+
+  getEntryForPendingDestroy (ownerKey, transportHash) {
+    if (transportHash) return this.entries.get(transportHash)
+    const knownTransportHash = this.ownerRecords.get(ownerKey)?.transportHash
+    if (knownTransportHash) return this.entries.get(knownTransportHash)
+    for (const entry of this.entries.values()) {
+      if (entry.pendingDestroyByOwner.has(ownerKey)) return entry
+    }
+  }
+
+  * getPendingDestroyOwnerKeys () {
+    for (const entry of this.entries.values()) {
+      yield * entry.pendingDestroyByOwner.keys()
+    }
   }
 }
 
