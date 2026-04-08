@@ -13,6 +13,7 @@
 import { it, describe, before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
+import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 import { $, sub } from '../index.js'
 import { docSubscriptions, DocSubscriptions } from '../orm/Doc.js'
 import { isMissingShareDoc } from '../orm/missingDoc.js'
@@ -50,8 +51,55 @@ beforeEach(() => {
   setSubscriptionGcDelay(0)
 })
 
+const trackedDocManagerRefs = []
+const trackedQueryManagerRefs = []
+
+function trackDocManager (manager) {
+  trackedDocManagerRefs.push(new WeakRef(manager))
+  return manager
+}
+
+function trackQueryManager (manager) {
+  trackedQueryManagerRefs.push(new WeakRef(manager))
+  return manager
+}
+
+function createTrackedDocManager (...args) {
+  return trackDocManager(new DocSubscriptions(...args))
+}
+
+function createTrackedQueryManager (...args) {
+  return trackQueryManager(new QuerySubscriptions(...args))
+}
+
+function resetTrackedManagers () {
+  trackedDocManagerRefs.length = 0
+  trackedQueryManagerRefs.length = 0
+}
+
+function assertTrackedManagersAndReset () {
+  try {
+    assertDocSubscriptionsConsistent(docSubscriptions)
+    assertQuerySubscriptionsConsistent(querySubscriptions)
+    assertQuerySubscriptionsConsistent(aggregationSubscriptions)
+
+    for (const managerRef of trackedDocManagerRefs) {
+      const manager = managerRef.deref()
+      if (manager) assertDocSubscriptionsConsistent(manager)
+    }
+
+    for (const managerRef of trackedQueryManagerRefs) {
+      const manager = managerRef.deref()
+      if (manager) assertQuerySubscriptionsConsistent(manager)
+    }
+  } finally {
+    resetTrackedManagers()
+  }
+}
+
 afterEach(() => {
   setSubscriptionGcDelay(TEST_DEFAULT_SUBSCRIPTION_GC_DELAY)
+  resetTrackedManagers()
 })
 
 function cbPromise (fn) {
@@ -204,6 +252,7 @@ class MockQuery {
 
 describe('DocSubscriptions', () => {
   afterEachTestGc()
+  afterEach(assertTrackedManagersAndReset)
 
   it('reference counting - subscribe twice to same doc, count increases, unsubscribing once doesn\'t actually unsubscribe', async () => {
     const gameId = '_refcount1'
@@ -393,7 +442,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('uses fetch transport for subscribe on fetchOnly roots', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_fetch_root', fetchOnly: true })
     const $doc = $root.games._fetchOnlyDoc
     const hash = JSON.stringify(['games', '_fetchOnlyDoc'])
@@ -410,7 +459,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('uses subscribe transport for subscribe on live roots', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_live_root', fetchOnly: false })
     const $doc = $root.games._liveDoc
     const hash = JSON.stringify(['games', '_liveDoc'])
@@ -427,7 +476,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('uses fetch transport for explicit fetch intent on live roots', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_fetch_intent_root', fetchOnly: false })
     const $doc = $root.games._fetchIntentDoc
     const hash = JSON.stringify(['games', '_fetchIntentDoc'])
@@ -444,7 +493,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('upgrades and downgrades doc transport for mixed root modes', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $fetchRoot = getRootSignal({ rootId: '_doc_mixed_fetch_root', fetchOnly: true })
     const $liveRoot = getRootSignal({ rootId: '_doc_mixed_live_root', fetchOnly: false })
     const $fetchDoc = $fetchRoot.games._mixedDoc
@@ -479,7 +528,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('unsubscribe handles stale canonical owner state when doc runtime is already missing', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_stale_owner_root', fetchOnly: false })
     const $doc = $root.games._staleOwner
     const hash = JSON.stringify(['games', '_staleOwner'])
@@ -502,7 +551,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('subscribe recreates missing doc runtime from canonical owner state', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_stale_subcount_root', fetchOnly: false })
     const $doc = $root.games._staleSubCount
     const hash = JSON.stringify(['games', '_staleSubCount'])
@@ -525,7 +574,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('destroyByHash tolerates stale active mode when doc entry was already detached from transport state', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_stale_transport_root', fetchOnly: false })
     const $doc = $root.games._staleTransport
     const hash = JSON.stringify(['games', '_staleTransport'])
@@ -547,7 +596,7 @@ describe('DocSubscriptions', () => {
   })
 
   it('destroyByOwnerKey and destroyByHash remain idempotent on the same doc transport', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $root = getRootSignal({ rootId: '_doc_destroy_idempotent_root', fetchOnly: false })
     const $doc = $root.games._destroyIdempotent
     const hash = JSON.stringify(['games', '_destroyIdempotent'])
@@ -577,6 +626,7 @@ describe('QuerySubscriptions', () => {
   })
 
   afterEachTestGc()
+  afterEach(assertTrackedManagersAndReset)
 
   it('reference counting - subscribe twice to same query, count increases, unsubscribing once doesn\'t actually unsubscribe', async () => {
     const params = { active: true }
@@ -699,7 +749,7 @@ describe('QuerySubscriptions', () => {
       }
     }
 
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $query = getQuerySignal('gamesQuery', { active: true })
     const hash = $query[QUERY_HASH]
     const ownerKey = getQueryOwnerKeyForTest($query)
@@ -719,7 +769,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('unsubscribe is a no-op when query is already missing', async () => {
-    const manager = new QuerySubscriptions(class {
+    const manager = createTrackedQueryManager(class {
       async subscribe () {}
       async unsubscribe () {}
     })
@@ -733,7 +783,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('unsubscribe handles stale canonical owner state when query entry is already missing', async () => {
-    const manager = new QuerySubscriptions(class {
+    const manager = createTrackedQueryManager(class {
       async subscribe () {}
       async unsubscribe () {}
     })
@@ -755,7 +805,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('subscribe recreates stale canonical query entry when owner state already exists', async () => {
-    const manager = new QuerySubscriptions(class {
+    const manager = createTrackedQueryManager(class {
       async subscribe () {}
       async unsubscribe () {}
     })
@@ -779,7 +829,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('destroyByOwnerKey clears stale canonical transport state when query entry is already missing', async () => {
-    const manager = new QuerySubscriptions(class {
+    const manager = createTrackedQueryManager(class {
       async subscribe () {}
       async unsubscribe () {}
     })
@@ -802,7 +852,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('destroyByOwnerKey and destroyByRuntimeHash remain idempotent on the same query transport', async () => {
-    const manager = new QuerySubscriptions(class {
+    const manager = createTrackedQueryManager(class {
       async subscribe () {}
       async unsubscribe () {}
     })
@@ -831,7 +881,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('reconcileTransportNow tolerates stale active mode when shareQuery is already missing', async () => {
-    const manager = new QuerySubscriptions(class {
+    const manager = createTrackedQueryManager(class {
       async subscribe () {}
       async unsubscribe () {}
     })
@@ -895,7 +945,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('shares QuerySubscriptions transport entry across root-scoped query signals', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const params = { active: true }
     const $rootA = getRootSignal({ rootId: '_scopeA_transport' })
     const $rootB = getRootSignal({ rootId: '_scopeB_transport' })
@@ -919,7 +969,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('uses fetch transport for query subscribe on fetchOnly roots', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $root = getRootSignal({ rootId: '_query_fetch_root', fetchOnly: true })
     const $query = getQuerySignal('gamesQuery', { active: true }, { root: $root })
     const transportHash = $query[QUERY_HASH]
@@ -936,7 +986,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('uses subscribe transport for query subscribe on live roots', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $root = getRootSignal({ rootId: '_query_live_root', fetchOnly: false })
     const $query = getQuerySignal('gamesQuery', { active: true }, { root: $root })
     const transportHash = $query[QUERY_HASH]
@@ -953,7 +1003,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('uses fetch transport for explicit fetch intent on live query roots', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $root = getRootSignal({ rootId: '_query_fetch_intent_root', fetchOnly: false })
     const $query = getQuerySignal('gamesQuery', { active: true }, { root: $root })
     const transportHash = $query[QUERY_HASH]
@@ -970,7 +1020,7 @@ describe('QuerySubscriptions', () => {
   })
 
   it('upgrades and downgrades query transport for mixed root modes', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $fetchRoot = getRootSignal({ rootId: '_query_mixed_fetch_root', fetchOnly: true })
     const $liveRoot = getRootSignal({ rootId: '_query_mixed_live_root', fetchOnly: false })
     const params = { active: true }
@@ -1022,7 +1072,7 @@ describe('QuerySubscriptions', () => {
 
   it('uses fetch transport for aggregation subscribe on fetchOnly roots', async () => {
     const params = { $aggregate: [{ $match: { active: true } }] }
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $root = getRootSignal({ rootId: '_aggregation_fetch_root', fetchOnly: true })
     const $aggregation = getAggregationSignal('gamesQuery', params, { root: $root })
     const transportHash = $aggregation[QUERY_HASH]
@@ -1040,7 +1090,7 @@ describe('QuerySubscriptions', () => {
 
   it('uses subscribe transport for aggregation subscribe on live roots', async () => {
     const params = { $aggregate: [{ $match: { active: true } }] }
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $root = getRootSignal({ rootId: '_aggregation_live_root', fetchOnly: false })
     const $aggregation = getAggregationSignal('gamesQuery', params, { root: $root })
     const transportHash = $aggregation[QUERY_HASH]
@@ -1058,7 +1108,7 @@ describe('QuerySubscriptions', () => {
 
   it('upgrades and downgrades aggregation transport for mixed root modes', async () => {
     const params = { $aggregate: [{ $match: { active: true } }] }
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $fetchRoot = getRootSignal({ rootId: '_aggregation_mixed_fetch_root', fetchOnly: true })
     const $liveRoot = getRootSignal({ rootId: '_aggregation_mixed_live_root', fetchOnly: false })
     const $fetchAggregation = getAggregationSignal('gamesQuery', params, { root: $fetchRoot })
@@ -1159,6 +1209,7 @@ describe('QuerySubscriptions', () => {
 })
 
 describe('Subscription GC grace delay', () => {
+  afterEach(assertTrackedManagersAndReset)
   const gcDelay = 30
   const defaultCompatGcDelay = 3000
 
@@ -1183,7 +1234,7 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('doc: does not destroy immediately when refCount hits zero', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $doc = createDocSignal('gamesGrace', 'doc-immediate')
     const hash = JSON.stringify($doc[SEGMENTS])
 
@@ -1200,7 +1251,7 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('doc: rapid unsubscribe/subscribe reuses the same instance', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $docA = createDocSignal('gamesGrace', 'doc-reuse')
     const hash = JSON.stringify($docA[SEGMENTS])
 
@@ -1222,7 +1273,7 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('doc: destroys after delay if no resubscribe', async () => {
-    const manager = new DocSubscriptions(MockDoc)
+    const manager = createTrackedDocManager(MockDoc)
     const $doc = createDocSignal('gamesGrace', 'doc-destroy')
     const hash = JSON.stringify($doc[SEGMENTS])
 
@@ -1237,7 +1288,7 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('doc: waits pending operations before destroy', async () => {
-    const manager = new DocSubscriptions(PendingMockDoc)
+    const manager = createTrackedDocManager(PendingMockDoc)
     const $doc = createDocSignal('gamesGrace', 'doc-pending')
     const hash = JSON.stringify($doc[SEGMENTS])
 
@@ -1266,7 +1317,7 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('query: does not destroy immediately when refCount hits zero', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $query = createMockQuerySignal('gamesGrace', { active: true })
     const hash = $query[QUERY_HASH]
 
@@ -1283,7 +1334,7 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('query: rapid unsubscribe/subscribe reuses the same instance', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $queryA = createMockQuerySignal('gamesGrace', { active: true, tab: 1 })
     const hash = $queryA[QUERY_HASH]
 
@@ -1305,7 +1356,7 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('query: destroys after delay if no resubscribe', async () => {
-    const manager = new QuerySubscriptions(MockQuery)
+    const manager = createTrackedQueryManager(MockQuery)
     const $query = createMockQuerySignal('gamesGrace', { active: false })
     const hash = $query[QUERY_HASH]
 
@@ -1320,8 +1371,8 @@ describe('Subscription GC grace delay', () => {
   })
 
   it('clear cancels pending doc/query destroy timers', async () => {
-    const docManager = new DocSubscriptions(MockDoc)
-    const queryManager = new QuerySubscriptions(MockQuery)
+    const docManager = createTrackedDocManager(MockDoc)
+    const queryManager = createTrackedQueryManager(MockQuery)
     const $doc = createDocSignal('gamesGrace', 'doc-clear')
     const $query = createMockQuerySignal('gamesGrace', { active: true, clear: 1 })
     const docHash = JSON.stringify($doc[SEGMENTS])
@@ -1352,6 +1403,7 @@ describe('Subscription GC grace delay', () => {
 
 describe('sub() function - error handling and edge cases', () => {
   afterEachTestGc()
+  afterEach(assertTrackedManagersAndReset)
 
   it('sub() with array throws error', async () => {
     await assert.rejects(
@@ -1408,6 +1460,7 @@ describe('sub() function - error handling and edge cases', () => {
 
 describe('Rapid subscribe/unsubscribe integration tests', () => {
   afterEachTestGc()
+  afterEach(assertTrackedManagersAndReset)
 
   afterEach(async () => {
     // Run GC first to clean up signal references
