@@ -515,7 +515,36 @@ export class DocSubscriptions {
 
   async destroyByOwnerKey (ownerKey, options = {}) {
     const meta = this.ownerMeta.get(ownerKey)
-    if (!meta) return
+    if (!meta) {
+      const hash = options.hash
+      const ownerCount = this.getOwnerTotalCount(ownerKey)
+      const currentCount = hash ? (this.subCount.get(hash) || 0) : 0
+      const nextCount = Math.max(currentCount - ownerCount, 0)
+      this.ownerFetchCount.delete(ownerKey)
+      this.ownerSubscribeCount.delete(ownerKey)
+      if (!hash) return
+      this.removeOwnerMeta(ownerKey, hash)
+      if (nextCount > 0) this.subCount.set(hash, nextCount)
+      else this.subCount.set(hash, 0)
+      const doc = this.docs.get(hash)
+      await this.reconcileTransport(hash)
+      if (nextCount > 0) return
+      if (!doc) {
+        this.subCount.delete(hash)
+        this.ownerKeysByHash.delete(hash)
+        return
+      }
+      if (doc.activeTransportMode !== 'idle') {
+        await doc.unsubscribe()
+      }
+      if ((this.subCount.get(hash) || 0) > 0) return
+      if (typeof doc.destroy === 'function') await doc.destroy()
+      if (typeof doc.dispose === 'function') doc.dispose()
+      this.docs.delete(hash)
+      this.ownerKeysByHash.delete(hash)
+      this.subCount.delete(hash)
+      return
+    }
     const { hash, segments } = meta
     const ownerCount = this.getOwnerTotalCount(ownerKey)
     if (!options.force && ownerCount > 0) return

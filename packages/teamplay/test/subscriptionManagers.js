@@ -84,6 +84,10 @@ function getQueryOwnerKeyForTest ($query, rootId) {
   return getScopedSignalHash(rootId, $query[QUERY_HASH], 'queryOwner')
 }
 
+function getDocOwnerKeyForTest ($doc, rootId) {
+  return JSON.stringify({ owner: [rootId, JSON.stringify($doc[SEGMENTS])] })
+}
+
 class MockDoc {
   constructor (collection, docId) {
     this.collection = collection
@@ -472,6 +476,68 @@ describe('DocSubscriptions', () => {
 
     await manager.unsubscribe($fetchDoc, { intent: 'subscribe' })
     await manager.clear()
+  })
+
+  it('unsubscribe handles stale owner metadata when doc entry is already missing', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_stale_owner_root', fetchOnly: false })
+    const $doc = $root.games._staleOwner
+    const hash = JSON.stringify(['games', '_staleOwner'])
+    const ownerKey = getDocOwnerKeyForTest($doc, $root[ROOT_ID])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+
+    manager.docs.delete(hash)
+    manager.ownerMeta.delete(ownerKey)
+    manager.ownerKeysByHash.get(hash)?.delete(ownerKey)
+
+    await assert.doesNotReject(async () => manager.destroyByOwnerKey(ownerKey, { hash, force: true }))
+
+    assert.equal(manager.subCount.get(hash), undefined, 'stale sub count should be removed')
+    assert.equal(manager.ownerFetchCount.get(ownerKey), undefined, 'stale fetch count should be removed')
+    assert.equal(manager.ownerSubscribeCount.get(ownerKey), undefined, 'stale subscribe count should be removed')
+    assert.equal(manager.ownerKeysByHash.get(hash), undefined, 'stale owner key bucket should be removed')
+  })
+
+  it('subscribe clears stale sub count when doc entry is already missing', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_stale_subcount_root', fetchOnly: false })
+    const $doc = $root.games._staleSubCount
+    const hash = JSON.stringify(['games', '_staleSubCount'])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+
+    manager.docs.delete(hash)
+    manager.subCount.set(hash, 0)
+
+    await assert.doesNotReject(async () => manager.subscribe($doc, { intent: 'subscribe' }))
+
+    const doc = manager.docs.get(hash)
+    assert.equal(manager.subCount.get(hash), 1, 'stale sub count should be normalized back to 1')
+    assert.ok(doc, 'doc entry should be recreated')
+    assert.equal(doc.activeTransportMode, 'subscribe')
+  })
+
+  it('destroyByHash tolerates stale active mode when doc entry was already detached from transport state', async () => {
+    const manager = new DocSubscriptions(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_stale_transport_root', fetchOnly: false })
+    const $doc = $root.games._staleTransport
+    const hash = JSON.stringify(['games', '_staleTransport'])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+
+    const doc = manager.docs.get(hash)
+    doc.activeTransportMode = 'subscribe'
+    manager.subCount.set(hash, 0)
+    manager.ownerFetchCount.clear()
+    manager.ownerSubscribeCount.clear()
+    manager.ownerMeta.clear()
+    manager.ownerKeysByHash.clear()
+
+    await assert.doesNotReject(async () => manager.destroyByHash(hash, { force: true }))
+
+    assert.equal(manager.docs.get(hash), undefined, 'stale doc should be removed')
+    assert.equal(manager.subCount.get(hash), undefined, 'stale sub count should be removed')
   })
 })
 
