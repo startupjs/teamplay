@@ -611,6 +611,79 @@ describe('DocSubscriptions', () => {
     assert.equal(manager.subCount.get(hash), undefined)
     assert.equal(manager.ownerMeta.get(ownerKey), undefined)
   })
+
+  it('retain keeps doc runtime alive after owner unsubscribe until release', async () => {
+    const manager = createTrackedDocManager(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_retain_release_root', fetchOnly: false })
+    const $doc = $root.games._retainedDoc
+    const hash = JSON.stringify(['games', '_retainedDoc'])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+    manager.retain($doc)
+    await manager.unsubscribe($doc, { intent: 'subscribe' })
+
+    const entryAfterUnsubscribe = manager.entries.get(hash)
+    const docAfterUnsubscribe = manager.docs.get(hash)
+    assert.ok(entryAfterUnsubscribe, 'entry should remain while retained')
+    assert.equal(entryAfterUnsubscribe.retainCount, 1)
+    assert.equal(entryAfterUnsubscribe.owners.size, 0)
+    assert.ok(docAfterUnsubscribe, 'runtime should remain while retained')
+    assert.equal(docAfterUnsubscribe.activeTransportMode, 'idle')
+    assert.equal(manager.getTrackedCount(hash), 1, 'tracked count should reflect retain only')
+
+    await manager.release($doc)
+
+    assert.equal(manager.entries.get(hash), undefined, 'entry should be removed after final release')
+    assert.equal(manager.docs.get(hash), undefined, 'runtime should be removed after final release')
+    assert.equal(manager.getTrackedCount(hash), undefined, 'tracked count should be cleared after final release')
+  })
+
+  it('destroyByHash does not destroy a retained doc without force', async () => {
+    const manager = createTrackedDocManager(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_destroy_retained_root', fetchOnly: false })
+    const $doc = $root.games._destroyRetained
+    const hash = JSON.stringify(['games', '_destroyRetained'])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+    manager.retain($doc)
+    await manager.unsubscribe($doc, { intent: 'subscribe' })
+
+    await manager.destroyByHash(hash, { force: false })
+
+    const entry = manager.entries.get(hash)
+    assert.ok(entry, 'retained entry should survive non-force destroy')
+    assert.equal(entry.retainCount, 1)
+    assert.ok(manager.docs.get(hash), 'runtime should survive non-force destroy while retained')
+
+    await manager.release($doc)
+  })
+
+  it('destroyByOwnerKey tolerates stale owner cleanup when retain keeps the doc alive', async () => {
+    const manager = createTrackedDocManager(MockDoc)
+    const $root = getRootSignal({ rootId: '_doc_stale_owner_retain_root', fetchOnly: false })
+    const $doc = $root.games._staleOwnerRetained
+    const hash = JSON.stringify(['games', '_staleOwnerRetained'])
+    const ownerKey = getDocOwnerKeyForTest($doc, $root[ROOT_ID])
+
+    await manager.subscribe($doc, { intent: 'subscribe' })
+    manager.retain($doc)
+
+    const entry = manager.entries.get(hash)
+    manager.ownerRecords.delete(ownerKey)
+    entry.owners.delete(ownerKey)
+
+    await assert.doesNotReject(async () => manager.destroyByOwnerKey(ownerKey, { hash, force: true }))
+
+    const nextEntry = manager.entries.get(hash)
+    const nextDoc = manager.docs.get(hash)
+    assert.ok(nextEntry, 'retained entry should remain after stale owner cleanup')
+    assert.equal(nextEntry.retainCount, 1)
+    assert.equal(nextEntry.owners.size, 0)
+    assert.ok(nextDoc, 'runtime should remain while retained')
+    assert.equal(nextDoc.activeTransportMode, 'idle')
+
+    await manager.release($doc)
+  })
 })
 
 describe('QuerySubscriptions', () => {

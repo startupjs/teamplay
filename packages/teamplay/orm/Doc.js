@@ -284,6 +284,12 @@ export class DocSubscriptions {
     return count
   }
 
+  getEntryTrackedTotal (entry) {
+    if (!entry) return undefined
+    const total = this.getEntryTotalCount(entry)
+    if (total > 0 || entry.pendingDestroy) return total
+  }
+
   syncOwnerMirror () {}
 
   clearOwnerMirror () {}
@@ -293,12 +299,16 @@ export class DocSubscriptions {
   deleteEntryIfEmpty (hash) {
     const entry = this.entries.get(hash)
     if (!entry) return
-    if (entry.owners.size > 0) return
-    if (entry.retainCount > 0) return
-    if (entry.pendingDestroy) return
-    if (entry.runtime) return
-    if (entry.phase === 'transition') return
+    if (!this.canDeleteEntry(entry)) return
     this.entries.delete(hash)
+  }
+
+  canDeleteEntry (entry) {
+    if (!entry) return false
+    if (this.getEntryTrackedTotal(entry) !== undefined) return false
+    if (entry.runtime) return false
+    if (entry.phase === 'transition') return false
+    return true
   }
 
   ensureRuntime (hash, segments) {
@@ -775,18 +785,11 @@ export class DocSubscriptions {
 
   getTrackedCount (hash) {
     const entry = this.entries.get(hash)
-    if (entry) {
-      const total = this.getEntryTotalCount(entry)
-      if (total > 0 || entry.pendingDestroy) return total
-    }
-    return undefined
+    return this.getEntryTrackedTotal(entry)
   }
 
   getTrackedHashCountSize () {
-    return countMapLike(this.entries, entry => {
-      const total = this.getEntryTotalCount(entry)
-      return total > 0 || !!entry.pendingDestroy
-    })
+    return countMapLike(this.entries, entry => this.getEntryTrackedTotal(entry) !== undefined)
   }
 
   getOwnerMeta (ownerKey) {

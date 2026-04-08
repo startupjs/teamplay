@@ -48,6 +48,10 @@ describe('GC cleanup: doc subscriptions', () => {
     expect(container.textContent).toBe('empty')
 
     const hash = JSON.stringify(['gcDoc1', 'd1'])
+    await waitForCondition(() =>
+      (docSubscriptions.subCount.get(hash) || 0) > 0 &&
+      docSubscriptions.docs.has(hash)
+    )
     expect((docSubscriptions.subCount.get(hash) || 0)).toBeGreaterThan(0)
     expect(docSubscriptions.docs.has(hash)).toBe(true)
 
