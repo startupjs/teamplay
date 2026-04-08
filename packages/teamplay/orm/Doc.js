@@ -176,29 +176,155 @@ class Doc {
 export class DocSubscriptions {
   constructor (DocClass = Doc) {
     this.DocClass = DocClass
-    this.subCount = new Map() // transportHash -> total ref count (owners + retained docs)
-    this.ownerFetchCount = new Map() // ownerKey -> fetch intent count
-    this.ownerSubscribeCount = new Map() // ownerKey -> subscribe intent count
-    this.ownerMeta = new Map() // ownerKey -> { hash, segments, rootId }
-    this.ownerKeysByHash = new Map() // transportHash -> Set(ownerKey)
-    this.docs = new Map()
+    this.ownerRecords = new Map() // ownerKey -> owner record
+    this.entries = new Map() // transportHash -> transport entry
+    this.subCount = new Map() // transportHash -> total ref count (owners + retained docs) (mirror)
+    this.ownerFetchCount = new Map() // ownerKey -> fetch intent count (mirror)
+    this.ownerSubscribeCount = new Map() // ownerKey -> subscribe intent count (mirror)
+    this.ownerMeta = new Map() // ownerKey -> { hash, segments, rootId } (mirror)
+    this.ownerKeysByHash = new Map() // transportHash -> Set(ownerKey) (mirror)
+    this.docs = new Map() // transportHash -> runtime (mirror)
     this.pendingDestroyTimers = new Map()
-    this.transportTasks = new Map()
     this.fr = new FinalizationRegistry(({ hash, ownerKey }) => this.destroyByOwnerKey(ownerKey, { hash, force: true }))
+  }
+
+  getOrCreateOwnerRecord (ownerKey, meta) {
+    let record = this.ownerRecords.get(ownerKey)
+    if (!record) {
+      record = {
+        ownerKey,
+        rootId: meta.rootId,
+        hash: meta.hash,
+        segments: meta.segments ? [...meta.segments] : parseDocHash(meta.hash),
+        fetchCount: 0,
+        subscribeCount: 0
+      }
+      this.ownerRecords.set(ownerKey, record)
+    } else {
+      if (meta.rootId != null) record.rootId = meta.rootId
+      if (meta.hash != null) record.hash = meta.hash
+      if (meta.segments != null) record.segments = [...meta.segments]
+    }
+    this.syncOwnerMirror(record)
+    return record
+  }
+
+  getOrCreateEntry (hash, segments) {
+    let entry = this.entries.get(hash)
+    if (!entry) {
+      entry = {
+        hash,
+        segments: segments ? [...segments] : parseDocHash(hash),
+        mode: 'idle',
+        targetMode: 'idle',
+        phase: 'stable',
+        runtime: null,
+        owners: new Set(),
+        retainCount: 0,
+        reconcilePromise: null
+      }
+      this.entries.set(hash, entry)
+    } else if (segments && !entry.segments?.length) {
+      entry.segments = [...segments]
+    }
+    return entry
+  }
+
+  getEntry (hash) {
+    return this.entries.get(hash)
+  }
+
+  getEntryTotalCount (entry) {
+    if (!entry) return 0
+    let count = entry.retainCount
+    for (const ownerKey of entry.owners) {
+      count += this.getOwnerTotalCount(ownerKey)
+    }
+    return count
+  }
+
+  syncOwnerMirror (record) {
+    if (!record) return
+    this.ownerMeta.set(record.ownerKey, {
+      hash: record.hash,
+      segments: [...record.segments],
+      rootId: record.rootId
+    })
+    if (record.fetchCount > 0) this.ownerFetchCount.set(record.ownerKey, record.fetchCount)
+    else this.ownerFetchCount.delete(record.ownerKey)
+    if (record.subscribeCount > 0) this.ownerSubscribeCount.set(record.ownerKey, record.subscribeCount)
+    else this.ownerSubscribeCount.delete(record.ownerKey)
+  }
+
+  clearOwnerMirror (ownerKey) {
+    this.ownerMeta.delete(ownerKey)
+    this.ownerFetchCount.delete(ownerKey)
+    this.ownerSubscribeCount.delete(ownerKey)
+  }
+
+  syncEntryMirror (entry) {
+    if (!entry) return
+    if (entry.runtime) this.docs.set(entry.hash, entry.runtime)
+    else this.docs.delete(entry.hash)
+
+    if (entry.owners.size > 0) this.ownerKeysByHash.set(entry.hash, new Set(entry.owners))
+    else this.ownerKeysByHash.delete(entry.hash)
+
+    const totalCount = this.getEntryTotalCount(entry)
+    if (totalCount > 0 || this.pendingDestroyTimers.has(entry.hash)) this.subCount.set(entry.hash, totalCount)
+    else this.subCount.delete(entry.hash)
+  }
+
+  deleteEntryIfEmpty (hash) {
+    const entry = this.entries.get(hash)
+    if (!entry) return
+    if (entry.owners.size > 0) return
+    if (entry.retainCount > 0) return
+    if (entry.runtime) return
+    if (entry.phase === 'transition') return
+    this.entries.delete(hash)
+    this.docs.delete(hash)
+    this.subCount.delete(hash)
+    this.ownerKeysByHash.delete(hash)
+  }
+
+  ensureRuntime (hash, segments) {
+    const entry = this.getOrCreateEntry(hash, segments)
+    if (!entry.runtime) {
+      const runtimeSegments = entry.segments?.length ? entry.segments : parseDocHash(hash)
+      entry.runtime = new this.DocClass(...runtimeSegments)
+    }
+    entry.runtime.init()
+    entry.mode = entry.runtime.activeTransportMode || entry.mode
+    this.syncEntryMirror(entry)
+    return entry.runtime
+  }
+
+  addOwnerToEntry (record) {
+    const entry = this.getOrCreateEntry(record.hash, record.segments)
+    entry.owners.add(record.ownerKey)
+    this.syncEntryMirror(entry)
+    return entry
+  }
+
+  removeOwnerFromEntry (record) {
+    const entry = this.entries.get(record.hash)
+    if (!entry) return
+    entry.owners.delete(record.ownerKey)
+    this.syncEntryMirror(entry)
   }
 
   init ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
-    let doc = this.docs.get(hash)
-    if (doc) {
-      if (doc.initialized) return
-      doc.init()
-    } else {
-      doc = new this.DocClass(...segments)
-      this.docs.set(hash, doc)
-      doc.init()
+    const entry = this.getOrCreateEntry(hash, segments)
+    const doc = entry.runtime || this.docs.get(hash)
+    if (doc && !entry.runtime) {
+      entry.runtime = doc
+      entry.mode = doc.activeTransportMode || entry.mode
+      this.syncEntryMirror(entry)
     }
+    this.ensureRuntime(hash, segments)
   }
 
   subscribe ($doc, { intent = 'subscribe' } = {}) {
@@ -207,23 +333,32 @@ export class DocSubscriptions {
     const rootId = getOwningRootId($doc)
     const ownerKey = getDocOwnerKey(rootId, hash)
     const token = getDocFinalizationToken($doc)
-    const previousCount = this.subCount.get(hash) || 0
+    const entry = this.getOrCreateEntry(hash, segments)
+    const previousCount = this.getEntryTotalCount(entry)
+    const previousMirrorCount = this.subCount.get(hash) || 0
     this.cancelDestroy(hash)
-    this.incrementOwnerIntent(ownerKey, intent)
-    this.addOwnerMeta(ownerKey, hash, segments, rootId)
-    this.subCount.set(hash, previousCount + 1)
-    if (rootId) {
-      registerRootOwnedDirectDocSubscription(rootId, hash, segments, token)
+    const existingRecord = this.ownerRecords.get(ownerKey)
+    const staleMirrorRecovery =
+      previousCount > 0 &&
+      previousMirrorCount <= 0 &&
+      this.getOwnerTotalCount(existingRecord || ownerKey) > 0
+    const record = this.getOrCreateOwnerRecord(ownerKey, { hash, segments, rootId })
+    if (!staleMirrorRecovery) {
+      this.incrementOwnerIntent(record, intent)
+      this.addOwnerToEntry(record)
+      if (rootId) {
+        registerRootOwnedDirectDocSubscription(rootId, hash, segments, token)
+      }
+      this.fr.register($doc, { hash, ownerKey }, token)
     }
-    this.fr.register($doc, { hash, ownerKey }, token)
-
-    this.init($doc)
-    const doc = this.docs.get(hash)
+    this.ensureRuntime(hash, segments)
+    const doc = entry.runtime || this.docs.get(hash)
+    this.syncOwnerMirror(record)
+    this.syncEntryMirror(entry)
     if (
       previousCount > 0 &&
       doc &&
-      !doc._subscribing &&
-      !this.transportTasks.get(hash) &&
+      entry.phase === 'stable' &&
       this.getDesiredTransportMode(hash) === doc.activeTransportMode
     ) return
     return this.reconcileTransport(hash)
@@ -232,10 +367,11 @@ export class DocSubscriptions {
   retain ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
+    const entry = this.getOrCreateEntry(hash, segments)
     this.cancelDestroy(hash)
-    const count = this.subCount.get(hash) || 0
-    this.subCount.set(hash, count + 1)
-    this.init($doc)
+    entry.retainCount += 1
+    this.ensureRuntime(hash, segments)
+    this.syncEntryMirror(entry)
   }
 
   async unsubscribe ($doc, { intent = 'subscribe' } = {}) {
@@ -244,23 +380,31 @@ export class DocSubscriptions {
     const rootId = getOwningRootId($doc)
     const ownerKey = getDocOwnerKey(rootId, hash)
     const token = getDocFinalizationToken($doc)
-    const currentIntentCount = this.getOwnerIntentCount(ownerKey, intent)
+    const record = this.ownerRecords.get(ownerKey)
+    const currentIntentCount = this.getOwnerIntentCount(record, intent)
     if (currentIntentCount <= 0) {
       if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw ERRORS.notSubscribed($doc)
       return
     }
-    this.setOwnerIntentCount(ownerKey, intent, currentIntentCount - 1)
-    const nextOwnerCount = this.getOwnerTotalCount(ownerKey)
-    const count = Math.max((this.subCount.get(hash) || 0) - 1, 0)
-    if (count > 0) this.subCount.set(hash, count)
-    else this.subCount.set(hash, 0)
+    this.setOwnerIntentCount(record, intent, currentIntentCount - 1)
+    const nextOwnerCount = this.getOwnerTotalCount(record)
     if (rootId) {
       unregisterRootOwnedDirectDocSubscription(rootId, hash, token)
     }
+    const entry = this.getOrCreateEntry(hash, segments)
     if (nextOwnerCount === 0) {
       this.fr.unregister(token)
-      this.removeOwnerMeta(ownerKey, hash)
+      if (record) {
+        this.removeOwnerFromEntry(record)
+      }
+      this.ownerRecords.delete(ownerKey)
+      this.clearOwnerMirror(ownerKey)
+    } else {
+      this.syncOwnerMirror(record)
     }
+    this.syncEntryMirror(entry)
+    const count = this.getEntryTotalCount(entry)
+    if (count === 0) this.subCount.set(hash, 0)
     const destroyPromise = count === 0 ? this.scheduleDestroy(segments) : undefined
     await this.reconcileTransport(hash)
     if (count > 0) return
@@ -270,17 +414,19 @@ export class DocSubscriptions {
   async release ($doc) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
-    let count = this.subCount.get(hash) || 0
-    count -= 1
-    if (count < 0) {
+    const entry = this.entries.get(hash)
+    if (!entry) {
       if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw ERRORS.notSubscribed($doc)
       return
     }
-    if (count > 0) {
-      this.subCount.set(hash, count)
+    if (entry.retainCount <= 0) {
+      if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw ERRORS.notSubscribed($doc)
       return
     }
-    this.subCount.set(hash, 0)
+    entry.retainCount -= 1
+    this.syncEntryMirror(entry)
+    if (this.getEntryTotalCount(entry) === 0) this.subCount.set(hash, 0)
+    if ((this.subCount.get(hash) || 0) > 0) return
     await this.scheduleDestroy(segments)
   }
 
@@ -292,16 +438,20 @@ export class DocSubscriptions {
   async clear () {
     const hashes = new Set([
       ...this.pendingDestroyTimers.keys(),
-      ...this.docs.keys()
+      ...this.docs.keys(),
+      ...this.entries.keys()
     ])
     for (const hash of hashes) {
       await this.destroyByHash(hash, { force: true })
     }
+    this.entries.clear()
+    this.ownerRecords.clear()
     this.subCount.clear()
     this.ownerFetchCount.clear()
     this.ownerSubscribeCount.clear()
     this.ownerMeta.clear()
     this.ownerKeysByHash.clear()
+    this.pendingDestroyTimers.clear()
   }
 
   async releaseRootOwnedSubscriptions (rootId) {
@@ -351,36 +501,58 @@ export class DocSubscriptions {
   }
 
   async reconcileTransport (hash) {
-    const previous = this.transportTasks.get(hash) || Promise.resolve()
-    const next = previous
+    const entry = this.getOrCreateEntry(hash)
+    entry.targetMode = this.getDesiredTransportMode(hash)
+    if (entry.phase === 'transition' && entry.reconcilePromise) return entry.reconcilePromise
+    const next = Promise.resolve()
       .catch(ignoreDestroyError)
       .then(() => this.reconcileTransportNow(hash))
-    this.transportTasks.set(hash, next)
+    entry.phase = 'transition'
+    entry.reconcilePromise = next
     try {
       await next
     } finally {
-      if (this.transportTasks.get(hash) === next) this.transportTasks.delete(hash)
+      const currentEntry = this.entries.get(hash)
+      if (currentEntry?.reconcilePromise === next) {
+        currentEntry.reconcilePromise = null
+        currentEntry.phase = 'stable'
+      }
+      this.deleteEntryIfEmpty(hash)
     }
   }
 
   async reconcileTransportNow (hash) {
-    const doc = this.docs.get(hash)
-    if (!doc) return
+    const existingDoc = this.docs.get(hash)
+    const entry = this.getOrCreateEntry(hash)
+    if (existingDoc && !entry.runtime) {
+      entry.runtime = existingDoc
+      entry.mode = existingDoc.activeTransportMode || entry.mode
+      this.syncEntryMirror(entry)
+    }
     while (true) {
-      const desiredMode = this.getDesiredTransportMode(hash)
-      const currentMode = doc.activeTransportMode
+      let doc = entry.runtime || this.docs.get(hash)
+      if (doc && entry.runtime !== doc) entry.runtime = doc
+      const desiredMode = entry.targetMode = this.getDesiredTransportMode(hash)
+      const currentMode = doc?.activeTransportMode ?? entry.mode
+      entry.mode = currentMode
       if (desiredMode === currentMode) return
       if (desiredMode === 'idle') {
-        if (currentMode === 'idle') return
-        await doc.unsubscribe()
+        if (doc && currentMode !== 'idle') {
+          await doc.unsubscribe()
+        }
+        entry.mode = 'idle'
         continue
       }
-      if (currentMode !== 'idle') {
+      if (currentMode !== 'idle' && doc) {
         await doc.unsubscribe()
+        entry.mode = 'idle'
         continue
       }
-      doc._subscribing = doc.subscribe({ mode: desiredMode }).then(() => { doc._subscribing = undefined })
-      await doc._subscribing
+      doc = this.ensureRuntime(hash)
+      await doc.subscribe({ mode: desiredMode })
+      entry.runtime = doc
+      entry.mode = doc.activeTransportMode || desiredMode
+      this.syncEntryMirror(entry)
     }
   }
 
@@ -397,33 +569,58 @@ export class DocSubscriptions {
     }
 
     try {
-      const count = this.subCount.get(hash) || 0
+      const entry = this.entries.get(hash)
+      if (options.force && entry?.owners.size) {
+        for (const ownerKey of Array.from(entry.owners)) {
+          this.ownerRecords.delete(ownerKey)
+          this.clearOwnerMirror(ownerKey)
+        }
+        entry.owners.clear()
+        this.syncEntryMirror(entry)
+      }
+      const count = entry ? this.getEntryTotalCount(entry) : (this.subCount.get(hash) || 0)
       if (!options.force && count > 0) {
         settlePending()
         return
       }
-      const doc = this.docs.get(hash)
+      const doc = entry?.runtime || this.docs.get(hash)
       if (!doc) {
-        this.subCount.delete(hash)
+        if (entry) {
+          entry.mode = 'idle'
+          entry.runtime = null
+          this.syncEntryMirror(entry)
+          this.deleteEntryIfEmpty(hash)
+        } else {
+          this.docs.delete(hash)
+          this.subCount.delete(hash)
+          this.ownerKeysByHash.delete(hash)
+        }
         settlePending()
         return
       }
       await this.reconcileTransport(hash)
-      if (!options.force && (this.subCount.get(hash) || 0) > 0) {
+      const nextEntry = this.entries.get(hash)
+      const nextCount = nextEntry ? this.getEntryTotalCount(nextEntry) : (this.subCount.get(hash) || 0)
+      if (!options.force && nextCount > 0) {
         settlePending()
         return
       }
-      if (doc.activeTransportMode !== 'idle') {
-        await doc.unsubscribe()
+      const activeDoc = nextEntry?.runtime || this.docs.get(hash) || doc
+      if (activeDoc.activeTransportMode !== 'idle') {
+        await activeDoc.unsubscribe()
       }
-      if (!options.force && (this.subCount.get(hash) || 0) > 0) {
+      const finalEntryBeforeDestroy = this.entries.get(hash)
+      const finalCountBeforeDestroy = finalEntryBeforeDestroy
+        ? this.getEntryTotalCount(finalEntryBeforeDestroy)
+        : (this.subCount.get(hash) || 0)
+      if (!options.force && finalCountBeforeDestroy > 0) {
         settlePending()
         return
       }
-      if (typeof doc.hasPending === 'function' && doc.hasPending()) {
-        if (typeof doc.whenNothingPending === 'function') {
+      if (typeof activeDoc.hasPending === 'function' && activeDoc.hasPending()) {
+        if (typeof activeDoc.whenNothingPending === 'function') {
           if (pendingDestroy) this.pendingDestroyTimers.set(hash, pendingDestroy)
-          doc.whenNothingPending(() => {
+          activeDoc.whenNothingPending(() => {
             const nextOptions = pendingDestroy ? { ...options, _pendingDestroy: pendingDestroy } : options
             this.destroyByHash(hash, nextOptions).catch(ignoreDestroyError)
           })
@@ -432,11 +629,19 @@ export class DocSubscriptions {
         }
         return
       }
-      if (typeof doc.destroy === 'function') await doc.destroy()
-      if (typeof doc.dispose === 'function') doc.dispose()
-      this.docs.delete(hash)
-      this.subCount.delete(hash)
-      this.ownerKeysByHash.delete(hash)
+      if (typeof activeDoc.destroy === 'function') await activeDoc.destroy()
+      if (typeof activeDoc.dispose === 'function') activeDoc.dispose()
+      const finalEntry = this.entries.get(hash)
+      if (finalEntry) {
+        finalEntry.runtime = null
+        finalEntry.mode = 'idle'
+        this.syncEntryMirror(finalEntry)
+        this.deleteEntryIfEmpty(hash)
+      } else {
+        this.docs.delete(hash)
+        this.subCount.delete(hash)
+        this.ownerKeysByHash.delete(hash)
+      }
       settlePending()
     } catch (err) {
       settlePending(err)
@@ -453,42 +658,52 @@ export class DocSubscriptions {
     return entry
   }
 
-  getOwnerIntentCount (ownerKey, intent) {
-    const store = intent === 'fetch' ? this.ownerFetchCount : this.ownerSubscribeCount
-    return store.get(ownerKey) || 0
+  getOwnerIntentCount (recordOrOwnerKey, intent) {
+    const record = typeof recordOrOwnerKey === 'string'
+      ? this.ownerRecords.get(recordOrOwnerKey)
+      : recordOrOwnerKey
+    if (!record) {
+      const ownerKey = typeof recordOrOwnerKey === 'string' ? recordOrOwnerKey : recordOrOwnerKey?.ownerKey
+      const store = intent === 'fetch' ? this.ownerFetchCount : this.ownerSubscribeCount
+      return ownerKey == null ? 0 : (store.get(ownerKey) || 0)
+    }
+    return intent === 'fetch' ? record.fetchCount : record.subscribeCount
   }
 
-  setOwnerIntentCount (ownerKey, intent, count) {
-    const store = intent === 'fetch' ? this.ownerFetchCount : this.ownerSubscribeCount
-    if (count > 0) store.set(ownerKey, count)
-    else store.delete(ownerKey)
+  setOwnerIntentCount (record, intent, count) {
+    if (!record) return
+    if (intent === 'fetch') record.fetchCount = Math.max(count, 0)
+    else record.subscribeCount = Math.max(count, 0)
+    this.syncOwnerMirror(record)
   }
 
-  incrementOwnerIntent (ownerKey, intent) {
-    this.setOwnerIntentCount(ownerKey, intent, this.getOwnerIntentCount(ownerKey, intent) + 1)
+  incrementOwnerIntent (record, intent) {
+    this.setOwnerIntentCount(record, intent, this.getOwnerIntentCount(record, intent) + 1)
   }
 
-  getOwnerTotalCount (ownerKey) {
+  getOwnerTotalCount (recordOrOwnerKey) {
+    const record = typeof recordOrOwnerKey === 'string'
+      ? this.ownerRecords.get(recordOrOwnerKey)
+      : recordOrOwnerKey
+    if (record) return record.fetchCount + record.subscribeCount
+    const ownerKey = typeof recordOrOwnerKey === 'string' ? recordOrOwnerKey : recordOrOwnerKey?.ownerKey
+    if (ownerKey == null) return 0
     return (this.ownerFetchCount.get(ownerKey) || 0) + (this.ownerSubscribeCount.get(ownerKey) || 0)
   }
 
   addOwnerMeta (ownerKey, hash, segments, rootId) {
-    if (this.ownerMeta.has(ownerKey)) return
-    this.ownerMeta.set(ownerKey, { hash, segments: [...segments], rootId })
-    let ownerKeys = this.ownerKeysByHash.get(hash)
-    if (!ownerKeys) {
-      ownerKeys = new Set()
-      this.ownerKeysByHash.set(hash, ownerKeys)
-    }
-    ownerKeys.add(ownerKey)
+    const record = this.getOrCreateOwnerRecord(ownerKey, { hash, segments, rootId })
+    this.addOwnerToEntry(record)
   }
 
   removeOwnerMeta (ownerKey, hash) {
-    const meta = this.ownerMeta.get(ownerKey)
-    const knownHash = hash ?? meta?.hash
-    this.ownerMeta.delete(ownerKey)
-    this.ownerFetchCount.delete(ownerKey)
-    this.ownerSubscribeCount.delete(ownerKey)
+    const record = this.ownerRecords.get(ownerKey)
+    const knownHash = hash ?? record?.hash ?? this.ownerMeta.get(ownerKey)?.hash
+    if (record) {
+      this.removeOwnerFromEntry(record)
+      this.ownerRecords.delete(ownerKey)
+    }
+    this.clearOwnerMirror(ownerKey)
     if (!knownHash) return
     const ownerKeys = this.ownerKeysByHash.get(knownHash)
     if (!ownerKeys) return
@@ -497,13 +712,15 @@ export class DocSubscriptions {
   }
 
   getDesiredTransportMode (hash) {
-    const ownerKeys = this.ownerKeysByHash.get(hash)
+    const entry = this.entries.get(hash)
+    const ownerKeys = entry?.owners?.size ? entry.owners : this.ownerKeysByHash.get(hash)
     if (!ownerKeys || ownerKeys.size === 0) return 'idle'
     let hasFetchBackedOwner = false
     for (const ownerKey of ownerKeys) {
-      const subscribeCount = this.ownerSubscribeCount.get(ownerKey) || 0
-      const fetchCount = this.ownerFetchCount.get(ownerKey) || 0
-      const rootId = this.ownerMeta.get(ownerKey)?.rootId
+      const record = this.ownerRecords.get(ownerKey)
+      const subscribeCount = record ? record.subscribeCount : (this.ownerSubscribeCount.get(ownerKey) || 0)
+      const fetchCount = record ? record.fetchCount : (this.ownerFetchCount.get(ownerKey) || 0)
+      const rootId = record?.rootId ?? this.ownerMeta.get(ownerKey)?.rootId
       const subscribeMode = getRootTransportMode(rootId, 'subscribe')
       if (subscribeCount > 0 && subscribeMode === 'subscribe') return 'subscribe'
       if (fetchCount > 0 || (subscribeCount > 0 && subscribeMode === 'fetch')) {
@@ -514,49 +731,42 @@ export class DocSubscriptions {
   }
 
   async destroyByOwnerKey (ownerKey, options = {}) {
+    const record = this.ownerRecords.get(ownerKey)
     const meta = this.ownerMeta.get(ownerKey)
-    if (!meta) {
-      const hash = options.hash
-      const ownerCount = this.getOwnerTotalCount(ownerKey)
-      const currentCount = hash ? (this.subCount.get(hash) || 0) : 0
-      const nextCount = Math.max(currentCount - ownerCount, 0)
-      this.ownerFetchCount.delete(ownerKey)
-      this.ownerSubscribeCount.delete(ownerKey)
-      if (!hash) return
-      this.removeOwnerMeta(ownerKey, hash)
-      if (nextCount > 0) this.subCount.set(hash, nextCount)
-      else this.subCount.set(hash, 0)
-      const doc = this.docs.get(hash)
-      await this.reconcileTransport(hash)
-      if (nextCount > 0) return
-      if (!doc) {
-        this.subCount.delete(hash)
-        this.ownerKeysByHash.delete(hash)
-        return
-      }
-      if (doc.activeTransportMode !== 'idle') {
-        await doc.unsubscribe()
-      }
-      if ((this.subCount.get(hash) || 0) > 0) return
-      if (typeof doc.destroy === 'function') await doc.destroy()
-      if (typeof doc.dispose === 'function') doc.dispose()
-      this.docs.delete(hash)
-      this.ownerKeysByHash.delete(hash)
-      this.subCount.delete(hash)
-      return
-    }
-    const { hash, segments } = meta
-    const ownerCount = this.getOwnerTotalCount(ownerKey)
+    const hash = record?.hash ?? options.hash ?? meta?.hash
+    if (!hash) return
+    const segments = record?.segments ?? meta?.segments ?? parseDocHash(hash)
+    const ownerCount = this.getOwnerTotalCount(record || ownerKey)
     if (!options.force && ownerCount > 0) return
 
-    const currentCount = this.subCount.get(hash) || 0
-    const nextCount = Math.max(currentCount - ownerCount, 0)
-    if (nextCount > 0) this.subCount.set(hash, nextCount)
-    else this.subCount.set(hash, 0)
-    this.removeOwnerMeta(ownerKey, hash)
+    const entry = this.entries.get(hash)
+    if (record) {
+      this.removeOwnerFromEntry(record)
+      this.ownerRecords.delete(ownerKey)
+    } else if (entry?.owners.has(ownerKey)) {
+      entry.owners.delete(ownerKey)
+      this.syncEntryMirror(entry)
+    }
+    this.clearOwnerMirror(ownerKey)
+
+    if (!entry && !this.docs.get(hash)) {
+      this.subCount.delete(hash)
+      this.ownerKeysByHash.delete(hash)
+      return
+    }
+
     await this.reconcileTransport(hash)
-    if (nextCount > 0) return
-    await this.scheduleDestroy(segments, { force: !!options.force })
+    const nextEntry = this.entries.get(hash)
+    const nextCount = nextEntry ? this.getEntryTotalCount(nextEntry) : (this.subCount.get(hash) || 0)
+    if (nextCount > 0) {
+      this.deleteEntryIfEmpty(hash)
+      return
+    }
+    if (options.force) {
+      await this.destroyByHash(hash, { force: true })
+      return
+    }
+    await this.scheduleDestroy(segments, { force: false })
   }
 }
 
@@ -564,6 +774,10 @@ export const docSubscriptions = new DocSubscriptions()
 
 function hashDoc (segments) {
   return JSON.stringify(segments)
+}
+
+function parseDocHash (hash) {
+  return JSON.parse(hash)
 }
 
 function getDocOwnerKey (rootId, hash) {
