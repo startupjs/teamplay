@@ -2275,6 +2275,25 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($to.get(), { name: 'Bob' })
   })
 
+  it('allows refs only from private source paths', async () => {
+    const $base = setup('privateSourceOnly')
+    cleanupSegments.push(['users'])
+    await $root.users.u1.set({ title: 'Alice' })
+
+    assert.throws(
+      () => $root.users.alias.ref($root.users.u1),
+      /source path must be in a private collection/
+    )
+
+    assert.throws(
+      () => $root.ref('users.alias', $root.users.u1),
+      /source path must be in a private collection/
+    )
+
+    $base.ref('user', $root.users.u1)
+    assert.equal($base.get('user.title'), 'Alice')
+  })
+
   it('routes ref syncing through scheduler in batch mode (no intermediate alias snapshots)', async () => {
     const $base = setup('batch')
     const $from = $base.from
@@ -2299,6 +2318,29 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($from.get(), { a: 1, b: 2 })
     assert.deepEqual(snapshots[snapshots.length - 1], { a: 1, b: 2 })
     assert.equal(snapshots.some(s => s && s.a === 1 && s.b === 0), false)
+  })
+
+  it('does not mirror local target updates twice', async () => {
+    const $base = setup('noDoubleMirror')
+    const $from = $base.from
+    const $to = $base.to
+    await $base.set({ from: {}, to: {} })
+    $from.ref($to)
+
+    const updates = []
+    const reaction = observe(
+      () => deepCopyCompat($from.get()),
+      { lazy: true, scheduler: job => updates.push(job()) }
+    )
+
+    reaction()
+    updates.length = 0
+
+    await $to.set({ name: 'Alice' })
+    assert.equal(updates.length, 1)
+    assert.deepEqual(updates[0], { name: 'Alice' })
+
+    unobserve(reaction)
   })
 
   it('supports subpath refs from root', async () => {

@@ -33,7 +33,7 @@ import { normalizePattern, onModelEvent, removeModelListener } from './modelEven
 import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
 import { runInBatch } from '../batchScheduler.js'
-import { runInSilentContext, runInModelEventsSilentContext } from './silentContext.js'
+import { runInSilentContext, runInModelEventsSilentContext, isSilentContextActive } from './silentContext.js'
 import universal$ from '../../react/universal$.js'
 import { getRootContext } from '../rootContext.js'
 import disposeRootContext from '../disposeRootContext.js'
@@ -618,6 +618,7 @@ class SignalCompat extends Signal {
     }
     if (!$to) throw Error('Signal.ref() expects a target path or signal')
     if ($from === $to) return $from
+    ensurePrivateRefSource($from, 'Signal.ref()')
     const store = getRefStore($from)
     const fromPath = $from.path()
     const existing = store.get(fromPath)
@@ -1060,7 +1061,7 @@ function setReplacePrivateCompatSync ($signal, value) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   setReplacePrivateData(getOwningRootId($signal), segments, value)
-  mirrorRefMutationFromTarget(segments, value)
+  if (isSilentContextActive()) mirrorRefMutationFromTarget(segments, value)
 }
 
 function delPrivateCompatSync ($signal, options) {
@@ -1115,12 +1116,14 @@ async function setReplaceOnSignal ($signal, value) {
   }
   if (isPublicCollection(segments[0])) {
     const result = await _setPublicDocReplace(segments, value)
-    mirrorRefMutationFromTarget(segments, value)
+    if (shouldMirrorPublicRefMutationLocally(segments)) {
+      mirrorRefMutationFromTarget(segments, value)
+    }
     return result
   }
   if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   const result = setReplacePrivateData(getOwningRootId($signal), segments, value)
-  mirrorRefMutationFromTarget(segments, value)
+  if (isSilentContextActive()) mirrorRefMutationFromTarget(segments, value)
   return result
 }
 
@@ -1250,6 +1253,22 @@ async function stringRemoveOnSignal ($signal, index, howMany) {
 function getOwningRootId ($signal) {
   const $root = getRoot($signal) || $signal
   return $root?.[ROOT_ID]
+}
+
+function ensurePrivateRefSource ($signal, methodName) {
+  const segments = $signal?.[SEGMENTS]
+  const collection = segments?.[0]
+  if (typeof collection === 'string' && /^[_$]/.test(collection)) return
+  throw Error(`${methodName} source path must be in a private collection`)
+}
+
+function shouldMirrorPublicRefMutationLocally (segments) {
+  if (isSilentContextActive()) return true
+  if (!Array.isArray(segments) || segments.length < 2) return true
+  // Public doc ops emit compat model events only when there is an initialized
+  // Doc runtime (subscribed/fetched). Without runtime we must mirror immediately.
+  const transportHash = JSON.stringify([segments[0], segments[1]])
+  return !docSubscriptions.hasRuntime(transportHash)
 }
 
 function shallowCopy (value) {
