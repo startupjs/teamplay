@@ -849,26 +849,58 @@ describe('SignalCompat mutators with path', () => {
     })
   })
 
-  it('setDiff(value) is an alias to compat set(value)', async () => {
-    setup('setdiff-alias')
-    await $base.set({ a: { x: 1, y: 2 } })
-    await $base.setDiff({ a: { x: 9 } })
-    assert.deepEqual($base.get(), { a: { x: 9 } })
+  it('setDiff(value) skips exact-equal primitive writes', async () => {
+    setup('setdiff-primitive-noop')
+    await $base.set(1)
+    const events = []
+    const handler = (value, prevValue) => events.push([value, prevValue])
+    $root.on('change', $base.path(), handler)
+
+    await $base.setDiff(1)
+    assert.deepEqual(events, [])
+
+    await $base.setDiff(2)
+    assert.equal($base.get(), 2)
+    if (process?.env?.TEAMPLAY_COMPAT === '1') {
+      assert.deepEqual(events, [[2, 1]])
+    }
   })
 
-  it('setDiff on child signal follows compat set semantics', async () => {
+  it('setDiff(path, value) emits change for equivalent objects', async () => {
+    setup('setdiff-object-change')
+    await $base.set({ profile: { name: 'Ann' } })
+    const events = []
+    const handler = (value, prevValue) => events.push([value, prevValue])
+    $root.on('change', `${$base.path()}.profile`, handler)
+
+    await $base.setDiff('profile', { name: 'Ann' })
+
+    assert.deepEqual($base.profile.get(), { name: 'Ann' })
+    if (process?.env?.TEAMPLAY_COMPAT === '1') {
+      assert.deepEqual(events, [[{ name: 'Ann' }, { name: 'Ann' }]])
+    }
+  })
+
+  it('setDiff(path, value) emits change for equivalent arrays', async () => {
+    setup('setdiff-array-change')
+    await $base.set({ list: [2, 3, 4] })
+    const events = []
+    const handler = (value, prevValue) => events.push([value, prevValue])
+    $root.on('change', `${$base.path()}.list`, handler)
+
+    await $base.setDiff('list', [2, 3, 4])
+
+    assert.deepEqual($base.list.get(), [2, 3, 4])
+    if (process?.env?.TEAMPLAY_COMPAT === '1') {
+      assert.deepEqual(events, [[[2, 3, 4], [2, 3, 4]]])
+    }
+  })
+
+  it('setDiff on child signal follows racer replace semantics', async () => {
     setup('setdiffnull')
     await $base.set({ a: 1 })
     await $base.a.setDiff(null)
     assert.equal($base.a.get(), null)
-  })
-
-  it('setDiff(path, value) delegates to compat set semantics', async () => {
-    setup('setdiff-path-delegates')
-    await $base.set({ a: 1, b: 2 })
-    await $base.setDiff('a', null)
-    assert.equal($base.a.get(), null)
-    assert.deepEqual($base.get(), { a: null, b: 2 })
   })
 
   it('setEach supports subpath', async () => {
@@ -1409,6 +1441,43 @@ describe('SignalCompat public mutators', () => {
         }
       ])
       assert.deepEqual($game.profile.get(), { name: 'Kate' })
+    } finally {
+      doc.submitOp = originalSubmitOp
+    }
+  })
+
+  it('uses racer-like setDiff semantics on public docs', async () => {
+    const gameId = '_compat_public_setdiff'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({
+      count: 1,
+      profile: { name: 'Ann' },
+      list: [2, 3, 4]
+    })
+
+    const doc = getConnection().get('compatGames', gameId)
+    const originalSubmitOp = doc.submitOp.bind(doc)
+    const submittedOps = []
+    doc.submitOp = (op, cb) => {
+      submittedOps.push(JSON.parse(JSON.stringify(op)))
+      return originalSubmitOp(op, cb)
+    }
+
+    try {
+      await $game.setDiff('count', 1)
+      assert.equal(submittedOps.length, 0)
+
+      await $game.setDiff('profile', { name: 'Ann' })
+      assert.deepEqual(submittedOps.at(-1), [
+        { p: ['profile'], od: { name: 'Ann' }, oi: { name: 'Ann' } }
+      ])
+      assert.deepEqual($game.profile.get(), { name: 'Ann' })
+
+      await $game.setDiff('list', [2, 3, 4])
+      assert.deepEqual(submittedOps.at(-1), [
+        { p: ['list'], od: [2, 3, 4], oi: [2, 3, 4] }
+      ])
+      assert.deepEqual($game.list.get(), [2, 3, 4])
     } finally {
       doc.submitOp = originalSubmitOp
     }

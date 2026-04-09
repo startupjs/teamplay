@@ -289,10 +289,16 @@ class SignalCompat extends Signal {
     const forwarded = forwardRef(this, 'setDiff', arguments)
     if (forwarded) return forwarded
     if (arguments.length > 2) throw Error('Signal.setDiff() expects one or two arguments')
-    if (arguments.length === 1) {
-      return this.set(path)
+    let segments = []
+    if (arguments.length === 2) {
+      segments = parseAtSubpath(path, 1, 'Signal.setDiff()')
+    } else if (arguments.length === 1) {
+      value = path
     }
-    return this.set(path, value)
+    const $target = resolveRelativePathTarget(this, segments)
+    const before = $target.peek()
+    if (racerEqualCompat(before, value)) return
+    return setReplaceOnSignal($target, value)
   }
 
   async setEach (path, object) {
@@ -1088,6 +1094,10 @@ function deepEqualCompat (left, right) {
     if (!deepEqualCompat(left[key], right[key])) return false
   }
   return true
+}
+
+function racerEqualCompat (left, right) {
+  return left === right || (Number.isNaN(left) && Number.isNaN(right))
 }
 
 function getSignalValueAt ($signal, segments) {

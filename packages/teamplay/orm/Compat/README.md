@@ -407,7 +407,7 @@ Compatibility mode intentionally aligns mutators with Racer. This differs from c
 | `set` | Uses deep-diff path (`dataTree.set` + internal `setDiffDeep`). | Path-targeted replace semantics, Racer-like. `undefined` keeps delete semantics. |
 | `setEach` | Not a special API in core mutators. | Per-key compat `set` (not `assign` merge/delete behavior). |
 | `setDiffDeep` | Deep-diff engine (`utils/setDiffDeep.js`). | Recursive Racer-like diff implemented via compat mutators (`set` / `del`) on nested paths. |
-| `setDiff` | N/A as compat shim. | Alias to compat `set` for both signatures: `setDiff(value)` and `setDiff(path, value)`. |
+| `setDiff` | N/A as compat shim. | Racer-like full replace with exact-equality no-op (`===` / `NaN`). Equivalent objects / arrays still replace. |
 
 Migration note: compat behavior is intentionally Racer-aligned and may differ from core mutators.
 Composite compat mutators (`setEach`, `setDiffDeep`) apply updates atomically for Teamplay-scheduled observers via the runtime batch scheduler.
@@ -474,13 +474,17 @@ await $.users.user1.setDiffDeep({ profile: { name: 'Kate' } }) // deep-diff path
 
 ### setDiff(path?, value)
 
-Alias for compat `set` in both forms:
-- `setDiff(value)` -> same as `set(value)`
-- `setDiff(path, value)` -> same as `set(path, value)`
+Racer-like full replace at the target path.
+- No-op only when previous and next values are exactly equal (`===`) or both `NaN`
+- Equivalent objects / arrays still perform a replace
+- Unlike `setDiffDeep`, this is not a recursive diff
 
 ```js
+await $.users.user1.set('count', 1)
+await $.users.user1.setDiff('count', 1) // no-op
+
 await $.users.user1.setDiff({ profile: { name: 'Kate' } })
-await $.users.user1.setDiff('profile', { name: 'Bob' })
+await $.users.user1.setDiff('profile', { name: 'Bob' }) // full replace
 ```
 
 ### setEach(path?, object)
