@@ -1374,6 +1374,46 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.text.get(), 'hlo')
   })
 
+  it('uses direct replace ops for compat set on public array slots and object subpaths', async () => {
+    const gameId = '_compat_public_set_replace_ops'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({
+      list: ['one', 'two', 'three'],
+      profile: {
+        name: 'Ann',
+        role: 'student'
+      }
+    })
+
+    const doc = getConnection().get('compatGames', gameId)
+    const originalSubmitOp = doc.submitOp.bind(doc)
+    const submittedOps = []
+    doc.submitOp = (op, cb) => {
+      submittedOps.push(JSON.parse(JSON.stringify(op)))
+      return originalSubmitOp(op, cb)
+    }
+
+    try {
+      await $game.set('list.1', 'TWO')
+      assert.deepEqual(submittedOps.at(-1), [
+        { p: ['list', 1], ld: 'two', li: 'TWO' }
+      ])
+      assert.deepEqual($game.list.get(), ['one', 'TWO', 'three'])
+
+      await $game.set('profile', { name: 'Kate' })
+      assert.deepEqual(submittedOps.at(-1), [
+        {
+          p: ['profile'],
+          od: { name: 'Ann', role: 'student' },
+          oi: { name: 'Kate' }
+        }
+      ])
+      assert.deepEqual($game.profile.get(), { name: 'Kate' })
+    } finally {
+      doc.submitOp = originalSubmitOp
+    }
+  })
+
   it('treats missing public numeric compat paths as zero on increment', async () => {
     const gameId = '_compat_public_increment_missing'
     const $game = await sub($.compatGames[gameId])

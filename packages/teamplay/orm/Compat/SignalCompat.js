@@ -23,6 +23,7 @@ import {
   arrayShiftPublic as _arrayShiftPublic,
   arrayRemovePublic as _arrayRemovePublic,
   arrayMovePublic as _arrayMovePublic,
+  setPublicDocReplace as _setPublicDocReplace,
   stringInsertPublic as _stringInsertPublic,
   stringRemovePublic as _stringRemovePublic
 } from '../dataTree.js'
@@ -1103,7 +1104,7 @@ async function setReplaceOnSignal ($signal, value) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   if (isPublicCollection(segments[0])) {
-    const result = await Signal.prototype.set.call($signal, value)
+    const result = await _setPublicDocReplace(segments, value)
     mirrorRefMutationFromTarget(segments, value)
     return result
   }

@@ -340,7 +340,11 @@ export async function setPublicDocReplace (segments, value) {
     op = [{ p: relativePath, od: normalizedPrevious, oi: normalizedValue }]
   }
   return new Promise((resolve, reject) => {
-    doc.submitOp(op, err => err ? reject(err) : resolve())
+    doc.submitOp(op, err => {
+      if (err) return reject(err)
+      ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
+      resolve()
+    })
   })
 }
 

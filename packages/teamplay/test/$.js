@@ -536,10 +536,11 @@ describe('initLocalCollection()', () => {
 
   it('global root get/peek include public and local collections', async () => {
     _set(['users', 'u1'], { name: 'John' })
-    $('hello')
+    const $message = $('hello')
     await $._session.userId.set('u1')
     const $collection = initLocalCollection('_localTest')
     await $collection.sample.set(123)
+    const localId = $message.path().split('.').pop()
 
     const snapshot = $.get()
     const rawSnapshot = $.peek()
@@ -548,8 +549,8 @@ describe('initLocalCollection()', () => {
     assert.equal(rawSnapshot.users.u1.name, 'John')
     assert.equal(snapshot._session.userId, 'u1')
     assert.equal(rawSnapshot._session.userId, 'u1')
-    assert.equal(snapshot.$local._0, 'hello')
-    assert.equal(rawSnapshot.$local._0, 'hello')
+    assert.equal(snapshot.$local[localId], 'hello')
+    assert.equal(rawSnapshot.$local[localId], 'hello')
     assert.equal(snapshot._localTest.sample, 123)
     assert.equal(rawSnapshot._localTest.sample, 123)
 
