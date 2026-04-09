@@ -158,6 +158,7 @@ function maybeThrottle (promise) {
 function registerCompatAttemptCleanup (signal, params) {
   // Compat hooks don't build per-hook init objects like Racer.
   // We still need a marker so trapRender can defer observer-shell cleanup
-  // to Suspense resolution instead of tearing the whole shell down immediately.
-  renderAttemptDestroyer.armCompat()
+  // only when a real attempt cleanup exists.
+  // This path must not arm suspense-gate keep-alive by itself.
+  renderAttemptDestroyer.armCompatAttemptCleanup()
 }

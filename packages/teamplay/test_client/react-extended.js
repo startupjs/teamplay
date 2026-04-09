@@ -392,7 +392,7 @@ describe('useSub edge cases', () => {
     const wrapped = trapRender({
       componentId: 'compatTrapRenderArmed',
       render: () => {
-        renderAttemptDestroyer.armCompat()
+        renderAttemptDestroyer.armSuspenseGate()
         throw pending
       },
       cache: {
@@ -421,6 +421,51 @@ describe('useSub edge cases', () => {
     expect(events).toEqual([
       'activate',
       'deactivate'
+    ])
+  })
+
+  it('regression: compat attempt cleanup marker without handlers should still destroy shell (useSub/useDoc path)', async () => {
+    const events = []
+    let resolvePromise
+    const pending = new Promise(resolve => {
+      resolvePromise = resolve
+    })
+    const wrapped = trapRender({
+      componentId: 'compatTrapRenderArmedNoCleanup',
+      render: () => {
+        // This mirrors compat useSub/useDoc: it arms compat cleanup, but does not
+        // register per-attempt cleanup handlers in renderAttemptDestroyer.
+        renderAttemptDestroyer.armCompatAttemptCleanup()
+        throw pending
+      },
+      cache: {
+        activate: () => events.push('activate'),
+        deactivate: () => events.push('deactivate')
+      },
+      destroy: where => events.push(`destroy:${where}`)
+    })
+
+    let thrown
+    try {
+      wrapped()
+    } catch (err) {
+      thrown = err
+    }
+
+    // Expected stable behavior (alpha.88): no compat shell preservation without
+    // real attempt cleanup handlers.
+    expect(events).toEqual([
+      'activate',
+      'destroy:trapRender.js'
+    ])
+    expect(thrown).toBe(pending)
+
+    resolvePromise()
+    await pending
+
+    expect(events).toEqual([
+      'activate',
+      'destroy:trapRender.js'
     ])
   })
 
