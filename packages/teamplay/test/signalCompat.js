@@ -15,7 +15,7 @@ import { __resetSilentContextForTests, isSilentContextActive } from '../orm/Comp
 import { isMissingShareDoc } from '../orm/missingDoc.js'
 import { ROOT, ROOT_ID } from '../orm/Root.js'
 import { PARAMS, HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
-import { AGGREGATIONS } from '../orm/Aggregation.js'
+import { AGGREGATIONS, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { delPrivateData, setPrivateData } from '../orm/privateData.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 import { __resetRootContextsForTests, getRootContext } from '../orm/rootContext.js'
@@ -1942,6 +1942,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
   afterEach(async () => {
     querySubscriptions.subscribe = QuerySubscriptionsSubscribe
+    aggregationSubscriptions.subscribe = AggregationSubscriptionsSubscribe
     const docs = getConnection().collections?.[collection] || {}
     for (const id of Object.keys(docs)) {
       const doc = getConnection().get(collection, id)
@@ -1969,6 +1970,7 @@ class NonCompatRefUserModel extends BaseSignal {
   })
 
   const QuerySubscriptionsSubscribe = querySubscriptions.subscribe.bind(querySubscriptions)
+  const AggregationSubscriptionsSubscribe = aggregationSubscriptions.subscribe.bind(aggregationSubscriptions)
 
   it('query() normalizes shorthand params', () => {
     const $byIds = $compatRoot.query(collection, ['a', 'b'])
@@ -2148,6 +2150,77 @@ class NonCompatRefUserModel extends BaseSignal {
     await $query.fetch()
 
     assert.deepEqual($query.get().map(doc => doc.id), ['doc6', 'doc7'])
+  })
+
+  it('stops waiting when owner is destroyed during imperative query materialization', async () => {
+    const $root = createCompatRoot('_compat_query_owner_cancel_root')
+    const $query = $root.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
+    __setImperativeQueryReadyTimeoutForTests(60)
+
+    querySubscriptions.subscribe = async ($signal, options) => {
+      await QuerySubscriptionsSubscribe($signal, options)
+      setQueryRuntime($query, 'ids', ['doc_owner_cancel'])
+      setQueryRuntime($query, 'docs', [undefined])
+    }
+
+    const destroyPromise = new Promise((resolve, reject) => {
+      setTimeout(() => {
+        querySubscriptions.destroyByRuntimeHash(getQueryRuntimeHash($query), {
+          rootId: $root[ROOT_ID],
+          force: true
+        }).then(resolve, reject)
+      }, 5)
+    })
+
+    await assert.doesNotReject($query.subscribe())
+    await destroyPromise
+    await new Promise((resolve, reject) => {
+      $root.close(err => err ? reject(err) : resolve())
+    })
+  })
+
+  it('stops waiting when root closes during imperative query materialization', async () => {
+    const $root = createCompatRoot('_compat_query_root_cancel_root')
+    const $query = $root.query(collection, { active: true })
+    cleanupQueryHashes.push($query[QUERY_HASH])
+    cleanupQueryRuntimeHashes.push(getQueryRuntimeHash($query))
+    __setImperativeQueryReadyTimeoutForTests(60)
+
+    querySubscriptions.subscribe = async ($signal, options) => {
+      await QuerySubscriptionsSubscribe($signal, options)
+      setQueryRuntime($query, 'ids', ['doc_root_cancel'])
+      setQueryRuntime($query, 'docs', [undefined])
+    }
+
+    const closePromise = new Promise((resolve, reject) => {
+      setTimeout(() => {
+        $root.close(err => err ? reject(err) : resolve())
+      }, 5)
+    })
+
+    await assert.doesNotReject($query.subscribe())
+    await closePromise
+  })
+
+  it('stops waiting when root closes during imperative aggregation materialization', async () => {
+    const $root = createCompatRoot('_compat_aggregation_root_cancel_root')
+    const $aggregation = $root.query(collection, { $aggregate: [{ $match: { active: true } }] })
+    cleanupAggregationHashes.push($aggregation[QUERY_HASH])
+    cleanupAggregationRuntimeHashes.push(getAggregationRuntimeHash($aggregation))
+    __setImperativeQueryReadyTimeoutForTests(60)
+
+    aggregationSubscriptions.subscribe = async () => {}
+
+    const closePromise = new Promise((resolve, reject) => {
+      setTimeout(() => {
+        $root.close(err => err ? reject(err) : resolve())
+      }, 5)
+    })
+
+    await assert.doesNotReject($aggregation.subscribe())
+    await closePromise
   })
 
   it('throws when imperative compat query never fully materializes', async () => {

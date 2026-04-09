@@ -1,10 +1,12 @@
 import { getRaw } from '../dataTree.js'
 import { getConnection } from '../connection.js'
 import { isMissingShareDoc } from '../missingDoc.js'
-import { QUERIES, HASH, PARAMS, COLLECTION_NAME } from '../Query.js'
-import { AGGREGATIONS, IS_AGGREGATION } from '../Aggregation.js'
+import { QUERIES, HASH, PARAMS, COLLECTION_NAME, querySubscriptions } from '../Query.js'
+import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../Aggregation.js'
 import { getPrivateData, setPrivateData } from '../privateData.js'
 import { getRoot, ROOT_ID } from '../Root.js'
+import { isRootContextClosed } from '../rootContext.js'
+import { getScopedSignalHash, normalizeRootId } from '../rootScope.js'
 
 let imperativeQueryReadyTimeoutMs = 1000
 
@@ -47,7 +49,9 @@ export function isDocReady (segments) {
 export async function waitForImperativeQueryReady ($query) {
   const timeoutMs = imperativeQueryReadyTimeoutMs
   const startedAt = Date.now()
+  const ownerState = createImperativeOwnerState($query)
   while (true) {
+    if (isImperativeQueryCancelled($query, ownerState)) return
     if (isImperativeQueryReady($query)) {
       syncQueryDocsFromCollection($query)
       return
@@ -90,6 +94,28 @@ function isImperativeQueryReady ($query) {
     if (getRaw([collection, id]) === undefined) return false
   }
   return true
+}
+
+function isImperativeQueryCancelled ($query, ownerState) {
+  const rootId = getRoot($query)?.[ROOT_ID]
+  if (isRootContextClosed(rootId)) return true
+  if (!ownerState?.wasTracked) return false
+  const trackedOwnerCount = ownerState.subscriptions.getTrackedOwnerCount(ownerState.ownerKey)
+  return trackedOwnerCount == null || trackedOwnerCount <= 0
+}
+
+function createImperativeOwnerState ($query) {
+  const hash = $query[HASH]
+  const rootId = normalizeRootId(getRoot($query)?.[ROOT_ID])
+  const subscriptions = ($query[IS_AGGREGATION] || isAggregationQuery($query[PARAMS]))
+    ? aggregationSubscriptions
+    : querySubscriptions
+  const ownerKey = getScopedSignalHash(rootId, hash, 'queryOwner')
+  return {
+    subscriptions,
+    ownerKey,
+    wasTracked: subscriptions.getTrackedOwnerCount(ownerKey) != null
+  }
 }
 
 function syncQueryDocsFromCollection ($query) {
