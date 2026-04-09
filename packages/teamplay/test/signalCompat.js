@@ -4,6 +4,7 @@ import { raw, observe, unobserve } from '@nx-js/observer-util'
 import { $, sub, addModel, aggregation, getRootSignal } from '../index.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import { getConnection, setConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../orm/connection.js'
+import getSignal from '../orm/getSignal.js'
 import connect from '../connect/test.js'
 import SignalCompat from '../orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../orm/SignalBase.js'
@@ -2113,6 +2114,21 @@ class NonCompatRefUserModel extends BaseSignal {
     await $compatRoot.subscribe($query)
 
     assert.deepEqual($query.get().map(doc => doc.id), ['doc3', 'doc4'])
+  })
+
+  it('supports imperative query from a rootless public collection signal', async () => {
+    const id = '_compat_query_api_rootless'
+    const $doc = await sub($[collection][id])
+    await $doc.set({ active: true })
+
+    const $collection = getSignal(undefined, [collection])
+    const $query = $collection.query(collection, { active: true })
+
+    await $query.subscribe()
+
+    assert.deepEqual($query.getIds(), [id])
+    assert.deepEqual($query.get().map(doc => doc.id), [id])
+    await $query.unsubscribe()
   })
 
   it('await query.fetch also waits for full materialization', async () => {

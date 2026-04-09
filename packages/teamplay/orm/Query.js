@@ -9,7 +9,7 @@ import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
-import { getScopedSignalHash } from './rootScope.js'
+import { getScopedSignalHash, normalizeRootId } from './rootScope.js'
 import { getRoot, ROOT_ID, getRootTransportMode } from './Root.js'
 import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.js'
 import {
@@ -980,7 +980,7 @@ function detachQueryRoot (query, rootId) {
 }
 
 function getOwningRootId ($query) {
-  return getRoot($query)?.[ROOT_ID]
+  return normalizeRootId(getRoot($query)?.[ROOT_ID])
 }
 
 function getQueryOwnerKey (rootId, transportHash) {
