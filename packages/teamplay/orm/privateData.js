@@ -37,6 +37,7 @@ export function setPrivateData (rootId, logicalSegments, value) {
     throw Error('setPrivateData expects private collection segments')
   }
   const context = getRootContext(rootId, true)
+  if (!context) return
   const segments = getPrivateDataSegments(logicalSegments)
   _set(segments, value, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
@@ -46,6 +47,7 @@ export function setReplacePrivateData (rootId, logicalSegments, value) {
     throw Error('setReplacePrivateData expects private collection segments')
   }
   const context = getRootContext(rootId, true)
+  if (!context) return
   const segments = getPrivateDataSegments(logicalSegments)
   _setReplace(segments, value, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
@@ -61,46 +63,55 @@ export function delPrivateData (rootId, logicalSegments, options = {}) {
 
 export function arrayPushPrivateData (rootId, logicalSegments, value) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'arrayPushPrivateData')
+  if (!context) return
   return _arrayPush(getPrivateDataSegments(logicalSegments), value, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function arrayUnshiftPrivateData (rootId, logicalSegments, value) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'arrayUnshiftPrivateData')
+  if (!context) return
   return _arrayUnshift(getPrivateDataSegments(logicalSegments), value, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function arrayInsertPrivateData (rootId, logicalSegments, index, values) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'arrayInsertPrivateData')
+  if (!context) return
   return _arrayInsert(getPrivateDataSegments(logicalSegments), index, values, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function arrayPopPrivateData (rootId, logicalSegments) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'arrayPopPrivateData')
+  if (!context) return
   return _arrayPop(getPrivateDataSegments(logicalSegments), context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function arrayShiftPrivateData (rootId, logicalSegments) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'arrayShiftPrivateData')
+  if (!context) return
   return _arrayShift(getPrivateDataSegments(logicalSegments), context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function arrayRemovePrivateData (rootId, logicalSegments, index, howMany = 1) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'arrayRemovePrivateData')
+  if (!context) return
   return _arrayRemove(getPrivateDataSegments(logicalSegments), index, howMany, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function arrayMovePrivateData (rootId, logicalSegments, from, to, howMany = 1) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'arrayMovePrivateData')
+  if (!context) return
   return _arrayMove(getPrivateDataSegments(logicalSegments), from, to, howMany, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function stringInsertPrivateData (rootId, logicalSegments, index, text) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'stringInsertPrivateData')
+  if (!context) return
   return _stringInsertLocal(getPrivateDataSegments(logicalSegments), index, text, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 
 export function stringRemovePrivateData (rootId, logicalSegments, index, howMany) {
   const context = getRequiredPrivateContext(rootId, logicalSegments, 'stringRemovePrivateData')
+  if (!context) return
   return _stringRemoveLocal(getPrivateDataSegments(logicalSegments), index, howMany, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
 

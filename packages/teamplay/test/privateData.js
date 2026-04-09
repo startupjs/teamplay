@@ -1,12 +1,18 @@
 import { afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootContext, __resetRootContextsForTests } from '../orm/rootContext.js'
 import {
-  getPrivateDataRoot,
+  deleteRootContext,
+  getRootContext,
+  __resetRootContextsForTests
+} from '../orm/rootContext.js'
+import {
+  arrayPushPrivateData,
   getPrivateData,
-  setPrivateData,
+  getPrivateDataRoot,
   delPrivateData,
-  getPrivateDataSnapshot
+  getPrivateDataSnapshot,
+  setPrivateData,
+  setReplacePrivateData
 } from '../orm/privateData.js'
 
 afterEach(() => {
@@ -68,5 +74,19 @@ describe('privateData infrastructure', () => {
 
     context.resetPrivateData()
     assert.equal(context.isRuntimeEmpty(), true)
+  })
+
+  it('ignores late private writes after the root context is closed', () => {
+    setPrivateData('rootA', ['_session', 'userId'], 'a')
+    deleteRootContext('rootA')
+
+    assert.doesNotThrow(() => {
+      setPrivateData('rootA', ['_session', 'userId'], 'b')
+      setReplacePrivateData('rootA', ['_session', 'userId'], 'c')
+      arrayPushPrivateData('rootA', ['_session', 'items'], 'x')
+    })
+
+    assert.equal(getRootContext('rootA', false), undefined)
+    assert.equal(getPrivateData('rootA', ['_session', 'userId']), undefined)
   })
 })
