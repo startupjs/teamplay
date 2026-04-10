@@ -696,6 +696,20 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.a.b.get(), 1)
   })
 
+  it('regression: root set(path, value) materializes missing nested object parents on local paths', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+    setup('root-set-missing-local-object')
+
+    await $root.set(`${basePath}.doc.__dummyField.test`, '123')
+
+    assert.equal($base.doc.__dummyField.test.get(), '123')
+    assert.deepEqual($base.doc.get(), {
+      __dummyField: {
+        test: '123'
+      }
+    })
+  })
+
   it('set supports numeric subpath', async () => {
     setup('setnum')
     await $base.arr.set([0, 1, 2])
@@ -1165,6 +1179,19 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual(moveMissing, [])
     assert.deepEqual($base.ui.missing.get(), [])
   })
+
+  it('regression: root push(path, value) materializes missing nested arrays on local paths', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+    setup('root-push-missing-local-array')
+
+    const len = await $root.push(`${basePath}.doc.tags`, 'tag-1')
+
+    assert.equal(len, 1)
+    assert.deepEqual($base.doc.tags.get(), ['tag-1'])
+    assert.deepEqual($base.doc.get(), {
+      tags: ['tag-1']
+    })
+  })
 })
 
 describe('SignalCompat relative path split equivalence', () => {
@@ -1447,6 +1474,45 @@ describe('SignalCompat public mutators', () => {
     }
   })
 
+  it('regression: public set(path, value) materializes missing nested object parents', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+
+    const gameId = '_compat_public_missing_object_parent'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'Missing Object' })
+
+    await $game.set('__dummyField.test', '123')
+
+    assert.equal($game.__dummyField.test.get(), '123')
+    assert.deepEqual($game.get(), {
+      _id: gameId,
+      id: gameId,
+      name: 'Missing Object',
+      __dummyField: {
+        test: '123'
+      }
+    })
+  })
+
+  it('materializes nested objects when setting a child under a primitive value on public docs', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+
+    const gameId = '_compat_public_primitive_parent'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ profile: 'legacy' })
+
+    await $game.set('profile.name', 'Kate')
+
+    assert.deepEqual($game.profile.get(), { name: 'Kate' })
+    assert.deepEqual($game.get(), {
+      _id: gameId,
+      id: gameId,
+      profile: {
+        name: 'Kate'
+      }
+    })
+  })
+
   it('uses racer-like setDiff semantics on public docs', async () => {
     const gameId = '_compat_public_setdiff'
     const $game = await sub($.compatGames[gameId])
@@ -1531,6 +1597,27 @@ describe('SignalCompat public mutators', () => {
     const len = await $game.push('list', 1)
     assert.equal(len, 1)
     assert.deepEqual($game.list.get(), [1])
+  })
+
+  it('regression: public push(path, value) materializes missing nested arrays through missing object parents', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+
+    const gameId = '_compat_public_missing_nested_array'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'Missing Nested Array' })
+
+    const len = await $game.push('stats.tags', 'tag-1')
+
+    assert.equal(len, 1)
+    assert.deepEqual($game.stats.tags.get(), ['tag-1'])
+    assert.deepEqual($game.get(), {
+      _id: gameId,
+      id: gameId,
+      name: 'Missing Nested Array',
+      stats: {
+        tags: ['tag-1']
+      }
+    })
   })
 
   it('keeps racer-like missing-path semantics for public compat string/array mutators', async () => {
@@ -1663,6 +1750,51 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.profile._id.get(), 'profile-3')
     assert.equal($._session.activeGame.profile.id.get(), 'profile-2')
     assert.equal($._session.activeGame.profile._id.get(), 'profile-3')
+  })
+
+  it('regression: root set(path, value) through public ref materializes missing nested object parents', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+
+    const gameId = '_compat_public_ref_missing_object_parent'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'Compat Ref Missing Object' })
+
+    $._session.ref('activeGame', $game)
+    await $.set('_session.activeGame.__dummyField.test', '123')
+
+    assert.equal($._session.activeGame.__dummyField.test.get(), '123')
+    assert.equal($game.__dummyField.test.get(), '123')
+    assert.deepEqual($game.get(), {
+      _id: gameId,
+      id: gameId,
+      name: 'Compat Ref Missing Object',
+      __dummyField: {
+        test: '123'
+      }
+    })
+  })
+
+  it('regression: root push(path, value) through public ref materializes missing nested arrays', async () => {
+    if (process.env.TEAMPLAY_COMPAT !== '1') return
+
+    const gameId = '_compat_public_ref_missing_array'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'Compat Ref Missing Array' })
+
+    $._session.ref('activeGame', $game)
+    const len = await $.push('_session.activeGame.stats.tags', 'tag-1')
+
+    assert.equal(len, 1)
+    assert.deepEqual($._session.activeGame.stats.tags.get(), ['tag-1'])
+    assert.deepEqual($game.stats.tags.get(), ['tag-1'])
+    assert.deepEqual($game.get(), {
+      _id: gameId,
+      id: gameId,
+      name: 'Compat Ref Missing Array',
+      stats: {
+        tags: ['tag-1']
+      }
+    })
   })
 
   it('injects _id/id in compat queries', async () => {

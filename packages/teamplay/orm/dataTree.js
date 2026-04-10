@@ -326,6 +326,13 @@ export async function setPublicDocReplace (segments, value) {
   }
 
   const relativePath = segments.slice(2)
+  // json0 direct replace ops require every ancestor container to already exist.
+  // Racer-like compat set, however, materializes missing/primitive parents while
+  // descending into the path. Fall back to the older diff-based path when the
+  // direct op would target a non-existent/non-object ancestor.
+  if (!canApplyDirectReplaceOp(docState.snapshot || {}, relativePath)) {
+    return setPublicDoc(segments, value)
+  }
   const previous = getRaw(segments)
   const normalizedPrevious = normalizeUndefined(
     relativePath.length === 0 ? stripIdFields(previous, idFields) : previous
@@ -442,6 +449,16 @@ function ensureLocalDocSyncedWithShareDoc ({
 
 function normalizeUndefined (value) {
   return value === undefined ? null : value
+}
+
+function canApplyDirectReplaceOp (docSnapshot, relativePath) {
+  if (relativePath.length === 0) return true
+  let node = docSnapshot
+  for (let i = 0; i < relativePath.length - 1; i++) {
+    if (node == null || typeof node !== 'object') return false
+    node = node[relativePath[i]]
+  }
+  return node != null && typeof node === 'object'
 }
 
 function normalizeValueForOp (value) {
