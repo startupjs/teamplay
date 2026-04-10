@@ -44,8 +44,8 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
+    const hasPreviousSignal = !!$signalRef.current
     if (batch) {
-      const hasPreviousSignal = !!$signalRef.current
       // Batch suspense must block only on initial load.
       // On resubscribe we keep rendering previous signal and refresh in background.
       if (!hasPreviousSignal) {
@@ -60,6 +60,11 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
     if (async) {
       scheduleUpdate(promise)
       return
+    }
+    // Keep previous snapshot during update re-subscribe and refresh in background.
+    if (hasPreviousSignal) {
+      scheduleUpdate(promise)
+      return $signalRef.current
     }
     if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
     throw promise
