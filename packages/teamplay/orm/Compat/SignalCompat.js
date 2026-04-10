@@ -29,7 +29,7 @@ import {
 } from '../dataTree.js'
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
 import { waitForImperativeQueryReady } from './queryReadiness.js'
-import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
+import { isModelEventsEnabled, normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
 import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
 import { runInBatch } from '../batchScheduler.js'
@@ -1061,7 +1061,9 @@ function setReplacePrivateCompatSync ($signal, value) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   setReplacePrivateData(getOwningRootId($signal), segments, value)
-  if (isSilentContextActive()) mirrorRefMutationFromTarget(segments, value)
+  if (shouldMirrorPrivateRefMutationLocally()) {
+    mirrorRefMutationFromTarget(segments, value)
+  }
 }
 
 function delPrivateCompatSync ($signal, options) {
@@ -1123,7 +1125,9 @@ async function setReplaceOnSignal ($signal, value) {
   }
   if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   const result = setReplacePrivateData(getOwningRootId($signal), segments, value)
-  if (isSilentContextActive()) mirrorRefMutationFromTarget(segments, value)
+  if (shouldMirrorPrivateRefMutationLocally()) {
+    mirrorRefMutationFromTarget(segments, value)
+  }
   return result
 }
 
@@ -1269,6 +1273,11 @@ function shouldMirrorPublicRefMutationLocally (segments) {
   // Doc runtime (subscribed/fetched). Without runtime we must mirror immediately.
   const transportHash = JSON.stringify([segments[0], segments[1]])
   return !docSubscriptions.hasRuntime(transportHash)
+}
+
+function shouldMirrorPrivateRefMutationLocally () {
+  if (isSilentContextActive()) return true
+  return !isModelEventsEnabled()
 }
 
 function shallowCopy (value) {
