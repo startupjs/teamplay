@@ -1,23 +1,34 @@
 import Redlock from 'redlock'
 import redisPubSub from 'sharedb-redis-pubsub'
-import { getRedis, Redis, RedisMock } from './getRedis.js'
+import { getIoRedis, Redis, RedisMock } from './getIoRedis.js'
+import { getNodeRedis } from './getNodeRedis.js'
 
 const ENABLE_REDIS = !process.env.NO_REDIS
+const ENABLE_REDIS_PUBSUB = ENABLE_REDIS && !!(process.env.REDIS_URL || process.env.REDIS_OPTS)
 
 const RedisClient = ENABLE_REDIS ? Redis : RedisMock
-export { RedisClient as Redis, getRedis, getRedisOptions, generatePrefix }
+export {
+  RedisClient as Redis,
+  getRedisOptions,
+  generatePrefix
+}
+export const getRedis = getIoRedis
 export const prefix = generatePrefix({
   mongoUrl: process.env.MONGO_URL,
   baseUrl: process.env.BASE_URL
 })
-export const redis = getRedis(getRedisOptions())
-export const redisObserver = getRedis(getRedisOptions())
+export const redis = getIoRedis(getRedisOptions())
 
-export const pubsub = redisPubSub({
-  client: redis,
-  observer: redisObserver,
-  prefix
-})
+// Teamplay exposes ioredis for the rest of the backend ecosystem
+// (BullMQ, Redlock, mocks), but sharedb-redis-pubsub@5 expects node-redis.
+// We therefore create separate node-redis clients only for ShareDB pubsub.
+export const pubsub = ENABLE_REDIS_PUBSUB
+  ? redisPubSub({
+    client: getNodeRedis(getRedisOptions({ addPrefix: false })),
+    observer: getNodeRedis(getRedisOptions({ addPrefix: false })),
+    prefix
+  })
+  : undefined
 
 export const redlock = getRedlock(redis)
 

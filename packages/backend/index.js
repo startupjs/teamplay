@@ -43,7 +43,7 @@ export default function createBackend ({
 
   const backend = new ShareDB({
     db,
-    pubsub,
+    ...(pubsub ? { pubsub } : {}),
     extraDbs
   })
 

@@ -4,7 +4,7 @@ import RedisMock from 'ioredis-mock'
 
 export { Redis, RedisMock }
 
-export function getRedis ({ enable = true, opts, url, keyPrefix, ...additionalOptions }) {
+export function getIoRedis ({ enable = true, opts, url, keyPrefix, ...additionalOptions }) {
   if (enable) {
     if (typeof opts === 'string') {
       opts = JSON.parse(opts)
