@@ -745,6 +745,26 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.arr[2].get(), undefined)
   })
 
+  it('direct child set(undefined) matches racer local object semantics', async () => {
+    setup('set-undefined-child-object')
+    await $base.set({ a: 1, b: 2 })
+    await $base.a.set(undefined)
+    assert.equal($base.a.get(), undefined)
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($base.get()), 'a'))
+    assert.deepEqual($base.get(), { a: undefined, b: 2 })
+  })
+
+  it('direct child set(undefined) matches racer local sparse-array semantics', async () => {
+    setup('set-undefined-child-array')
+    await $base.arr[2].set(undefined)
+    const items = raw($base.arr.get())
+    assert.equal(items.length, 3)
+    assert.equal(0 in items, false)
+    assert.equal(1 in items, false)
+    assert.equal(2 in items, true)
+    assert.equal($base.arr[2].get(), undefined)
+  })
+
   it('set uses replace semantics for nested objects', async () => {
     setup('set-replace')
     await $base.set({ a: { x: 1, y: 2 } })
@@ -970,6 +990,20 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.a.get(), undefined)
     assert.ok(Object.prototype.hasOwnProperty.call(raw($base.get()), 'a'))
     assert.deepEqual($base.get(), { a: undefined, b: 2 })
+  })
+
+  it('setEach(path, object) with undefined matches racer local semantics (keeps key)', async () => {
+    setup('seteach-path-undefined')
+    await $base.set({
+      obj: {
+        a: 1,
+        b: 2
+      }
+    })
+    await $base.setEach('obj', { a: undefined })
+    assert.equal($base.obj.a.get(), undefined)
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($base.obj.get()), 'a'))
+    assert.deepEqual($base.obj.get(), { a: undefined, b: 2 })
   })
 
   it('setEach applies updates atomically for scheduled observers', async () => {
@@ -3114,6 +3148,58 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal($base.virtual.flag.get(), null)
     assert.ok(Object.prototype.hasOwnProperty.call(raw($doc.get()), 'flag'))
     assert.ok(Object.prototype.hasOwnProperty.call(raw($base.virtual.get()), 'flag'))
+  })
+
+  it('public compat set(undefined) keeps array slots as null like racer remote semantics', async () => {
+    const $base = setup('publicSetUndefinedArray')
+    const $doc = $root[domainCollection]._compatPublicSetUndefinedArray
+    await $doc.create({
+      title: 'Stage 1',
+      options: ['A', 'B', 'C']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $doc, doc => doc)
+
+    await $doc.options[1].set(undefined)
+
+    const sourceOptions = raw($doc.get('options'))
+    const targetOptions = raw($base.virtual.get('options'))
+    assert.equal($doc.options[1].get(), null)
+    assert.equal($base.virtual.options[1].get(), null)
+    assert.equal(sourceOptions[1], null)
+    assert.equal(targetOptions[1], null)
+    assert.equal(Object.prototype.hasOwnProperty.call(sourceOptions, 1), true)
+    assert.equal(Object.prototype.hasOwnProperty.call(targetOptions, 1), true)
+  })
+
+  it('public compat setEach(path, object) keeps undefined keys as null like racer remote semantics', async () => {
+    const $base = setup('publicSetEachUndefinedObject')
+    const $doc = $root[domainCollection]._compatPublicSetEachUndefinedObject
+    await $doc.create({
+      profile: {
+        name: 'Ann',
+        role: 'student'
+      }
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $doc, doc => doc)
+
+    await $doc.setEach('profile', { role: undefined })
+
+    assert.deepEqual($doc.profile.get(), {
+      name: 'Ann',
+      role: null
+    })
+    assert.deepEqual($base.virtual.profile.get(), {
+      name: 'Ann',
+      role: null
+    })
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($doc.profile.get()), 'role'))
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($base.virtual.profile.get()), 'role'))
   })
 
   it('keeps pre-bound sparse array child signals reactive after public reverse sync with null-normalized source', async () => {
