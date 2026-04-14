@@ -24,6 +24,7 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
   const existing = store.get(targetKey)
   if (existing) existing.stop()
 
+  let lastSourceSnapshot = UNSET
   const reaction = observe(() => {
     const resolvedDeps = []
     for (const dep of deps) {
@@ -38,13 +39,22 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
       if (isThenable(err)) return
       throw err
     }
-    const detachedValue = detachStartValue(nextValue)
+    const sourceSnapshot = detachStartValue(nextValue)
+    if (lastSourceSnapshot !== UNSET && deepEqualStartValue(lastSourceSnapshot, sourceSnapshot)) {
+      return
+    }
+    lastSourceSnapshot = sourceSnapshot
+    const detachedValue = detachStartValue(sourceSnapshot)
     // Keep the detached snapshot to avoid aliasing source and target.
     // Old racer start() writes through diffDeep by default. In compat mode we must preserve
     // that behavior, but also avoid reading the target reactively inside start(), otherwise
     // start() subscribes to its own output and local child edits get immediately overwritten.
     const maybePromise = $target.setDiffDeep(detachedValue)
-    if (maybePromise?.catch) maybePromise.catch(ignorePromiseRejection)
+    if (maybePromise?.then) {
+      maybePromise
+        .then(() => {})
+        .catch(ignorePromiseRejection)
+    }
   }, { scheduler: scheduleReaction })
   store.set(targetKey, { stop: () => unobserve(reaction) })
   return $target
@@ -134,6 +144,8 @@ function isThenable (value) {
   return !!value && typeof value.then === 'function'
 }
 
+const UNSET = Symbol('compat start unset')
+
 function detachStartValue (value) {
   const rawValue = raw(value)
   if (!rawValue || typeof rawValue !== 'object') return rawValue
@@ -165,4 +177,31 @@ function racerDeepCopy (value) {
     return object
   }
   return value
+}
+
+function deepEqualStartValue (left, right) {
+  if (left === right) return true
+  if (Number.isNaN(left) && Number.isNaN(right)) return true
+  if (left instanceof Date || right instanceof Date) {
+    return left instanceof Date && right instanceof Date && left.getTime() === right.getTime()
+  }
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false
+    if (left.length !== right.length) return false
+    for (let i = 0; i < left.length; i++) {
+      if (!deepEqualStartValue(left[i], right[i])) return false
+    }
+    return true
+  }
+
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false
+    if (!deepEqualStartValue(left[key], right[key])) return false
+  }
+  return true
 }

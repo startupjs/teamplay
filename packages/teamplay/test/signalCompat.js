@@ -725,12 +725,24 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual($base.obj.get(), { a: null, b: 2 })
   })
 
-  it('set with undefined follows compat delete semantics', async () => {
+  it('set with undefined matches racer local semantics on object keys', async () => {
     setup('set-undefined')
     await $base.set({ a: 1, b: 2 })
     await $base.set('a', undefined)
     assert.equal($base.a.get(), undefined)
-    assert.deepEqual($base.get(), { b: 2 })
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($base.get()), 'a'))
+    assert.deepEqual($base.get(), { a: undefined, b: 2 })
+  })
+
+  it('set with undefined matches racer local sparse-array semantics', async () => {
+    setup('set-undefined-array')
+    await $base.arr.set(2, undefined)
+    const items = raw($base.arr.get())
+    assert.equal(items.length, 3)
+    assert.equal(0 in items, false)
+    assert.equal(1 in items, false)
+    assert.equal(2 in items, true)
+    assert.equal($base.arr[2].get(), undefined)
   })
 
   it('set uses replace semantics for nested objects', async () => {
@@ -951,12 +963,13 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual($base.get(), { a: null, b: 2 })
   })
 
-  it('setEach with undefined follows compat set semantics (deletes key)', async () => {
+  it('setEach with undefined matches racer local semantics (keeps key)', async () => {
     setup('seteach-undefined')
     await $base.set({ a: 1, b: 2 })
     await $base.setEach({ a: undefined })
     assert.equal($base.a.get(), undefined)
-    assert.deepEqual($base.get(), { b: 2 })
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($base.get()), 'a'))
+    assert.deepEqual($base.get(), { a: undefined, b: 2 })
   })
 
   it('setEach applies updates atomically for scheduled observers', async () => {
@@ -2920,6 +2933,276 @@ class NonCompatRefUserModel extends BaseSignal {
       { final: true, prompt: undefined },
       { final: true, prompt: 'Draft prompt' },
       { final: true, prompt: 'Saved prompt' }
+    ])
+  })
+
+  it('keeps pre-bound sparse array child signals reactive after reverse sync with null-normalized source', async () => {
+    const $base = setup('sparseArrayChildSignals')
+    await $base.doc.set({
+      options: ['A']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    const $hole = $base.virtual.options[2]
+    const $tail = $base.virtual.options[4]
+    $root.start(targetPath, $base.doc, doc => doc)
+
+    const snapshots = []
+    const reaction = observe(
+      () => ({
+        hole: $hole.get(),
+        tail: $tail.get()
+      }),
+      {
+        lazy: true,
+        scheduler: job => scheduleReaction(() => {
+          const snapshot = job()
+          const prev = snapshots[snapshots.length - 1]
+          if (JSON.stringify(prev) !== JSON.stringify(snapshot)) snapshots.push(snapshot)
+        })
+      }
+    )
+    snapshots.push(reaction())
+
+    await $tail.set('Z')
+    await $base.doc.set({
+      options: ['A', null, null, null, 'Z']
+    })
+    await $hole.set('Draft')
+
+    unobserve(reaction)
+
+    assert.equal($base.virtual.get('options.2'), 'Draft')
+    assert.equal($base.virtual.get('options.4'), 'Z')
+    assert.deepEqual(snapshots, [
+      { hole: undefined, tail: undefined },
+      { hole: undefined, tail: 'Z' },
+      { hole: null, tail: 'Z' },
+      { hole: 'Draft', tail: 'Z' }
+    ])
+  })
+
+  it('keeps sparse array child signals writable across repeated reverse sync leaf updates', async () => {
+    const $base = setup('sparseArrayRepeatedLeafSync')
+    await $base.doc.set({
+      options: ['A']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    const $slot = $base.virtual.options[2]
+    $root.start(targetPath, $base.doc, doc => doc)
+
+    const snapshots = []
+    const reaction = observe(
+      () => $slot.get(),
+      {
+        lazy: true,
+        scheduler: job => scheduleReaction(() => {
+          const snapshot = job()
+          const prev = snapshots[snapshots.length - 1]
+          if (JSON.stringify(prev) !== JSON.stringify(snapshot)) snapshots.push(snapshot)
+        })
+      }
+    )
+    snapshots.push(reaction())
+
+    await $base.virtual.options[4].set('Z')
+    await $base.doc.set({
+      options: ['A', null, null, null, 'Z']
+    })
+    await $slot.set('Draft 1')
+    await $base.doc.set({
+      options: ['A', null, 'Saved 1', null, 'Z']
+    })
+    await $slot.set('Draft 2')
+
+    unobserve(reaction)
+
+    assert.equal($base.virtual.get('options.2'), 'Draft 2')
+    assert.deepEqual(snapshots, [
+      undefined,
+      null,
+      'Draft 1',
+      'Saved 1',
+      'Draft 2'
+    ])
+  })
+
+  it('syncs public doc array leaf updates into started targets', async () => {
+    const $base = setup('publicStartSanity')
+    const $doc = $root[domainCollection]._compatPublicStartSanity
+    await $doc.create({
+      title: 'Stage 1',
+      options: ['A']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $doc, doc => doc)
+
+    assert.equal($base.virtual.get('title'), 'Stage 1')
+    assert.deepEqual($base.virtual.get('options'), ['A'])
+
+    await $doc.options[0].set('B')
+
+    assert.deepEqual($base.virtual.get('options'), ['B'])
+  })
+
+  it('syncs public doc array replace updates into started targets', async () => {
+    const $base = setup('publicStartArrayReplace')
+    const $doc = $root[domainCollection]._compatPublicStartArrayReplace
+    await $doc.create({
+      title: 'Stage 1',
+      options: ['A']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $doc, doc => doc)
+
+    await $doc.title.set('Stage 2')
+    await $doc.options.set(['B'])
+
+    assert.equal($doc.get('title'), 'Stage 2')
+    assert.deepEqual($doc.get('options'), ['B'])
+    assert.equal($base.virtual.get('title'), 'Stage 2')
+    assert.deepEqual($base.virtual.get('options'), ['B'])
+  })
+
+  it('keeps immediate local sparse writes after public start before the next tick', async () => {
+    const $base = setup('publicStartImmediateLocalWrite')
+    const $doc = $root[domainCollection]._compatPublicStartImmediateLocalWrite
+    await $doc.create({
+      options: ['A']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $doc, doc => doc)
+
+    await $base.virtual.options[4].set('Z')
+
+    const options = raw($base.virtual.get('options'))
+    assert.equal(options.length, 5)
+    assert.equal(options[0], 'A')
+    assert.equal(options[1], undefined)
+    assert.equal(options[2], undefined)
+    assert.equal(options[3], undefined)
+    assert.equal(options[4], 'Z')
+    assert.equal(Object.prototype.hasOwnProperty.call(options, 1), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(options, 2), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(options, 3), false)
+  })
+
+  it('public compat set(undefined) keeps object keys as null like racer remote semantics', async () => {
+    const $base = setup('publicSetUndefinedObject')
+    const $doc = $root[domainCollection]._compatPublicSetUndefinedObject
+    await $doc.create({
+      title: 'Stage 1',
+      flag: true
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $doc, doc => doc)
+
+    await $doc.flag.set(undefined)
+
+    assert.equal($doc.flag.get(), null)
+    assert.equal($base.virtual.flag.get(), null)
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($doc.get()), 'flag'))
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($base.virtual.get()), 'flag'))
+  })
+
+  it('keeps pre-bound sparse array child signals reactive after public reverse sync with null-normalized source', async () => {
+    const $base = setup('publicSparseArrayChildSignals')
+    const $doc = $root[domainCollection]._compatPublicSparseArrayChildSignals
+    await $doc.create({
+      options: ['A']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    const $hole = $base.virtual.options[2]
+    const $tail = $base.virtual.options[4]
+    $root.start(targetPath, $doc, doc => doc)
+
+    const snapshots = []
+    const reaction = observe(
+      () => ({
+        hole: $hole.get(),
+        tail: $tail.get()
+      }),
+      {
+        lazy: true,
+        scheduler: job => scheduleReaction(() => {
+          const snapshot = job()
+          const prev = snapshots[snapshots.length - 1]
+          if (JSON.stringify(prev) !== JSON.stringify(snapshot)) snapshots.push(snapshot)
+        })
+      }
+    )
+    snapshots.push(reaction())
+
+    await $tail.set('Z')
+    await $doc.options.set(['A', null, null, null, 'Z'])
+    await $hole.set('Draft')
+
+    unobserve(reaction)
+
+    assert.equal($base.virtual.get('options.2'), 'Draft')
+    assert.equal($base.virtual.get('options.4'), 'Z')
+    assert.deepEqual(snapshots, [
+      { hole: undefined, tail: undefined },
+      { hole: undefined, tail: 'Z' },
+      { hole: null, tail: 'Z' },
+      { hole: 'Draft', tail: 'Z' }
+    ])
+  })
+
+  it('keeps sparse array child signals writable across repeated public reverse sync leaf updates', async () => {
+    const $base = setup('publicSparseArrayRepeatedLeafSync')
+    const $doc = $root[domainCollection]._compatPublicSparseArrayRepeatedLeafSync
+    await $doc.create({
+      options: ['A']
+    })
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    const $slot = $base.virtual.options[2]
+    $root.start(targetPath, $doc, doc => doc)
+
+    const snapshots = []
+    const reaction = observe(
+      () => $slot.get(),
+      {
+        lazy: true,
+        scheduler: job => scheduleReaction(() => {
+          const snapshot = job()
+          const prev = snapshots[snapshots.length - 1]
+          if (JSON.stringify(prev) !== JSON.stringify(snapshot)) snapshots.push(snapshot)
+        })
+      }
+    )
+    snapshots.push(reaction())
+
+    await $base.virtual.options[4].set('Z')
+    await $doc.options.set(['A', null, null, null, 'Z'])
+    await $slot.set('Draft 1')
+    await $doc.options.set(['A', null, 'Saved 1', null, 'Z'])
+    await $slot.set('Draft 2')
+
+    unobserve(reaction)
+
+    assert.equal($base.virtual.get('options.2'), 'Draft 2')
+    assert.deepEqual(snapshots, [
+      undefined,
+      null,
+      'Draft 1',
+      'Saved 1',
+      'Draft 2'
     ])
   })
 

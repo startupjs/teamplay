@@ -35,6 +35,34 @@ function getOwningRootId ($doc) {
   return rootId
 }
 
+function deepEqualDocData (left, right) {
+  if (left === right) return true
+  if (left == null || right == null) return left === right
+
+  const leftIsArray = Array.isArray(left)
+  if (leftIsArray || Array.isArray(right)) {
+    if (!leftIsArray || !Array.isArray(right)) return false
+    if (left.length !== right.length) return false
+    for (let i = 0; i < left.length; i++) {
+      if (!deepEqualDocData(left[i], right[i])) return false
+    }
+    return true
+  }
+
+  if (typeof left !== 'object' || typeof right !== 'object') return false
+
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false
+    if (!deepEqualDocData(left[key], right[key])) return false
+  }
+
+  return true
+}
+
 class Doc {
   initialized
 
@@ -162,6 +190,12 @@ class Doc {
     if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, this.docId)
     const path = [this.collection, this.docId]
     const data = isObservable(doc.data) ? raw(doc.data) : doc.data
+    const current = _getRaw(path)
+    if (deepEqualDocData(current, data)) {
+      if (current != null && current !== raw(doc.data)) doc.data = current
+      if (!isObservable(doc.data)) doc.data = observable(doc.data)
+      return
+    }
     _set(path, data)
     const synced = _getRaw(path)
     if (synced != null && synced !== raw(doc.data)) doc.data = synced

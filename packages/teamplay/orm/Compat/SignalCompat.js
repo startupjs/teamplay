@@ -1,4 +1,5 @@
 import { raw, observe, unobserve } from '@nx-js/observer-util'
+import arrayDiff from 'arraydiff'
 import {
   Signal,
   GETTERS,
@@ -974,14 +975,14 @@ async function diffDeepCompat ($signal, before, after) {
   if (before === after) return
 
   if (Array.isArray(before) && Array.isArray(after)) {
-    if (deepEqualCompat(before, after)) return
-    const changedIndexes = getChangedArrayIndexes(before, after)
-    if (before.length === after.length && changedIndexes.length === 1) {
-      const index = changedIndexes[0]
+    const diff = arrayDiff(before, after, deepEqualCompat)
+    if (!diff.length) return
+    const index = getSingleArrayReplacementIndex(diff)
+    if (index != null) {
       await diffDeepCompat(getChildSignal($signal, index), before[index], after[index])
       return
     }
-    await SignalCompat.prototype.set.call($signal, after)
+    await applyArrayDiffCompat($signal, diff)
     return
   }
 
@@ -1003,14 +1004,14 @@ function diffDeepCompatSync ($signal, before, after) {
   if (before === after) return
 
   if (Array.isArray(before) && Array.isArray(after)) {
-    if (deepEqualCompat(before, after)) return
-    const changedIndexes = getChangedArrayIndexes(before, after)
-    if (before.length === after.length && changedIndexes.length === 1) {
-      const index = changedIndexes[0]
+    const diff = arrayDiff(before, after, deepEqualCompat)
+    if (!diff.length) return
+    const index = getSingleArrayReplacementIndex(diff)
+    if (index != null) {
       diffDeepCompatSync(getChildSignal($signal, index), before[index], after[index])
       return
     }
-    setReplacePrivateCompatSync($signal, after)
+    applyArrayDiffCompatSync($signal, diff)
     return
   }
 
@@ -1035,14 +1036,54 @@ function isDiffableObject (before, after) {
   return true
 }
 
-function getChangedArrayIndexes (before, after) {
-  if (!Array.isArray(before) || !Array.isArray(after)) return []
-  const maxLength = Math.max(before.length, after.length)
-  const changed = []
-  for (let i = 0; i < maxLength; i++) {
-    if (!deepEqualCompat(before[i], after[i])) changed.push(i)
+function getSingleArrayReplacementIndex (diff) {
+  if (!Array.isArray(diff) || diff.length !== 2) return null
+  const first = diff[0]
+  const second = diff[1]
+  if (
+    first instanceof arrayDiff.RemoveDiff &&
+    second instanceof arrayDiff.InsertDiff &&
+    first.index === second.index &&
+    first.howMany === 1 &&
+    second.values.length === 1
+  ) {
+    return first.index
   }
-  return changed
+  return null
+}
+
+async function applyArrayDiffCompat ($signal, diff) {
+  for (const item of diff) {
+    if (item instanceof arrayDiff.InsertDiff) {
+      await arrayInsertOnSignal($signal, item.index, item.values)
+      continue
+    }
+    if (item instanceof arrayDiff.RemoveDiff) {
+      await arrayRemoveOnSignal($signal, item.index, item.howMany)
+      continue
+    }
+    if (item instanceof arrayDiff.MoveDiff) {
+      await arrayMoveOnSignal($signal, item.from, item.to, item.howMany)
+    }
+  }
+}
+
+function applyArrayDiffCompatSync ($signal, diff) {
+  const segments = ensureArrayTarget($signal)
+  const rootId = getOwningRootId($signal)
+  for (const item of diff) {
+    if (item instanceof arrayDiff.InsertDiff) {
+      arrayInsertPrivateData(rootId, segments, item.index, item.values)
+      continue
+    }
+    if (item instanceof arrayDiff.RemoveDiff) {
+      arrayRemovePrivateData(rootId, segments, item.index, item.howMany)
+      continue
+    }
+    if (item instanceof arrayDiff.MoveDiff) {
+      arrayMovePrivateData(rootId, segments, item.from, item.to, item.howMany)
+    }
+  }
 }
 
 function getChildSignal ($parent, key) {

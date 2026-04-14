@@ -202,16 +202,18 @@ describe('set, get, del on local collections', () => {
   afterEachTestGc()
   afterEachTestGcLocal()
 
-  it('set undefined deletes the key in object', () => {
+  it('set undefined preserves the key in object like racer LocalDoc.set', () => {
     const $obj = $({ a: 1, b: 2 })
     $obj.a.set(undefined)
-    assert.deepEqual($obj.get(), { b: 2 })
+    assert.ok(Object.prototype.hasOwnProperty.call($obj.get(), 'a'))
+    assert.deepEqual($obj.get(), { a: undefined, b: 2 })
   })
 
-  it('set undefined on non-existing key does nothing', () => {
+  it('set undefined on non-existing key materializes the key like racer LocalDoc.set', () => {
     const $obj = $({ a: 1, b: 2 })
     $obj.c.set(undefined)
-    assert.deepEqual($obj.get(), { a: 1, b: 2 })
+    assert.ok(Object.prototype.hasOwnProperty.call($obj.get(), 'c'))
+    assert.deepEqual($obj.get(), { a: 1, b: 2, c: undefined })
   })
 
   it('set undefined sets array\'s element to undefined', () => {
@@ -220,10 +222,17 @@ describe('set, get, del on local collections', () => {
     assert.deepEqual($arr.get(), [undefined, 2])
   })
 
-  it('set undefined on non-existing array index adds an undefined element', () => {
+  it('set undefined on non-existing array index preserves sparse holes like racer LocalDoc.set', () => {
     const $arr = $([1, 2])
     $arr[3].set(undefined)
-    assert.deepEqual($arr.get(), [1, 2, undefined, undefined])
+    const items = $arr.get()
+    assert.equal(items.length, 4)
+    assert.equal(items[0], 1)
+    assert.equal(items[1], 2)
+    assert.equal(items[2], undefined)
+    assert.equal(items[3], undefined)
+    assert.equal(Object.prototype.hasOwnProperty.call(items, 2), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(items, 3), true)
   })
 
   it('del deletes the key in object', () => {
