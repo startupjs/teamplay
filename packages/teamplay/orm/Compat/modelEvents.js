@@ -1,8 +1,10 @@
 import { getRefLinks, getRefRootIds } from './refRegistry.js'
 import { isCompatEnv } from '../compatEnv.js'
-import { isSilentContextActive, isModelEventsSilentContextActive } from './silentContext.js'
+import { isSilentContextActive, isModelEventsSilentContextActive, runInModelEventsSilentContext } from './silentContext.js'
 import { normalizeRootId } from '../rootScope.js'
 import { getRootContext, getRootContexts } from '../rootContext.js'
+import { setReplace as setReplaceInDataTree, del as delFromDataTree } from '../dataTree.js'
+import { setReplacePrivateData, delPrivateData } from '../privateData.js'
 
 const MODEL_EVENT_NAMES = ['change', 'all']
 
@@ -70,6 +72,8 @@ export function emitModelChange (path, value, prevValue, meta) {
         if (!isPathPrefix(link.toSegments, segments)) continue
         if (link.mirrorOnly && typeof link.onChange === 'function') {
           link.onChange()
+        } else if (!link.mirrorOnly) {
+          mirrorRefAliasFromTargetSegments(rootId, link, segments, value, meta)
         }
         const suffix = segments.slice(link.toSegments.length)
         const nextSegments = link.fromSegments.concat(suffix)
@@ -105,6 +109,49 @@ function emitForEvent (rootId, eventName, pathSegments, value, prevValue, meta, 
 function splitPattern (pattern) {
   if (!pattern) return []
   return pattern.split('.').filter(Boolean)
+}
+
+function mirrorRefAliasFromTargetSegments (rootId, link, targetSegments, value, meta) {
+  const suffix = targetSegments.slice(link.toSegments.length)
+  const fromSegments = link.fromSegments.concat(suffix)
+  const fromRootId = normalizeRootId(link.fromRootId ?? rootId)
+  const shouldDelete = shouldDeleteMirroredPath(value, meta)
+  runInModelEventsSilentContext(() => {
+    if (isPrivateSegments(fromSegments)) {
+      if (shouldDelete) {
+        delPrivateData(fromRootId, fromSegments)
+      } else {
+        setReplacePrivateData(fromRootId, fromSegments, cloneValue(value))
+      }
+      return
+    }
+    if (shouldDelete) {
+      delFromDataTree(fromSegments)
+      return
+    }
+    setReplaceInDataTree(fromSegments, cloneValue(value))
+  })
+}
+
+function isPrivateSegments (segments) {
+  if (!Array.isArray(segments) || !segments.length) return false
+  return /^[_$]/.test(String(segments[0]))
+}
+
+function shouldDeleteMirroredPath (value, meta) {
+  if (meta?.op === 'setReplace') return false
+  if (meta?.op === 'del') return true
+  return value === undefined
+}
+
+function cloneValue (value) {
+  if (Array.isArray(value)) return value.map(cloneValue)
+  if (value && typeof value === 'object') {
+    const cloned = {}
+    for (const key of Object.keys(value)) cloned[key] = cloneValue(value[key])
+    return cloned
+  }
+  return value
 }
 
 function getModelEventRootStore (eventName, rootId, create = false) {

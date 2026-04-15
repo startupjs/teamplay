@@ -119,6 +119,10 @@ Reads (`get`/`peek`) are forwarded to the target while the ref is active.
 Ref mirroring is scheduled through Teamplay runtime scheduler, so updates remain batch-friendly
 and do not leak intermediate ref states during a single batched cycle.
 
+Source path restriction:
+- The ref source path (`$from`) must be in a private collection (`_session`, `_page`, `$local`, etc.).
+- Public source paths are not supported.
+
 ```js
 const $local = $.local.value
 const $user = $.users.user1
@@ -201,7 +205,6 @@ $table.dataSource.get()
 
 **Limitations vs Racer**
 - No `refList`, `refMap`.
-- No automatic list index patching on insert/remove/move.
 - No event emissions specific to refs.
 - No support for racer-style ref meta/options beyond the basic signature.
 

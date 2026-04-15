@@ -3,6 +3,7 @@ import { describe, it, beforeAll as before, afterEach, expect } from '@jest/glob
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { $, observer, useSession } from '../index.js'
 import connect from '../connect/test.js'
+import { getConnection } from '../orm/connection.js'
 import { del as _del } from '../orm/dataTree.js'
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
@@ -17,6 +18,13 @@ afterEach(() => {
 })
 
 describeCompat('session alias + ref contract', () => {
+  async function submitTenantRawOp (tenantId, op) {
+    const shareDoc = getConnection().get('tenants', tenantId)
+    await new Promise((resolve, reject) => {
+      shareDoc.submitOp(op, err => err ? reject(err) : resolve())
+    })
+  }
+
   async function setupSessionRefs () {
     await act(async () => {
       await $.users.u1.set({ id: 'u1', name: 'Alice', email: 'alice@example.com', timeZone: 'Europe/Kyiv', profile: { lang: 'en' }, baseLearnLanguages: ['en'] })
@@ -302,5 +310,146 @@ describeCompat('session alias + ref contract', () => {
     await waitFor(() => {
       expect(container.querySelector('#sessionTenantTheme').textContent).toBe('light')
     })
+  })
+
+  it('useSession("tenant") stays in sync when the tenant doc changes via raw ShareDB ops', async () => {
+    await setupSessionRefs()
+    await act(async () => {
+      await $.tenants.t1.subscribe()
+    })
+
+    const Component = observer(() => {
+      const [tenant] = useSession('tenant')
+      return el(Fragment, null,
+        el('span', { id: 'sessionTenantNameRawOp' }, tenant?.name || ''),
+        el('span', { id: 'sessionTenantThemeRawOp' }, tenant?.branding?.theme || '')
+      )
+    })
+
+    const { container } = render(el(Component))
+
+    expect(container.querySelector('#sessionTenantNameRawOp').textContent).toBe('Exxon Mobil')
+    expect(container.querySelector('#sessionTenantThemeRawOp').textContent).toBe('dark')
+
+    await act(async () => {
+      await submitTenantRawOp('t1', [
+        { p: ['name'], od: 'Exxon Mobil', oi: 'Exxon Remote' },
+        { p: ['branding', 'theme'], od: 'dark', oi: 'sunrise' }
+      ])
+    })
+
+    await waitFor(() => {
+      expect($.tenants.t1.name.get()).toBe('Exxon Remote')
+    })
+    await waitFor(() => {
+      expect($.tenants.t1.branding.theme.get()).toBe('sunrise')
+    })
+
+    await waitFor(() => {
+      expect($.session.tenant.get().name).toBe('Exxon Remote')
+    })
+    await waitFor(() => {
+      expect($.session.tenant.get().branding.theme).toBe('sunrise')
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#sessionTenantNameRawOp').textContent).toBe('Exxon Remote')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#sessionTenantThemeRawOp').textContent).toBe('sunrise')
+    })
+  })
+
+  it('tenant ref keeps following the rebound tenant under raw ShareDB ops', async () => {
+    await setupSessionRefs()
+    await act(async () => {
+      await $.tenants.t1.subscribe()
+      await $.tenants.t2.subscribe()
+    })
+
+    const Component = observer(() => {
+      const [tenantName] = useSession('tenant.name')
+      return el('span', { id: 'sessionTenantNameReboundRawOp' }, tenantName || '')
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#sessionTenantNameReboundRawOp').textContent).toBe('Exxon Mobil')
+
+    await act(async () => {
+      $.session.tenantId.set('t2')
+      $.session.ref('tenant', $.tenants.t2)
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('#sessionTenantNameReboundRawOp').textContent).toBe('Chevron')
+    })
+
+    await act(async () => {
+      await submitTenantRawOp('t1', [{ p: ['name'], od: 'Exxon Mobil', oi: 'Exxon Should Not Show' }])
+      await submitTenantRawOp('t2', [{ p: ['name'], od: 'Chevron', oi: 'Chevron Remote' }])
+    })
+
+    await waitFor(() => {
+      expect($.tenants.t1.name.get()).toBe('Exxon Should Not Show')
+    })
+    await waitFor(() => {
+      expect($.tenants.t2.name.get()).toBe('Chevron Remote')
+    })
+    await waitFor(() => {
+      expect($.session.tenant.get().name).toBe('Chevron Remote')
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#sessionTenantNameReboundRawOp').textContent).toBe('Chevron Remote')
+    })
+  })
+
+  it('tenant ref mirrors target field deletion from raw ShareDB ops', async () => {
+    await setupSessionRefs()
+    await act(async () => {
+      await $.tenants.t1.subscribe()
+    })
+
+    const Component = observer(() => {
+      const [tenantTheme] = useSession('tenant.branding.theme')
+      return el('span', { id: 'sessionTenantThemeDeleteRawOp' }, tenantTheme || '')
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#sessionTenantThemeDeleteRawOp').textContent).toBe('dark')
+
+    await act(async () => {
+      await submitTenantRawOp('t1', [{ p: ['branding', 'theme'], od: 'dark' }])
+    })
+
+    await waitFor(() => {
+      expect($.tenants.t1.branding.theme.get()).toBeUndefined()
+    })
+    await waitFor(() => {
+      expect($.session.tenant.branding.theme.get()).toBeUndefined()
+    })
+    await waitFor(() => {
+      expect(container.querySelector('#sessionTenantThemeDeleteRawOp').textContent).toBe('')
+    })
+  })
+
+  it('removeRef freezes alias snapshot even when target changes via raw ShareDB ops', async () => {
+    await setupSessionRefs()
+    await act(async () => {
+      await $.tenants.t1.subscribe()
+    })
+
+    const before = $.session.tenant.get()
+    expect(before?.name).toBe('Exxon Mobil')
+
+    await act(async () => {
+      $.session.removeRef('tenant')
+      await submitTenantRawOp('t1', [{ p: ['name'], od: 'Exxon Mobil', oi: 'Exxon After RemoveRef' }])
+    })
+
+    await waitFor(() => {
+      expect($.tenants.t1.name.get()).toBe('Exxon After RemoveRef')
+    })
+
+    expect($.session.tenant.get().name).toBe('Exxon Mobil')
   })
 })

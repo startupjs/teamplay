@@ -73,7 +73,7 @@ export function set (segments, value, tree = dataTree, eventContext) {
   const shouldEmit = shouldEmitModelEvents(tree, eventContext)
   const prevValue = shouldEmit ? get(segments, getTreeRaw(tree)) : undefined
   let dataNode = writableTree
-  let dataNodeRaw = raw(writableTree)
+  let dataNodeRaw = getTreeRaw(writableTree)
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
     const nextSegment = segments[i + 1]
@@ -84,34 +84,15 @@ export function set (segments, value, tree = dataTree, eventContext) {
       else dataNode[segment] = {}
     }
     dataNode = dataNode[segment]
-    dataNodeRaw = raw(dataNode)
+    dataNodeRaw = getTreeRaw(dataNode)
   }
   const key = segments[segments.length - 1]
-  // handle adding out of bounds empty element to the array
-  if (value == null && Array.isArray(dataNodeRaw) && key >= dataNodeRaw.length) {
-    // inject new undefined elements to the end of the array
-    dataNode.splice(dataNodeRaw.length, key - dataNodeRaw.length + 1,
-      ...Array(key - dataNodeRaw.length + 1).fill(undefined))
-    return
-  }
-  // handle when the value didn't change
-  if (value === dataNodeRaw[key]) return
-  // handle setting undefined value
-  if (value == null) {
-    if (Array.isArray(dataNodeRaw)) {
-      // if parent is an array -- we set array element to undefined
-      // IMPORTANT: JSON serialization will replace `undefined` with `null`
-      //            so if the data will go to the server, it will be serialized as `null`.
-      //            And when it comes back from the server it will be still `null`.
-      //            This can lead to confusion since when you set `undefined` the value
-      //            might end up becoming `null` for seemingly no reason (like in this case).
-      dataNode[key] = undefined
-    } else {
-      // if parent is an object -- we completely delete the property.
-      // Deleting the property is better for the JSON serialization
-      // since JSON does not have `undefined` values and replaces them with `null`.
-      delete dataNode[key]
-    }
+  const keyExists = hasOwnDataKey(dataNodeRaw, key)
+  // Preserve racer local semantics: assigning undefined creates/keeps the slot/key
+  // instead of deleting it, and sparse array writes keep holes intact.
+  if (keyExists && value === dataNodeRaw[key]) return
+  if (value == null || typeof value !== 'object') {
+    dataNode[key] = value
     emitModelEvent(segments, prevValue, { op: 'set' }, tree, eventContext)
     return
   }
@@ -122,6 +103,12 @@ export function set (segments, value, tree = dataTree, eventContext) {
   // (we just set it to this value)
   if (dataNode[key] !== newValue) dataNode[key] = newValue
   emitModelEvent(segments, prevValue, { op: 'set' }, tree, eventContext)
+}
+
+function hasOwnDataKey (node, key) {
+  if (node == null) return false
+  if (Array.isArray(node)) return key in node
+  return Object.prototype.hasOwnProperty.call(node, key)
 }
 
 // Like set(), but always assigns the value without equality checks or delete-on-null behavior
@@ -253,7 +240,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
     if (deleteValue) {
       del(segments.slice(2), newDoc)
     } else {
-      set(segments.slice(2), value, newDoc)
+      set(segments.slice(2), normalizeUndefined(value), newDoc)
     }
     const diff = jsonDiff(oldDoc, newDoc, diffMatchPatch)
     return new Promise((resolve, reject) => {
@@ -326,6 +313,13 @@ export async function setPublicDocReplace (segments, value) {
   }
 
   const relativePath = segments.slice(2)
+  // json0 direct replace ops require every ancestor container to already exist.
+  // Racer-like compat set, however, materializes missing/primitive parents while
+  // descending into the path. Fall back to the older diff-based path when the
+  // direct op would target a non-existent/non-object ancestor.
+  if (!canApplyDirectReplaceOp(docState.snapshot || {}, relativePath)) {
+    return setPublicDoc(segments, value)
+  }
   const previous = getRaw(segments)
   const normalizedPrevious = normalizeUndefined(
     relativePath.length === 0 ? stripIdFields(previous, idFields) : previous
@@ -342,7 +336,13 @@ export async function setPublicDocReplace (segments, value) {
   return new Promise((resolve, reject) => {
     doc.submitOp(op, err => {
       if (err) return reject(err)
-      ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
+      syncLocalDocAfterPublicWrite({
+        collection,
+        docId,
+        doc,
+        idFields,
+        relativePath
+      })
       resolve()
     })
   })
@@ -440,8 +440,45 @@ function ensureLocalDocSyncedWithShareDoc ({
   setReplace([collection, docId], shared)
 }
 
+function syncLocalDocAfterPublicWrite ({
+  collection,
+  docId,
+  doc,
+  idFields,
+  relativePath = []
+}) {
+  if (!Array.isArray(relativePath) || relativePath.length === 0) {
+    ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
+    return
+  }
+  if (isMissingShareDoc(doc)) return
+  if (doc?.data == null) return
+  const shared = raw(doc.data)
+  const nextValue = get(relativePath, shared)
+  setReplace([collection, docId, ...relativePath], clonePublicLocalSyncValue(nextValue))
+}
+
+function clonePublicLocalSyncValue (value) {
+  const rawValue = raw(value)
+  if (rawValue == null || typeof rawValue !== 'object') return rawValue
+  if (typeof globalThis.structuredClone === 'function') {
+    return globalThis.structuredClone(rawValue)
+  }
+  return JSON.parse(JSON.stringify(rawValue))
+}
+
 function normalizeUndefined (value) {
   return value === undefined ? null : value
+}
+
+function canApplyDirectReplaceOp (docSnapshot, relativePath) {
+  if (relativePath.length === 0) return true
+  let node = docSnapshot
+  for (let i = 0; i < relativePath.length - 1; i++) {
+    if (node == null || typeof node !== 'object') return false
+    node = node[relativePath[i]]
+  }
+  return node != null && typeof node === 'object'
 }
 
 function normalizeValueForOp (value) {

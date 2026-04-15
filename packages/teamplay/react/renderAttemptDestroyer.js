@@ -1,37 +1,46 @@
 class RenderAttemptDestroyer {
   constructor () {
     this.fns = []
-    this.compatArmed = false
+    this.compatAttemptCleanupArmed = false
+    this.suspenseGateArmed = false
   }
 
   add (fn, { compat = false } = {}) {
     if (typeof fn !== 'function') return
     this.fns.push(fn)
-    if (compat) this.compatArmed = true
+    if (compat) this.compatAttemptCleanupArmed = true
   }
 
-  armCompat () {
-    this.compatArmed = true
+  armCompatAttemptCleanup () {
+    this.compatAttemptCleanupArmed = true
   }
 
-  getDestructor () {
-    if (!this.compatArmed) {
-      this.reset()
-      return undefined
+  armSuspenseGate () {
+    this.suspenseGateArmed = true
+  }
+
+  consumeThenableHandling () {
+    const shouldRunAttemptCleanup = this.compatAttemptCleanupArmed && this.fns.length > 0
+    const shouldKeepShellAlive = this.suspenseGateArmed || shouldRunAttemptCleanup
+    let destroyAttempt
+    if (shouldRunAttemptCleanup) {
+      const fns = [...this.fns]
+      destroyAttempt = async () => {
+        await Promise.allSettled(fns.map(fn => fn()))
+        fns.length = 0
+      }
     }
-
-    const fns = [...this.fns]
     this.reset()
-    return async () => {
-      if (fns.length === 0) return
-      await Promise.allSettled(fns.map(fn => fn()))
-      fns.length = 0
+    return {
+      shouldKeepShellAlive,
+      destroyAttempt
     }
   }
 
   reset () {
     this.fns.length = 0
-    this.compatArmed = false
+    this.compatAttemptCleanupArmed = false
+    this.suspenseGateArmed = false
   }
 }
 

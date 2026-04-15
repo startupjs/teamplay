@@ -24,8 +24,11 @@ export default function trapRender ({ render, cache, destroy, componentId }) {
         destroyed = true
         throw err
       }
-      const destroyAttempt = renderAttemptDestroyer.getDestructor()
-      if (destroyAttempt) {
+      const {
+        shouldKeepShellAlive,
+        destroyAttempt
+      } = renderAttemptDestroyer.consumeThenableHandling()
+      if (shouldKeepShellAlive) {
         throw Promise.resolve(err).then(() => destroyAttempt?.())
       }
 

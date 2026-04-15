@@ -1,4 +1,5 @@
 import { raw, observe, unobserve } from '@nx-js/observer-util'
+import arrayDiff from 'arraydiff'
 import {
   Signal,
   GETTERS,
@@ -29,11 +30,11 @@ import {
 } from '../dataTree.js'
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
 import { waitForImperativeQueryReady } from './queryReadiness.js'
-import { normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
+import { isModelEventsEnabled, normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
 import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
 import { runInBatch } from '../batchScheduler.js'
-import { runInSilentContext, runInModelEventsSilentContext } from './silentContext.js'
+import { runInSilentContext, runInModelEventsSilentContext, isSilentContextActive } from './silentContext.js'
 import universal$ from '../../react/universal$.js'
 import { getRootContext } from '../rootContext.js'
 import disposeRootContext from '../disposeRootContext.js'
@@ -618,6 +619,7 @@ class SignalCompat extends Signal {
     }
     if (!$to) throw Error('Signal.ref() expects a target path or signal')
     if ($from === $to) return $from
+    ensurePrivateRefSource($from, 'Signal.ref()')
     const store = getRefStore($from)
     const fromPath = $from.path()
     const existing = store.get(fromPath)
@@ -973,14 +975,14 @@ async function diffDeepCompat ($signal, before, after) {
   if (before === after) return
 
   if (Array.isArray(before) && Array.isArray(after)) {
-    if (deepEqualCompat(before, after)) return
-    const changedIndexes = getChangedArrayIndexes(before, after)
-    if (before.length === after.length && changedIndexes.length === 1) {
-      const index = changedIndexes[0]
+    const diff = arrayDiff(before, after, deepEqualCompat)
+    if (!diff.length) return
+    const index = getSingleArrayReplacementIndex(diff)
+    if (index != null) {
       await diffDeepCompat(getChildSignal($signal, index), before[index], after[index])
       return
     }
-    await SignalCompat.prototype.set.call($signal, after)
+    await applyArrayDiffCompat($signal, diff)
     return
   }
 
@@ -1002,14 +1004,14 @@ function diffDeepCompatSync ($signal, before, after) {
   if (before === after) return
 
   if (Array.isArray(before) && Array.isArray(after)) {
-    if (deepEqualCompat(before, after)) return
-    const changedIndexes = getChangedArrayIndexes(before, after)
-    if (before.length === after.length && changedIndexes.length === 1) {
-      const index = changedIndexes[0]
+    const diff = arrayDiff(before, after, deepEqualCompat)
+    if (!diff.length) return
+    const index = getSingleArrayReplacementIndex(diff)
+    if (index != null) {
       diffDeepCompatSync(getChildSignal($signal, index), before[index], after[index])
       return
     }
-    setReplacePrivateCompatSync($signal, after)
+    applyArrayDiffCompatSync($signal, diff)
     return
   }
 
@@ -1034,14 +1036,54 @@ function isDiffableObject (before, after) {
   return true
 }
 
-function getChangedArrayIndexes (before, after) {
-  if (!Array.isArray(before) || !Array.isArray(after)) return []
-  const maxLength = Math.max(before.length, after.length)
-  const changed = []
-  for (let i = 0; i < maxLength; i++) {
-    if (!deepEqualCompat(before[i], after[i])) changed.push(i)
+function getSingleArrayReplacementIndex (diff) {
+  if (!Array.isArray(diff) || diff.length !== 2) return null
+  const first = diff[0]
+  const second = diff[1]
+  if (
+    first instanceof arrayDiff.RemoveDiff &&
+    second instanceof arrayDiff.InsertDiff &&
+    first.index === second.index &&
+    first.howMany === 1 &&
+    second.values.length === 1
+  ) {
+    return first.index
   }
-  return changed
+  return null
+}
+
+async function applyArrayDiffCompat ($signal, diff) {
+  for (const item of diff) {
+    if (item instanceof arrayDiff.InsertDiff) {
+      await arrayInsertOnSignal($signal, item.index, item.values)
+      continue
+    }
+    if (item instanceof arrayDiff.RemoveDiff) {
+      await arrayRemoveOnSignal($signal, item.index, item.howMany)
+      continue
+    }
+    if (item instanceof arrayDiff.MoveDiff) {
+      await arrayMoveOnSignal($signal, item.from, item.to, item.howMany)
+    }
+  }
+}
+
+function applyArrayDiffCompatSync ($signal, diff) {
+  const segments = ensureArrayTarget($signal)
+  const rootId = getOwningRootId($signal)
+  for (const item of diff) {
+    if (item instanceof arrayDiff.InsertDiff) {
+      arrayInsertPrivateData(rootId, segments, item.index, item.values)
+      continue
+    }
+    if (item instanceof arrayDiff.RemoveDiff) {
+      arrayRemovePrivateData(rootId, segments, item.index, item.howMany)
+      continue
+    }
+    if (item instanceof arrayDiff.MoveDiff) {
+      arrayMovePrivateData(rootId, segments, item.from, item.to, item.howMany)
+    }
+  }
 }
 
 function getChildSignal ($parent, key) {
@@ -1060,7 +1102,9 @@ function setReplacePrivateCompatSync ($signal, value) {
     value = normalizeIdFields(value, idFields, segments[1])
   }
   setReplacePrivateData(getOwningRootId($signal), segments, value)
-  mirrorRefMutationFromTarget(segments, value)
+  if (shouldMirrorPrivateRefMutationLocally()) {
+    mirrorRefMutationFromTarget(segments, value)
+  }
 }
 
 function delPrivateCompatSync ($signal, options) {
@@ -1115,12 +1159,16 @@ async function setReplaceOnSignal ($signal, value) {
   }
   if (isPublicCollection(segments[0])) {
     const result = await _setPublicDocReplace(segments, value)
-    mirrorRefMutationFromTarget(segments, value)
+    if (shouldMirrorPublicRefMutationLocally(segments)) {
+      mirrorRefMutationFromTarget(segments, value)
+    }
     return result
   }
   if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
   const result = setReplacePrivateData(getOwningRootId($signal), segments, value)
-  mirrorRefMutationFromTarget(segments, value)
+  if (shouldMirrorPrivateRefMutationLocally()) {
+    mirrorRefMutationFromTarget(segments, value)
+  }
   return result
 }
 
@@ -1250,6 +1298,27 @@ async function stringRemoveOnSignal ($signal, index, howMany) {
 function getOwningRootId ($signal) {
   const $root = getRoot($signal) || $signal
   return $root?.[ROOT_ID]
+}
+
+function ensurePrivateRefSource ($signal, methodName) {
+  const segments = $signal?.[SEGMENTS]
+  const collection = segments?.[0]
+  if (typeof collection === 'string' && /^[_$]/.test(collection)) return
+  throw Error(`${methodName} source path must be in a private collection`)
+}
+
+function shouldMirrorPublicRefMutationLocally (segments) {
+  if (isSilentContextActive()) return true
+  if (!Array.isArray(segments) || segments.length < 2) return true
+  // Public doc ops emit compat model events only when there is an initialized
+  // Doc runtime (subscribed/fetched). Without runtime we must mirror immediately.
+  const transportHash = JSON.stringify([segments[0], segments[1]])
+  return !docSubscriptions.hasRuntime(transportHash)
+}
+
+function shouldMirrorPrivateRefMutationLocally () {
+  if (isSilentContextActive()) return true
+  return !isModelEventsEnabled()
 }
 
 function shallowCopy (value) {
