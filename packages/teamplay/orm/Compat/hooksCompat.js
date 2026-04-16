@@ -115,48 +115,54 @@ export function useAsyncDoc (collection, id, options) {
   return [$doc.get(), $doc]
 }
 
-export function useQuery$ (collection, query, options) {
-  const normalizedQuery = normalizeQuery(query, 'useQuery')
-  const $collection = getCollectionSignal(collection, query, 'useQuery')
-  const normalizedOptions = normalizeSyncSubOptions(options)
-  const $query = useSub($collection, normalizedQuery, normalizedOptions)
-  return isExtraQuery(normalizedQuery) ? $query.extra : $query
+function useSubscribedQuery (collection, query, options, hookName, subscribe) {
+  const normalizedQuery = normalizeQuery(query, hookName)
+  const $collection = getCollectionSignal(collection, query, hookName)
+  const $query = subscribe($collection, normalizedQuery, options)
+  return {
+    normalizedQuery,
+    $collection,
+    $query: getExtraQuerySignal($query, normalizedQuery)
+  }
 }
 
-export function useQuery (collection, query, options) {
-  const $collection = getCollectionSignal(collection, query, 'useQuery')
-  const normalizedOptions = normalizeSyncSubOptions(options)
-  const $query = useSub($collection, normalizeQuery(query, 'useQuery'), normalizedOptions)
-  return [$query.get(), $collection]
-}
-
-export function useAsyncQuery$ (collection, query, options) {
-  const normalizedQuery = normalizeQuery(query, 'useAsyncQuery')
-  const $collection = getCollectionSignal(collection, query, 'useAsyncQuery')
-  const $query = useAsyncSub($collection, normalizedQuery, options)
+function getExtraQuerySignal ($query, normalizedQuery) {
   if (!$query) return $query
   return isExtraQuery(normalizedQuery) ? $query.extra : $query
 }
 
+export function useQuery$ (collection, query, options) {
+  const normalizedOptions = normalizeSyncSubOptions(options)
+  const { $query } = useSubscribedQuery(collection, query, normalizedOptions, 'useQuery', useSub)
+  return $query
+}
+
+export function useQuery (collection, query, options) {
+  const normalizedOptions = normalizeSyncSubOptions(options)
+  const { $collection, $query } = useSubscribedQuery(collection, query, normalizedOptions, 'useQuery', useSub)
+  return [$query.get(), $collection]
+}
+
+export function useAsyncQuery$ (collection, query, options) {
+  const { $query } = useSubscribedQuery(collection, query, options, 'useAsyncQuery', useAsyncSub)
+  return $query
+}
+
 export function useAsyncQuery (collection, query, options) {
-  const $collection = getCollectionSignal(collection, query, 'useAsyncQuery')
-  const $query = useAsyncSub($collection, normalizeQuery(query, 'useAsyncQuery'), options)
+  const { $collection, $query } = useSubscribedQuery(collection, query, options, 'useAsyncQuery', useAsyncSub)
   if (!$query) return [undefined, $collection]
   return [$query.get(), $collection]
 }
 
 export function useBatchQuery$ (collection, query, _options) {
-  const normalizedQuery = normalizeQuery(query, 'useBatchQuery')
-  const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
-  const options = _options ? { ..._options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
-  const $query = useSub($collection, normalizedQuery, options)
-  if (!$query) return $query
-  return isExtraQuery(normalizedQuery) ? $query.extra : $query
+  const options = normalizeBatchSubOptions(_options)
+  const { $query } = useSubscribedQuery(collection, query, options, 'useBatchQuery', useSub)
+  return $query
 }
 
-export function useBatchQuery (collection, query, options) {
-  const $collection = getCollectionSignal(collection, query, 'useBatchQuery')
-  const $query = useBatchQuery$(collection, query, options)
+export function useBatchQuery (collection, query, _options) {
+  const options = normalizeBatchSubOptions(_options)
+  const { $collection, $query } = useSubscribedQuery(collection, query, options, 'useBatchQuery', useSub)
   if (!$query) return [undefined, $collection]
   return [$query.get(), $collection]
 }
@@ -357,6 +363,10 @@ function normalizeSyncSubOptions (options) {
     // Compat sync hooks are strict by design: no deferred snapshots between route/tab switches.
     defer: false
   }
+}
+
+function normalizeBatchSubOptions (options) {
+  return options ? { ...options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
 }
 
 export const __COMPAT_BATCH_READY__ = {

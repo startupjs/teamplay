@@ -1919,6 +1919,36 @@ describe('useQuery / useQuery$', () => {
     expect(container.querySelector('#qNames2').textContent).toBe('q1:John')
   })
 
+  itCompat('useQuery returns the same extra payload as useQuery$ for $count queries', async () => {
+    await act(async () => {
+      $.users.queryCountUser1.set({ _id: 'queryCountUser1', name: 'A' })
+      $.users.queryCountUser2.set({ _id: 'queryCountUser2', name: 'B' })
+    })
+
+    const query = {
+      _id: { $in: ['queryCountUser1', 'queryCountUser2'] },
+      $count: true
+    }
+
+    const Component = observer(() => {
+      const [count] = useQuery('users', query)
+      const $count = useQuery$('users', query)
+      return el('div', { id: 'queryCountValue' }, `${typeof count}:${String(count)}|${typeof $count.get()}:${String($count.get())}`)
+    }, { suspenseProps: { fallback: el('div', { id: 'queryCountValue' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#queryCountValue').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#queryCountValue').textContent).toBe('number:2|number:2')
+    })
+
+    await act(async () => {
+      $.users.queryCountUser1.del()
+      $.users.queryCountUser2.del()
+    })
+  })
+
   it('useQuery warns on undefined query and falls back to non-existent query', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
 
@@ -2184,6 +2214,37 @@ describe('useBatchQuery / useBatchQuery$', () => {
 
     await wait()
     expect(container.querySelector('#bqNames2').textContent).toBe('q1:Mia')
+  })
+
+  itCompat('useBatchQuery returns the same extra payload as useBatchQuery$ for $count queries', async () => {
+    await act(async () => {
+      $.users.batchCountUser1.set({ _id: 'batchCountUser1', name: 'A' })
+      $.users.batchCountUser2.set({ _id: 'batchCountUser2', name: 'B' })
+    })
+
+    const query = {
+      _id: { $in: ['batchCountUser1', 'batchCountUser2'] },
+      $count: true
+    }
+
+    const Component = observer(() => {
+      const [count] = useBatchQuery('users', query)
+      const $count = useBatchQuery$('users', query)
+      useBatch()
+      return el('div', { id: 'batchCountValue' }, `${typeof count}:${String(count)}|${typeof $count.get()}:${String($count.get())}`)
+    }, { suspenseProps: { fallback: el('div', { id: 'batchCountValue' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#batchCountValue').textContent).toBe('Loading...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchCountValue').textContent).toBe('number:2|number:2')
+    })
+
+    await act(async () => {
+      $.users.batchCountUser1.del()
+      $.users.batchCountUser2.del()
+    })
   })
 
   itCompat('aggregate useBatchQuery resolves from query-level docs without waiting for collection docs', async () => {
@@ -2671,6 +2732,37 @@ describe('useAsyncQuery / useAsyncQuery$', () => {
     expect(container.querySelector('#aqNames2').textContent).toBe('Loading...')
     await wait()
     expect(container.querySelector('#aqNames2').textContent).toBe('q1:Ivy')
+  })
+
+  itCompat('useAsyncQuery returns the same extra payload as useAsyncQuery$ for $count queries', async () => {
+    await act(async () => {
+      $.users.asyncCountUser1.set({ _id: 'asyncCountUser1', name: 'A' })
+      $.users.asyncCountUser2.set({ _id: 'asyncCountUser2', name: 'B' })
+    })
+
+    const query = {
+      _id: { $in: ['asyncCountUser1', 'asyncCountUser2'] },
+      $count: true
+    }
+
+    const Component = observer(() => {
+      const [count] = useAsyncQuery('users', query)
+      const $count = useAsyncQuery$('users', query)
+      if (count == null || !$count) return el('div', { id: 'asyncCountValue' }, 'Waiting...')
+      return el('div', { id: 'asyncCountValue' }, `${typeof count}:${String(count)}|${typeof $count.get()}:${String($count.get())}`)
+    })
+
+    const { container } = render(el(Component))
+    expect(container.querySelector('#asyncCountValue').textContent).toBe('Waiting...')
+
+    await waitFor(() => {
+      expect(container.querySelector('#asyncCountValue').textContent).toBe('number:2|number:2')
+    })
+
+    await act(async () => {
+      $.users.asyncCountUser1.del()
+      $.users.asyncCountUser2.del()
+    })
   })
 })
 
