@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { useRef, useDeferredValue } from 'react'
 import sub from '../orm/sub.ts'
@@ -118,7 +117,7 @@ export default function useSub (signal, params, options) {
 
 // version of sub() which works as a react hook and throws promise for Suspense
 export function useSubDeferred (signal, params, { async = false, defer, batch = false, compatAttemptCleanup = false } = {}) {
-  const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
+  const $signalRef = useRef()
   const componentId = useId()
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import Signal from './Signal.ts'
 export { belongsTo, hasMany, hasOne } from './associations.js'

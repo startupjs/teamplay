@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 export const isAggregationFlag = '__isAggregation'
 export const isClientAggregationFlag = '__isClientAggregation'

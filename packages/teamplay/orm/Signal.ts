@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { Signal } from './SignalBase.ts'
 import SignalCompat from './Compat/SignalCompat.js'
@@ -154,7 +153,7 @@ export type FromJsonSchema<TSchema> =
               ? ObjectFromJsonSchema<TSchema>
               : unknown
 
-export type SignalClass<TValue = unknown> = new (segments: PathSegment[]) => Signal<TValue>
+export type SignalClass<TValue = unknown> = new (segments: PathSegment[]) => any & { readonly __valueType?: TValue }
 
 export type SignalInstance<TModel> =
   TModel extends new (...args: any[]) => infer Instance ? Instance : Signal

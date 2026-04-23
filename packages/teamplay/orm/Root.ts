@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import getSignal from './getSignal.ts'
 import disposeRootContext from './disposeRootContext.js'

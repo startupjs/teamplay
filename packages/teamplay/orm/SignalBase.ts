@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment, @typescript-eslint/unbound-method */
 // @ts-nocheck
 /**
  * Implementation of the BaseSignal class which is used as a base class for all signals

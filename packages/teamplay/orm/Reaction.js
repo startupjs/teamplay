@@ -7,7 +7,7 @@ import { getRoot, ROOT_ID } from './Root.ts'
 import { delPrivateData, setPrivateData } from './privateData.js'
 
 // this is `let` to be able to directly change it if needed in tests or in the app
-export let DELETION_DELAY = 0 // eslint-disable-line prefer-const
+export let DELETION_DELAY = 0
 
 class ReactionSubscriptions {
   constructor () {

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 // NOTE:
 //   $() and sub() are currently set to be universal ones which work in both
@@ -24,7 +23,6 @@ import type {
   ZodSchemaSpec
 } from './orm/Signal.ts'
 
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface TeamplayCollections {}
 
 export interface LocalSignalFactory {

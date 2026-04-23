@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { useContext, createContext, useRef, useEffect, useLayoutEffect } from 'react'
 
@@ -82,7 +81,7 @@ export function useDidUpdate (fn, deps) {
       return
     }
     return fnRef.current()
-  }, stableDeps)
+  }, stableDeps) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 export function useOnce (condition, fn) {

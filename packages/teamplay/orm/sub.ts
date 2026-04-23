@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment, @typescript-eslint/no-misused-promises, @typescript-eslint/promise-function-async, no-async-promise-executor, @typescript-eslint/restrict-template-expressions */
 // @ts-nocheck
 import { isAggregationHeader, isAggregationFunction, isClientAggregationFunction } from '@teamplay/utils/aggregation'
 import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } from './Signal.ts'
