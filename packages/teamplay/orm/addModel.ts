@@ -1,7 +1,13 @@
 // @ts-nocheck
+import type { SignalClass } from './Signal.ts'
+import type { TeamplayModels } from '../index.ts'
+
 export const MODELS = {}
 
-export default function addModel (pattern, Model) {
+export default function addModel<TPattern extends string> (
+  pattern: TPattern,
+  Model: TPattern extends keyof TeamplayModels ? TeamplayModels[TPattern] : SignalClass<any>
+) {
   if (typeof pattern !== 'string') throw Error('Model pattern must be a string, e.g. "users.*"')
   if (/\s/.test(pattern)) throw Error('Model pattern can not have spaces')
   if (typeof Model !== 'function') throw Error('Model must be a class')

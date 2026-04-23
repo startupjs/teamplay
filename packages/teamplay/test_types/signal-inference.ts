@@ -27,6 +27,12 @@ type TypeAssertions = [
   SubKeepsDocumentModel,
   UseSubKeepsDocumentModel,
   ZodStructuralInference,
+  NestedPathModelMethod,
+  NestedArrayPathModelMethod,
+  ModelThisNestedString,
+  ModelThisNestedPathMethod,
+  QueryNestedPathModelMethod,
+  AggregationNestedPathModelMethod,
   QuerySignalType,
   QueryIndexDocumentModel,
   QueryIteratorDocumentModel,
@@ -37,8 +43,14 @@ type TypeAssertions = [
   LocalPrimitive,
   LocalNestedString,
   LocalNestedBoolean,
+  LocalArrayMapItem,
+  LocalArrayIteratorItem,
+  LocalArrayFindItem,
   ComputedNumber,
-  ComputedString
+  ComputedString,
+  NullableSchemaInference,
+  NullableObjectSchemaInference,
+  TupleSchemaInference
 ]
 
 const gameSchema = {
@@ -60,6 +72,28 @@ const gameSchema = {
   }
 } as const
 
+const nullableSchema = {
+  type: ['string', 'null']
+} as const
+
+const nullableObjectSchema = {
+  type: ['object', 'null'],
+  required: ['name'],
+  properties: {
+    name: { type: 'string' },
+    score: { type: ['integer', 'null'] }
+  }
+} as const
+
+const tupleSchema = {
+  type: 'array',
+  items: [
+    { type: 'string' },
+    { type: 'integer' },
+    { type: 'boolean' }
+  ]
+} as const
+
 interface Game {
   info: {
     title: string
@@ -76,6 +110,10 @@ class GamesModel extends Signal<Game[]> {
 }
 
 class GameModel extends Signal<Game> {
+  titleFromThis () {
+    return this.info.title.get()
+  }
+
   async start () {
     await this.set({
       info: {
@@ -87,7 +125,23 @@ class GameModel extends Signal<Game> {
   }
 }
 
+class GameInfoModel extends Signal<Game['info']> {
+  titleCase () {
+    return this.title.get().toUpperCase()
+  }
+}
+
+class GameTagModel extends Signal<string> {
+  label () {
+    return `#${this.get()}`
+  }
+}
+
 addModel('games.*', GameModel)
+addModel('games.*.info', GameInfoModel)
+addModel('games.*.info.tags.*', GameTagModel)
+// @ts-expect-error registered model patterns require the matching model class
+addModel('games.*.info', GameTagModel)
 
 interface ZodLikeGame {
   _output?: {
@@ -102,6 +156,11 @@ declare module 'teamplay' {
   interface TeamplayCollections {
     games: JsonSchemaSpec<typeof gameSchema, typeof GamesModel, typeof GameModel>
     zodGames: ZodSchemaSpec<ZodLikeGame, typeof GamesModel, typeof GameModel>
+  }
+
+  interface TeamplayModels {
+    'games.*.info': typeof GameInfoModel
+    'games.*.info.tags.*': typeof GameTagModel
   }
 }
 
@@ -127,6 +186,12 @@ $game.start()
 $game.info.title.set('Chess')
 $game.info.maxPlayers.increment()
 $game.info.tags[0].set('board')
+$game.info.titleCase()
+$game.info.tags[0].label()
+// @ts-expect-error unknown schema fields should not be suggested or accepted
+void $game.info.typo
+// @ts-expect-error setter values should follow schema inference
+$game.info.maxPlayers.set('two')
 
 type GameSchemaInference = Expect<Equal<FromJsonSchema<typeof gameSchema>, Game>>
 type TitleValue = Expect<Equal<ReturnType<typeof $game.info.title.get>, string>>
@@ -135,11 +200,31 @@ type StatusValue = Expect<Equal<ReturnType<typeof $game.status.get>, 'draft' | '
 type SubKeepsDocumentModel = Expect<Equal<AwaitedSub<typeof $subGame>, typeof $game>>
 type UseSubKeepsDocumentModel = Expect<Equal<ReturnType<typeof useHookGame>, typeof $game>>
 type ZodStructuralInference = Expect<Equal<ReturnType<typeof $zodGame.info.title.get>, string>>
+type NestedPathModelMethod = Expect<Equal<ReturnType<typeof $game.info.titleCase>, string>>
+type NestedArrayPathModelMethod = Expect<Equal<ReturnType<typeof $game.info.tags[0]['label']>, string>>
+type ModelThisNestedString = Expect<Equal<ReturnType<GameModel['titleFromThis']>, string>>
+type ModelThisNestedPathMethod = Expect<Equal<ReturnType<GameInfoModel['titleCase']>, string>>
+type NullableSchemaInference = Expect<Equal<FromJsonSchema<typeof nullableSchema>, string | null>>
+type NullableObjectSchemaInference = Expect<Equal<FromJsonSchema<typeof nullableObjectSchema>, { name: string, score?: number | null } | null>>
+type TupleSchemaInference = Expect<Equal<FromJsonSchema<typeof tupleSchema>, readonly [string, number, boolean]>>
 
 const $queryGames = sub($.games, { status: 'draft' })
+sub($.games, { 'info.maxPlayers': { $gte: 2 }, 'info.title': { $regex: /chess/i } })
+sub($.games, { $sort: { 'info.maxPlayers': -1 } })
 function useHookQueryGames () {
   return useSub($.games, { status: 'draft' })
 }
+function useHookQueryByTitle () {
+  return useSub($.games, { 'info.title': 'Chess' })
+}
+// @ts-expect-error collection query params must be an object
+sub($.games, 'draft')
+// @ts-expect-error query params should reject misspelled schema fields
+sub($.games, { stauts: 'draft' })
+// @ts-expect-error query params should reject wrong schema value types
+sub($.games, { 'info.maxPlayers': 'two' })
+// @ts-expect-error query operators should follow the field value type
+sub($.games, { status: { $in: ['draft', 'archived'] } })
 const $$activeGames = aggregation('games', ({ active }: { active: boolean }) => [{ $match: { active } }])
 const $aggregationGames = sub($$activeGames, { active: true })
 function useHookAggregationGames () {
@@ -152,16 +237,20 @@ const $hookAggregationGame = (null as unknown as ReturnType<typeof useHookAggreg
 type QueryGames = AwaitedSub<typeof $queryGames>
 type AggregationGames = AwaitedSub<typeof $aggregationGames>
 type QueryGameItem = QueryGames extends Iterable<infer Item> ? Item : never
-type QuerySignalType = Expect<Equal<QueryGames, QuerySignal<Game, typeof GameModel>>>
+type QuerySignalType = Expect<Equal<QueryGames, QuerySignal<Game, typeof GameModel, readonly ['games', '*']>>>
 type QueryIndexDocumentModel = Expect<Equal<ReturnType<QueryGames[0]['info']['title']['get']>, string>>
 type QueryIteratorDocumentModel = Expect<Equal<ReturnType<QueryGameItem['info']['title']['get']>, string>>
 type HookQueryIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookQueryGame.info.maxPlayers.get>, number>>
 type AggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $aggregationGame.info.title.get>, string>>
 type AggregationDocumentMethods = Expect<Equal<ReturnType<typeof $aggregationGame.start>, Promise<void>>>
 type HookAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookAggregationGame.info.maxPlayers.get>, number>>
+type QueryNestedPathModelMethod = Expect<Equal<ReturnType<typeof $hookQueryGame.info.titleCase>, string>>
+type AggregationNestedPathModelMethod = Expect<Equal<ReturnType<typeof $aggregationGame.info.tags[0]['label']>, string>>
 
 const $score = $(0)
 $score.increment()
+// @ts-expect-error primitive local signals should not expose arbitrary child paths
+void $score.nope
 
 const $scoreboard = $({
   players: [{ name: 'Robot 1', robot: true }],
@@ -171,6 +260,8 @@ const $scoreboard = $({
 $scoreboard.players[0].name.set('Robot 2')
 $scoreboard.players[0].robot.set(false)
 $scoreboard.totalPlayers.increment()
+const localPlayerNames = $scoreboard.players.map($player => $player.name.get())
+const foundLocalPlayer = $scoreboard.players.find($player => $player.robot.get())
 
 const $computedScoreboard = $(() => ({
   nextRound: $scoreboard.round.get() + 1,
@@ -181,6 +272,10 @@ type LocalPrimitive = Expect<Equal<ReturnType<typeof $score.get>, number>>
 const $localPlayer = $scoreboard.players[0]
 type LocalNestedString = Expect<Equal<ReturnType<typeof $localPlayer.name.get>, string>>
 type LocalNestedBoolean = Expect<Equal<ReturnType<typeof $localPlayer.robot.get>, boolean>>
+type LocalPlayerIteratorItem = typeof $scoreboard.players extends Iterable<infer Item> ? Item : never
+type LocalArrayMapItem = Expect<Equal<typeof localPlayerNames[number], string>>
+type LocalArrayIteratorItem = Expect<Equal<ReturnType<LocalPlayerIteratorItem['name']['get']>, string>>
+type LocalArrayFindItem = Expect<Equal<ReturnType<NonNullable<typeof foundLocalPlayer>['robot']['get']>, boolean>>
 type ComputedNumber = Expect<Equal<ReturnType<typeof $computedScoreboard.nextRound.get>, number>>
 type ComputedString = Expect<Equal<ReturnType<typeof $computedScoreboard.firstPlayerName.get>, string>>
 

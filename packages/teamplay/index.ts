@@ -15,15 +15,21 @@ import type {
   FromJsonSchema,
   JsonSchema,
   JsonSchemaSpec,
+  WildcardPathSegment,
+  WildcardSignalPath,
+  AppendPath,
+  QueryParams,
   QuerySignal,
   Signal,
   SignalClass,
+  SignalConstructor,
   TypedSignal,
   ZodLikeSchema,
   ZodSchemaSpec
 } from './orm/Signal.ts'
 
 export interface TeamplayCollections {}
+export interface TeamplayModels {}
 
 export interface LocalSignalFactory {
   <TValue>(factory: () => TValue): TypedSignal<TValue>
@@ -31,7 +37,7 @@ export interface LocalSignalFactory {
 }
 
 export type RootCollections<TCollections extends Record<string, any> = TeamplayCollections> = {
-  readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K]>
+  readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
 }
 
 export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
@@ -43,8 +49,13 @@ export type {
   FromJsonSchema,
   JsonSchema,
   JsonSchemaSpec,
+  WildcardPathSegment,
+  WildcardSignalPath,
+  AppendPath,
+  QueryParams,
   QuerySignal,
   SignalClass,
+  SignalConstructor,
   TypedSignal,
   ZodLikeSchema,
   ZodSchemaSpec

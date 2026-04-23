@@ -8,10 +8,13 @@ import { getRoot } from './Root.ts'
 import isServer from '../utils/isServer.js'
 import type {
   AggregationSignal,
+  AppendPath,
   CollectionDocument,
   CollectionDocumentModel,
   CollectionSignal,
-  QuerySignal
+  QueryParams,
+  QuerySignal,
+  WildcardSignalPath
 } from './Signal.ts'
 import type { TeamplayCollections } from '../index.ts'
 
@@ -19,10 +22,14 @@ export default function sub<TSignal extends Signal<any>> (
   $signal: TSignal
 ): TSignal | Promise<TSignal>
 
-export default function sub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
-  $collection: CollectionSignal<TDocument, any, TDocumentModel>,
-  params: Record<string, any>
-): QuerySignal<TDocument, TDocumentModel> | Promise<QuerySignal<TDocument, TDocumentModel>>
+export default function sub<
+  TDocument,
+  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionPath extends WildcardSignalPath
+> (
+  $collection: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
+  params: QueryParams<TDocument>
+): QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>> | Promise<QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>>>
 
 export default function sub<TCollection extends keyof TeamplayCollections & string> (
   $aggregation: {
@@ -32,10 +39,12 @@ export default function sub<TCollection extends keyof TeamplayCollections & stri
   params?: Record<string, any>
 ): AggregationSignal<
 CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>
+CollectionDocumentModel<TeamplayCollections[TCollection]>,
+readonly [TCollection, '*']
 > | Promise<AggregationSignal<
 CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>
+CollectionDocumentModel<TeamplayCollections[TCollection]>,
+readonly [TCollection, '*']
 >>
 
 export default function sub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
@@ -47,11 +56,6 @@ export default function sub<TDocument, TDocumentModel extends new (...args: any[
   },
   params?: Record<string, any>
 ): AggregationSignal<TDocument, TDocumentModel> | Promise<AggregationSignal<TDocument, TDocumentModel>>
-
-export default function sub<TSignal, TParams> (
-  $signal: TSignal,
-  params?: TParams
-): any
 
 export default function sub ($signal, params) {
   // TODO: temporarily disable support for multiple subscriptions

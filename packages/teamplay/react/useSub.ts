@@ -8,11 +8,14 @@ import renderAttemptDestroyer from './renderAttemptDestroyer.js'
 import { markCompatComponent } from './compatComponentRegistry.js'
 import type {
   AggregationSignal,
+  AppendPath,
   CollectionDocument,
   CollectionDocumentModel,
   CollectionSignal,
+  QueryParams,
   QuerySignal,
-  Signal
+  Signal,
+  WildcardSignalPath
 } from '../orm/Signal.ts'
 import type { TeamplayCollections } from '../index.ts'
 
@@ -37,11 +40,15 @@ export function useAsyncSub<TSignal extends Signal<any>> (
   options?: UseSubOptions
 ): TSignal
 
-export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
-  signal: CollectionSignal<TDocument, any, TDocumentModel>,
-  params: Record<string, any>,
+export function useAsyncSub<
+  TDocument,
+  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionPath extends WildcardSignalPath
+> (
+  signal: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
+  params: QueryParams<TDocument>,
   options?: UseSubOptions
-): QuerySignal<TDocument, TDocumentModel>
+): QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>>
 
 export function useAsyncSub<TCollection extends keyof TeamplayCollections & string> (
   signal: {
@@ -52,7 +59,8 @@ export function useAsyncSub<TCollection extends keyof TeamplayCollections & stri
   options?: UseSubOptions
 ): AggregationSignal<
 CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>
+CollectionDocumentModel<TeamplayCollections[TCollection]>,
+readonly [TCollection, '*']
 >
 
 export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
@@ -66,7 +74,6 @@ export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[
   options?: UseSubOptions
 ): AggregationSignal<TDocument, TDocumentModel>
 
-export function useAsyncSub (signal: any, params?: any, options?: UseSubOptions): any
 export function useAsyncSub (signal, params, options) {
   return useSub(signal, params, { ...options, async: true })
 }
@@ -77,11 +84,15 @@ export default function useSub<TSignal extends Signal<any>> (
   options?: UseSubOptions
 ): TSignal
 
-export default function useSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
-  signal: CollectionSignal<TDocument, any, TDocumentModel>,
-  params: Record<string, any>,
+export default function useSub<
+  TDocument,
+  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionPath extends WildcardSignalPath
+> (
+  signal: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
+  params: QueryParams<TDocument>,
   options?: UseSubOptions
-): QuerySignal<TDocument, TDocumentModel>
+): QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>>
 
 export default function useSub<TCollection extends keyof TeamplayCollections & string> (
   signal: {
@@ -92,7 +103,8 @@ export default function useSub<TCollection extends keyof TeamplayCollections & s
   options?: UseSubOptions
 ): AggregationSignal<
 CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>
+CollectionDocumentModel<TeamplayCollections[TCollection]>,
+readonly [TCollection, '*']
 >
 
 export default function useSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
@@ -106,7 +118,6 @@ export default function useSub<TDocument, TDocumentModel extends new (...args: a
   options?: UseSubOptions
 ): AggregationSignal<TDocument, TDocumentModel>
 
-export default function useSub (signal: any, params?: any, options?: UseSubOptions): any
 export default function useSub (signal, params, options) {
   if (USE_DEFERRED_VALUE) {
     return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks

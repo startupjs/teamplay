@@ -10,13 +10,18 @@ export type {
   FromJsonSchema,
   JsonSchema,
   JsonSchemaSpec,
+  WildcardPathSegment,
+  WildcardSignalPath,
+  AppendPath,
+  QueryParams,
   QuerySignal,
   SignalClass,
+  SignalConstructor,
   TypedSignal,
   ZodLikeSchema,
   ZodSchemaSpec
 } from './Signal.ts'
-export type { RootSignal, TeamplayCollections } from '../index.ts'
+export type { RootSignal, TeamplayCollections, TeamplayModels } from '../index.ts'
 
 export const BaseModel = Signal
 export default BaseModel

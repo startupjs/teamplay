@@ -85,6 +85,7 @@ export interface Signal<TValue = unknown> {
   getId: () => string | number
   getCollection: () => string
   getAssociations: () => readonly unknown[]
+  [Symbol.iterator]: () => IterableIterator<Signal>
   map: <TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult) => TResult[]
   reduce: <TResult>(
     callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
