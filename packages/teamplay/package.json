@@ -22,6 +22,7 @@
   },
   "scripts": {
     "test": "npm run test-server && npm run test-client",
+    "test-types": "tsc -p tsconfig.type-tests.json",
     "test-server": "NODE_OPTIONS=\"--expose-gc\" mocha 'test/[!_]*.js'",
     "test-server-only": "NODE_OPTIONS=\"--expose-gc\" mocha --grep '@only' 'test/[!_]*.js'",
     "test-client": "NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest",

@@ -1,5 +1,46 @@
-// teamplay/index.d.ts
 import type * as React from 'react'
+import type {
+  CollectionSignalFromSpec,
+  CollectionSpec,
+  DocumentSignal,
+  FromJsonSchema,
+  JsonSchema,
+  JsonSchemaSpec,
+  QuerySignal,
+  Signal,
+  SignalClass,
+  TypedSignal,
+  ZodLikeSchema,
+  ZodSchemaSpec
+} from './orm/Signal.js'
+
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface TeamplayCollections {}
+
+export interface LocalSignalFactory {
+  <TValue>(factory: () => TValue): TypedSignal<TValue>
+  <TValue>(value: TValue): TypedSignal<TValue>
+}
+
+export type RootCollections<TCollections extends Record<string, any> = TeamplayCollections> = {
+  readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K]>
+}
+
+export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
+  Signal<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
+
+export type {
+  CollectionSpec,
+  DocumentSignal,
+  FromJsonSchema,
+  JsonSchema,
+  JsonSchemaSpec,
+  QuerySignal,
+  SignalClass,
+  TypedSignal,
+  ZodLikeSchema,
+  ZodSchemaSpec
+}
 
 export interface ObserverOptions {
   /** Wrap the resulting component with forwardRef */
@@ -26,10 +67,9 @@ export function observer<
   options?: ObserverOptions
 ): React.ComponentType<P>
 
-// Keep existing public surface available even if typed loosely for now.
-export const $: any
-export const $root: any
-export const model: any
+export const $: RootSignal
+export const $root: RootSignal
+export const model: RootSignal
 export { default as Signal, SEGMENTS } from './orm/Signal.js'
 export { __DEBUG_SIGNALS_CACHE__, rawSignal, getSignalClass } from './orm/getSignal.js'
 export { default as addModel } from './orm/addModel.js'
@@ -102,5 +142,5 @@ export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/help
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'
 export { accessControl } from '@teamplay/utils/accessControl'
-export function getRootSignal (options?: Record<string, any>): any
+export function getRootSignal<TCollections extends Record<string, any> = TeamplayCollections> (options?: Record<string, any>): RootSignal<TCollections>
 export default $
