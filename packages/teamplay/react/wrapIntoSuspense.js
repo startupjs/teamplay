@@ -1,7 +1,7 @@
 // useSyncExternalStore is used to trigger an update same as in MobX
 // ref: https://github.com/mobxjs/mobx/blob/94bc4997c14152ff5aefcaac64d982d5c21ba51a/packages/mobx-react-lite/src/useObserver.ts
 import { useSyncExternalStore, forwardRef as _forwardRef, memo, createElement as el, Suspense, useId, useRef } from 'react'
-import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.js'
+import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
 
 // TODO: probably add FinalizationRegistry to handle destruction of observer() before it ever mounted.
 //       In such case we might have a memory leak because subscribe() would never fire and would never

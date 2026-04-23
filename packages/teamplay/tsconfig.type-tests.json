@@ -3,6 +3,9 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "checkJs": false,
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -12,9 +15,12 @@
     ]
   },
   "include": [
-    "index.d.ts",
-    "orm/**/*.d.ts",
-    "react/**/*.d.ts",
+    "index.ts",
+    "orm/**/*.ts",
+    "react/**/*.ts",
+    "../schema/index.ts",
+    "../utils/aggregation.ts",
+    "../utils/accessControl.ts",
     "test_types/**/*.ts"
   ]
 }

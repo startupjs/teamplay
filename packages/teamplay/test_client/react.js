@@ -1,8 +1,8 @@
 import { createElement as el, Fragment, useEffect, useLayoutEffect } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { $, useSub, useAsyncSub, observer, sub } from '../index.js'
-import { setTestThrottling, resetTestThrottling } from '../react/useSub.js'
+import { $, useSub, useAsyncSub, observer, sub } from '../index.ts'
+import { setTestThrottling, resetTestThrottling } from '../react/useSub.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import connect from '../connect/test.js'
 

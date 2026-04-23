@@ -1,6 +1,6 @@
 import { afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal, setPublicOnly } from '../index.js'
+import { getRootSignal, setPublicOnly } from '../index.ts'
 import { __resetRootContextsForTests } from '../orm/rootContext.js'
 
 describe('publicOnly', () => {

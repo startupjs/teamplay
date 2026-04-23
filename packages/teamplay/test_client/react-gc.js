@@ -1,7 +1,7 @@
 import { createElement as el, Fragment } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, render } from '@testing-library/react'
-import { $, useSub, observer, sub, aggregation } from '../index.js'
+import { $, useSub, observer, sub, aggregation } from '../index.ts'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'

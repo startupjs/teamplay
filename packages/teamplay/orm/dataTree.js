@@ -1,7 +1,7 @@
 import { observable, raw } from '@nx-js/observer-util'
 import jsonDiff from 'json0-ot-diff'
 import diffMatchPatch from 'diff-match-patch'
-import { getConnection } from './connection.js'
+import { getConnection } from './connection.ts'
 import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.js'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'

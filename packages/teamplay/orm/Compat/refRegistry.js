@@ -1,4 +1,4 @@
-import { GLOBAL_ROOT_ID } from '../Root.js'
+import { GLOBAL_ROOT_ID } from '../Root.ts'
 import { normalizeRootId } from '../rootScope.js'
 import { getRootContext, getRootContexts } from '../rootContext.js'
 

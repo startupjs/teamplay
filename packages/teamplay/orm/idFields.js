@@ -1,4 +1,4 @@
-import { findModel } from './addModel.js'
+import { findModel } from './addModel.ts'
 
 export const DEFAULT_ID_FIELDS = ['_id']
 

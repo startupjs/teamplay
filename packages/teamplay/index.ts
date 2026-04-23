@@ -1,28 +1,81 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 // NOTE:
 //   $() and sub() are currently set to be universal ones which work in both
 //   plain JS and React environments. In React they are tied to the observer() HOC.
 //   This is done to simplify the API.
 //   In future, we might want to separate the plain JS and React APIs
-import { getRootSignal as _getRootSignal, GLOBAL_ROOT_ID } from './orm/Root.js'
+import type * as React from 'react'
+import { getRootSignal as _getRootSignal, GLOBAL_ROOT_ID } from './orm/Root.ts'
 import universal$ from './react/universal$.js'
 import useApi from './react/useApi.js'
+import type {
+  CollectionSignalFromSpec,
+  CollectionSpec,
+  DocumentSignal,
+  FromJsonSchema,
+  JsonSchema,
+  JsonSchemaSpec,
+  QuerySignal,
+  Signal,
+  SignalClass,
+  TypedSignal,
+  ZodLikeSchema,
+  ZodSchemaSpec
+} from './orm/Signal.ts'
 
-export { default as Signal, SEGMENTS } from './orm/Signal.js'
-export { __DEBUG_SIGNALS_CACHE__, rawSignal, getSignalClass } from './orm/getSignal.js'
-export { default as addModel } from './orm/addModel.js'
-export { default as signal } from './orm/getSignal.js'
-export { GLOBAL_ROOT_ID } from './orm/Root.js'
-export const $ = _getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
-export const $root = $
-export const model = $
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface TeamplayCollections {}
+
+export interface LocalSignalFactory {
+  <TValue>(factory: () => TValue): TypedSignal<TValue>
+  <TValue>(value: TValue): TypedSignal<TValue>
+}
+
+export type RootCollections<TCollections extends Record<string, any> = TeamplayCollections> = {
+  readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K]>
+}
+
+export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
+  Signal<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
+
+export type {
+  CollectionSpec,
+  DocumentSignal,
+  FromJsonSchema,
+  JsonSchema,
+  JsonSchemaSpec,
+  QuerySignal,
+  SignalClass,
+  TypedSignal,
+  ZodLikeSchema,
+  ZodSchemaSpec
+}
+
+export interface ObserverOptions {
+  forwardRef?: boolean
+  cache?: boolean
+  throttle?: number | boolean
+  defer?: boolean | number
+  suspenseProps?: React.ComponentProps<typeof React.Suspense>
+}
+
+export { default as Signal, SEGMENTS } from './orm/Signal.ts'
+export { __DEBUG_SIGNALS_CACHE__, rawSignal, getSignalClass } from './orm/getSignal.ts'
+export { default as addModel } from './orm/addModel.ts'
+export { default as signal } from './orm/getSignal.ts'
+export { GLOBAL_ROOT_ID } from './orm/Root.ts'
+export const $: RootSignal = _getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ }) as RootSignal
+export const $root: RootSignal = $
+export const model: RootSignal = $
 export default $
-export { default as sub } from './orm/sub.js'
+export { default as sub } from './orm/sub.ts'
 export {
   default as useSub,
   useAsyncSub,
   setUseDeferredValue as __setUseDeferredValue,
   setDefaultDefer as __setDefaultDefer
-} from './react/useSub.js'
+} from './react/useSub.ts'
 export {
   default as useSuspendMemo,
   useSuspendMemoByKey
@@ -68,7 +121,7 @@ export {
   useDidUpdate,
   useOnce,
   useSyncEffect
-} from './react/helpers.js'
+} from './react/helpers.ts'
 export {
   connection,
   setConnection,
@@ -77,9 +130,9 @@ export {
   setDefaultFetchOnly,
   publicOnly,
   setPublicOnly
-} from './orm/connection.js'
+} from './orm/connection.ts'
 export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.js'
-export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.js'
+export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.ts'
 export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'
 export { accessControl } from '@teamplay/utils/accessControl'
@@ -117,9 +170,9 @@ export function initLocalCollection (name) {
 
 export { useApi }
 
-export function getRootSignal (options) {
+export function getRootSignal<TCollections extends Record<string, any> = TeamplayCollections> (options?: Record<string, any>): RootSignal<TCollections> {
   return _getRootSignal({
     rootFunction: universal$,
     ...options
-  })
+  }) as RootSignal<TCollections>
 }

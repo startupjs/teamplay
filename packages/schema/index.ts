@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 export { default as ajv } from './lib/ajv.js'
 export { default as transformSchema } from './lib/transformSchema.js'
 export { onTransformSchema, setOnTransformSchema } from './lib/onTransformSchema.js'

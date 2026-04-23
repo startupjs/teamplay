@@ -1,5 +1,5 @@
-import { getRootSignal, GLOBAL_ROOT_ID } from '../Root.js'
-import useSub, { useAsyncSub } from '../../react/useSub.js'
+import { getRootSignal, GLOBAL_ROOT_ID } from '../Root.ts'
+import useSub, { useAsyncSub } from '../../react/useSub.ts'
 import universal$ from '../../react/universal$.js'
 import * as promiseBatcher from '../../react/promiseBatcher.js'
 import { isCompatEnv } from '../compatEnv.js'

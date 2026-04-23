@@ -1,7 +1,7 @@
 import { createElement as el, Fragment } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { $, useSub, useAsyncSub, observer, sub, aggregation } from '../index.js'
+import { $, useSub, useAsyncSub, observer, sub, aggregation } from '../index.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import connect from '../connect/test.js'
 

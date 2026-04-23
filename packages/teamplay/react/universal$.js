@@ -1,5 +1,5 @@
 import $ from '../orm/$.js'
-import { useCache } from './helpers.js'
+import { useCache } from './helpers.ts'
 import executionContextTracker from './executionContextTracker.js'
 
 // universal versions of $() which work as a plain function or as a react hook

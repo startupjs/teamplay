@@ -1,6 +1,6 @@
 import { observable } from '@nx-js/observer-util'
 import { normalizeRootId } from './rootScope.js'
-import { getDefaultFetchOnly } from './connection.js'
+import { getDefaultFetchOnly } from './connection.ts'
 
 const ROOT_CONTEXTS = new Map()
 const CLOSED_ROOT_CONTEXTS = new Set()

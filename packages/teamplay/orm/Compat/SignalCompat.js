@@ -8,9 +8,9 @@ import {
   isPublicCollection,
   isPublicCollectionSignal,
   isPublicDocumentSignal
-} from '../SignalBase.js'
-import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.js'
-import { isPrivateMutationForbidden } from '../connection.js'
+} from '../SignalBase.ts'
+import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.ts'
+import { isPrivateMutationForbidden } from '../connection.ts'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import { isCompatEnv } from './compatEnv.js'
 
 export let connection

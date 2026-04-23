@@ -1,5 +1,5 @@
 import executionContextTracker from './executionContextTracker.js'
-import { useCache, useId } from './helpers.js'
+import { useCache, useId } from './helpers.ts'
 import { markCompatComponent } from './compatComponentRegistry.js'
 import renderAttemptDestroyer from './renderAttemptDestroyer.js'
 

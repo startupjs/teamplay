@@ -1,12 +1,14 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import Cache from './Cache.js'
-import Signal, { SEGMENTS, regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.js'
-import { findModel } from './addModel.js'
+import Signal, { SEGMENTS, regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.ts'
+import { findModel } from './addModel.ts'
 import { LOCAL } from './$.js'
-import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
+import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.ts'
 import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
 import { isCompatEnv } from './compatEnv.js'
-import { getConnection } from './connection.js'
+import { getConnection } from './connection.ts'
 import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
 import { getSignalIdentityHash } from './rootScope.js'
 import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.js'

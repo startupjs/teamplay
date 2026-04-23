@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import { useContext, createContext, useRef, useEffect, useLayoutEffect } from 'react'
 
 export const ComponentMetaContext = createContext({})

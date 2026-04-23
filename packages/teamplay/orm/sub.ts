@@ -1,10 +1,58 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment, @typescript-eslint/no-misused-promises, @typescript-eslint/promise-function-async, no-async-promise-executor, @typescript-eslint/restrict-template-expressions */
+// @ts-nocheck
 import { isAggregationHeader, isAggregationFunction, isClientAggregationFunction } from '@teamplay/utils/aggregation'
-import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } from './Signal.js'
+import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } from './Signal.ts'
 import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
-import { getRoot } from './Root.js'
+import { getRoot } from './Root.ts'
 import isServer from '../utils/isServer.js'
+import type {
+  AggregationSignal,
+  CollectionDocument,
+  CollectionDocumentModel,
+  CollectionSignal,
+  QuerySignal
+} from './Signal.ts'
+import type { TeamplayCollections } from '../index.ts'
+
+export default function sub<TSignal extends Signal<any>> (
+  $signal: TSignal
+): TSignal | Promise<TSignal>
+
+export default function sub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
+  $collection: CollectionSignal<TDocument, any, TDocumentModel>,
+  params: Record<string, any>
+): QuerySignal<TDocument, TDocumentModel> | Promise<QuerySignal<TDocument, TDocumentModel>>
+
+export default function sub<TCollection extends keyof TeamplayCollections & string> (
+  $aggregation: {
+    readonly __isAggregation: true
+    readonly collection: TCollection
+  },
+  params?: Record<string, any>
+): AggregationSignal<
+CollectionDocument<TeamplayCollections[TCollection]>,
+CollectionDocumentModel<TeamplayCollections[TCollection]>
+> | Promise<AggregationSignal<
+CollectionDocument<TeamplayCollections[TCollection]>,
+CollectionDocumentModel<TeamplayCollections[TCollection]>
+>>
+
+export default function sub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
+  $aggregation: {
+    readonly __isAggregation: true
+    readonly collection: string
+    readonly __teamplayDocument?: TDocument
+    readonly __teamplayDocumentModel?: TDocumentModel
+  },
+  params?: Record<string, any>
+): AggregationSignal<TDocument, TDocumentModel> | Promise<AggregationSignal<TDocument, TDocumentModel>>
+
+export default function sub<TSignal, TParams> (
+  $signal: TSignal,
+  params?: TParams
+): any
 
 export default function sub ($signal, params) {
   // TODO: temporarily disable support for multiple subscriptions
@@ -40,7 +88,7 @@ export default function sub ($signal, params) {
       throw Error(ERRORS.gotAggregationFunction($signal))
     }
   } else if (typeof $signal === 'function' && !($signal instanceof Signal)) {
-    return api$($signal, params)
+    api$($signal, params)
   } else {
     throw Error('Invalid args passed for sub()')
   }
@@ -64,7 +112,7 @@ function getAggregationFromFunction (fn, collection, params) {
 function doc$ ($doc) {
   const promise = docSubscriptions.subscribe($doc)
   if (!promise) return $doc
-  return new Promise(resolve => promise.then(() => resolve($doc)))
+  return new Promise(resolve => promise.then(() => { resolve($doc) }))
 }
 
 function query$ ($collection, params) {
@@ -75,14 +123,14 @@ function query$ ($collection, params) {
   const $query = getQuerySignal(collectionName, params, signalOptions)
   const promise = querySubscriptions.subscribe($query)
   if (!promise) return $query
-  return new Promise(resolve => promise.then(() => resolve($query)))
+  return new Promise(resolve => promise.then(() => { resolve($query) }))
 }
 
 function aggregation$ (collectionName, params, signalOptions) {
   const $aggregationQuery = getAggregationSignal(collectionName, params, signalOptions)
   const promise = aggregationSubscriptions.subscribe($aggregationQuery)
   if (!promise) return $aggregationQuery
-  return new Promise(resolve => promise.then(() => resolve($aggregationQuery)))
+  return new Promise(resolve => promise.then(() => { resolve($aggregationQuery) }))
 }
 
 function api$ (fn, args) {

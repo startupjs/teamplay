@@ -1,9 +1,9 @@
 import { observe, unobserve } from '@nx-js/observer-util'
-import { SEGMENTS } from './Signal.js'
+import { SEGMENTS } from './Signal.ts'
 import { LOCAL } from './Value.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 import { scheduleReaction } from './batchScheduler.js'
-import { getRoot, ROOT_ID } from './Root.js'
+import { getRoot, ROOT_ID } from './Root.ts'
 import { delPrivateData, setPrivateData } from './privateData.js'
 
 // this is `let` to be able to directly change it if needed in tests or in the app

@@ -1,4 +1,6 @@
-import getSignal from './getSignal.js'
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
+import getSignal from './getSignal.ts'
 import disposeRootContext from './disposeRootContext.js'
 import { getRootContext, reviveRootContext } from './rootContext.js'
 import { isGlobalRootId, normalizeRootId } from './rootScope.js'

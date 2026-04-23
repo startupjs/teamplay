@@ -1,7 +1,7 @@
 import { it, describe, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub, aggregation } from '../index.js'
+import { $, sub, aggregation } from '../index.ts'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import connect from '../connect/test.js'
 

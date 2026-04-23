@@ -44,10 +44,10 @@ import {
   useDidUpdate,
   useOnce,
   useSyncEffect
-} from '../index.js'
-import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.js'
+} from '../index.ts'
+import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.ts'
 import { __resetSuspendMemoForTests } from '../react/useSuspendMemo.js'
-import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.js'
+import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.ts'
 import trapRender from '../react/trapRender.js'
 import renderAttemptDestroyer from '../react/renderAttemptDestroyer.js'
 import {
@@ -57,7 +57,7 @@ import {
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
-import { SEGMENTS } from '../orm/Signal.js'
+import { SEGMENTS } from '../orm/Signal.ts'
 import { docSubscriptions } from '../orm/Doc.js'
 import { PARAMS as QUERY_PARAMS, querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions, AGGREGATIONS } from '../orm/Aggregation.js'

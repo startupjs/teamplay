@@ -1,5 +1,5 @@
 import { getRefLinks } from './refRegistry.js'
-import { GLOBAL_ROOT_ID } from '../Root.js'
+import { GLOBAL_ROOT_ID } from '../Root.ts'
 
 export const REF_TARGET = Symbol.for('teamplay.compat.refTarget')
 

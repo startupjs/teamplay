@@ -1,6 +1,6 @@
 import { aggregationSubscriptions } from './Aggregation.js'
 import { docSubscriptions } from './Doc.js'
-import { purgeSignalHashes } from './getSignal.js'
+import { purgeSignalHashes } from './getSignal.ts'
 import { querySubscriptions } from './Query.js'
 import {
   deleteRootContext,

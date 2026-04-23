@@ -1,12 +1,12 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub, aggregation } from '../index.js'
+import { $, sub, aggregation } from '../index.ts'
 import { get as _get, del as _del } from '../orm/dataTree.js'
-import { getConnection } from '../orm/connection.js'
+import { getConnection } from '../orm/connection.ts'
 import { hashQuery } from '../orm/Query.js'
 import { getPrivateData } from '../orm/privateData.js'
-import { getRoot, ROOT_ID } from '../orm/Root.js'
+import { getRoot, ROOT_ID } from '../orm/Root.ts'
 import connect from '../connect/test.js'
 
 before(connect)

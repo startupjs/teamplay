@@ -1,6 +1,6 @@
 import { describe, it, before, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { $, getConnection, sub } from '../index.js'
+import { $, getConnection, sub } from '../index.ts'
 import connect from '../connect/test.js'
 import { docSubscriptions } from '../orm/Doc.js'
 

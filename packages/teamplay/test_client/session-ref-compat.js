@@ -1,9 +1,9 @@
 import { createElement as el, Fragment } from 'react'
 import { describe, it, beforeAll as before, afterEach, expect } from '@jest/globals'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { $, observer, useSession } from '../index.js'
+import { $, observer, useSession } from '../index.ts'
 import connect from '../connect/test.js'
-import { getConnection } from '../orm/connection.js'
+import { getConnection } from '../orm/connection.ts'
 import { del as _del } from '../orm/dataTree.js'
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'

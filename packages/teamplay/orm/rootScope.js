@@ -1,4 +1,4 @@
-import { GLOBAL_ROOT_ID } from './Root.js'
+import { GLOBAL_ROOT_ID } from './Root.ts'
 
 const REGEX_PRIVATE_COLLECTION = /^[_$]/
 

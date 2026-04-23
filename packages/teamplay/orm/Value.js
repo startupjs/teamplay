@@ -1,5 +1,5 @@
-import { SEGMENTS } from './Signal.js'
-import { getRoot, ROOT_ID } from './Root.js'
+import { SEGMENTS } from './Signal.ts'
+import { getRoot, ROOT_ID } from './Root.ts'
 import { delPrivateData, setPrivateData } from './privateData.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
 

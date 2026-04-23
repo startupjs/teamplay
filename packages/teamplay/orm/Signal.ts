@@ -1,8 +1,8 @@
-export const SEGMENTS: unique symbol
-export const ARRAY_METHOD: unique symbol
-export const GET: unique symbol
-export const GETTERS: unique symbol
-export const DEFAULT_GETTERS: readonly string[]
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
+import { Signal } from './SignalBase.ts'
+import SignalCompat from './Compat/SignalCompat.js'
+import { isCompatEnv } from './compatEnv.js'
 
 export type PathSegment = string | number
 export type SignalPath = readonly PathSegment[]
@@ -278,58 +278,23 @@ export type CollectionSignalFromSpec<TSpec> =
       ? CollectionSignal<FromJsonSchema<TSpec>>
       : CollectionSignal
 
-export interface Signal<TValue = unknown> {
-  (...args: never[]): unknown
-  readonly __valueType?: TValue
-  readonly [SEGMENTS]: PathSegment[]
-}
+export {
+  Signal,
+  SEGMENTS,
+  ARRAY_METHOD,
+  GET,
+  GETTERS,
+  DEFAULT_GETTERS,
+  regularBindings,
+  extremelyLateBindings,
+  isPublicCollectionSignal,
+  isPublicDocumentSignal,
+  isPublicCollection,
+  isPrivateCollection
+} from './SignalBase.ts'
 
-export class Signal<TValue = unknown> extends Function {
-  static ID_FIELDS: readonly string[]
-  static associations: readonly unknown[]
-  static addAssociation (association: object): void
-  static [GETTERS]: readonly string[]
+export { SignalCompat }
 
-  constructor (segments: PathSegment[])
+const DefaultSignal = (isCompatEnv() ? SignalCompat : Signal) as typeof Signal
 
-  path (): string
-  leaf (): string
-  parent (levels?: number): AnySignal
-  id (): string
-  batch<TResult>(fn?: () => TResult): TResult | undefined
-  get (): TValue
-  getIds (): Array<string | number>
-  peek (): TValue
-  getId (): string | number
-  getCollection (): string
-  getAssociations (): readonly unknown[]
-  map<TResult>(callback: (value: AnySignal, index: number, array: AnySignal[]) => TResult): TResult[]
-  reduce<TResult>(
-    callback: (previousValue: TResult, currentValue: AnySignal, currentIndex: number, array: AnySignal[]) => TResult,
-    initialValue: TResult
-  ): TResult
-  find (predicate: (value: AnySignal, index: number, obj: AnySignal[]) => unknown): AnySignal | undefined
-  set (value: TValue): Promise<void>
-  assign (value: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never): Promise<void>
-  push (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown>
-  pop (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown>
-  unshift (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown>
-  shift (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown>
-  insert (index: number, values: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | Item[] : unknown): Promise<unknown>
-  remove (index: number, howMany?: number): Promise<unknown>
-  move (from: number, to: number, howMany?: number): Promise<unknown>
-  stringInsert (index: number, text: string): Promise<unknown>
-  stringRemove (index: number, howMany?: number): Promise<unknown>
-  increment (value?: number): Promise<number>
-  add (value: unknown): Promise<string>
-  del (): Promise<void>
-}
-
-export const regularBindings: ProxyHandler<Signal>
-export const extremelyLateBindings: ProxyHandler<Signal>
-export function isPublicCollectionSignal ($signal: unknown): boolean
-export function isPublicDocumentSignal ($signal: unknown): boolean
-export function isPublicCollection (collectionName: unknown): boolean
-export function isPrivateCollection (collectionName: unknown): boolean
-
-export { Signal as default }
+export default DefaultSignal

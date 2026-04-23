@@ -1,6 +1,6 @@
 import Socket from '@teamplay/channel'
 import Connection from './sharedbConnection.cjs'
-import { connection, setConnection } from '../orm/connection.js'
+import { connection, setConnection } from '../orm/connection.ts'
 
 export default function connect (options) {
   if (connection) return

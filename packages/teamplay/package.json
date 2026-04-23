@@ -3,10 +3,17 @@
   "version": "0.4.0-alpha.100",
   "description": "Full-stack signals ORM with multiplayer",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
+  "types": "index.ts",
   "exports": {
-    ".": "./index.js",
-    "./orm": "./orm/index.js",
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./orm": {
+      "types": "./orm/index.ts",
+      "default": "./orm/index.ts"
+    },
     "./connect": "./connect/index.js",
     "./server": "./server.js",
     "./connect-test": "./connect/test.js",
@@ -75,7 +82,12 @@
     }
   },
   "jest": {
-    "transform": {},
+    "transform": {
+      "^.+\\.ts$": "./test/ts-transform.cjs"
+    },
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
     "testEnvironment": "jsdom",
     "testRegex": "test_client/.*\\.jsx?$",
     "testPathIgnorePatterns": [

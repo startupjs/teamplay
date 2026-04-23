@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment, @typescript-eslint/unbound-method */
+// @ts-nocheck
 /**
  * Implementation of the BaseSignal class which is used as a base class for all signals
  * and can be extended to create custom models for a particular path pattern of the data tree.
@@ -29,12 +31,12 @@ import {
   stringInsertPublic as _stringInsertPublic,
   stringRemovePublic as _stringRemovePublic
 } from './dataTree.js'
-import getSignal, { rawSignal } from './getSignal.js'
+import getSignal, { rawSignal } from './getSignal.ts'
 import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
-import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.js'
-import { isPrivateMutationForbidden } from './connection.js'
+import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.ts'
+import { isPrivateMutationForbidden } from './connection.ts'
 import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
@@ -71,12 +73,47 @@ export const GET = Symbol('get the value of the signal - either observed or raw'
 export const GETTERS = Symbol('get the list of this signal\'s getters')
 export const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds', 'getExtra', 'getCollection']
 
-export class Signal extends Function {
+export interface Signal<TValue = unknown> {
+  readonly [SEGMENTS]: Array<string | number>
+  path: () => string
+  leaf: () => string
+  parent: (levels?: number) => Signal
+  id: () => string
+  batch: <TResult>(fn?: () => TResult) => TResult | undefined
+  get: () => TValue
+  getIds: () => Array<string | number>
+  peek: () => TValue
+  getId: () => string | number
+  getCollection: () => string
+  getAssociations: () => readonly unknown[]
+  map: <TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult) => TResult[]
+  reduce: <TResult>(
+    callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
+    initialValue: TResult
+  ) => TResult
+  find: (predicate: (value: Signal, index: number, obj: Signal[]) => unknown) => Signal | undefined
+  set: (value: TValue) => Promise<void>
+  assign: (value: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never) => Promise<void>
+  push: (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown) => Promise<unknown>
+  pop: () => Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown>
+  unshift: (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown) => Promise<unknown>
+  shift: () => Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown>
+  insert: (index: number, values: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | Item[] : unknown) => Promise<unknown>
+  remove: (index: number, howMany?: number) => Promise<unknown>
+  move: (from: number, to: number, howMany?: number) => Promise<unknown>
+  stringInsert: (index: number, text: string) => Promise<unknown>
+  stringRemove: (index: number, howMany?: number) => Promise<unknown>
+  increment: (value?: number) => Promise<number>
+  add: (value: unknown) => Promise<string>
+  del: () => Promise<void>
+}
+
+export class Signal<TValue = unknown> extends Function {
   static ID_FIELDS = DEFAULT_ID_FIELDS
   static [GETTERS] = DEFAULT_GETTERS
   static associations = []
 
-  static addAssociation (association) {
+  static addAssociation (association: object): void {
     if (!association || typeof association !== 'object') {
       throw Error('Signal.addAssociation() expects an association object')
     }
@@ -87,25 +124,25 @@ export class Signal extends Function {
     this.associations = own.concat(association)
   }
 
-  constructor (segments) {
+  constructor (segments: Array<string | number>) {
     if (!Array.isArray(segments)) throw Error('Signal constructor expects an array of segments')
     super()
     this[SEGMENTS] = segments
   }
 
-  path () {
+  path (): string {
     if (arguments.length > 0) throw Error('Signal.path() does not accept any arguments')
     return this[SEGMENTS].join('.')
   }
 
-  leaf () {
+  leaf (): string {
     if (arguments.length > 0) throw Error('Signal.leaf() does not accept any arguments')
     const segments = this[SEGMENTS]
     if (segments.length === 0) return ''
     return String(segments[segments.length - 1])
   }
 
-  parent (levels = 1) {
+  parent (levels = 1): Signal {
     if (arguments.length > 1) throw Error('Signal.parent() expects a single argument')
     if (arguments.length === 0) levels = 1
     if (typeof levels !== 'number' || !Number.isFinite(levels) || !Number.isInteger(levels)) {
@@ -124,18 +161,18 @@ export class Signal extends Function {
     return $cursor
   }
 
-  id () {
+  id (): string {
     return uuid()
   }
 
-  batch (fn) {
+  batch<TResult>(fn?: () => TResult): TResult | undefined {
     if (arguments.length > 1) throw Error('Signal.batch() expects a single argument')
     if (fn == null) return
     if (typeof fn !== 'function') throw Error('Signal.batch() expects a function argument')
     return runInBatch(fn)
   }
 
-  [GET] (method) {
+  [GET] (method: (segments: Array<string | number>) => TValue): TValue {
     if (arguments.length > 1) throw Error('Signal[GET]() only accepts method as an argument')
     if (this[SEGMENTS].length === 0) {
       const $root = getRoot(this) || this
@@ -152,7 +189,7 @@ export class Signal extends Function {
     return method(getStorageSegmentsForSignal(this))
   }
 
-  get () {
+  get (): TValue {
     if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
     if (this[SEGMENTS].length === 3 && this[SEGMENTS][0] === QUERIES && this[SEGMENTS][2] === 'ids') {
       // TODO: This should never happen, but in reality it happens sometimes
@@ -170,7 +207,7 @@ export class Signal extends Function {
     return this[GET](_get)
   }
 
-  getIds () {
+  getIds (): Array<string | number> {
     if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
     if (this[IS_QUERY]) {
       const $root = getRoot(this) || this
@@ -196,12 +233,12 @@ export class Signal extends Function {
     }
   }
 
-  peek () {
+  peek (): TValue {
     if (arguments.length > 0) throw Error('Signal.peek() does not accept any arguments')
     return this[GET](getRaw)
   }
 
-  getId () {
+  getId (): string | number {
     if (this[SEGMENTS].length === 0) throw Error('Can\'t get the id of the root signal')
     if (this[SEGMENTS].length === 1) throw Error('Can\'t get the id of a collection')
     if (this[SEGMENTS][0] === AGGREGATIONS && this[SEGMENTS].length === 3) {
@@ -213,7 +250,7 @@ export class Signal extends Function {
     return this[SEGMENTS][this[SEGMENTS].length - 1]
   }
 
-  getCollection () {
+  getCollection (): string {
     if (this[SEGMENTS].length === 0) throw Error('Can\'t get the collection of the root signal')
     if (this[SEGMENTS][0] === AGGREGATIONS) {
       return getAggregationCollectionName(this[SEGMENTS])
@@ -228,12 +265,12 @@ export class Signal extends Function {
     return this[SEGMENTS][0]
   }
 
-  getAssociations () {
+  getAssociations (): readonly unknown[] {
     const $raw = rawSignal(this) || this
     return $raw.constructor.associations || []
   }
 
-  * [Symbol.iterator] () {
+  * [Symbol.iterator] (): IterableIterator<Signal> {
     if (this[IS_QUERY]) {
       const $root = getRoot(this) || this
       const ids = getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'ids'])
@@ -253,7 +290,7 @@ export class Signal extends Function {
     }
   }
 
-  [ARRAY_METHOD] (method, nonArrayReturnValue, ...args) {
+  [ARRAY_METHOD] (method: string, nonArrayReturnValue: unknown, ...args: unknown[]): unknown {
     if (this[IS_QUERY]) {
       const collection = this[SEGMENTS][0]
       const $root = getRoot(this) || this
@@ -277,19 +314,25 @@ export class Signal extends Function {
     )[method](...args)
   }
 
-  map (...args) {
+  map<TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult): TResult[] {
+    const args = [callback]
     return this[ARRAY_METHOD]('map', [], ...args)
   }
 
-  reduce (...args) {
+  reduce<TResult>(
+    callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
+    initialValue: TResult
+  ): TResult {
+    const args = [callback, initialValue]
     return this[ARRAY_METHOD]('reduce', undefined, ...args)
   }
 
-  find (...args) {
+  find (predicate: (value: Signal, index: number, obj: Signal[]) => unknown): Signal | undefined {
+    const args = [predicate]
     return this[ARRAY_METHOD]('find', undefined, ...args)
   }
 
-  async set (value) {
+  async set (value: TValue): Promise<void> {
     if (arguments.length > 1) throw Error('Signal.set() expects a single argument')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
     const idFields = getIdFieldsForSegments(this[SEGMENTS])
@@ -305,7 +348,7 @@ export class Signal extends Function {
     }
   }
 
-  async assign (value) {
+  async assign (value: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never): Promise<void> {
     if (arguments.length > 1) throw Error('Signal.assign() expects a single argument')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t assign to the root signal data')
     if (!value) return
@@ -324,47 +367,47 @@ export class Signal extends Function {
     await Promise.all(promises)
   }
 
-  async push (value) {
+  async push (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown> {
     if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
+    if (isPublicCollection(segments[0])) return await _arrayPushPublic(segments, value)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayPushPrivateData(getOwningRootId(this), segments, value)
   }
 
-  async pop () {
+  async pop (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown> {
     if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
+    if (isPublicCollection(segments[0])) return await _arrayPopPublic(segments)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayPopPrivateData(getOwningRootId(this), segments)
   }
 
-  async unshift (value) {
+  async unshift (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown> {
     if (arguments.length > 1) throw Error('Signal.unshift() expects a single argument')
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
+    if (isPublicCollection(segments[0])) return await _arrayUnshiftPublic(segments, value)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayUnshiftPrivateData(getOwningRootId(this), segments, value)
   }
 
-  async shift () {
+  async shift (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown> {
     if (arguments.length > 0) throw Error('Signal.shift() does not accept any arguments')
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
+    if (isPublicCollection(segments[0])) return await _arrayShiftPublic(segments)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayShiftPrivateData(getOwningRootId(this), segments)
   }
 
-  async insert (index, values) {
+  async insert (index: number, values: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | Item[] : unknown): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for insert')
     if (arguments.length > 2) throw Error('Signal.insert() expects two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
@@ -373,12 +416,12 @@ export class Signal extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
+    if (isPublicCollection(segments[0])) return await _arrayInsertPublic(segments, index, values)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayInsertPrivateData(getOwningRootId(this), segments, index, values)
   }
 
-  async remove (index, howMany = 1) {
+  async remove (index: number, howMany = 1): Promise<unknown> {
     if (arguments.length < 1) throw Error('Not enough arguments for remove')
     if (arguments.length > 2) throw Error('Signal.remove() expects one or two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
@@ -387,12 +430,12 @@ export class Signal extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
+    if (isPublicCollection(segments[0])) return await _arrayRemovePublic(segments, index, howMany)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
-  async move (from, to, howMany = 1) {
+  async move (from: number, to: number, howMany = 1): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for move')
     if (arguments.length > 3) throw Error('Signal.move() expects two or three arguments')
     if (typeof from !== 'number' || !Number.isFinite(from) || typeof to !== 'number' || !Number.isFinite(to)) {
@@ -401,12 +444,12 @@ export class Signal extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
+    if (isPublicCollection(segments[0])) return await _arrayMovePublic(segments, from, to, howMany)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayMovePrivateData(getOwningRootId(this), segments, from, to, howMany)
   }
 
-  async stringInsert (index, text) {
+  async stringInsert (index: number, text: string): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for stringInsert')
     if (arguments.length > 2) throw Error('Signal.stringInsert() expects two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
@@ -415,12 +458,12 @@ export class Signal extends Function {
     const segments = ensureValueTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
+    if (isPublicCollection(segments[0])) return await _stringInsertPublic(segments, index, text)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return stringInsertPrivateData(getOwningRootId(this), segments, index, text)
   }
 
-  async stringRemove (index, howMany = 1) {
+  async stringRemove (index: number, howMany = 1): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for stringRemove')
     if (arguments.length > 2) throw Error('Signal.stringRemove() expects two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
@@ -429,12 +472,12 @@ export class Signal extends Function {
     const segments = ensureValueTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
+    if (isPublicCollection(segments[0])) return await _stringRemovePublic(segments, index, howMany)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return stringRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
-  async increment (value) {
+  async increment (value?: number): Promise<number> {
     if (arguments.length > 1) throw Error('Signal.increment() expects a single argument')
     if (value === undefined) value = 1
     if (typeof value !== 'number') throw Error('Signal.increment() expects a number argument')
@@ -454,7 +497,7 @@ export class Signal extends Function {
     return currentValue + value
   }
 
-  async add (value) {
+  async add (value: unknown): Promise<string> {
     if (arguments.length > 1) throw Error('Signal.add() expects a single argument')
     const id = resolveAddDocId(value, uuid)
     const idFields = getIdFieldsForSegments([this[SEGMENTS][0], id])
@@ -462,7 +505,7 @@ export class Signal extends Function {
     return id
   }
 
-  async del () {
+  async del (): Promise<void> {
     if (arguments.length > 0) throw Error('Signal.del() does not accept any arguments')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t delete the root signal data')
     const idFields = getIdFieldsForSegments(this[SEGMENTS])
@@ -603,7 +646,7 @@ export const extremelyLateBindings = {
           throw Error('Signal.stop() expects targetPath to be a string')
         }
         const absolutePath = joinScopePath($parent.path(), relativePath || '')
-        return compatStopOnRoot(getRoot($parent) || $parent, absolutePath)
+        compatStopOnRoot(getRoot($parent) || $parent, absolutePath); return
       }
     }
 

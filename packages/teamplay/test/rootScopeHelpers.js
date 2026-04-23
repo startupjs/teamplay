@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { GLOBAL_ROOT_ID } from '../orm/Root.js'
+import { GLOBAL_ROOT_ID } from '../orm/Root.ts'
 import {
   normalizeRootId,
   isGlobalRootId,

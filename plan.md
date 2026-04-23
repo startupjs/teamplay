@@ -83,3 +83,9 @@ Expected VS Code behavior:
 - If/when Zod runtime schemas are added, expose a helper that accepts a Zod namespace or converter so `z.toJSONSchema(schema)` can be used without making every runtime consumer load Zod.
 - Backend validation should continue to receive plain JSON Schema after `transformSchema()`, regardless of whether the source schema is JSON Schema or Zod.
 
+## Direct TypeScript Source Update
+
+- The migrated files are now distributed as `.ts` source directly, without `.js` re-export shims and without parallel `.d.ts` files.
+- Package exports point `types` and `default` at the same `.ts` entrypoints for the converted modules. Runtime imports inside the monorepo use explicit `.ts` extensions when they target converted files.
+- Jest cannot use Node's built-in TypeScript stripper from its VM module loader, so client tests use a test-only TypeScript strip transformer. This does not produce build artifacts or change published source.
+- `SignalBase.ts` now carries the public method annotations directly on the class implementation so local/computed signal inference does not collapse to `any`.

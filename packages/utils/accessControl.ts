@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 export const isAccessControlSymbol = Symbol('is access control object')
 export const OPERATIONS = [
   'create',

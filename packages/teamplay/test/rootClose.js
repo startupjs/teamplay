@@ -3,12 +3,12 @@ import { strict as assert } from 'node:assert'
 import {
   __DEBUG_SIGNALS_CACHE__ as signalsCache,
   getRootSignal
-} from '../index.js'
+} from '../index.ts'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 import connect from '../connect/test.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import { docSubscriptions } from '../orm/Doc.js'
-import { getConnection } from '../orm/connection.js'
+import { getConnection } from '../orm/connection.ts'
 import { del as _del } from '../orm/dataTree.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'

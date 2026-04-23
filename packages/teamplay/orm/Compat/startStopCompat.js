@@ -1,5 +1,5 @@
 import { observe, raw, unobserve } from '@nx-js/observer-util'
-import { getRoot } from '../Root.js'
+import { getRoot } from '../Root.ts'
 import { scheduleReaction } from '../batchScheduler.js'
 
 const START_REACTIONS = Symbol('compat start reactions')

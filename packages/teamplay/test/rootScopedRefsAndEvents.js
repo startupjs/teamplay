@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal } from '../index.js'
+import { getRootSignal } from '../index.ts'
 import { del as _del, set as _set } from '../orm/dataTree.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'

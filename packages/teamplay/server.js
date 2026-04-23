@@ -1,5 +1,5 @@
 import createChannel from '@teamplay/channel/server'
-import { connection, setConnection, setDefaultFetchOnly, setPublicOnly } from './orm/connection.js'
+import { connection, setConnection, setDefaultFetchOnly, setPublicOnly } from './orm/connection.ts'
 
 export { default as ShareDB } from 'sharedb'
 export {

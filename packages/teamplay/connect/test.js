@@ -3,7 +3,7 @@
 // and creates a server connection to it.
 import ShareDbMingo from '@startupjs/sharedb-mingo-memory'
 import ShareBackend from 'sharedb'
-import { connection, setConnection } from '../orm/connection.js'
+import { connection, setConnection } from '../orm/connection.ts'
 
 export default function connect () {
   if (connection) return
