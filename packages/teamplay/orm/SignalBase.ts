@@ -130,6 +130,8 @@ export class Signal<TValue = unknown> extends Function {
     return uuid()
   }
 
+  batch (): undefined
+  batch<TResult>(fn: () => TResult): TResult
   batch<TResult>(fn?: () => TResult): TResult | undefined {
     if (arguments.length > 1) throw Error('Signal.batch() expects a single argument')
     if (fn == null) return

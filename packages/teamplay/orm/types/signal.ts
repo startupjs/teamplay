@@ -77,7 +77,7 @@ export type CollectionSignal<
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TPath extends WildcardSignalPath = readonly []
 > =
-  SignalModelInstance<TDocument[], PathModel<TDocument[], TCollectionModel, TPath>> &
+  Omit<SignalModelInstance<TDocument[], PathModel<TDocument[], TCollectionModel, TPath>>, 'add'> &
   { add: (value: TDocument) => Promise<string> } &
   Readonly<Record<string, DocumentSignal<TDocument, TDocumentModel, AppendPath<TPath, '*'>>>>
 
@@ -137,13 +137,19 @@ export type TypedAggregationSignal<TDocument, TDocumentModel extends SignalClass
 export type SignalChild<TValue, TPath extends WildcardSignalPath> =
   DocumentSignal<TValue, typeof Signal, TPath>
 
+type ObjectSignalChildren<TValue, TPath extends WildcardSignalPath> = {
+  readonly [K in keyof NonNullable<TValue> & string]-?: SignalChild<NonNullable<TValue>[K], AppendPath<TPath, K>>
+}
+
+type DollarObjectSignalChildren<TValue, TPath extends WildcardSignalPath> = {
+  readonly [K in keyof NonNullable<TValue> & string as `$${K}`]-?: SignalChild<NonNullable<TValue>[K], AppendPath<TPath, K>>
+}
+
 export type SignalChildren<TValue, TPath extends WildcardSignalPath = readonly []> =
   NonNullable<TValue> extends ReadonlyArray<infer Item>
     ? Readonly<Record<number, DocumentSignal<Item, typeof Signal, AppendPath<TPath, '*'>>>>
     : NonNullable<TValue> extends object
-      ? {
-          readonly [K in keyof NonNullable<TValue> & string]-?: SignalChild<NonNullable<TValue>[K], AppendPath<TPath, K>>
-        }
+      ? ObjectSignalChildren<TValue, TPath> & DollarObjectSignalChildren<TValue, TPath>
       : {}
 
 export interface CollectionSpec<

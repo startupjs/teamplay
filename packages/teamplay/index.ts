@@ -43,6 +43,8 @@ export interface LocalSignalFactory {
 
 export type RootCollections<TCollections extends Record<string, any> = TeamplayCollections> = {
   readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
+} & {
+  readonly [K in keyof TCollections & string as `$${K}`]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
 }
 
 export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
