@@ -91,7 +91,7 @@ export default function sub ($signal, params) {
       throw Error(ERRORS.gotAggregationFunction($signal))
     }
   } else if (typeof $signal === 'function' && !($signal instanceof Signal)) {
-    api$($signal, params)
+    return api$($signal, params)
   } else {
     throw Error('Invalid args passed for sub()')
   }
@@ -115,7 +115,7 @@ function getAggregationFromFunction (fn, collection, params) {
 function doc$ ($doc) {
   const promise = docSubscriptions.subscribe($doc)
   if (!promise) return $doc
-  return new Promise(resolve => promise.then(() => { resolve($doc) }))
+  return new Promise(resolve => promise.then(() => resolve($doc)))
 }
 
 function query$ ($collection, params) {
@@ -126,14 +126,14 @@ function query$ ($collection, params) {
   const $query = getQuerySignal(collectionName, params, signalOptions)
   const promise = querySubscriptions.subscribe($query)
   if (!promise) return $query
-  return new Promise(resolve => promise.then(() => { resolve($query) }))
+  return new Promise(resolve => promise.then(() => resolve($query)))
 }
 
 function aggregation$ (collectionName, params, signalOptions) {
   const $aggregationQuery = getAggregationSignal(collectionName, params, signalOptions)
   const promise = aggregationSubscriptions.subscribe($aggregationQuery)
   if (!promise) return $aggregationQuery
-  return new Promise(resolve => promise.then(() => { resolve($aggregationQuery) }))
+  return new Promise(resolve => promise.then(() => resolve($aggregationQuery)))
 }
 
 function api$ (fn, args) {

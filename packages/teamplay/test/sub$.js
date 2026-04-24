@@ -402,6 +402,21 @@ describe('$sub() function. Queries', () => {
     assert.deepEqual($activeGames.map($game => $game.name.get()).sort(), ['Game 1', 'Game 2'])
   })
 
+  it('query forwards optional array method arguments', async () => {
+    const $activeGames = await sub($.games, { active: true })
+    const labels = $activeGames.map(function ($game) {
+      return `${this.prefix}${$game.name.get()}`
+    }, { prefix: '#' })
+    const $firstGame = $activeGames.reduce(($firstGame, $secondGame) => $firstGame)
+    const found = $activeGames.find(function ($game) {
+      return $game.name.get() === this.name
+    }, { name: 'Game 2' })
+
+    assert.deepEqual(labels.sort(), ['#Game 1', '#Game 2'])
+    assert.equal($firstGame.name.get(), 'Game 1')
+    assert.equal(found.name.get(), 'Game 2')
+  })
+
   it('query ids should support .map()', async () => {
     const $activeGames = await sub($.games, { active: true })
     assert.deepEqual($activeGames.ids.map($id => $id.get()).sort(), ['_1', '_2'])
@@ -476,6 +491,24 @@ describe('$sub() function. Aggregations', () => {
     })
     const $activeGames = await sub($$activeGames, { active: true })
     assert.deepEqual($activeGames.map($game => $game.name.get()).sort(), ['Game 1', 'Game 2'])
+  })
+
+  it('aggregation forwards optional array method arguments', async () => {
+    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+      return [{ $match: { active } }]
+    })
+    const $activeGames = await sub($$activeGames, { active: true })
+    const labels = $activeGames.map(function ($game) {
+      return `${this.prefix}${$game.name.get()}`
+    }, { prefix: '#' })
+    const $firstGame = $activeGames.reduce(($firstGame, $secondGame) => $firstGame)
+    const found = $activeGames.find(function ($game) {
+      return $game.name.get() === this.name
+    }, { name: 'Game 2' })
+
+    assert.deepEqual(labels.sort(), ['#Game 1', '#Game 2'])
+    assert.equal($firstGame.name.get(), 'Game 1')
+    assert.equal(found.name.get(), 'Game 2')
   })
 })
 

@@ -44,8 +44,12 @@ type TypeAssertions = [
   LocalNestedString,
   LocalNestedBoolean,
   LocalArrayMapItem,
+  LocalArrayMapThisArg,
+  LocalArrayReduceNoInitial,
   LocalArrayIteratorItem,
   LocalArrayFindItem,
+  LocalArrayFindThisArg,
+  QueryArrayReduceNoInitial,
   ComputedNumber,
   ComputedString,
   NullableSchemaInference,
@@ -246,6 +250,9 @@ type AggregationDocumentMethods = Expect<Equal<ReturnType<typeof $aggregationGam
 type HookAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookAggregationGame.info.maxPlayers.get>, number>>
 type QueryNestedPathModelMethod = Expect<Equal<ReturnType<typeof $hookQueryGame.info.titleCase>, string>>
 type AggregationNestedPathModelMethod = Expect<Equal<ReturnType<typeof $aggregationGame.info.tags[0]['label']>, string>>
+declare const $resolvedQueryGames: QueryGames
+const $firstQueryGame = $resolvedQueryGames.reduce(($firstGame, $secondGame) => $firstGame)
+type QueryArrayReduceNoInitial = Expect<Equal<ReturnType<typeof $firstQueryGame.info.title.get>, string>>
 
 const $score = $(0)
 $score.increment()
@@ -261,7 +268,10 @@ $scoreboard.players[0].name.set('Robot 2')
 $scoreboard.players[0].robot.set(false)
 $scoreboard.totalPlayers.increment()
 const localPlayerNames = $scoreboard.players.map($player => $player.name.get())
+const localPlayerNamesWithThisArg = $scoreboard.players.map($player => $player.name.get(), { prefix: '#' })
+const localFirstPlayerFromReduce = $scoreboard.players.reduce(($firstPlayer, $secondPlayer) => $firstPlayer)
 const foundLocalPlayer = $scoreboard.players.find($player => $player.robot.get())
+const foundLocalPlayerWithThisArg = $scoreboard.players.find($player => $player.robot.get(), { robot: true })
 
 const $computedScoreboard = $(() => ({
   nextRound: $scoreboard.round.get() + 1,
@@ -274,8 +284,11 @@ type LocalNestedString = Expect<Equal<ReturnType<typeof $localPlayer.name.get>, 
 type LocalNestedBoolean = Expect<Equal<ReturnType<typeof $localPlayer.robot.get>, boolean>>
 type LocalPlayerIteratorItem = typeof $scoreboard.players extends Iterable<infer Item> ? Item : never
 type LocalArrayMapItem = Expect<Equal<typeof localPlayerNames[number], string>>
+type LocalArrayMapThisArg = Expect<Equal<typeof localPlayerNamesWithThisArg[number], string>>
+type LocalArrayReduceNoInitial = Expect<Equal<ReturnType<typeof localFirstPlayerFromReduce.name.get>, string>>
 type LocalArrayIteratorItem = Expect<Equal<ReturnType<LocalPlayerIteratorItem['name']['get']>, string>>
 type LocalArrayFindItem = Expect<Equal<ReturnType<NonNullable<typeof foundLocalPlayer>['robot']['get']>, boolean>>
+type LocalArrayFindThisArg = Expect<Equal<ReturnType<NonNullable<typeof foundLocalPlayerWithThisArg>['robot']['get']>, boolean>>
 type ComputedNumber = Expect<Equal<ReturnType<typeof $computedScoreboard.nextRound.get>, number>>
 type ComputedString = Expect<Equal<ReturnType<typeof $computedScoreboard.firstPlayerName.get>, string>>
 

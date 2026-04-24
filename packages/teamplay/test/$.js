@@ -185,6 +185,23 @@ describe('Signal array mutators (local)', () => {
     assert.equal($text.get(), 'Xc')
   })
 
+  it('forwards optional array method arguments on local signals', () => {
+    const $players = $([{ name: 'A', score: 1 }, { name: 'B', score: 2 }])
+    const labels = $players.map(function ($player) {
+      return `${this.prefix}${$player.name.get()}`
+    }, { prefix: '#' })
+    const total = $players.reduce(($firstPlayer, $secondPlayer) => {
+      return $firstPlayer.score.get() + $secondPlayer.score.get()
+    })
+    const found = $players.find(function ($player) {
+      return $player.score.get() === this.score
+    }, { score: 2 })
+
+    assert.deepEqual(labels, ['#A', '#B'])
+    assert.equal(total, 3)
+    assert.equal(found.name.get(), 'B')
+  })
+
   it('initializes missing nested array paths for local signals', async () => {
     const $state = $({})
 

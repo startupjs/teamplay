@@ -86,12 +86,14 @@ export interface Signal<TValue = unknown> {
   getCollection: () => string
   getAssociations: () => readonly unknown[]
   [Symbol.iterator]: () => IterableIterator<Signal>
-  map: <TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult) => TResult[]
+  map: <TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult, thisArg?: any) => TResult[]
   reduce: <TResult>(
     callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
     initialValue: TResult
   ) => TResult
-  find: (predicate: (value: Signal, index: number, obj: Signal[]) => unknown) => Signal | undefined
+  reduce: (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal) => Signal
+  reduce: (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal, initialValue: Signal) => Signal
+  find: (predicate: (value: Signal, index: number, obj: Signal[]) => unknown, thisArg?: any) => Signal | undefined
   set: (value: TValue) => Promise<void>
   assign: (value: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never) => Promise<void>
   push: (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown) => Promise<unknown>
@@ -314,21 +316,15 @@ export class Signal<TValue = unknown> extends Function {
     )[method](...args)
   }
 
-  map<TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult): TResult[] {
-    const args = [callback]
+  map<TResult>(...args): TResult[] {
     return this[ARRAY_METHOD]('map', [], ...args)
   }
 
-  reduce<TResult>(
-    callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
-    initialValue: TResult
-  ): TResult {
-    const args = [callback, initialValue]
+  reduce<TResult>(...args): TResult {
     return this[ARRAY_METHOD]('reduce', undefined, ...args)
   }
 
-  find (predicate: (value: Signal, index: number, obj: Signal[]) => unknown): Signal | undefined {
-    const args = [predicate]
+  find (...args): Signal | undefined {
     return this[ARRAY_METHOD]('find', undefined, ...args)
   }
 
@@ -372,7 +368,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _arrayPushPublic(segments, value)
+    if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayPushPrivateData(getOwningRootId(this), segments, value)
   }
@@ -382,7 +378,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _arrayPopPublic(segments)
+    if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayPopPrivateData(getOwningRootId(this), segments)
   }
@@ -392,7 +388,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _arrayUnshiftPublic(segments, value)
+    if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayUnshiftPrivateData(getOwningRootId(this), segments, value)
   }
@@ -402,7 +398,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _arrayShiftPublic(segments)
+    if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayShiftPrivateData(getOwningRootId(this), segments)
   }
@@ -416,7 +412,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _arrayInsertPublic(segments, index, values)
+    if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayInsertPrivateData(getOwningRootId(this), segments, index, values)
   }
@@ -430,7 +426,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _arrayRemovePublic(segments, index, howMany)
+    if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
@@ -444,7 +440,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureArrayTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _arrayMovePublic(segments, from, to, howMany)
+    if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return arrayMovePrivateData(getOwningRootId(this), segments, from, to, howMany)
   }
@@ -458,7 +454,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureValueTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _stringInsertPublic(segments, index, text)
+    if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return stringInsertPrivateData(getOwningRootId(this), segments, index, text)
   }
@@ -472,7 +468,7 @@ export class Signal<TValue = unknown> extends Function {
     const segments = ensureValueTarget(this)
     const idFields = getIdFieldsForSegments(segments)
     if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return await _stringRemovePublic(segments, index, howMany)
+    if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
     if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
     return stringRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
@@ -646,7 +642,7 @@ export const extremelyLateBindings = {
           throw Error('Signal.stop() expects targetPath to be a string')
         }
         const absolutePath = joinScopePath($parent.path(), relativePath || '')
-        compatStopOnRoot(getRoot($parent) || $parent, absolutePath); return
+        return compatStopOnRoot(getRoot($parent) || $parent, absolutePath)
       }
     }
 

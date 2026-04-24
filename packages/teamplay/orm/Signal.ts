@@ -51,6 +51,64 @@ type SignalModelInstance<TValue, TModel> =
 
 type SignalArrayMethodKeys = 'map' | 'reduce' | 'find' | typeof Symbol.iterator
 
+type SignalArrayLike<TItem> = {
+  [Symbol.iterator]: () => IterableIterator<TItem>
+  map: <TResult>(
+    callback: (
+      value: TItem,
+      index: number,
+      array: TItem[]
+    ) => TResult,
+    thisArg?: any
+  ) => TResult[]
+  reduce: {
+    (
+      callback: (
+        previousValue: TItem,
+        currentValue: TItem,
+        currentIndex: number,
+        array: TItem[]
+      ) => TItem
+    ): TItem
+    (
+      callback: (
+        previousValue: TItem,
+        currentValue: TItem,
+        currentIndex: number,
+        array: TItem[]
+      ) => TItem,
+      initialValue: TItem
+    ): TItem
+    <TResult>(
+      callback: (
+        previousValue: TResult,
+        currentValue: TItem,
+        currentIndex: number,
+        array: TItem[]
+      ) => TResult,
+      initialValue: TResult
+    ): TResult
+  }
+  find: {
+    <TNarrowed extends TItem>(
+      predicate: (
+        value: TItem,
+        index: number,
+        obj: TItem[]
+      ) => value is TNarrowed,
+      thisArg?: any
+    ): TNarrowed | undefined
+    (
+      predicate: (
+        value: TItem,
+        index: number,
+        obj: TItem[]
+      ) => unknown,
+      thisArg?: any
+    ): TItem | undefined
+  }
+}
+
 type PathModel<
   TValue,
   TDefaultModel extends SignalClass<any>,
@@ -69,32 +127,7 @@ type ArrayItemSignal<Item, TPath extends WildcardSignalPath> =
 
 type SignalArrayMethods<TValue, TPath extends WildcardSignalPath> =
   NonNullable<TValue> extends ReadonlyArray<infer Item>
-    ? {
-        [Symbol.iterator]: () => IterableIterator<ArrayItemSignal<Item, TPath>>
-        map: <TResult>(
-          callback: (
-            value: ArrayItemSignal<Item, TPath>,
-            index: number,
-            array: Array<ArrayItemSignal<Item, TPath>>
-          ) => TResult
-        ) => TResult[]
-        reduce: <TResult>(
-          callback: (
-            previousValue: TResult,
-            currentValue: ArrayItemSignal<Item, TPath>,
-            currentIndex: number,
-            array: Array<ArrayItemSignal<Item, TPath>>
-          ) => TResult,
-          initialValue: TResult
-        ) => TResult
-        find: (
-          predicate: (
-            value: ArrayItemSignal<Item, TPath>,
-            index: number,
-            obj: Array<ArrayItemSignal<Item, TPath>>
-          ) => unknown
-        ) => ArrayItemSignal<Item, TPath> | undefined
-      }
+    ? SignalArrayLike<ArrayItemSignal<Item, TPath>>
     : Pick<Signal<TValue>, SignalArrayMethodKeys>
 
 export type AnySignal = Signal<any>
@@ -128,32 +161,9 @@ export type QuerySignal<
   TDocument = unknown,
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TDocumentPath extends WildcardSignalPath = readonly []
-> = Omit<Signal<TDocument[]>, SignalArrayMethodKeys> & {
+> = Omit<Signal<TDocument[]>, SignalArrayMethodKeys> &
+SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
   readonly [index: number]: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>
-  [Symbol.iterator]: () => IterableIterator<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>>
-  map: <TResult>(
-    callback: (
-      value: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>,
-      index: number,
-      array: Array<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>>
-    ) => TResult
-  ) => TResult[]
-  reduce: <TResult>(
-    callback: (
-      previousValue: TResult,
-      currentValue: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>,
-      currentIndex: number,
-      array: Array<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>>
-    ) => TResult,
-    initialValue: TResult
-  ) => TResult
-  find: (
-    predicate: (
-      value: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>,
-      index: number,
-      obj: Array<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>>
-    ) => unknown
-  ) => DocumentSignal<TDocument, TDocumentModel, TDocumentPath> | undefined
 }
 
 export type AggregationSignal<
