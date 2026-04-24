@@ -10,6 +10,8 @@ import universal$ from './react/universal$.js'
 import useApi from './react/useApi.js'
 import type {
   CollectionSignalFromSpec,
+  CollectionAggregationSignal,
+  CollectionQuerySignal,
   CollectionSpec,
   DocumentSignal,
   FromJsonSchema,
@@ -20,9 +22,12 @@ import type {
   AppendPath,
   QueryParams,
   QuerySignal,
+  RegisteredAggregationInput,
   Signal,
   SignalClass,
   SignalConstructor,
+  TypedAggregationInput,
+  TypedAggregationSignal,
   TypedSignal,
   ZodLikeSchema,
   ZodSchemaSpec
@@ -45,6 +50,8 @@ export type RootSignal<TCollections extends Record<string, any> = TeamplayCollec
 
 export type {
   CollectionSpec,
+  CollectionAggregationSignal,
+  CollectionQuerySignal,
   DocumentSignal,
   FromJsonSchema,
   JsonSchema,
@@ -54,8 +61,11 @@ export type {
   AppendPath,
   QueryParams,
   QuerySignal,
+  RegisteredAggregationInput,
   SignalClass,
   SignalConstructor,
+  TypedAggregationInput,
+  TypedAggregationSignal,
   TypedSignal,
   ZodLikeSchema,
   ZodSchemaSpec

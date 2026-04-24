@@ -7,13 +7,13 @@ import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js
 import { getRoot } from './Root.ts'
 import isServer from '../utils/isServer.js'
 import type {
-  AggregationSignal,
-  AppendPath,
-  CollectionDocument,
-  CollectionDocumentModel,
+  CollectionAggregationSignal,
+  CollectionQuerySignal,
   CollectionSignal,
   QueryParams,
-  QuerySignal,
+  RegisteredAggregationInput,
+  TypedAggregationInput,
+  TypedAggregationSignal,
   WildcardSignalPath
 } from './Signal.ts'
 import type { TeamplayCollections } from '../index.ts'
@@ -29,33 +29,17 @@ export default function sub<
 > (
   $collection: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>
-): QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>> | Promise<QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>>>
+): CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath> | Promise<CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath>>
 
 export default function sub<TCollection extends keyof TeamplayCollections & string> (
-  $aggregation: {
-    readonly __isAggregation: true
-    readonly collection: TCollection
-  },
+  $aggregation: RegisteredAggregationInput<TCollection>,
   params?: Record<string, any>
-): AggregationSignal<
-CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>,
-readonly [TCollection, '*']
-> | Promise<AggregationSignal<
-CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>,
-readonly [TCollection, '*']
->>
+): CollectionAggregationSignal<TCollection> | Promise<CollectionAggregationSignal<TCollection>>
 
 export default function sub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
-  $aggregation: {
-    readonly __isAggregation: true
-    readonly collection: string
-    readonly __teamplayDocument?: TDocument
-    readonly __teamplayDocumentModel?: TDocumentModel
-  },
+  $aggregation: TypedAggregationInput<TDocument, TDocumentModel>,
   params?: Record<string, any>
-): AggregationSignal<TDocument, TDocumentModel> | Promise<AggregationSignal<TDocument, TDocumentModel>>
+): TypedAggregationSignal<TDocument, TDocumentModel> | Promise<TypedAggregationSignal<TDocument, TDocumentModel>>
 
 export default function sub ($signal, params) {
   // TODO: temporarily disable support for multiple subscriptions

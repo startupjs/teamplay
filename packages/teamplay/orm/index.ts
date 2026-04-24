@@ -3,6 +3,8 @@ import Signal from './Signal.ts'
 export { belongsTo, hasMany, hasOne } from './associations.js'
 export type {
   AggregationSignal,
+  CollectionAggregationSignal,
+  CollectionQuerySignal,
   CollectionSignal,
   CollectionSignalFromSpec,
   CollectionSpec,
@@ -15,8 +17,11 @@ export type {
   AppendPath,
   QueryParams,
   QuerySignal,
+  RegisteredAggregationInput,
   SignalClass,
   SignalConstructor,
+  TypedAggregationInput,
+  TypedAggregationSignal,
   TypedSignal,
   ZodLikeSchema,
   ZodSchemaSpec

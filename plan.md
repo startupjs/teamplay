@@ -2,37 +2,25 @@
 
 ## Current State
 
-- The main Signal runtime lives in `packages/teamplay/orm/SignalBase.js`. `packages/teamplay/orm/Signal.js` only switches between `Signal` and `SignalCompat` depending on `TEAMPLAY_COMPAT`.
-- The proxy wrapper lives in `packages/teamplay/orm/getSignal.js`. It always uses `extremelyLateBindings` by default, so property access always returns a child signal and method calls are resolved in the proxy `apply` trap.
-- Custom model classes are registered with `addModel(pattern, Model)` from `packages/teamplay/orm/addModel.js`. Runtime model selection uses exact segment-length pattern matching with `*`.
-- Runtime schema validation is currently backend-only. `@teamplay/backend/features/validateSchema.js` reads `models[collection].schema`, transforms the simplified schema with `@teamplay/schema/transformSchema`, and passes JSON Schema into `@teamplay/sharedb-schema`.
-- Public TypeScript coverage is currently very loose. `packages/teamplay/index.d.ts` exports `$`, `model`, `Signal`, `sub`, and hooks mostly as `any`, so VS Code cannot infer collection fields, document fields, or custom model methods.
-- The repo has no source build step. Tests import `.js` files directly, so renaming `SignalBase.js` to `.ts` immediately would break runtime unless we also add a build pipeline or commit generated `.js`.
+- The default Signal implementation has been moved to TypeScript source and is distributed as `.ts` directly. Converted runtime imports use explicit `.ts` extensions so Node and Metro can load the source without a build step.
+- `packages/teamplay/orm/SignalBase.ts` contains the runtime class implementation and its directly maintained method typings. We removed the duplicate ambient `interface Signal` shape so method signatures are no longer maintained in two places.
+- `packages/teamplay/orm/Signal.ts` is now a small runtime facade that selects `Signal` or `SignalCompat` and re-exports the public type surface.
+- Compatibility mode remains JS-backed and intentionally unchanged except for import paths needed to coexist with the converted TS files.
+- Type-only logic has been split out of implementation files:
+  - `packages/teamplay/orm/types/signal.ts` defines the high-level signal graph: `TypedSignal`, `DocumentSignal`, `CollectionSignal`, `QuerySignal`, `AggregationSignal`, model binding, and collection specs.
+  - `packages/teamplay/orm/types/jsonSchema.ts` maps the supported JSON Schema subset into TypeScript values.
+  - `packages/teamplay/orm/types/query.ts` maps document schemas into typed Mongo-style query params.
+  - `packages/teamplay/orm/types/path.ts` contains reusable path tuple/string helpers.
+- Public root typing is registry-based. End projects augment `TeamplayCollections` and `TeamplayModels`, and `$`, `sub()`, `useSub()`, query signals, aggregation signals, local signals, and computed local signals derive from those registries.
+- Runtime model binding still uses `addModel(pattern, Model)`. Type binding is separate because TypeScript cannot infer global root signal types from runtime calls in unrelated modules.
+- Runtime collection schema validation still comes from backend `models[collection].schema`. `createBackend({ models, validateSchema: true })` wires this into ShareDB schema validation outside production.
 
-## Schema Typing Research
+## Supported Developer UX
 
-- Plain JSON Schema does not automatically provide TypeScript types unless we either add a type-level JSON Schema mapper or use a library such as `json-schema-to-ts`.
-- `json-schema-to-ts` is current at `3.1.1` and is purpose-built for inferring TypeScript from JSON Schema, but adding it to public declarations would make it a public type dependency.
-- Zod is current at `4.3.6`. Zod 4 has first-party `z.toJSONSchema()` support, so Zod can be a good developer-facing schema source while still emitting JSON Schema for ShareDB validation.
-- For this repository, the lowest-risk first step is to implement a small built-in JSON Schema type mapper that handles Teamplay’s common schemas: object, array, string, number/integer, boolean, null, enum, const, required, and the existing simplified `{ field: schema }` form.
-- Zod support should be typed structurally via `_output`/`_zod.output` so users can use Zod schemas for static typing without forcing a hard runtime dependency yet. A later runtime helper can call `z.toJSONSchema()` when Zod is installed.
-
-## Target Developer UX
+The intended developer experience now works through module augmentation:
 
 ```ts
-import { $, Signal, type CollectionSpec, type JsonSchemaSpec, sub } from 'teamplay'
-
-class GamesModel extends Signal<Game> {
-  findOpenGames () {
-    return this
-  }
-}
-
-class GameModel extends Signal<Game> {
-  start () {
-    return this.status.set('started')
-  }
-}
+import { $, Signal, addModel, sub, type JsonSchemaSpec } from 'teamplay'
 
 const gameSchema = {
   info: {
@@ -46,46 +34,66 @@ const gameSchema = {
   status: { type: 'string', enum: ['draft', 'started'] as const }
 } as const
 
+class GamesModel extends Signal<Array<Game>> {
+  collectionLabel () {
+    return this.path()
+  }
+}
+
+class GameModel extends Signal<Game> {
+  start () {
+    return this.status.set('started')
+  }
+}
+
+type Game = import('teamplay').FromJsonSchema<typeof gameSchema>
+
+addModel('games', GamesModel)
+addModel('games.*', GameModel)
+
 declare module 'teamplay' {
   interface TeamplayCollections {
     games: JsonSchemaSpec<typeof gameSchema, typeof GamesModel, typeof GameModel>
   }
 }
 
-$.games.findOpenGames()
-$.games.gameId.info.title.get()
+$.games.collectionLabel()
+$.games[gameId].info.title.get()
 
-const $game = await sub($.games.gameId)
-$game.start()
-$game.info.maxPlayers.get()
+const $game = await sub($.games[gameId])
+await $game.start()
 ```
 
 Expected VS Code behavior:
 
-- `$.games.` suggests collection model methods, standard Signal methods, and document id access through bracket/dot navigation.
-- `$.games[gameId].` suggests document model methods, standard Signal methods, and fields inferred from the schema.
+- `$.games.` suggests collection model methods, standard Signal methods, and document id access.
+- `$.games[gameId].` suggests document model methods, standard Signal methods, and fields inferred from the collection schema.
 - `$.games[gameId].info.` suggests `title`, `maxPlayers`, and standard Signal methods.
-- `sub($.games[gameId])` preserves the same typed document signal.
+- `sub($.games[gameId])`, `useSub($.games[gameId])`, `sub($.games, query)`, and `useSub($.games, query)` preserve the same document schema and document model methods.
+- Query and aggregation results behave like typed arrays of document signals. Iteration, numeric indexes, `map`, `reduce`, and `find` expose document signals with schema fields and custom document model methods.
+- Local `$({ ... })` and computed `$(() => ...)` infer their value shape from the initial value or return value and expose nested child signals.
 
-## Implementation Strategy
+## Schema Typing
 
-1. Add strong public declarations around `Signal`, `sub`, `addModel`, and root `$` without changing runtime behavior.
-2. Add a `TeamplayCollections` module-augmentation registry. This is necessary because TypeScript cannot infer global `$` types from runtime `addModel()` calls in unrelated files.
-3. Add `CollectionSpec`, `JsonSchemaSpec`, and `ZodSchemaSpec` helper types to bind collection/document data and custom collection/document model classes.
-4. Add isolated type tests using `tsc --noEmit` against a test-only config under `packages/teamplay`, because the root TypeScript config is currently broken by docs/tooling dependencies.
-5. Keep existing JS runtime tests passing, including compatibility tests.
-6. In a follow-up source migration, convert `SignalBase.js` to `SignalBase.ts`, set package-local TypeScript compiler options to `module: NodeNext`, emit runtime `.js`, and treat compat files as JS until they are intentionally migrated.
+- JSON Schema typing is built in for the subset Teamplay uses most: object, array, tuple arrays, string, number/integer, boolean, null, enum, const, required arrays, field-level `required: true`, and the existing simplified `{ field: schema }` form.
+- Query params are schema-aware. Known document paths are suggested, nested paths such as `'info.maxPlayers'` are supported, and common operators such as `$in`, `$gte`, and `$regex` are value-type checked.
+- Zod typing is supported structurally through `ZodSchemaSpec` by reading `_output` or `_zod.output`, but runtime Zod-to-JSON-Schema conversion is not yet exposed as a first-class Teamplay helper.
+- If a project uses Zod today, it can use `ZodSchemaSpec` for editor typing and still provide JSON Schema to backend `models` for runtime validation.
 
-## Runtime Migration Notes
+## Completed Work
 
-- Do not change `extremelyLateBindings` semantics during the typing phase. The runtime method-call behavior depends on the proxy returning child signals for all string properties.
-- Keep `SignalCompat` importing the default `Signal` wrapper exactly as it does now so compatibility mode behavior remains unchanged.
-- If/when Zod runtime schemas are added, expose a helper that accepts a Zod namespace or converter so `z.toJSONSchema(schema)` can be used without making every runtime consumer load Zod.
-- Backend validation should continue to receive plain JSON Schema after `transformSchema()`, regardless of whether the source schema is JSON Schema or Zod.
+- Converted the default Signal path to TypeScript source without adding a compile step.
+- Replaced loose declaration files with implementation-backed types and focused type helper modules.
+- Added type tests for schema inference, custom collection/document/nested models, query params, query signals, aggregation signals, `sub()`, `useSub()`, local signals, computed signals, and array-like signal forwarding.
+- Fixed runtime regressions found during the TS migration in `sub()` and array-like forwarding, then added behavioral tests so those paths stay covered.
+- Added the type test command to the main test command and precommit flow.
 
-## Direct TypeScript Source Update
+## Remaining Work
 
-- The migrated files are now distributed as `.ts` source directly, without `.js` re-export shims and without parallel `.d.ts` files.
-- Package exports point `types` and `default` at the same `.ts` entrypoints for the converted modules. Runtime imports inside the monorepo use explicit `.ts` extensions when they target converted files.
-- Jest cannot use Node's built-in TypeScript stripper from its VM module loader, so client tests use a test-only TypeScript strip transformer. This does not produce build artifacts or change published source.
-- `SignalBase.ts` now carries the public method annotations directly on the class implementation so local/computed signal inference does not collapse to `any`.
+- Generate a project-level `teamplay-env.d.ts` automatically in the future, similar to Expo Router, so end projects do not have to hand-write module augmentation.
+- Add a runtime schema helper if we want Zod to be a first-class schema source:
+  - accept a Zod schema for developer typing,
+  - convert it to JSON Schema for backend validation,
+  - register the generated JSON Schema in the backend `models` object.
+- Continue migrating non-Signal source files from JS to TS in small slices, keeping compatibility mode green.
+- Expand docs/API references as more of the type surface stabilizes.

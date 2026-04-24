@@ -7,14 +7,14 @@ import * as promiseBatcher from './promiseBatcher.js'
 import renderAttemptDestroyer from './renderAttemptDestroyer.js'
 import { markCompatComponent } from './compatComponentRegistry.js'
 import type {
-  AggregationSignal,
-  AppendPath,
-  CollectionDocument,
-  CollectionDocumentModel,
+  CollectionAggregationSignal,
+  CollectionQuerySignal,
   CollectionSignal,
   QueryParams,
-  QuerySignal,
+  RegisteredAggregationInput,
   Signal,
+  TypedAggregationInput,
+  TypedAggregationSignal,
   WildcardSignalPath
 } from '../orm/Signal.ts'
 import type { TeamplayCollections } from '../index.ts'
@@ -48,31 +48,19 @@ export function useAsyncSub<
   signal: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>,
   options?: UseSubOptions
-): QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>>
+): CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath>
 
 export function useAsyncSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: {
-    readonly __isAggregation: true
-    readonly collection: TCollection
-  },
+  signal: RegisteredAggregationInput<TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): AggregationSignal<
-CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>,
-readonly [TCollection, '*']
->
+): CollectionAggregationSignal<TCollection>
 
 export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
-  signal: {
-    readonly __isAggregation: true
-    readonly collection: string
-    readonly __teamplayDocument?: TDocument
-    readonly __teamplayDocumentModel?: TDocumentModel
-  },
+  signal: TypedAggregationInput<TDocument, TDocumentModel>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): AggregationSignal<TDocument, TDocumentModel>
+): TypedAggregationSignal<TDocument, TDocumentModel>
 
 export function useAsyncSub (signal, params, options) {
   return useSub(signal, params, { ...options, async: true })
@@ -92,31 +80,19 @@ export default function useSub<
   signal: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>,
   options?: UseSubOptions
-): QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>>
+): CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath>
 
 export default function useSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: {
-    readonly __isAggregation: true
-    readonly collection: TCollection
-  },
+  signal: RegisteredAggregationInput<TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): AggregationSignal<
-CollectionDocument<TeamplayCollections[TCollection]>,
-CollectionDocumentModel<TeamplayCollections[TCollection]>,
-readonly [TCollection, '*']
->
+): CollectionAggregationSignal<TCollection>
 
 export default function useSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
-  signal: {
-    readonly __isAggregation: true
-    readonly collection: string
-    readonly __teamplayDocument?: TDocument
-    readonly __teamplayDocumentModel?: TDocumentModel
-  },
+  signal: TypedAggregationInput<TDocument, TDocumentModel>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): AggregationSignal<TDocument, TDocumentModel>
+): TypedAggregationSignal<TDocument, TDocumentModel>
 
 export default function useSub (signal, params, options) {
   if (USE_DEFERRED_VALUE) {

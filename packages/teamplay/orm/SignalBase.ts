@@ -72,48 +72,11 @@ export const GET = Symbol('get the value of the signal - either observed or raw'
 export const GETTERS = Symbol('get the list of this signal\'s getters')
 export const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds', 'getExtra', 'getCollection']
 
-export interface Signal<TValue = unknown> {
-  readonly [SEGMENTS]: Array<string | number>
-  path: () => string
-  leaf: () => string
-  parent: (levels?: number) => Signal
-  id: () => string
-  batch: <TResult>(fn?: () => TResult) => TResult | undefined
-  get: () => TValue
-  getIds: () => Array<string | number>
-  peek: () => TValue
-  getId: () => string | number
-  getCollection: () => string
-  getAssociations: () => readonly unknown[]
-  [Symbol.iterator]: () => IterableIterator<Signal>
-  map: <TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult, thisArg?: any) => TResult[]
-  reduce: <TResult>(
-    callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
-    initialValue: TResult
-  ) => TResult
-  reduce: (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal) => Signal
-  reduce: (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal, initialValue: Signal) => Signal
-  find: (predicate: (value: Signal, index: number, obj: Signal[]) => unknown, thisArg?: any) => Signal | undefined
-  set: (value: TValue) => Promise<void>
-  assign: (value: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never) => Promise<void>
-  push: (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown) => Promise<unknown>
-  pop: () => Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown>
-  unshift: (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown) => Promise<unknown>
-  shift: () => Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown>
-  insert: (index: number, values: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | Item[] : unknown) => Promise<unknown>
-  remove: (index: number, howMany?: number) => Promise<unknown>
-  move: (from: number, to: number, howMany?: number) => Promise<unknown>
-  stringInsert: (index: number, text: string) => Promise<unknown>
-  stringRemove: (index: number, howMany?: number) => Promise<unknown>
-  increment: (value?: number) => Promise<number>
-  add: (value: unknown) => Promise<string>
-  del: () => Promise<void>
-}
-
 export class Signal<TValue = unknown> extends Function {
   static ID_FIELDS = DEFAULT_ID_FIELDS
   static [GETTERS] = DEFAULT_GETTERS
   static associations = []
+  declare readonly [SEGMENTS]: Array<string | number>
 
   static addAssociation (association: object): void {
     if (!association || typeof association !== 'object') {
@@ -316,14 +279,22 @@ export class Signal<TValue = unknown> extends Function {
     )[method](...args)
   }
 
+  map<TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult, thisArg?: any): TResult[]
   map<TResult>(...args): TResult[] {
     return this[ARRAY_METHOD]('map', [], ...args)
   }
 
+  reduce (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal): Signal
+  reduce (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal, initialValue: Signal): Signal
+  reduce<TResult>(
+    callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
+    initialValue: TResult
+  ): TResult
   reduce<TResult>(...args): TResult {
     return this[ARRAY_METHOD]('reduce', undefined, ...args)
   }
 
+  find (predicate: (value: Signal, index: number, obj: Signal[]) => unknown, thisArg?: any): Signal | undefined
   find (...args): Signal | undefined {
     return this[ARRAY_METHOD]('find', undefined, ...args)
   }
