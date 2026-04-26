@@ -9,6 +9,7 @@ import { getRootSignal as _getRootSignal, GLOBAL_ROOT_ID } from './orm/Root.ts'
 import universal$ from './react/universal$.js'
 import useApi from './react/useApi.js'
 import type {
+  AnySignal,
   CollectionSignalFromSpec,
   CollectionAggregationSignal,
   CollectionQuerySignal,
@@ -37,6 +38,7 @@ export interface TeamplayCollections {}
 export interface TeamplayModels {}
 
 export interface LocalSignalFactory {
+  (): any
   <TValue>(factory: () => TValue): TypedSignal<TValue>
   <TValue>(value: TValue): TypedSignal<TValue>
 }
@@ -51,6 +53,7 @@ export type RootSignal<TCollections extends Record<string, any> = TeamplayCollec
   Signal<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
 
 export type {
+  AnySignal,
   CollectionSpec,
   CollectionAggregationSignal,
   CollectionQuerySignal,

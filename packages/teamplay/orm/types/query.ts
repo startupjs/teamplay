@@ -45,5 +45,10 @@ type QueryValue<TValue> =
 export type QueryParams<TDocument> = {
   [K in QueryPath<TDocument>]?: QueryValue<QueryPathValue<TDocument, K>>
 } & {
+  _id?: QueryValue<string | number>
+  id?: QueryValue<string | number>
+} & {
+  [K in `${string}.${string}`]?: unknown
+} & {
   [K in `$${string}`]?: unknown
 }

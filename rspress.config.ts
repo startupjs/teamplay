@@ -34,6 +34,7 @@ export default defineConfig({
             { text: 'React Integration', link: '/guide/react-integration' },
             { text: 'Async Setters', link: '/guide/async-setters' },
             { text: 'ORM', link: '/guide/orm' },
+            { text: 'Usage in StartupJS', link: '/guide/usage-in-startupjs' },
             { text: 'Offline Mode', link: '/guide/offline-mode' }
           ]
         },

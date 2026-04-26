@@ -59,6 +59,7 @@ type IsJsonSchemaKeyword<TKey extends string> =
   | 'const'
   | 'additionalProperties'
   | 'patternProperties'
+  | '$comment'
   | 'description'
   | 'title'
   | 'default'
@@ -66,7 +67,16 @@ type IsJsonSchemaKeyword<TKey extends string> =
   | 'validators'
   | 'collection'
   | 'format'
+  | 'input'
+  | 'label'
+  | 'options'
+  | 'placeholder'
+  | 'disabled'
+  | 'mimeTypes'
+  | 'pattern'
+  | 'min'
   | 'minimum'
+  | 'max'
   | 'maximum'
   | 'minLength'
   | 'maxLength'
@@ -108,6 +118,20 @@ type SimplifiedRequiredKeys<TProperties> = {
 type RequiredKeys<TSchema, TProperties> =
   ExplicitRequiredKeys<TSchema, TProperties> | SimplifiedRequiredKeys<TProperties>
 
+type PatternPropertiesFromJsonSchema<TSchema> =
+  TSchema extends { readonly patternProperties?: infer PatternProperties }
+    ? PatternProperties extends Record<string, infer PatternSchema>
+      ? Record<string, FromJsonSchema<PatternSchema>>
+      : {}
+    : {}
+
+type AdditionalPropertiesFromJsonSchema<TSchema> =
+  TSchema extends { readonly additionalProperties?: infer AdditionalProperties }
+    ? AdditionalProperties extends JsonSchema
+      ? Record<string, FromJsonSchema<AdditionalProperties>>
+      : {}
+    : {}
+
 type ObjectFromJsonSchema<TSchema> =
   SchemaProperties<TSchema> extends infer Properties
     ? Properties extends Record<string, unknown>
@@ -115,7 +139,7 @@ type ObjectFromJsonSchema<TSchema> =
         [K in RequiredKeys<TSchema, Properties>]-?: FromJsonSchema<Properties[K]>
       } & {
         [K in Exclude<keyof Properties & string, RequiredKeys<TSchema, Properties>>]?: FromJsonSchema<Properties[K]>
-      }>
+      } & PatternPropertiesFromJsonSchema<TSchema> & AdditionalPropertiesFromJsonSchema<TSchema>>
       : Record<string, unknown>
     : Record<string, unknown>
 

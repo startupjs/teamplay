@@ -73,11 +73,19 @@ export const GETTERS = Symbol('get the list of this signal\'s getters')
 export const DEFAULT_GETTERS = ['path', 'id', 'get', 'peek', 'getId', 'map', 'reduce', 'find', 'getIds', 'getExtra', 'getCollection']
 
 export class Signal<TValue = unknown> extends Function {
+  /** Fields that are treated as document ids and mirror the document id segment. */
   static ID_FIELDS = DEFAULT_ID_FIELDS
+  /** Method names that keep method binding priority over child signal dot access. */
   static [GETTERS] = DEFAULT_GETTERS
+  /** Association metadata registered for this model class. */
   static associations = []
+  /** Path segments from the root signal to this signal. */
   declare readonly [SEGMENTS]: Array<string | number>
 
+  /**
+   * Add association metadata to this model class.
+   * @param association Association metadata object to register on the model class.
+   */
   static addAssociation (association: object): void {
     if (!association || typeof association !== 'object') {
       throw Error('Signal.addAssociation() expects an association object')
@@ -89,17 +97,23 @@ export class Signal<TValue = unknown> extends Function {
     this.associations = own.concat(association)
   }
 
+  /**
+   * Create a signal for the given root-relative path segments.
+   * @param segments Root-relative path segments this signal points to.
+   */
   constructor (segments: Array<string | number>) {
     if (!Array.isArray(segments)) throw Error('Signal constructor expects an array of segments')
     super()
     this[SEGMENTS] = segments
   }
 
+  /** Return the dot-separated path of this signal from the root data tree. */
   path (): string {
     if (arguments.length > 0) throw Error('Signal.path() does not accept any arguments')
     return this[SEGMENTS].join('.')
   }
 
+  /** Return the last segment of this signal path, or an empty string for the root signal. */
   leaf (): string {
     if (arguments.length > 0) throw Error('Signal.leaf() does not accept any arguments')
     const segments = this[SEGMENTS]
@@ -107,6 +121,10 @@ export class Signal<TValue = unknown> extends Function {
     return String(segments[segments.length - 1])
   }
 
+  /**
+   * Return the parent signal `levels` above this signal.
+   * @param levels Number of parent levels to walk upward. Defaults to `1`.
+   */
   parent (levels = 1): Signal {
     if (arguments.length > 1) throw Error('Signal.parent() expects a single argument')
     if (arguments.length === 0) levels = 1
@@ -126,11 +144,17 @@ export class Signal<TValue = unknown> extends Function {
     return $cursor
   }
 
+  /** Generate a new unique id suitable for a new document. */
   id (): string {
     return uuid()
   }
 
+  /** Run multiple signal reads and writes in a single reactive batch. */
   batch (): undefined
+  /**
+   * Run multiple signal reads and writes in a single reactive batch.
+   * @param fn Function to execute inside the batch.
+   */
   batch<TResult>(fn: () => TResult): TResult
   batch<TResult>(fn?: () => TResult): TResult | undefined {
     if (arguments.length > 1) throw Error('Signal.batch() expects a single argument')
@@ -139,6 +163,10 @@ export class Signal<TValue = unknown> extends Function {
     return runInBatch(fn)
   }
 
+  /**
+   * Internal read hook used by `.get()` and `.peek()`.
+   * @param method Storage read function to use for the current signal path.
+   */
   [GET] (method: (segments: Array<string | number>) => TValue): TValue {
     if (arguments.length > 1) throw Error('Signal[GET]() only accepts method as an argument')
     if (this[SEGMENTS].length === 0) {
@@ -156,6 +184,7 @@ export class Signal<TValue = unknown> extends Function {
     return method(getStorageSegmentsForSignal(this))
   }
 
+  /** Read the current value and track it for reactive rendering. */
   get (): TValue {
     if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
     if (this[SEGMENTS].length === 3 && this[SEGMENTS][0] === QUERIES && this[SEGMENTS][2] === 'ids') {
@@ -174,6 +203,7 @@ export class Signal<TValue = unknown> extends Function {
     return this[GET](_get)
   }
 
+  /** Return document ids for a query or aggregation signal. */
   getIds (): Array<string | number> {
     if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
     if (this[IS_QUERY]) {
@@ -200,11 +230,13 @@ export class Signal<TValue = unknown> extends Function {
     }
   }
 
+  /** Read the current value without tracking it for reactive rendering. */
   peek (): TValue {
     if (arguments.length > 0) throw Error('Signal.peek() does not accept any arguments')
     return this[GET](getRaw)
   }
 
+  /** Return the document id represented by this document signal. */
   getId (): string | number {
     if (this[SEGMENTS].length === 0) throw Error('Can\'t get the id of the root signal')
     if (this[SEGMENTS].length === 1) throw Error('Can\'t get the id of a collection')
@@ -217,6 +249,7 @@ export class Signal<TValue = unknown> extends Function {
     return this[SEGMENTS][this[SEGMENTS].length - 1]
   }
 
+  /** Return the public collection name this signal belongs to. */
   getCollection (): string {
     if (this[SEGMENTS].length === 0) throw Error('Can\'t get the collection of the root signal')
     if (this[SEGMENTS][0] === AGGREGATIONS) {
@@ -232,11 +265,13 @@ export class Signal<TValue = unknown> extends Function {
     return this[SEGMENTS][0]
   }
 
+  /** Return association metadata registered on this signal's model class. */
   getAssociations (): readonly unknown[] {
     const $raw = rawSignal(this) || this
     return $raw.constructor.associations || []
   }
 
+  /** Iterate child document signals for query signals, or item signals for array signals. */
   * [Symbol.iterator] (): IterableIterator<Signal> {
     if (this[IS_QUERY]) {
       const $root = getRoot(this) || this
@@ -257,6 +292,7 @@ export class Signal<TValue = unknown> extends Function {
     }
   }
 
+  /** Internal helper used to run array-style methods on query and array signals. */
   [ARRAY_METHOD] (method: string, nonArrayReturnValue: unknown, ...args: unknown[]): unknown {
     if (this[IS_QUERY]) {
       const collection = this[SEGMENTS][0]
@@ -281,13 +317,32 @@ export class Signal<TValue = unknown> extends Function {
     )[method](...args)
   }
 
+  /**
+   * Run `Array.prototype.map()` over query document signals or array item signals.
+   * @param callback Function called for each child signal.
+   * @param thisArg Optional `this` value for the callback.
+   */
   map<TResult>(callback: (value: Signal, index: number, array: Signal[]) => TResult, thisArg?: any): TResult[]
   map<TResult>(...args): TResult[] {
     return this[ARRAY_METHOD]('map', [], ...args)
   }
 
+  /**
+   * Run `Array.prototype.reduce()` over query document signals or array item signals.
+   * @param callback Function called for each child signal and accumulated value.
+   */
   reduce (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal): Signal
+  /**
+   * Run `Array.prototype.reduce()` over query document signals or array item signals.
+   * @param callback Function called for each child signal and accumulated value.
+   * @param initialValue Initial accumulator value.
+   */
   reduce (callback: (previousValue: Signal, currentValue: Signal, currentIndex: number, array: Signal[]) => Signal, initialValue: Signal): Signal
+  /**
+   * Run `Array.prototype.reduce()` over query document signals or array item signals.
+   * @param callback Function called for each child signal and accumulated value.
+   * @param initialValue Initial accumulator value.
+   */
   reduce<TResult>(
     callback: (previousValue: TResult, currentValue: Signal, currentIndex: number, array: Signal[]) => TResult,
     initialValue: TResult
@@ -296,11 +351,20 @@ export class Signal<TValue = unknown> extends Function {
     return this[ARRAY_METHOD]('reduce', undefined, ...args)
   }
 
+  /**
+   * Find the first query document signal or array item signal matching a predicate.
+   * @param predicate Function called for each child signal.
+   * @param thisArg Optional `this` value for the predicate.
+   */
   find (predicate: (value: Signal, index: number, obj: Signal[]) => unknown, thisArg?: any): Signal | undefined
   find (...args): Signal | undefined {
     return this[ARRAY_METHOD]('find', undefined, ...args)
   }
 
+  /**
+   * Replace this signal's value. Database writes are async and sync through ShareDB.
+   * @param value New value to store at this signal path.
+   */
   async set (value: TValue): Promise<void> {
     if (arguments.length > 1) throw Error('Signal.set() expects a single argument')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
@@ -317,6 +381,10 @@ export class Signal<TValue = unknown> extends Function {
     }
   }
 
+  /**
+   * Set multiple object fields at once. Fields set to `null` or `undefined` are deleted.
+   * @param value Object containing fields to set or delete.
+   */
   async assign (value: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never): Promise<void> {
     if (arguments.length > 1) throw Error('Signal.assign() expects a single argument')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t assign to the root signal data')
@@ -336,6 +404,10 @@ export class Signal<TValue = unknown> extends Function {
     await Promise.all(promises)
   }
 
+  /**
+   * Append one item to an array signal.
+   * @param value Item to append.
+   */
   async push (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown> {
     if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
     const segments = ensureArrayTarget(this)
@@ -346,6 +418,7 @@ export class Signal<TValue = unknown> extends Function {
     return arrayPushPrivateData(getOwningRootId(this), segments, value)
   }
 
+  /** Remove and return the last item from an array signal. */
   async pop (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown> {
     if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
     const segments = ensureArrayTarget(this)
@@ -356,6 +429,10 @@ export class Signal<TValue = unknown> extends Function {
     return arrayPopPrivateData(getOwningRootId(this), segments)
   }
 
+  /**
+   * Insert one item at the beginning of an array signal.
+   * @param value Item to insert.
+   */
   async unshift (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown> {
     if (arguments.length > 1) throw Error('Signal.unshift() expects a single argument')
     const segments = ensureArrayTarget(this)
@@ -366,6 +443,7 @@ export class Signal<TValue = unknown> extends Function {
     return arrayUnshiftPrivateData(getOwningRootId(this), segments, value)
   }
 
+  /** Remove and return the first item from an array signal. */
   async shift (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown> {
     if (arguments.length > 0) throw Error('Signal.shift() does not accept any arguments')
     const segments = ensureArrayTarget(this)
@@ -376,6 +454,11 @@ export class Signal<TValue = unknown> extends Function {
     return arrayShiftPrivateData(getOwningRootId(this), segments)
   }
 
+  /**
+   * Insert one or more items into an array signal at the given index.
+   * @param index Array index where the new item or items should be inserted.
+   * @param values Item or items to insert.
+   */
   async insert (index: number, values: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | Item[] : unknown): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for insert')
     if (arguments.length > 2) throw Error('Signal.insert() expects two arguments')
@@ -390,6 +473,11 @@ export class Signal<TValue = unknown> extends Function {
     return arrayInsertPrivateData(getOwningRootId(this), segments, index, values)
   }
 
+  /**
+   * Remove `howMany` items from an array signal starting at `index`.
+   * @param index Array index to start removing from.
+   * @param howMany Number of items to remove. Defaults to `1`.
+   */
   async remove (index: number, howMany = 1): Promise<unknown> {
     if (arguments.length < 1) throw Error('Not enough arguments for remove')
     if (arguments.length > 2) throw Error('Signal.remove() expects one or two arguments')
@@ -404,6 +492,12 @@ export class Signal<TValue = unknown> extends Function {
     return arrayRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
+  /**
+   * Move `howMany` array items from one index to another.
+   * @param from Source array index.
+   * @param to Destination array index.
+   * @param howMany Number of items to move. Defaults to `1`.
+   */
   async move (from: number, to: number, howMany = 1): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for move')
     if (arguments.length > 3) throw Error('Signal.move() expects two or three arguments')
@@ -418,6 +512,11 @@ export class Signal<TValue = unknown> extends Function {
     return arrayMovePrivateData(getOwningRootId(this), segments, from, to, howMany)
   }
 
+  /**
+   * Insert text into a string signal at the given character index.
+   * @param index Character index where text should be inserted.
+   * @param text Text to insert.
+   */
   async stringInsert (index: number, text: string): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for stringInsert')
     if (arguments.length > 2) throw Error('Signal.stringInsert() expects two arguments')
@@ -432,6 +531,11 @@ export class Signal<TValue = unknown> extends Function {
     return stringInsertPrivateData(getOwningRootId(this), segments, index, text)
   }
 
+  /**
+   * Remove `howMany` characters from a string signal starting at `index`.
+   * @param index Character index to start removing from.
+   * @param howMany Number of characters to remove. Defaults to `1`.
+   */
   async stringRemove (index: number, howMany = 1): Promise<unknown> {
     if (arguments.length < 2) throw Error('Not enough arguments for stringRemove')
     if (arguments.length > 2) throw Error('Signal.stringRemove() expects two arguments')
@@ -446,6 +550,10 @@ export class Signal<TValue = unknown> extends Function {
     return stringRemovePrivateData(getOwningRootId(this), segments, index, howMany)
   }
 
+  /**
+   * Add `value` to a number signal and return the new number. Defaults to `1`.
+   * @param value Amount to add to the current number. Defaults to `1`.
+   */
   async increment (value?: number): Promise<number> {
     if (arguments.length > 1) throw Error('Signal.increment() expects a single argument')
     if (value === undefined) value = 1
@@ -466,6 +574,10 @@ export class Signal<TValue = unknown> extends Function {
     return currentValue + value
   }
 
+  /**
+   * Add a document to a collection signal and return the new document id.
+   * @param value Document value to create. May include an explicit `id` field.
+   */
   async add (value: unknown): Promise<string> {
     if (arguments.length > 1) throw Error('Signal.add() expects a single argument')
     const id = resolveAddDocId(value, uuid)
@@ -474,6 +586,7 @@ export class Signal<TValue = unknown> extends Function {
     return id
   }
 
+  /** Delete this document or field. Whole collections and the root signal cannot be deleted. */
   async del (): Promise<void> {
     if (arguments.length > 0) throw Error('Signal.del() does not accept any arguments')
     if (this[SEGMENTS].length === 0) throw Error('Can\'t delete the root signal data')

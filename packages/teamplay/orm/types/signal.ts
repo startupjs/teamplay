@@ -87,6 +87,7 @@ export type QuerySignal<
   TDocumentPath extends WildcardSignalPath = readonly []
 > = Omit<Signal<TDocument[]>, SignalArrayMethodKeys> &
 SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
+  readonly ids: Signal<Array<string | number>>
   readonly [index: number]: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>
 }
 
