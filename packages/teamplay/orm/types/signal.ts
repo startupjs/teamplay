@@ -12,6 +12,7 @@ import type {
   PathSegment,
   WildcardSignalPath
 } from './path.ts'
+import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 
 export type SignalClass<TValue = unknown> = new (segments: PathSegment[]) => Signal<TValue>
 
@@ -30,7 +31,14 @@ type SignalModelInstance<TValue, TModel> =
     ? Signal<TValue>
     : Signal<TValue> & SignalInstance<TModel>
 
-type SignalArrayMethodKeys = 'map' | 'reduce' | 'find' | typeof Symbol.iterator
+type SignalArrayReaderMethodKeys = 'map' | 'reduce' | 'find' | typeof Symbol.iterator
+type SignalArrayMutatorMethodKeys = 'push' | 'pop' | 'unshift' | 'shift' | 'insert' | 'remove' | 'move'
+type SignalCollectionMethodKeys = 'add' | SignalArrayReaderMethodKeys | SignalArrayMutatorMethodKeys
+type SignalQueryMethodKeys = SignalArrayReaderMethodKeys | SignalArrayMutatorMethodKeys
+
+type BlockedArrayMutators = {
+  readonly [K in SignalArrayMutatorMethodKeys]?: never
+}
 
 type SignalArrayLike<TItem> = {
   readonly [Symbol.iterator]: () => IterableIterator<TItem>
@@ -65,7 +73,7 @@ type ArrayItemSignal<Item, TPath extends WildcardSignalPath> =
 type SignalArrayMethods<TValue, TPath extends WildcardSignalPath> =
   NonNullable<TValue> extends ReadonlyArray<infer Item>
     ? SignalArrayLike<ArrayItemSignal<Item, TPath>>
-    : Pick<Signal<TValue>, SignalArrayMethodKeys>
+    : Pick<Signal<TValue>, SignalArrayReaderMethodKeys>
 
 type SignalFieldsForPath<TPath extends WildcardSignalPath> =
   JoinPath<TPath> extends keyof TeamplaySignalFields
@@ -74,15 +82,84 @@ type SignalFieldsForPath<TPath extends WildcardSignalPath> =
 
 export type AnySignal = Signal<any>
 
+export type SignalKind =
+  | 'document'
+  | 'collection'
+  | 'array'
+  | 'query'
+  | 'aggregation'
+  | 'collectionQuery'
+
+type DocumentSignalForKind<
+  TValue,
+  TModel extends SignalClass<any>,
+  TPath extends WildcardSignalPath
+> =
+  Omit<SignalModelInstance<TValue, PathModel<TValue, TModel, TPath>>, SignalArrayReaderMethodKeys> &
+  SignalArrayMethods<TValue, TPath> &
+  SignalChildren<TValue, TPath> &
+  SignalFieldsForPath<TPath>
+
+type CollectionSignalForKind<
+  TDocument,
+  TCollectionModel extends SignalClass<any>,
+  TDocumentModel extends SignalClass<any>,
+  TPath extends WildcardSignalPath
+> =
+  Omit<
+    SignalModelInstance<TDocument[], PathModel<TDocument[], TCollectionModel, TPath>>,
+    SignalCollectionMethodKeys
+  > &
+  SignalArrayLike<CollectionDocumentSignal<TDocument, TDocumentModel, TPath>> &
+  BlockedArrayMutators &
+  { add: (value: TDocument) => Promise<string> } &
+  Readonly<Record<string, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>> &
+  Readonly<Record<number, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>>
+
+type ArraySignalForKind<
+  TDocument,
+  TDocumentModel extends SignalClass<any>,
+  TDocumentPath extends WildcardSignalPath
+> = Omit<Signal<TDocument[]>, SignalQueryMethodKeys> &
+SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
+  readonly [index: number]: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>
+} &
+BlockedArrayMutators
+
+type QuerySignalForKind<
+  TDocument,
+  TDocumentModel extends SignalClass<any>,
+  TDocumentPath extends WildcardSignalPath
+> = ArraySignalForKind<TDocument, TDocumentModel, TDocumentPath> & {
+  readonly ids: Signal<Array<string | number>>
+}
+
+export type SignalForKind<
+  TKind extends SignalKind,
+  TValue = unknown,
+  TCollectionModel extends SignalClass<any> = typeof Signal,
+  TDocumentModel extends SignalClass<any> = typeof Signal,
+  TPath extends WildcardSignalPath = readonly []
+> =
+  TKind extends 'document'
+    ? DocumentSignalForKind<TValue, TDocumentModel, TPath>
+    : TKind extends 'collection'
+      ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath>
+      : TKind extends 'array'
+        ? ArraySignalForKind<TValue, TDocumentModel, TPath>
+        : TKind extends 'query' | 'aggregation'
+          ? QuerySignalForKind<TValue, TDocumentModel, TPath>
+          : TKind extends 'collectionQuery'
+            ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath> & {
+              readonly ids: Signal<Array<string | number>>
+            }
+            : never
+
 export type TypedSignal<
   TValue = unknown,
   TModel extends SignalClass<any> = typeof Signal,
   TPath extends WildcardSignalPath = readonly []
-> =
-  Omit<SignalModelInstance<TValue, PathModel<TValue, TModel, TPath>>, SignalArrayMethodKeys> &
-  SignalArrayMethods<TValue, TPath> &
-  SignalChildren<TValue, TPath> &
-  SignalFieldsForPath<TPath>
+> = DocumentSignalForKind<TValue, TModel, TPath>
 
 export type DocumentSignal<
   TValue = unknown,
@@ -102,37 +179,25 @@ export type CollectionSignal<
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TPath extends WildcardSignalPath = readonly []
 > =
-  Omit<
-    SignalModelInstance<TDocument[], PathModel<TDocument[], TCollectionModel, TPath>>,
-    'add' | SignalArrayMethodKeys
-  > &
-  SignalArrayLike<CollectionDocumentSignal<TDocument, TDocumentModel, TPath>> &
-  { add: (value: TDocument) => Promise<string> } &
-  Readonly<Record<string, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>> &
-  Readonly<Record<number, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>>
+  CollectionSignalForKind<TDocument, TCollectionModel, TDocumentModel, TPath>
 
 export type ArraySignal<
   TDocument = unknown,
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TDocumentPath extends WildcardSignalPath = readonly []
-> = Omit<Signal<TDocument[]>, SignalArrayMethodKeys> &
-SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
-  readonly [index: number]: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>
-}
+> = ArraySignalForKind<TDocument, TDocumentModel, TDocumentPath>
 
 export type QuerySignal<
   TDocument = unknown,
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TDocumentPath extends WildcardSignalPath = readonly []
-> = ArraySignal<TDocument, TDocumentModel, TDocumentPath> & {
-  readonly ids: Signal<Array<string | number>>
-}
+> = QuerySignalForKind<TDocument, TDocumentModel, TDocumentPath>
 
 export type AggregationSignal<
   TDocument = unknown,
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TDocumentPath extends WildcardSignalPath = readonly []
-> = QuerySignal<TDocument, TDocumentModel, TDocumentPath>
+> = QuerySignalForKind<TDocument, TDocumentModel, TDocumentPath>
 
 export type CollectionDocument<TSpec> =
   TSpec extends CollectionSpec<infer Document, any, any> ? Document
@@ -148,7 +213,7 @@ export type CollectionQuerySignal<
   TCollectionModel extends SignalClass<any>,
   TDocumentModel extends SignalClass<any>,
   TCollectionPath extends WildcardSignalPath
-> = CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> & {
+> = CollectionSignalForKind<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> & {
   readonly ids: Signal<Array<string | number>>
 }
 
@@ -174,6 +239,32 @@ export type CollectionAggregationSignal<TCollection extends keyof TeamplayCollec
 
 export type TypedAggregationSignal<TDocument, TDocumentModel extends SignalClass<any>> =
   AggregationSignal<TDocument, TDocumentModel>
+
+export type MaybePromise<TValue> = TValue | Promise<TValue>
+
+export type SubResult<TSignal, TParams = undefined> =
+  TSignal extends TypedAggregationInput<infer TDocument, infer TDocumentModel>
+    ? TypedAggregationSignal<TDocument, TDocumentModel>
+    : TSignal extends RegisteredAggregationInput<infer TCollection>
+      ? TCollection extends keyof TeamplayCollections & string
+        ? CollectionAggregationSignal<TCollection>
+        : QuerySignal
+      : TSignal extends ClientAggregationFunction<infer TCollection>
+        ? TCollection extends keyof TeamplayCollections & string
+          ? CollectionAggregationSignal<TCollection>
+          : QuerySignal
+        : TSignal extends AggregationFunction
+          ? QuerySignal
+          : [TParams] extends [undefined]
+              ? TSignal extends DocumentSignal<any, any, any>
+                ? TSignal
+                : QuerySignal
+              : TSignal extends CollectionSignal<infer TDocument, infer TCollectionModel, infer TDocumentModel, infer TCollectionPath>
+                ? CollectionQuerySignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>
+                : QuerySignal
+
+export type MaybePromiseSubResult<TSignal, TParams = undefined> =
+  MaybePromise<SubResult<TSignal, TParams>>
 
 export type SignalChild<TValue, TPath extends WildcardSignalPath> =
   DocumentSignal<TValue, typeof Signal, TPath>

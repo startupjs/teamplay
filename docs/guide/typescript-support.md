@@ -179,6 +179,8 @@ const $activeUsers = await sub($.users, { active: true })
 $activeUsers.addNew()
 ```
 
+Top-level collection, query, and aggregation signals are array-readable with `map`, `reduce`, `find`, and iteration. Array mutators such as `push` and `pop` are only typed on actual array fields like `$user.tags`, because mutating a collection or query result as an array is not a valid runtime operation.
+
 If two collections have exactly the same document type, TeamPlay cannot safely infer which collection model belongs to `Signal<T>`, so it falls back to the plain typed signal shape.
 
 ## Local Signals

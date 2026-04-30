@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useRef, useDeferredValue } from 'react'
-import type { AggregationFunction } from '@teamplay/utils/aggregation'
+import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import sub from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer, useId } from './helpers.ts'
 import executionContextTracker from './executionContextTracker.js'
@@ -9,12 +9,11 @@ import renderAttemptDestroyer from './renderAttemptDestroyer.js'
 import { markCompatComponent } from './compatComponentRegistry.js'
 import type {
   CollectionAggregationSignal,
-  CollectionQuerySignal,
   CollectionSignal,
   DocumentSignal,
   QueryParams,
-  QuerySignal,
   RegisteredAggregationInput,
+  SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
   WildcardSignalPath
@@ -50,7 +49,7 @@ export function useAsyncSub<TSignal extends DocumentSignal<any, any, any>> (
   signal: TSignal,
   params?: undefined,
   options?: UseSubOptions
-): TSignal
+): SubResult<TSignal>
 
 /**
  * Subscribe to a collection query in React async mode.
@@ -67,7 +66,7 @@ export function useAsyncSub<
   signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>,
   options?: UseSubOptions
-): CollectionQuerySignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>
+): SubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
 
 /**
  * Subscribe to a registered collection aggregation in React async mode.
@@ -88,7 +87,7 @@ export function useAsyncSub<TCollection extends keyof TeamplayCollections & stri
  * @param options Subscription behavior options.
  */
 export function useAsyncSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: AggregationFunction<TCollection>,
+  signal: ClientAggregationFunction<TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
 ): CollectionAggregationSignal<TCollection>
@@ -115,7 +114,7 @@ export function useAsyncSub (
   signal: AggregationFunction,
   params?: Record<string, any>,
   options?: UseSubOptions
-): QuerySignal
+): SubResult<AggregationFunction, Record<string, any> | undefined>
 
 export function useAsyncSub (signal, params, options) {
   return useSub(signal, params, { ...options, async: true })
@@ -131,7 +130,7 @@ export default function useSub<TSignal extends DocumentSignal<any, any, any>> (
   signal: TSignal,
   params?: undefined,
   options?: UseSubOptions
-): TSignal
+): SubResult<TSignal>
 
 /**
  * Subscribe to a collection query in React.
@@ -148,7 +147,7 @@ export default function useSub<
   signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>,
   options?: UseSubOptions
-): CollectionQuerySignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>
+): SubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
 
 /**
  * Subscribe to a registered collection aggregation in React.
@@ -169,7 +168,7 @@ export default function useSub<TCollection extends keyof TeamplayCollections & s
  * @param options Subscription behavior options.
  */
 export default function useSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: AggregationFunction<TCollection>,
+  signal: ClientAggregationFunction<TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
 ): CollectionAggregationSignal<TCollection>
@@ -196,7 +195,7 @@ export default function useSub (
   signal: AggregationFunction,
   params?: Record<string, any>,
   options?: UseSubOptions
-): QuerySignal
+): SubResult<AggregationFunction, Record<string, any> | undefined>
 
 export default function useSub (signal, params, options) {
   if (USE_DEFERRED_VALUE) {

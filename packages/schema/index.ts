@@ -5,3 +5,10 @@ export { onTransformSchema, setOnTransformSchema } from './lib/onTransformSchema
 export * from './lib/associations.js'
 export { default as GUID_PATTERN } from './lib/GUID_PATTERN.js'
 export { default as pickFormFields } from './lib/pickFormFields.js'
+export {
+  JSON_SCHEMA_KEYWORDS,
+  getSchemaPropertiesObject,
+  getSimplifiedSchemaRequiredFields,
+  isFullObjectSchema,
+  isJsonSchemaKeyword
+} from './lib/schemaIntrospection.js'

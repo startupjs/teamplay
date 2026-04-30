@@ -1,10 +1,9 @@
-// @ts-nocheck
-export const isAggregationFlag = '__isAggregation'
-export const isClientAggregationFlag = '__isClientAggregation'
+export const isAggregationFlag = '__isAggregation' as const
+export const isClientAggregationFlag = '__isClientAggregation' as const
 
 export interface AggregationMeta<TCollection extends string = string> {
   /** Marker used by TeamPlay to identify aggregation headers. */
-  readonly __isAggregation: true
+  readonly [isAggregationFlag]: true
   /** Collection this aggregation runs against. */
   readonly collection: TCollection
   /** Aggregation name registered by the StartupJS model loader. */
@@ -14,24 +13,38 @@ export interface AggregationMeta<TCollection extends string = string> {
 export interface AggregationFunction<TCollection extends string = string> {
   (...args: any[]): any
   /** Marker used by TeamPlay to identify aggregation functions. */
-  readonly __isAggregation: true
+  readonly [isAggregationFlag]: true
   /** Collection this aggregation runs against when known on the client. */
+  readonly collection?: TCollection
+}
+
+export interface ClientAggregationFunction<TCollection extends string = string> extends AggregationFunction<TCollection> {
+  /** Marker used by TeamPlay to identify client aggregations with a known collection. */
+  readonly [isClientAggregationFlag]: true
+  /** Collection this aggregation runs against. */
   readonly collection: TCollection
 }
 
-export function isAggregation (something) {
+type MutableAggregationFunction<TCollection extends string = string> =
+  ((...args: any[]) => any) & {
+    [isAggregationFlag]?: true
+    [isClientAggregationFlag]?: true
+    collection?: TCollection
+  }
+
+export function isAggregation (something: unknown): something is AggregationFunction | AggregationMeta {
   return isAggregationFunction(something) || isAggregationHeader(something)
 }
 
-export function isAggregationFunction (fn) {
-  return typeof fn === 'function' && fn[isAggregationFlag]
+export function isAggregationFunction (fn: unknown): fn is AggregationFunction {
+  return typeof fn === 'function' && Boolean((fn as Partial<AggregationFunction>)[isAggregationFlag])
 }
 
-export function isClientAggregationFunction (fn) {
-  return isAggregationFunction(fn) && fn[isClientAggregationFlag]
+export function isClientAggregationFunction (fn: unknown): fn is ClientAggregationFunction {
+  return isAggregationFunction(fn) && Boolean((fn as Partial<ClientAggregationFunction>)[isClientAggregationFlag])
 }
 
-export function isAggregationHeader (aggregationMeta) {
+export function isAggregationHeader (aggregationMeta: unknown): aggregationMeta is AggregationMeta {
   return validateAggregationMeta(aggregationMeta) && aggregationMeta[isAggregationFlag]
 }
 
@@ -43,22 +56,26 @@ export function isAggregationHeader (aggregationMeta) {
 export function aggregation<TCollection extends string> (
   collection: TCollection,
   fn: (...args: any[]) => any
-): AggregationFunction<TCollection>
+): ClientAggregationFunction<TCollection>
 /**
  * Mark a model-file aggregation function for StartupJS server aggregation loading.
  * @param fn Function returning a Mongo aggregation pipeline or aggregation query object.
  */
-export function aggregation<TCollection extends string> (fn: (...args: any[]) => any): AggregationFunction<TCollection>
+export function aggregation<TCollection extends string = string> (fn: (...args: any[]) => any): AggregationFunction<TCollection>
 /**
  * Mark a model-file aggregation function for StartupJS server aggregation loading.
  * @param fn Function returning a Mongo aggregation pipeline or aggregation query object.
  */
 export function aggregation (fn: (...args: any[]) => any): AggregationFunction
-export function aggregation (collectionOrFn, aggregationFn) {
+export function aggregation<TCollection extends string> (
+  collectionOrFn: TCollection | ((...args: any[]) => any),
+  aggregationFn?: (...args: any[]) => any
+): AggregationFunction | ClientAggregationFunction<TCollection> {
   if (typeof collectionOrFn === 'string') return clientAggregation(collectionOrFn, aggregationFn)
   if (typeof collectionOrFn !== 'function') throw Error('aggregation: argument must be a function')
-  collectionOrFn[isAggregationFlag] = true
-  return collectionOrFn
+  const fn = collectionOrFn as MutableAggregationFunction
+  fn[isAggregationFlag] = true
+  return fn as AggregationFunction
 }
 
 /**
@@ -66,13 +83,17 @@ export function aggregation (collectionOrFn, aggregationFn) {
  * @param collection Collection name this aggregation runs against.
  * @param aggregationFn Function returning a Mongo aggregation pipeline or aggregation query object.
  */
-export function clientAggregation (collection, aggregationFn) {
+export function clientAggregation<TCollection extends string> (
+  collection: TCollection,
+  aggregationFn?: (...args: any[]) => any
+): ClientAggregationFunction<TCollection> {
   if (typeof collection !== 'string') throw Error('clientAggregation: collection must be a string')
   if (typeof aggregationFn !== 'function') throw Error('clientAggregation: aggregationFn must be a function')
-  aggregationFn[isAggregationFlag] = true
-  aggregationFn[isClientAggregationFlag] = true
-  aggregationFn.collection = collection
-  return aggregationFn
+  const fn = aggregationFn as MutableAggregationFunction<TCollection>
+  fn[isAggregationFlag] = true
+  fn[isClientAggregationFlag] = true
+  fn.collection = collection
+  return fn as ClientAggregationFunction<TCollection>
 }
 
 /**
@@ -82,25 +103,29 @@ export function clientAggregation (collection, aggregationFn) {
 export function aggregationHeader<TCollection extends string> (
   aggregationMeta: { collection: TCollection, name: string }
 ): AggregationMeta<TCollection>
-export function aggregationHeader (aggregationMeta) {
+export function aggregationHeader<TCollection extends string> (
+  aggregationMeta: { collection: TCollection, name: string }
+): AggregationMeta<TCollection> {
   if (!validateAggregationMeta(aggregationMeta)) {
     throw Error(ERRORS.wrongAggregationMeta(aggregationMeta))
   }
-  aggregationMeta[isAggregationFlag] = true
-  return aggregationMeta
+  const meta = aggregationMeta as AggregationMeta<TCollection>
+  ;(meta as { [isAggregationFlag]?: true })[isAggregationFlag] = true
+  return meta
 }
 
-function validateAggregationMeta (aggregationMeta) {
+function validateAggregationMeta (aggregationMeta: unknown): aggregationMeta is AggregationMeta {
   if (
+    aggregationMeta &&
     typeof aggregationMeta === 'object' &&
-    typeof aggregationMeta.collection === 'string' &&
-    typeof aggregationMeta.name === 'string'
+    typeof (aggregationMeta as Partial<AggregationMeta>).collection === 'string' &&
+    typeof (aggregationMeta as Partial<AggregationMeta>).name === 'string'
   ) return true
   return false
 }
 
 const ERRORS = {
-  wrongAggregationMeta: (aggregationMeta) => `
+  wrongAggregationMeta: (aggregationMeta: unknown) => `
     aggregationHeader: invalid aggregationMeta
       Expected: { collection: 'collectionName', name: 'aggregationName' }
       Received: ${JSON.stringify(aggregationMeta)}

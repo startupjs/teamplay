@@ -9,6 +9,8 @@
  * @param {Array} options.exclude - list of fields to exclude (default: none)
  * @param {Boolean} options.freeze - whether to deep freeze the result (default: true)
  */
+import { getSchemaPropertiesObject } from './schemaIntrospection.js'
+
 export default function pickFormFields (schema, options) {
   try {
     let include, exclude, freeze
@@ -20,9 +22,7 @@ export default function pickFormFields (schema, options) {
     exclude ??= []
     if (!schema) throw Error('pickFormFields: schema is required')
     schema = JSON.parse(JSON.stringify(schema))
-    if (schema.type === 'object') {
-      schema = schema.properties
-    }
+    schema = getSchemaPropertiesObject(schema)
     for (const key in schema) {
       if (shouldIncludeField(key, schema[key], { include, exclude })) {
         const field = schema[key]

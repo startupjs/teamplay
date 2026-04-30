@@ -3,11 +3,15 @@ import {
   Signal,
   addModel,
   aggregation,
+  defineModels,
   sub,
   useSub,
+  type CollectionsFromManifest,
   type FromJsonSchema,
   type JsonSchemaSpec,
   type CollectionQuerySignal,
+  type PathModelsFromManifest,
+  type TypedAggregationInput,
   type TypedSignal,
   type ZodSchemaSpec
 } from 'teamplay'
@@ -22,6 +26,11 @@ type Expect<T extends true> = T
 type AwaitedSub<T> = T extends Promise<infer Value> ? Value : T
 type PromiseValue<T> = T extends Promise<infer Value> ? Value : never
 type HasFindOpenGames<T> = T extends { findOpenGames: (...args: any[]) => any } ? true : false
+
+// Public Signal<T> is intentionally a registry-based facade. When T maps to
+// exactly one generated collection document type it exposes that model; when
+// multiple collections share the same document type it falls back to plain
+// signal fields to avoid guessing the wrong model.
 type TypeAssertions = [
   GameSchemaInference,
   TitleValue,
@@ -112,7 +121,14 @@ type TypeAssertions = [
   NullableSchemaInference,
   NullableObjectSchemaInference,
   SimplifiedKeywordFieldSchemaInference,
-  TupleSchemaInference
+  TupleSchemaInference,
+  AmbiguousDocumentFallbackField,
+  AmbiguousArrayFallbackItem,
+  TypedAggregationOutputField,
+  TypedAggregationOutputMethod,
+  DefinedManifestCollection,
+  DefinedManifestDocPathModel,
+  DefinedManifestNestedPathModel
 ]
 
 const gameSchema = {
@@ -231,10 +247,77 @@ interface ZodLikeGame {
   }
 }
 
+interface SharedDocShape {
+  name: string
+}
+
+const ambiguousSharedSchema = {
+  name: { type: 'string', required: true }
+} as const
+
+class SharedDocsA extends Signal<SharedDocShape[]> {
+  onlyOnSharedA () {
+    return this
+  }
+}
+
+class SharedDocA extends Signal<SharedDocShape> {
+  onlyOnSharedDocA () {
+    return this.name.get()
+  }
+}
+
+class SharedDocsB extends Signal<SharedDocShape[]> {
+  onlyOnSharedB () {
+    return this
+  }
+}
+
+class SharedDocB extends Signal<SharedDocShape> {
+  onlyOnSharedDocB () {
+    return this.name.get()
+  }
+}
+
+interface RoleCount {
+  role: string
+  count: number
+}
+
+class RoleCountModel extends Signal<RoleCount> {
+  label () {
+    return `${this.role.get()}: ${this.count.get()}`
+  }
+}
+
+const definedModels = defineModels({
+  games: {
+    default: GamesModel,
+    schema: gameSchema
+  },
+  'games.*': {
+    default: GameModel
+  },
+  'games.*.info': {
+    default: GameInfoModel
+  }
+})
+
+type DefinedManifestCollections = CollectionsFromManifest<typeof definedModels>
+type DefinedManifestPathModels = PathModelsFromManifest<typeof definedModels>
+type DefinedManifestCollection = Expect<Equal<
+  DefinedManifestCollections['games'],
+  JsonSchemaSpec<typeof gameSchema, typeof GamesModel, typeof GameModel>
+>>
+type DefinedManifestDocPathModel = Expect<Equal<DefinedManifestPathModels['games.*'], typeof GameModel>>
+type DefinedManifestNestedPathModel = Expect<Equal<DefinedManifestPathModels['games.*.info'], typeof GameInfoModel>>
+
 declare module 'teamplay' {
   interface TeamplayCollections {
     games: JsonSchemaSpec<typeof gameSchema, typeof GamesModel, typeof GameModel>
     zodGames: ZodSchemaSpec<ZodLikeGame, typeof GamesModel, typeof GameModel>
+    sharedAs: JsonSchemaSpec<typeof ambiguousSharedSchema, typeof SharedDocsA, typeof SharedDocA>
+    sharedBs: JsonSchemaSpec<typeof ambiguousSharedSchema, typeof SharedDocsB, typeof SharedDocB>
   }
 
   interface TeamplayModels {
@@ -265,6 +348,13 @@ const collectionAddId = $games.add({
 const collectionMethodChainAddId = $games.findOpenGames().add({
   info: {
     title: 'Go',
+    maxPlayers: 2
+  }
+})
+// @ts-expect-error top-level collection signals use add(), not array mutators
+$games.push({
+  info: {
+    title: 'Mutator Chess',
     maxPlayers: 2
   }
 })
@@ -409,6 +499,8 @@ sub($.games, { 'info.maxPlayers': 'two' })
 sub($.games, { status: { $in: ['draft', 'archived'] } })
 const $$activeGames = aggregation('games', ({ active }: { active: boolean }) => [{ $match: { active } }])
 const $aggregationGames = sub($$activeGames, { active: true })
+const $$roleCounts = null as unknown as TypedAggregationInput<RoleCount, typeof RoleCountModel>
+const $roleCounts = sub($$roleCounts, { active: true })
 function useHookAggregationGames () {
   return useSub($$activeGames, { active: true })
 }
@@ -418,7 +510,9 @@ const $hookAggregationGame = (null as unknown as ReturnType<typeof useHookAggreg
 
 type QueryGames = AwaitedSub<typeof $queryGames>
 type AggregationGames = AwaitedSub<typeof $aggregationGames>
+type RoleCounts = AwaitedSub<typeof $roleCounts>
 type QueryGameItem = QueryGames extends Iterable<infer Item> ? Item : never
+const $roleCount = (null as unknown as RoleCounts)[0]
 type QuerySignalType = Expect<Equal<QueryGames, CollectionQuerySignal<Game, typeof GamesModel, typeof GameModel, readonly ['games']>>>
 type QueryIndexDocumentModel = Expect<Equal<ReturnType<QueryGames[0]['info']['title']['get']>, string>>
 type QueryIteratorDocumentModel = Expect<Equal<ReturnType<QueryGameItem['info']['title']['get']>, string>>
@@ -428,9 +522,25 @@ type AggregationDocumentMethods = Expect<Equal<ReturnType<typeof $aggregationGam
 type HookAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookAggregationGame.info.maxPlayers.get>, number>>
 type QueryNestedPathModelMethod = Expect<Equal<ReturnType<typeof $hookQueryGame.info.titleCase>, string>>
 type AggregationNestedPathModelMethod = Expect<Equal<ReturnType<typeof $aggregationGame.info.tags[0]['label']>, string>>
+type TypedAggregationOutputField = Expect<Equal<ReturnType<typeof $roleCount.count.get>, number>>
+type TypedAggregationOutputMethod = Expect<Equal<ReturnType<typeof $roleCount.label>, string>>
 declare const $resolvedQueryGames: QueryGames
 const $firstQueryGame = $resolvedQueryGames.reduce(($firstGame, $secondGame) => $firstGame)
 const $resolvedOpenQueryGames = $resolvedQueryGames.findOpenGames()
+// @ts-expect-error query signals are array-readable but not array-mutable at the top level
+$resolvedQueryGames.push({
+  info: {
+    title: 'Queried Mutator Go',
+    maxPlayers: 2
+  }
+})
+// @ts-expect-error aggregation signals are array-readable but not array-mutable at the top level
+$aggregationGames.push({
+  info: {
+    title: 'Aggregated Mutator Go',
+    maxPlayers: 2
+  }
+})
 const $hookOpenQueryGames = (null as unknown as ReturnType<typeof useHookQueryGames>).findOpenGames()
 const resolvedOpenQueryAddId = $resolvedOpenQueryGames.add({
   info: {
@@ -551,8 +661,11 @@ const $signalAliasBoolean: Signal<boolean> = $<boolean>()
 const $signalAliasEvent: Signal<NewEventDoc> = $<NewEventDoc>()
 const $signalAliasGame: Signal<Game> = $.games[gameId]
 const $signalAliasGames: Signal<Game[]> = $.games
+const $ambiguousSharedDoc = null as unknown as Signal<SharedDocShape>
+const $ambiguousSharedDocs = null as unknown as Signal<SharedDocShape[]>
 const signalAliasGameTitles = $signalAliasGames.map($game => $game.titleFromThis())
 const collectionSignalGameTitles = $.games.map($game => $game.titleFromThis())
+const ambiguousSharedNames = $ambiguousSharedDocs.map($doc => $doc.name.get())
 const $signalAliasOpenGames = $signalAliasGames.findOpenGames()
 const signalAliasOpenGameAddId = $signalAliasOpenGames.add({
   info: {
@@ -562,6 +675,10 @@ const signalAliasOpenGameAddId = $signalAliasOpenGames.add({
 })
 $explicitBoolean.set(true)
 $explicitEvent.assign({ title: 'Launch' })
+// @ts-expect-error ambiguous document shapes should not guess a document model
+$ambiguousSharedDoc.onlyOnSharedDocA()
+// @ts-expect-error ambiguous document arrays should not guess a collection model
+$ambiguousSharedDocs.onlyOnSharedA()
 // @ts-expect-error explicit generic no-arg local signals should keep the requested primitive type
 $explicitBoolean.set('true')
 // @ts-expect-error explicit generic no-arg local signals should keep object field types
@@ -639,6 +756,8 @@ type CollectionSignalArrayMapDocumentModel = Expect<Equal<typeof collectionSigna
 type SignalAliasArrayCollectionModelMethod = Expect<Equal<HasFindOpenGames<typeof $signalAliasGames>, true>>
 type SignalAliasArrayCollectionAdd = Expect<Equal<typeof signalAliasOpenGameAddId, Promise<string>>>
 type SignalAliasNestedPathModelMethod = Expect<Equal<ReturnType<typeof $signalAliasGame.info.titleCase>, string>>
+type AmbiguousDocumentFallbackField = Expect<Equal<ReturnType<typeof $ambiguousSharedDoc.name.get>, string>>
+type AmbiguousArrayFallbackItem = Expect<Equal<typeof ambiguousSharedNames[number], string>>
 type LocalDollarPrimitive = Expect<Equal<ReturnType<typeof $destructuredLocalScore.get>, number>>
 type LocalDollarString = Expect<Equal<ReturnType<typeof $destructuredLocalTitle.get>, string>>
 const $localPlayer = $scoreboard.players[0]

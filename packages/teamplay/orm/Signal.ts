@@ -31,18 +31,29 @@ export type {
   CollectionSpec,
   DocumentSignal,
   JsonSchemaSpec,
+  MaybePromise,
+  MaybePromiseSubResult,
   RegisteredAggregationInput,
   QuerySignal,
   SignalChild,
   SignalChildren,
   SignalClass,
   SignalConstructor,
+  SignalForKind,
+  SignalKind,
   SignalInstance,
+  SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
   TypedSignal,
   ZodSchemaSpec
 } from './types/signal.ts'
+export type {
+  CollectionsFromManifest,
+  ModelEntry,
+  ModelManifest,
+  PathModelsFromManifest
+} from './types/modelManifest.ts'
 
 export {
   Signal,

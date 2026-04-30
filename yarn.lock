@@ -4714,6 +4714,7 @@ __metadata:
     "@babel/parser": "npm:^7.0.0"
     "@babel/traverse": "npm:^7.0.0"
     "@startupjs/babel-plugin-eliminator": "npm:^0.62.0-alpha.0"
+    "@teamplay/schema": "npm:^0.4.0-alpha.9"
     vitest: "npm:^4.1.5"
   languageName: unknown
   linkType: soft

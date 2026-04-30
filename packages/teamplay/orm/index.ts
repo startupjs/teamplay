@@ -9,10 +9,14 @@ export type {
   CollectionSignal,
   CollectionSignalFromSpec,
   CollectionSpec,
+  CollectionsFromManifest,
   DocumentSignal,
   FromJsonSchema,
   JsonSchema,
   JsonSchemaSpec,
+  ModelEntry,
+  ModelManifest,
+  PathModelsFromManifest,
   WildcardPathSegment,
   WildcardSignalPath,
   AppendPath,
@@ -22,6 +26,8 @@ export type {
   SignalClass,
   SignalChild,
   SignalConstructor,
+  SignalForKind,
+  SignalKind,
   TypedAggregationInput,
   TypedAggregationSignal,
   TypedSignal,
@@ -33,6 +39,7 @@ export type { RootSignal, TeamplayCollections, TeamplayModels, TeamplaySignalFie
 export const BaseModel = Signal
 export default BaseModel
 export {
+  defineModels,
   default as initModels,
   getModels,
   resetModelsForTests

@@ -926,6 +926,47 @@ When adding schema features:
 3. Add JSDoc extraction support only if it can be done statically and safely.
 4. Add paired runtime and type fixtures.
 
+## Implementation Notes
+
+### Manifest Helpers
+
+The first refactor moved model manifest interpretation into TeamPlay-owned helper types:
+
+- `ModelEntry` and `ModelManifest` describe the runtime object consumed by `initModels()`.
+- `defineModels()` is a typed no-op for manual model manifests.
+- `CollectionsFromManifest<T>` derives `TeamplayCollections` from collection entries, schema entries, and matching `collection.*` document model entries.
+- `PathModelsFromManifest<T>` derives `TeamplayModels` from wildcard model entries such as `games.*` and `games.*.comments.*`.
+
+The generated `teamplay-env.d.ts` now emits an internal manifest interface and augments TeamPlay by extending those helper types. This keeps generator output simpler and moves policy like "collection document model comes from `${collection}.*`" into checked TypeScript code.
+
+### Subscription Result Helpers
+
+`SubResult<TSignal, TParams>` and `MaybePromiseSubResult<TSignal, TParams>` now centralize the common document, collection query, typed aggregation, registered aggregation, client aggregation, and unregistered aggregation result shapes.
+
+Generic aggregation overloads still use direct result types where conditional inference would reduce editor quality. In particular, client aggregation typing goes through `ClientAggregationFunction<TCollection>` because plain `AggregationFunction` can represent server-only model-file aggregations where the collection is not known on the function value.
+
+### Signal Kind Core
+
+`SignalKind` and `SignalForKind` now provide one central place for the major signal shapes. The public aliases still resolve through non-conditional helper shapes where TypeScript needs to infer generic overloads, because conditional facades degrade inference for `sub()` and `useSub()`.
+
+Array readers and mutators are now represented separately:
+
+- Array readers are `map`, `reduce`, `find`, and `[Symbol.iterator]`.
+- Array mutators are `push`, `pop`, `unshift`, `shift`, `insert`, `remove`, and `move`.
+
+Top-level collection, query, and aggregation signals expose array readers where runtime supports them, but they block array mutators at the type level. Nested array fields still expose mutators because those paths are valid runtime array targets.
+
+### Schema Introspection Helpers
+
+Schema shape detection now has a shared runtime home in `@teamplay/schema`:
+
+- `isFullObjectSchema()` decides whether a schema is full JSON Schema form (`type: 'object'`) or TeamPlay shorthand.
+- `getSchemaPropertiesObject()` returns the properties object for both full and shorthand schema forms.
+- `getSimplifiedSchemaRequiredFields()` centralizes shorthand `required: true` extraction.
+- `JSON_SCHEMA_KEYWORDS` is shared with the Babel plugin so the AST-based JSDoc extractor does not maintain its own keyword list.
+
+The Babel plugin still needs AST-specific traversal for static schema files, but it no longer owns generic JSON-schema keyword policy.
+
 ## Bottom Line
 
 The current type system is a strong first version, but it is still a facade assembled from several independent type modules. That is normal for a proxy-based ORM, but we should reduce policy duplication.
