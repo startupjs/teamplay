@@ -47,59 +47,34 @@ type JsonTypeIncludes<TType, TExpected extends string> =
       ? TExpected extends TType[number] ? true : false
       : false
 
-type IsJsonSchemaKeyword<TKey extends string> =
-  TKey extends
-  | '$id'
-  | '$schema'
-  | 'type'
-  | 'properties'
-  | 'items'
-  | 'required'
-  | 'enum'
-  | 'const'
-  | 'additionalProperties'
-  | 'patternProperties'
-  | '$comment'
-  | 'description'
-  | 'title'
-  | 'default'
-  | 'errorMessage'
-  | 'validators'
-  | 'collection'
-  | 'format'
-  | 'input'
-  | 'label'
-  | 'options'
-  | 'placeholder'
-  | 'disabled'
-  | 'mimeTypes'
-  | 'pattern'
-  | 'min'
-  | 'minimum'
-  | 'max'
-  | 'maximum'
-  | 'minLength'
-  | 'maxLength'
-  | 'minItems'
-  | 'maxItems'
-  | 'uniqueItems'
-    ? true
+type IsJsonTypeValue<TValue> =
+  TValue extends string ? true
+    : TValue extends readonly string[] ? true
+      : false
+
+type IsFullObjectSchema<TSchema> =
+  TSchema extends { readonly type: infer Type }
+    ? Type extends 'object'
+      ? true
+      : Type extends readonly unknown[]
+        ? 'object' extends Type[number] ? true : false
+        : false
     : false
 
 type SimplifiedProperties<TSchema> = {
-  [K in keyof TSchema as K extends string
-    ? IsJsonSchemaKeyword<K> extends true ? never : K
-    : never]: TSchema[K]
+  [K in keyof TSchema as K extends string ? K : never]: TSchema[K]
 }
 
 type HasSimplifiedProperties<TSchema> =
   keyof SimplifiedProperties<TSchema> extends never ? false : true
 
 type SchemaProperties<TSchema> =
-  TSchema extends { readonly properties?: infer Properties }
-    ? Properties extends Record<string, JsonSchema>
+  TSchema extends { readonly properties: infer Properties }
+    ? IsFullObjectSchema<TSchema> extends true
       ? Properties
-      : Record<string, never>
+      : HasSimplifiedProperties<TSchema> extends true
+        ? SimplifiedProperties<TSchema>
+        : Record<string, never>
     : HasSimplifiedProperties<TSchema> extends true
       ? SimplifiedProperties<TSchema>
       : Record<string, never>
@@ -162,12 +137,18 @@ export type FromJsonSchema<TSchema> =
     ? never
     : TSchema extends true
       ? unknown
-      : TSchema extends { readonly const?: infer Const }
-        ? Const
-        : TSchema extends { readonly enum?: ReadonlyArray<infer EnumValue> }
-          ? EnumValue
-          : TSchema extends { readonly type?: infer Type }
-            ? TypeValueFromJsonSchema<TSchema, Type>
+      : TSchema extends { readonly const: infer Const }
+        ? Const extends JsonSchemaObject
+          ? ObjectFromJsonSchema<TSchema>
+          : Const
+        : TSchema extends { readonly enum: infer Enum }
+          ? Enum extends ReadonlyArray<infer EnumValue>
+            ? EnumValue
+            : ObjectFromJsonSchema<TSchema>
+          : TSchema extends { readonly type: infer Type }
+            ? IsJsonTypeValue<Type> extends true
+              ? TypeValueFromJsonSchema<TSchema, Type>
+              : ObjectFromJsonSchema<TSchema>
             : HasSimplifiedProperties<TSchema> extends true
               ? ObjectFromJsonSchema<TSchema>
               : unknown

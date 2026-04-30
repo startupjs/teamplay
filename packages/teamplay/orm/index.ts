@@ -3,6 +3,7 @@ import Signal from './Signal.ts'
 export { belongsTo, hasMany, hasOne } from './associations.js'
 export type {
   AggregationSignal,
+  ArraySignal,
   CollectionAggregationSignal,
   CollectionQuerySignal,
   CollectionSignal,
@@ -19,6 +20,7 @@ export type {
   QuerySignal,
   RegisteredAggregationInput,
   SignalClass,
+  SignalChild,
   SignalConstructor,
   TypedAggregationInput,
   TypedAggregationSignal,
@@ -26,7 +28,12 @@ export type {
   ZodLikeSchema,
   ZodSchemaSpec
 } from './Signal.ts'
-export type { RootSignal, TeamplayCollections, TeamplayModels } from '../index.ts'
+export type { RootSignal, TeamplayCollections, TeamplayModels, TeamplaySignalFields } from '../index.ts'
 
 export const BaseModel = Signal
 export default BaseModel
+export {
+  default as initModels,
+  getModels,
+  resetModelsForTests
+} from './initModels.ts'

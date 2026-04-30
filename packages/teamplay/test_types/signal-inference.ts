@@ -8,6 +8,7 @@ import {
   type FromJsonSchema,
   type JsonSchemaSpec,
   type QuerySignal,
+  type TypedSignal,
   type ZodSchemaSpec
 } from 'teamplay'
 
@@ -47,6 +48,17 @@ type TypeAssertions = [
   AggregationDocumentMethods,
   HookAggregationIndexDocumentModel,
   LocalPrimitive,
+  LocalExplicitBoolean,
+  LocalExplicitBooleanSignal,
+  LocalExplicitEventTitle,
+  LocalSignalAliasBoolean,
+  LocalSignalAliasEventTitle,
+  SignalAliasDocumentModelMethod,
+  SignalAliasArrayMapDocumentModel,
+  SignalAliasArrayIteratorDocumentModel,
+  QueryResultAcceptedAsSignalArray,
+  CollectionSignalArrayMapDocumentModel,
+  SignalAliasNestedPathModelMethod,
   LocalNestedString,
   LocalNestedBoolean,
   LocalArrayMapItem,
@@ -93,6 +105,7 @@ type TypeAssertions = [
   ComputedString,
   NullableSchemaInference,
   NullableObjectSchemaInference,
+  SimplifiedKeywordFieldSchemaInference,
   TupleSchemaInference
 ]
 
@@ -126,6 +139,22 @@ const nullableObjectSchema = {
     name: { type: 'string' },
     score: { type: ['integer', 'null'] }
   }
+} as const
+
+const simplifiedKeywordFieldSchema = {
+  title: { type: 'string', required: true },
+  description: { type: 'string' },
+  type: { type: 'string' },
+  required: { type: 'boolean' },
+  enum: { type: 'string' },
+  const: { type: 'number' },
+  properties: {
+    type: 'object',
+    properties: {
+      color: { type: 'string', required: true }
+    }
+  },
+  name: { type: 'string' }
 } as const
 
 const tupleSchema = {
@@ -341,6 +370,18 @@ type SignalMetadataMethods = Expect<Equal<
 >>
 type NullableSchemaInference = Expect<Equal<FromJsonSchema<typeof nullableSchema>, string | null>>
 type NullableObjectSchemaInference = Expect<Equal<FromJsonSchema<typeof nullableObjectSchema>, { name: string, score?: number | null } | null>>
+type SimplifiedKeywordFieldSchemaInference = Expect<Equal<FromJsonSchema<typeof simplifiedKeywordFieldSchema>, {
+  title: string
+  description?: string
+  type?: string
+  required?: boolean
+  enum?: string
+  const?: number
+  properties?: {
+    color: string
+  }
+  name?: string
+}>>
 type TupleSchemaInference = Expect<Equal<FromJsonSchema<typeof tupleSchema>, readonly [string, number, boolean]>>
 
 const $queryGames = sub($.games, { status: 'draft' })
@@ -476,6 +517,28 @@ $score.increment()
 // @ts-expect-error primitive local signals should not expose arbitrary child paths
 void $score.nope
 
+interface NewEventDoc {
+  title: string
+  active?: boolean
+}
+
+const $explicitBoolean = $<boolean>()
+const $explicitEvent = $<NewEventDoc>()
+const $signalAliasBoolean: Signal<boolean> = $<boolean>()
+const $signalAliasEvent: Signal<NewEventDoc> = $<NewEventDoc>()
+const $signalAliasGame: Signal<Game> = $.games[gameId]
+const $signalAliasGames: Signal<Game[]> = $.games
+const signalAliasGameTitles = $signalAliasGames.map($game => $game.titleFromThis())
+const collectionSignalGameTitles = $.games.map($game => $game.titleFromThis())
+// @ts-expect-error Signal<Game[]> is a general array/query signal; use typeof $.games for collection methods.
+$signalAliasGames.findOpenGames()
+$explicitBoolean.set(true)
+$explicitEvent.assign({ title: 'Launch' })
+// @ts-expect-error explicit generic no-arg local signals should keep the requested primitive type
+$explicitBoolean.set('true')
+// @ts-expect-error explicit generic no-arg local signals should keep object field types
+$explicitEvent.assign({ title: 1 })
+
 const $scoreboard = $({
   players: [{ name: 'Robot 1', robot: true }],
   totalPlayers: 0,
@@ -537,6 +600,15 @@ const $computedScoreboard = $(() => ({
 }))
 
 type LocalPrimitive = Expect<Equal<ReturnType<typeof $score.get>, number>>
+type LocalExplicitBoolean = Expect<Equal<ReturnType<typeof $explicitBoolean.get>, boolean>>
+type LocalExplicitBooleanSignal = Expect<Equal<typeof $explicitBoolean, TypedSignal<boolean>>>
+type LocalExplicitEventTitle = Expect<Equal<ReturnType<typeof $explicitEvent.title.get>, string>>
+type LocalSignalAliasBoolean = Expect<Equal<ReturnType<typeof $signalAliasBoolean.get>, boolean>>
+type LocalSignalAliasEventTitle = Expect<Equal<ReturnType<typeof $signalAliasEvent.title.get>, string>>
+type SignalAliasDocumentModelMethod = Expect<Equal<ReturnType<typeof $signalAliasGame.titleFromThis>, string>>
+type SignalAliasArrayMapDocumentModel = Expect<Equal<typeof signalAliasGameTitles[number], string>>
+type CollectionSignalArrayMapDocumentModel = Expect<Equal<typeof collectionSignalGameTitles[number], string>>
+type SignalAliasNestedPathModelMethod = Expect<Equal<ReturnType<typeof $signalAliasGame.info.titleCase>, string>>
 type LocalDollarPrimitive = Expect<Equal<ReturnType<typeof $destructuredLocalScore.get>, number>>
 type LocalDollarString = Expect<Equal<ReturnType<typeof $destructuredLocalTitle.get>, string>>
 const $localPlayer = $scoreboard.players[0]
@@ -559,6 +631,32 @@ type ComputedString = Expect<Equal<ReturnType<typeof $computedScoreboard.firstPl
 type ComputedNestedPlayerName = Expect<Equal<ReturnType<typeof $computedScoreboard.tournament.leaderName.get>, string>>
 const { $tournament: $computedTournament } = $computedScoreboard
 type ComputedDollarDestructure = Expect<Equal<ReturnType<typeof $computedTournament.$leaderName.get>, string>>
+
+function printGameTitles ($games: Signal<Game[]>) {
+  const titles = $games.map($game => $game.titleFromThis())
+  let loopTitle = ''
+
+  for (const $game of $games) {
+    $game.start()
+    loopTitle = $game.titleFromThis()
+  }
+
+  return {
+    titles,
+    loopTitle,
+    firstTitle: $games[0].titleFromThis()
+  }
+}
+
+async function printQueriedGameTitles () {
+  const $draftGames = await sub($.games, { status: 'draft' })
+  return printGameTitles($draftGames)
+}
+
+type PrintGameTitlesResult = ReturnType<typeof printGameTitles>
+type PrintQueriedGameTitlesResult = Awaited<ReturnType<typeof printQueriedGameTitles>>
+type SignalAliasArrayIteratorDocumentModel = Expect<Equal<PrintGameTitlesResult['loopTitle'], string>>
+type QueryResultAcceptedAsSignalArray = Expect<Equal<PrintQueriedGameTitlesResult['firstTitle'], string>>
 
 declare const typeAssertions: TypeAssertions
 void typeAssertions

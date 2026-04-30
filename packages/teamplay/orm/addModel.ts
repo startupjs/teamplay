@@ -15,7 +15,10 @@ export default function addModel<TPattern extends string> (
   if (pattern !== '' && pattern.split('.').some(segment => segment === '')) {
     throw Error('Model pattern can not have empty segments')
   }
-  if (MODELS[pattern]) throw Error(`Model for pattern "${pattern}" already exists`)
+  if (MODELS[pattern]) {
+    if (MODELS[pattern] === Model) return
+    throw Error(`Model for pattern "${pattern}" already exists`)
+  }
   MODELS[pattern] = Model
 }
 

@@ -1,9 +1,10 @@
 import createChannel from '@teamplay/channel/server'
+import backendCreateBackend from '@teamplay/backend'
+import { getModels } from './orm/initModels.ts'
 import { connection, setConnection, setDefaultFetchOnly, setPublicOnly } from './orm/connection.ts'
 
 export { default as ShareDB } from 'sharedb'
 export {
-  default as createBackend,
   mongo,
   mongoClient,
   createMongoIndex,
@@ -16,6 +17,22 @@ export {
   redisPrefix,
   generateRedisPrefix
 } from '@teamplay/backend'
+
+export function createBackend (options = {}) {
+  let nextOptions = options
+  const initializedModels = getModels()
+
+  if (!('models' in nextOptions) && Object.keys(initializedModels).length > 0) {
+    nextOptions = {
+      ...nextOptions,
+      models: initializedModels
+    }
+  }
+
+  return backendCreateBackend(nextOptions)
+}
+
+export default createBackend
 
 export function initConnection (backend, {
   fetchOnly = true,

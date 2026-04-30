@@ -1,4 +1,4 @@
-import type { TeamplayCollections, TeamplayModels } from '../../index.ts'
+import type { TeamplayCollections, TeamplayModels, TeamplaySignalFields } from '../../index.ts'
 import type { Signal, GETTERS } from '../SignalBase.ts'
 import type {
   FromJsonSchema,
@@ -30,8 +30,21 @@ type SignalModelInstance<TValue, TModel> =
     ? Signal<TValue>
     : Signal<TValue> & SignalInstance<TModel>
 
-type SignalArrayLike<TItem> = Pick<Array<TItem>, 'map' | 'reduce' | 'find' | typeof Symbol.iterator>
-type SignalArrayMethodKeys = keyof SignalArrayLike<unknown>
+type SignalArrayMethodKeys = 'map' | 'reduce' | 'find' | typeof Symbol.iterator
+
+type SignalArrayLike<TItem> = {
+  readonly [Symbol.iterator]: () => IterableIterator<TItem>
+  map: <TResult>(callback: (value: TItem, index: number, array: TItem[]) => TResult, thisArg?: any) => TResult[]
+  reduce: {
+    (callback: (previousValue: TItem, currentValue: TItem, currentIndex: number, array: TItem[]) => TItem): TItem
+    (callback: (previousValue: TItem, currentValue: TItem, currentIndex: number, array: TItem[]) => TItem, initialValue: TItem): TItem
+    <TResult>(
+      callback: (previousValue: TResult, currentValue: TItem, currentIndex: number, array: TItem[]) => TResult,
+      initialValue: TResult
+    ): TResult
+  }
+  find: (predicate: (value: TItem, index: number, obj: TItem[]) => unknown, thisArg?: any) => TItem | undefined
+}
 
 type PathModel<
   TValue,
@@ -54,6 +67,11 @@ type SignalArrayMethods<TValue, TPath extends WildcardSignalPath> =
     ? SignalArrayLike<ArrayItemSignal<Item, TPath>>
     : Pick<Signal<TValue>, SignalArrayMethodKeys>
 
+type SignalFieldsForPath<TPath extends WildcardSignalPath> =
+  JoinPath<TPath> extends keyof TeamplaySignalFields
+    ? TeamplaySignalFields[JoinPath<TPath>]
+    : {}
+
 export type AnySignal = Signal<any>
 
 export type TypedSignal<
@@ -63,7 +81,8 @@ export type TypedSignal<
 > =
   Omit<SignalModelInstance<TValue, PathModel<TValue, TModel, TPath>>, SignalArrayMethodKeys> &
   SignalArrayMethods<TValue, TPath> &
-  SignalChildren<TValue, TPath>
+  SignalChildren<TValue, TPath> &
+  SignalFieldsForPath<TPath>
 
 export type DocumentSignal<
   TValue = unknown,
@@ -71,24 +90,42 @@ export type DocumentSignal<
   TPath extends WildcardSignalPath = readonly []
 > = TypedSignal<TValue, TModel, TPath>
 
+type CollectionDocumentSignal<
+  TDocument,
+  TDocumentModel extends SignalClass<any>,
+  TPath extends WildcardSignalPath
+> = DocumentSignal<TDocument, TDocumentModel, AppendPath<TPath, '*'>>
+
 export type CollectionSignal<
   TDocument = unknown,
   TCollectionModel extends SignalClass<any> = typeof Signal,
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TPath extends WildcardSignalPath = readonly []
 > =
-  Omit<SignalModelInstance<TDocument[], PathModel<TDocument[], TCollectionModel, TPath>>, 'add'> &
+  Omit<
+    SignalModelInstance<TDocument[], PathModel<TDocument[], TCollectionModel, TPath>>,
+    'add' | SignalArrayMethodKeys
+  > &
+  SignalArrayLike<CollectionDocumentSignal<TDocument, TDocumentModel, TPath>> &
   { add: (value: TDocument) => Promise<string> } &
-  Readonly<Record<string, DocumentSignal<TDocument, TDocumentModel, AppendPath<TPath, '*'>>>>
+  Readonly<Record<string, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>> &
+  Readonly<Record<number, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>>
 
-export type QuerySignal<
+export type ArraySignal<
   TDocument = unknown,
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TDocumentPath extends WildcardSignalPath = readonly []
 > = Omit<Signal<TDocument[]>, SignalArrayMethodKeys> &
 SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
-  readonly ids: Signal<Array<string | number>>
   readonly [index: number]: DocumentSignal<TDocument, TDocumentModel, TDocumentPath>
+}
+
+export type QuerySignal<
+  TDocument = unknown,
+  TDocumentModel extends SignalClass<any> = typeof Signal,
+  TDocumentPath extends WildcardSignalPath = readonly []
+> = ArraySignal<TDocument, TDocumentModel, TDocumentPath> & {
+  readonly ids: Signal<Array<string | number>>
 }
 
 export type AggregationSignal<

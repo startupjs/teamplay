@@ -21,6 +21,7 @@ export type {
 export type {
   AggregationSignal,
   AnySignal,
+  ArraySignal,
   CollectionAggregationSignal,
   CollectionDocument,
   CollectionDocumentModel,

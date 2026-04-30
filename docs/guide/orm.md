@@ -1,234 +1,376 @@
 # ORM
 
-TeamPlay signals can be extended with custom model classes and collection schemas. The runtime parts and the TypeScript parts are intentionally explicit:
+TeamPlay models are `Signal` subclasses attached to paths in your data tree. The conventional setup is file-based: put schemas and models in `models/`, add the Babel plugin, create a shared `models.setup.ts`, and import that setup from both client and server entries.
 
-- `addModel(pattern, Model)` connects a Signal subclass to a runtime path pattern.
-- The backend `models` object connects collection schemas to ShareDB runtime validation.
-- `declare module 'teamplay'` connects those same paths to TypeScript so `$`, `sub()`, and `useSub()` can suggest custom methods and schema fields.
+For TypeScript details, see [TypeScript Support](/guide/typescript-support). This page focuses on the runtime ORM conventions.
 
-## Complete Example
+## Enable File-Based Models
 
-This example defines a shared `model/index.ts` file with `users` and `games` collections, collection-level models, document-level models, nested models, runtime JSON Schemas, and TypeScript module augmentation.
+Add the Babel plugin:
+
+```js
+// babel.config.cjs
+module.exports = {
+  plugins: ['teamplay/babel']
+}
+```
+
+Then create a `models/` folder:
+
+```txt
+models/
+  users/
+    schema.ts
+    index.ts
+    [id].ts
+    access.ts
+    $$active.ts
+    -helpers.ts
+```
+
+The loader maps files to TeamPlay paths:
+
+```txt
+models/users/index.ts       -> users
+models/users/[id].ts        -> users.*
+models/users/schema.ts      -> schema for users
+models/users/access.ts      -> access rules for users
+models/users/$$active.ts    -> aggregation for users
+models/users/-helpers.ts    -> ignored
+```
+
+Use `[id]` for wildcard path segments. Do not use `*` in filenames.
+
+## Define A Schema
+
+Create one `schema.ts` per collection. Most TeamPlay apps use the simplified schema format, where the top-level object is the collection document fields:
 
 ```ts
-// model/index.ts
-import {
-  $,
-  Signal,
-  addModel,
-  aggregation,
-  sub,
-  type FromJsonSchema,
-  type JsonSchemaSpec
-} from 'teamplay'
+// models/users/schema.ts
+import { type FromJsonSchema } from 'teamplay'
 
-export const userSchema = {
-  name: { type: 'string', required: true },
-  avatarUrl: { type: 'string' },
-  createdAt: { type: 'integer', required: true }
-} as const
-
-export const gameSchema = {
-  userId: { type: 'string', required: true },
-  createdAt: { type: 'integer', required: true },
-  info: {
-    type: 'object',
-    required: true,
-    properties: {
-      title: { type: 'string', required: true },
-      maxPlayers: { type: 'integer', required: true }
-    }
-  },
-  players: {
-    type: 'array',
-    required: true,
-    items: {
-      type: 'object',
-      required: ['name', 'robot'],
-      properties: {
-        name: { type: 'string' },
-        robot: { type: 'boolean' }
-      }
-    }
-  },
-  status: {
+const schema = {
+  name: {
     type: 'string',
-    enum: ['draft', 'started', 'finished'] as const
-  }
+    required: true,
+    label: 'Name'
+  },
+  email: { type: 'string' },
+  createdAt: { type: 'number', required: true }
 } as const
 
-export type Game = FromJsonSchema<typeof gameSchema>
-export type GamePlayer = Game['players'][number]
-export type User = FromJsonSchema<typeof userSchema>
+export default schema
+export type UserDoc = FromJsonSchema<typeof schema>
+```
 
-export class UsersModel extends Signal<User[]> {
-  addNew (name: string) {
-    return this.add({
-      name,
+When `validateSchema: true` is enabled on the backend, writes are validated with this schema.
+
+## Add Collection Methods
+
+`models/users/index.ts` is the collection model. It receives the collection signal, so it should extend `Signal<UserDoc[]>`.
+
+```ts
+// models/users/index.ts
+import { Signal } from 'teamplay'
+import type { UserDoc } from './schema.ts'
+
+export default class Users extends Signal<UserDoc[]> {
+  async addNew (user: Omit<UserDoc, 'createdAt'>) {
+    return await this.add({
+      ...user,
       createdAt: Date.now()
     })
   }
 }
+```
 
-export class UserModel extends Signal<User> {
+Collection methods are a good place for create helpers, default fields, and collection-level workflows.
+
+## Add Document Methods
+
+`models/users/[id].ts` is the document model. It receives one document signal, so it should extend `Signal<UserDoc>`.
+
+```ts
+// models/users/[id].ts
+import { Signal } from 'teamplay'
+import type { UserDoc } from './schema.ts'
+
+export default class User extends Signal<UserDoc> {
   displayName () {
     return this.name.get()
   }
-}
 
-export class GamesModel extends Signal<Game[]> {
-  addNew (data: Omit<Game, 'createdAt' | 'status'> & { status?: Game['status'] }) {
-    return this.add({
-      ...data,
-      status: data.status ?? 'draft',
-      createdAt: Date.now()
-    })
+  async rename (name: string) {
+    await this.name.set(name)
   }
 }
+```
 
-export class GameModel extends Signal<Game> {
-  async start () {
-    await this.status.set('started')
-  }
+Document methods are useful for business operations that belong to one document. For simple updates, use signal methods directly:
 
-  title () {
-    return this.info.title.get()
-  }
-}
+```ts
+await $.users[userId].name.set('Ada')
+await $.users[userId].assign({ email: 'ada@example.com' })
+```
 
-export class GameInfoModel extends Signal<Game['info']> {
-  capacityLabel () {
-    return `${this.maxPlayers.get()} players`
-  }
-}
+## Initialize The Models
 
-export class GamePlayerModel extends Signal<GamePlayer> {
+Create a shared setup file:
+
+```ts
+// models.setup.ts
+import models from 'teamplay/file-based-models'
+import { initModels } from 'teamplay'
+
+initModels(models)
+```
+
+`teamplay/file-based-models` is handled by the Babel plugin in client builds and by TeamPlay's Node loader on the server.
+
+Import `models.setup.ts` before using `$`, `sub()`, `useSub()`, or `createBackend()` with model-backed behavior. In a client/server app, import it in both entries:
+
+```ts
+// client entry
+import './models.setup.ts'
+```
+
+```ts
+// server entry
+import './models.setup.ts'
+```
+
+If your app is client-only, import it only from the client entry. StartupJS apps do not need this file because StartupJS initializes models through its registry.
+
+## Use The Models
+
+After initialization, import normal TeamPlay APIs:
+
+```ts
+import { $, sub } from 'teamplay'
+
+const userId = await $.users.addNew({ name: 'Ada' })
+
+const $user = await sub($.users[userId])
+$user.displayName()
+await $user.rename('Ada Lovelace')
+```
+
+In React, use `useSub()`:
+
+```tsx
+import { $, observer, useSub } from 'teamplay'
+
+export default observer(function UserName ({ userId }: { userId: string }) {
+  const $user = useSub($.users[userId])
+  return $user.displayName()
+})
+```
+
+Always subscribe to database data before reading it. Local/private signals such as `$._session` do not need subscriptions.
+
+## Nested Models
+
+Nested model files attach methods below a document:
+
+```txt
+models/games/[id]/players/[playerId].ts -> games.*.players.*
+```
+
+```ts
+// models/games/[id]/players/[playerId].ts
+import { Signal } from 'teamplay'
+import type { GameDoc } from '../../schema.ts'
+
+type GamePlayerDoc = GameDoc['players'][number]
+
+export default class GamePlayer extends Signal<GamePlayerDoc> {
   displayName () {
     return this.robot.get() ? `${this.name.get()} (bot)` : this.name.get()
   }
 }
+```
 
-// Runtime model registration. These classes are used by the Proxy-backed
-// signals returned for matching paths.
-addModel('users', UsersModel)
-addModel('users.*', UserModel)
-addModel('games', GamesModel)
-addModel('games.*', GameModel)
-addModel('games.*.info', GameInfoModel)
-addModel('games.*.players.*', GamePlayerModel)
+Now `$.games[gameId].players[0].displayName()` is available.
 
-// Runtime schema registration for the backend. Pass this object to
-// createBackend({ models }) so ShareDB validates writes for the collection.
-export const models = {
-  users: {
-    schema: userSchema
-  },
-  games: {
-    schema: gameSchema
-  }
-}
+## Queries
 
-// Type registration. This can live in the same imported file or in a generated
-// teamplay-env.d.ts file. The file only has to be included by the app tsconfig.
-declare module 'teamplay' {
-  interface TeamplayCollections {
-    users: JsonSchemaSpec<typeof userSchema, typeof UsersModel, typeof UserModel>
-    games: JsonSchemaSpec<typeof gameSchema, typeof GamesModel, typeof GameModel>
-  }
+Use collection subscriptions for filtered lists:
 
-  interface TeamplayModels {
-    'games.*.info': typeof GameInfoModel
-    'games.*.players.*': typeof GamePlayerModel
-  }
-}
+```ts
+const $activeUsers = await sub($.users, {
+  active: true,
+  $sort: { createdAt: -1 }
+})
 
-async function example (gameId: string) {
-  const userId = await $.users.addNew('Ada')
-  $.users[userId].displayName()
-
-  await $.games.addNew({
-    userId,
-    info: {
-      title: 'Chess',
-      maxPlayers: 2
-    },
-    players: [
-      { name: 'Ada', robot: false },
-      { name: 'Robot 1', robot: true }
-    ]
-  })
-
-  const $game = await sub($.games[gameId])
-  await $game.start()
-
-  $game.info.title.set('Chess')
-  $game.info.maxPlayers.increment()
-  $game.info.capacityLabel()
-  $game.players[0].displayName()
-
-  const $startedGames = await sub($.games, {
-    status: 'started',
-    'info.maxPlayers': { $gte: 2 }
-  })
-
-  for (const $startedGame of $startedGames) {
-    await $startedGame.start()
-    $startedGame.info.title.get()
-  }
-
-  const $$startedGames = aggregation('games', ({ status }: { status: Game['status'] }) => [
-    { $match: { status } },
-    { $project: { info: 1, players: 1, status: 1 } }
-  ])
-
-  const $projectedGames = await sub($$startedGames, { status: 'started' })
-  $projectedGames[0].title()
+for (const $user of $activeUsers) {
+  $user.displayName()
 }
 ```
 
-In server code, pass the exported `models` object to `createBackend()`:
+Query signals are array-like and contain document signals for the collection.
+
+## Aggregations
+
+Aggregation files start with `$$` and live under the collection folder:
 
 ```ts
-import { createBackend } from 'teamplay/server'
-import { models } from './model/index.ts'
+// models/users/$$byRole.ts
+import { aggregation } from 'teamplay'
 
-export const backend = createBackend({
-  validateSchema: true,
-  models
+interface ByRoleParams {
+  orgId: string
+}
+
+export default aggregation<'users'>(({ orgId }: ByRoleParams, { session }) => {
+  if (!session.userId) return
+
+  return [
+    { $match: { orgId } },
+    { $group: { _id: '$role', count: { $sum: 1 } } }
+  ]
 })
 ```
 
-Keep server-only code such as `createBackend()` in server files. The schema, model classes, `addModel()` calls, and module augmentation can live in a shared model setup file that is imported during app startup.
+Then subscribe to it:
 
-## What TypeScript Understands
+```ts
+import $$byRole from './models/users/$$byRole.ts'
 
-After the module augmentation is loaded, TypeScript can infer the signal shape from the schema and model registry:
+const $roles = await sub($$byRole, { orgId })
+```
 
-- `$.games.` suggests `GamesModel` methods, standard `Signal` methods, and document id navigation.
-- `$.games[gameId].` suggests `GameModel` methods, standard `Signal` methods, and fields from `gameSchema`.
-- `$.games[gameId].info.` suggests `title`, `maxPlayers`, `capacityLabel()`, and standard `Signal` methods.
-- `$.games[gameId].players[0].` suggests `name`, `robot`, `displayName()`, and standard `Signal` methods.
-- `$.users[userId].` suggests `UserModel` methods and fields from `userSchema`.
-- `sub($.games[gameId])` and `useSub($.games[gameId])` preserve the document model and schema fields.
-- `sub($.games, query)` and `useSub($.games, query)` return typed query signals that are iterable and array-like.
-- Aggregation subscriptions for a collection use that collection's document model and schema for the projected document signals.
-- Local signals created with `$({ ... })` infer fields from the initial value, and computed signals created with `$(() => value)` infer fields from the return value.
+Use normal queries for simple `$match`/`$sort` cases. Use aggregations for stages such as `$group`, `$project`, `$lookup`, and `$unwind`.
+
+## Access Rules
+
+Access rules live in `access.ts`:
+
+```ts
+// models/users/access.ts
+import { accessControl } from 'teamplay'
+
+export default accessControl({
+  read: ({ session }) => Boolean(session.userId),
+  create: ({ session }) => Boolean(session.userId),
+  update: ({ session, doc }) => session.userId === doc.id
+})
+```
+
+Client builds remove access rules from the bundle automatically.
+
+## Server Setup
+
+Import the shared model setup before creating the backend:
+
+```ts
+import './models.setup.ts'
+import { createBackend, initConnection } from 'teamplay/server'
+
+const backend = createBackend({
+  validateSchema: true
+})
+
+const { upgrade } = initConnection(backend)
+server.on('upgrade', upgrade)
+```
+
+`createBackend()` reuses models that were already initialized with `initModels()`. You can also pass `models` explicitly when you need to build or merge the model object yourself.
 
 ## Schema Formats
 
-JSON Schema is the runtime format used by backend validation. TeamPlay also supports the simplified schema style shown above, where top-level keys are treated as object properties.
+TeamPlay supports two schema shapes.
 
-Collection documents are stored in the database and synchronized as JSON data. Keep persisted values JSON-compatible: strings, numbers, booleans, nulls, arrays, and plain objects. For dates, prefer storing Unix time numbers such as `Date.now()` instead of `Date` instances.
+Simplified schema:
 
-The current type mapper covers the schema features used most often in TeamPlay apps: objects, arrays, tuple arrays, strings, numbers, integers, booleans, nulls, enums, const values, `required: [...]`, and field-level `required: true`.
+```ts
+const schema = {
+  title: { type: 'string', required: true },
+  description: { type: 'string' },
+  properties: {
+    type: 'object',
+    properties: {
+      color: { type: 'string' }
+    }
+  }
+} as const
+```
 
-Zod can be used for type inference through `ZodSchemaSpec`, but TeamPlay does not yet provide a first-class runtime helper that converts Zod schemas into backend JSON Schema. If you use Zod today, still pass JSON Schema to the backend `models` object for runtime validation.
+If the root schema does not have `type: 'object'`, TeamPlay treats it as the collection document's properties. That means fields can be named `title`, `description`, `type`, `required`, `properties`, and other JSON Schema keywords.
 
-## Module Augmentation
+Full JSON Schema:
 
-TypeScript cannot infer global `$` paths from runtime `addModel()` calls alone. The module augmentation is the type registry:
+```ts
+const schema = {
+  type: 'object',
+  required: ['title'],
+  properties: {
+    title: { type: 'string' },
+    description: { type: 'string' }
+  }
+} as const
+```
 
-- `TeamplayCollections` registers top-level collections, their schemas, collection model classes, and document model classes.
-- `TeamplayModels` registers extra path-specific model overrides below documents, such as `games.*.info` or `games.*.players.*`.
+Use full JSON Schema when you need normal JSON Schema root keywords. Use simplified schema for most app models.
 
-In the future this registry can be generated into a `teamplay-env.d.ts` file. For now, add it manually in a file included by the app TypeScript config.
+Stored documents should be JSON-compatible: strings, numbers, booleans, nulls, arrays, and plain objects. Prefer `Date.now()` numbers over `Date` instances.
+
+## Generated Files
+
+The Babel plugin also generates `teamplay-env.d.ts` in the project root. It is not rewritten when the content is unchanged, so it should not trigger hot reloads unnecessarily.
+
+Include the generated file in `tsconfig.json` if your project does not already include root-level `.d.ts` files:
+
+```json
+{
+  "include": ["**/*.ts", "**/*.tsx", "teamplay-env.d.ts"]
+}
+```
+
+See [TypeScript Support](/guide/typescript-support) for what the generated file provides.
+
+## Advanced Usage
+
+Most apps do not need these APIs. They are useful for frameworks, plugins, tests, or custom loading pipelines.
+
+### Custom Loading Pipelines
+
+If you need to merge framework/plugin models or change the model object before registration, put that logic in `models.setup.ts`:
+
+```ts
+// models.setup.ts
+import { initModels } from 'teamplay'
+import models from 'teamplay/file-based-models'
+
+const finalModels = {
+  ...models,
+  ...pluginModels
+}
+
+initModels(finalModels)
+```
+
+### Manual Registration
+
+Without file-based loading, register model classes yourself:
+
+```ts
+import { Signal, addModel, initModels } from 'teamplay'
+
+class Users extends Signal<UserDoc[]> {}
+class User extends Signal<UserDoc> {}
+
+addModel('users', Users)
+addModel('users.*', User)
+
+initModels({
+  users: {
+    schema: userSchema,
+    default: Users
+  },
+  'users.*': {
+    default: User
+  }
+})
+```
+
+When you skip file-based loading, you also need manual TypeScript augmentation. See [TypeScript Support](/guide/typescript-support#manual-augmentation).

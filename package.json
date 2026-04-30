@@ -10,7 +10,7 @@
   "scripts": {
     "start": "cd example && npm run start",
     "lint": "eslint .",
-    "test": "cd packages/teamplay && npm run test",
+    "test": "yarn workspace babel-plugin-teamplay test && cd packages/teamplay && npm run test",
     "test-client": "cd packages/teamplay && npm run test-client",
     "test-server": "cd packages/teamplay && npm run test-server",
     "test-server-only": "cd packages/teamplay && npm run test-server-only",

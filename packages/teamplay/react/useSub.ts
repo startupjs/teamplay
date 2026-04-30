@@ -11,10 +11,10 @@ import type {
   CollectionAggregationSignal,
   CollectionQuerySignal,
   CollectionSignal,
+  DocumentSignal,
   QueryParams,
   QuerySignal,
   RegisteredAggregationInput,
-  Signal,
   TypedAggregationInput,
   TypedAggregationSignal,
   WildcardSignalPath
@@ -46,7 +46,7 @@ let DEFAULT_DEFER = true
  * @param params Must be omitted for document subscriptions.
  * @param options Subscription behavior options.
  */
-export function useAsyncSub<TSignal extends Signal<any>> (
+export function useAsyncSub<TSignal extends DocumentSignal<any, any, any>> (
   signal: TSignal,
   params?: undefined,
   options?: UseSubOptions
@@ -126,7 +126,7 @@ export function useAsyncSub (signal, params, options) {
  * @param params Must be omitted for document subscriptions.
  * @param options Subscription behavior options.
  */
-export default function useSub<TSignal extends Signal<any>> (
+export default function useSub<TSignal extends DocumentSignal<any, any, any>> (
   signal: TSignal,
   params?: undefined,
   options?: UseSubOptions

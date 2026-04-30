@@ -5,11 +5,17 @@
 //   This is done to simplify the API.
 //   In future, we might want to separate the plain JS and React APIs
 import type * as React from 'react'
+import RuntimeSignal, { SEGMENTS, Signal as BaseSignalClass } from './orm/Signal.ts'
 import { getRootSignal as _getRootSignal, GLOBAL_ROOT_ID } from './orm/Root.ts'
 import universal$ from './react/universal$.js'
 import useApi from './react/useApi.js'
+import runtimeObserver from './react/observer.js'
 import type {
   AnySignal,
+  ArraySignal,
+  CollectionDocument,
+  CollectionDocumentModel,
+  CollectionSignal,
   CollectionSignalFromSpec,
   CollectionAggregationSignal,
   CollectionQuerySignal,
@@ -24,7 +30,8 @@ import type {
   QueryParams,
   QuerySignal,
   RegisteredAggregationInput,
-  Signal,
+  Signal as BaseSignalInstance,
+  SignalChild,
   SignalClass,
   SignalConstructor,
   TypedAggregationInput,
@@ -36,9 +43,90 @@ import type {
 
 export interface TeamplayCollections {}
 export interface TeamplayModels {}
+export interface TeamplaySignalFields {}
+
+type IsAny<TValue> = 0 extends (1 & TValue) ? true : false
+
+type IsEqual<TValue, TOther> =
+  (<T>() => T extends TValue ? 1 : 2) extends
+  (<T>() => T extends TOther ? 1 : 2)
+    ? (<T>() => T extends TOther ? 1 : 2) extends
+      (<T>() => T extends TValue ? 1 : 2)
+        ? true
+        : false
+    : false
+
+type IsUnion<TValue, TUnion = TValue> =
+  [TValue] extends [never]
+    ? false
+    : TValue extends unknown
+      ? [TUnion] extends [TValue] ? false : true
+      : false
+
+type SingleKey<TKey> = IsUnion<TKey> extends true ? never : TKey
+
+type MatchingDocumentCollectionKeys<TValue> =
+  IsAny<TValue> extends true
+    ? never
+    : {
+        [K in keyof TeamplayCollections & string]:
+        IsEqual<
+          NonNullable<TValue>,
+          NonNullable<CollectionDocument<TeamplayCollections[K]>>
+        > extends true ? K : never
+      }[keyof TeamplayCollections & string]
+
+type MatchingCollectionKeys<TValue> =
+  IsAny<TValue> extends true
+    ? never
+    : NonNullable<TValue> extends ReadonlyArray<infer TDocument>
+      ? MatchingDocumentCollectionKeys<TDocument>
+      : never
+
+type SingleDocumentCollectionKey<TValue> = SingleKey<MatchingDocumentCollectionKeys<TValue>>
+type SingleCollectionKey<TValue> = SingleKey<MatchingCollectionKeys<TValue>>
+
+type DocumentSignalModelForValue<TValue> =
+  [SingleDocumentCollectionKey<TValue>] extends [never]
+    ? typeof BaseSignalClass
+    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
+      ? CollectionDocumentModel<TeamplayCollections[SingleDocumentCollectionKey<TValue>]>
+      : typeof BaseSignalClass
+
+type DocumentSignalPathForValue<TValue> =
+  [SingleDocumentCollectionKey<TValue>] extends [never]
+    ? readonly []
+    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
+      ? readonly [SingleDocumentCollectionKey<TValue>, '*']
+      : readonly []
+
+type SignalForDocumentValue<TValue> =
+  TypedSignal<TValue, DocumentSignalModelForValue<TValue>, DocumentSignalPathForValue<TValue>>
+
+type SignalForCollectionArrayValue<TCollection extends keyof TeamplayCollections & string> =
+  ArraySignal<
+    CollectionDocument<TeamplayCollections[TCollection]>,
+    CollectionDocumentModel<TeamplayCollections[TCollection]>,
+    readonly [TCollection, '*']
+  >
+
+type SignalForArrayValue<TValue> =
+  [SingleCollectionKey<TValue>] extends [never]
+    ? SignalForDocumentValue<TValue>
+    : SingleCollectionKey<TValue> extends keyof TeamplayCollections & string
+      ? SignalForCollectionArrayValue<SingleCollectionKey<TValue>>
+      : SignalForDocumentValue<TValue>
+
+export type Signal<TValue = unknown> =
+  IsAny<TValue> extends true
+    ? TypedSignal<TValue>
+    : NonNullable<TValue> extends ReadonlyArray<any>
+      ? SignalForArrayValue<TValue>
+      : SignalForDocumentValue<TValue>
 
 export interface LocalSignalFactory {
   (): any
+  <TValue>(): TypedSignal<TValue>
   <TValue>(factory: () => TValue): TypedSignal<TValue>
   <TValue>(value: TValue): TypedSignal<TValue>
 }
@@ -50,10 +138,14 @@ export type RootCollections<TCollections extends Record<string, any> = TeamplayC
 }
 
 export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
-  Signal<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
+  BaseSignalInstance<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
 
 export type {
   AnySignal,
+  ArraySignal,
+  CollectionDocument,
+  CollectionDocumentModel,
+  CollectionSignal,
   CollectionSpec,
   CollectionAggregationSignal,
   CollectionQuerySignal,
@@ -68,6 +160,7 @@ export type {
   QuerySignal,
   RegisteredAggregationInput,
   SignalClass,
+  SignalChild,
   SignalConstructor,
   TypedAggregationInput,
   TypedAggregationSignal,
@@ -84,9 +177,40 @@ export interface ObserverOptions {
   suspenseProps?: React.ComponentProps<typeof React.Suspense>
 }
 
-export { default as Signal, SEGMENTS } from './orm/Signal.ts'
+export type ObserverComponent<TProps extends object> =
+  (props: TProps) => React.ReactNode
+
+export type ObserverForwardRefComponent<TProps extends object, TRef> =
+  (props: TProps, ref: React.ForwardedRef<TRef>) => React.ReactNode
+
+export type ObserverForwardRefOptions =
+  Omit<ObserverOptions, 'forwardRef'> & { forwardRef: true }
+
+export interface ObserverFunction {
+  <TProps extends object, TRef = unknown>(
+    Component: ObserverForwardRefComponent<TProps, TRef>,
+    options: ObserverForwardRefOptions
+  ): React.NamedExoticComponent<React.PropsWithoutRef<TProps> & React.RefAttributes<TRef>>
+
+  <TProps extends object>(
+    Component: ObserverComponent<TProps>,
+    options?: ObserverOptions
+  ): React.NamedExoticComponent<TProps>
+
+  __wrapObserverMeta: unknown
+  __makeObserver: unknown
+}
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const Signal = RuntimeSignal
+export { SEGMENTS }
 export { __DEBUG_SIGNALS_CACHE__, rawSignal, getSignalClass } from './orm/getSignal.ts'
 export { default as addModel } from './orm/addModel.ts'
+export {
+  default as initModels,
+  getModels,
+  resetModelsForTests
+} from './orm/initModels.ts'
 export { default as signal } from './orm/getSignal.ts'
 export { GLOBAL_ROOT_ID } from './orm/Root.ts'
 export const $: RootSignal = _getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ }) as RootSignal
@@ -104,7 +228,7 @@ export {
   default as useSuspendMemo,
   useSuspendMemoByKey
 } from './react/useSuspendMemo.js'
-export { default as observer } from './react/observer.js'
+export const observer = runtimeObserver as ObserverFunction
 export {
   useValue,
   useValue$,
@@ -167,6 +291,10 @@ export function batch (fn) {
 
 export function batchModel (fn) {
   return $.batch(fn)
+}
+
+export function serverOnly (value) {
+  return value
 }
 
 export function clone (value) {

@@ -11,6 +11,7 @@ import type {
   CollectionAggregationSignal,
   CollectionQuerySignal,
   CollectionSignal,
+  DocumentSignal,
   QueryParams,
   QuerySignal,
   RegisteredAggregationInput,
@@ -24,7 +25,7 @@ import type { TeamplayCollections } from '../index.ts'
  * Subscribe to a document signal outside React and return it when ready.
  * @param $signal Document signal to subscribe to.
  */
-export default function sub<TSignal extends Signal<any>> (
+export default function sub<TSignal extends DocumentSignal<any, any, any>> (
   $signal: TSignal
 ): TSignal | Promise<TSignal>
 
