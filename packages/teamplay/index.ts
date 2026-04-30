@@ -104,10 +104,13 @@ type SignalForDocumentValue<TValue> =
   TypedSignal<TValue, DocumentSignalModelForValue<TValue>, DocumentSignalPathForValue<TValue>>
 
 type SignalForCollectionArrayValue<TCollection extends keyof TeamplayCollections & string> =
-  ArraySignal<
+  CollectionSignal<
     CollectionDocument<TeamplayCollections[TCollection]>,
+    TeamplayCollections[TCollection] extends CollectionSpec<any, infer CollectionModel, any>
+      ? CollectionModel
+      : typeof BaseSignalClass,
     CollectionDocumentModel<TeamplayCollections[TCollection]>,
-    readonly [TCollection, '*']
+    readonly [TCollection]
   >
 
 type SignalForArrayValue<TValue> =

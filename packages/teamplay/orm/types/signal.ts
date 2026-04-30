@@ -145,9 +145,12 @@ export type CollectionDocumentModel<TSpec> =
 
 export type CollectionQuerySignal<
   TDocument,
+  TCollectionModel extends SignalClass<any>,
   TDocumentModel extends SignalClass<any>,
   TCollectionPath extends WildcardSignalPath
-> = QuerySignal<TDocument, TDocumentModel, AppendPath<TCollectionPath, '*'>>
+> = CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> & {
+  readonly ids: Signal<Array<string | number>>
+}
 
 export interface RegisteredAggregationInput<TCollection extends string = string> {
   readonly __isAggregation: true

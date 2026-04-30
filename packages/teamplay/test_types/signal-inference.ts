@@ -7,7 +7,7 @@ import {
   useSub,
   type FromJsonSchema,
   type JsonSchemaSpec,
-  type QuerySignal,
+  type CollectionQuerySignal,
   type TypedSignal,
   type ZodSchemaSpec
 } from 'teamplay'
@@ -21,6 +21,7 @@ type Equal<A, B> =
 type Expect<T extends true> = T
 type AwaitedSub<T> = T extends Promise<infer Value> ? Value : T
 type PromiseValue<T> = T extends Promise<infer Value> ? Value : never
+type HasFindOpenGames<T> = T extends { findOpenGames: (...args: any[]) => any } ? true : false
 type TypeAssertions = [
   GameSchemaInference,
   TitleValue,
@@ -56,7 +57,12 @@ type TypeAssertions = [
   SignalAliasDocumentModelMethod,
   SignalAliasArrayMapDocumentModel,
   SignalAliasArrayIteratorDocumentModel,
+  SignalAliasArrayCollectionModelMethod,
+  SignalAliasArrayCollectionAdd,
   QueryResultAcceptedAsSignalArray,
+  QueryCollectionModelMethod,
+  QueryCollectionAdd,
+  HookQueryCollectionModelMethod,
   CollectionSignalArrayMapDocumentModel,
   SignalAliasNestedPathModelMethod,
   LocalNestedString,
@@ -413,7 +419,7 @@ const $hookAggregationGame = (null as unknown as ReturnType<typeof useHookAggreg
 type QueryGames = AwaitedSub<typeof $queryGames>
 type AggregationGames = AwaitedSub<typeof $aggregationGames>
 type QueryGameItem = QueryGames extends Iterable<infer Item> ? Item : never
-type QuerySignalType = Expect<Equal<QueryGames, QuerySignal<Game, typeof GameModel, readonly ['games', '*']>>>
+type QuerySignalType = Expect<Equal<QueryGames, CollectionQuerySignal<Game, typeof GamesModel, typeof GameModel, readonly ['games']>>>
 type QueryIndexDocumentModel = Expect<Equal<ReturnType<QueryGames[0]['info']['title']['get']>, string>>
 type QueryIteratorDocumentModel = Expect<Equal<ReturnType<QueryGameItem['info']['title']['get']>, string>>
 type HookQueryIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookQueryGame.info.maxPlayers.get>, number>>
@@ -424,7 +430,24 @@ type QueryNestedPathModelMethod = Expect<Equal<ReturnType<typeof $hookQueryGame.
 type AggregationNestedPathModelMethod = Expect<Equal<ReturnType<typeof $aggregationGame.info.tags[0]['label']>, string>>
 declare const $resolvedQueryGames: QueryGames
 const $firstQueryGame = $resolvedQueryGames.reduce(($firstGame, $secondGame) => $firstGame)
+const $resolvedOpenQueryGames = $resolvedQueryGames.findOpenGames()
+const $hookOpenQueryGames = (null as unknown as ReturnType<typeof useHookQueryGames>).findOpenGames()
+const resolvedOpenQueryAddId = $resolvedOpenQueryGames.add({
+  info: {
+    title: 'Queried Go',
+    maxPlayers: 2
+  }
+})
+const hookOpenQueryAddId = $hookOpenQueryGames.add({
+  info: {
+    title: 'Hook Queried Go',
+    maxPlayers: 2
+  }
+})
 type QueryArrayReduceNoInitial = Expect<Equal<ReturnType<typeof $firstQueryGame.info.title.get>, string>>
+type QueryCollectionModelMethod = Expect<Equal<HasFindOpenGames<QueryGames>, true>>
+type QueryCollectionAdd = Expect<Equal<typeof resolvedOpenQueryAddId, Promise<string>>>
+type HookQueryCollectionModelMethod = Expect<Equal<typeof hookOpenQueryAddId, Promise<string>>>
 
 async function queryLoopAssertions () {
   const $draftGames = await sub($.games, { status: 'draft' })
@@ -530,8 +553,13 @@ const $signalAliasGame: Signal<Game> = $.games[gameId]
 const $signalAliasGames: Signal<Game[]> = $.games
 const signalAliasGameTitles = $signalAliasGames.map($game => $game.titleFromThis())
 const collectionSignalGameTitles = $.games.map($game => $game.titleFromThis())
-// @ts-expect-error Signal<Game[]> is a general array/query signal; use typeof $.games for collection methods.
-$signalAliasGames.findOpenGames()
+const $signalAliasOpenGames = $signalAliasGames.findOpenGames()
+const signalAliasOpenGameAddId = $signalAliasOpenGames.add({
+  info: {
+    title: 'Signal Alias Go',
+    maxPlayers: 2
+  }
+})
 $explicitBoolean.set(true)
 $explicitEvent.assign({ title: 'Launch' })
 // @ts-expect-error explicit generic no-arg local signals should keep the requested primitive type
@@ -608,6 +636,8 @@ type LocalSignalAliasEventTitle = Expect<Equal<ReturnType<typeof $signalAliasEve
 type SignalAliasDocumentModelMethod = Expect<Equal<ReturnType<typeof $signalAliasGame.titleFromThis>, string>>
 type SignalAliasArrayMapDocumentModel = Expect<Equal<typeof signalAliasGameTitles[number], string>>
 type CollectionSignalArrayMapDocumentModel = Expect<Equal<typeof collectionSignalGameTitles[number], string>>
+type SignalAliasArrayCollectionModelMethod = Expect<Equal<HasFindOpenGames<typeof $signalAliasGames>, true>>
+type SignalAliasArrayCollectionAdd = Expect<Equal<typeof signalAliasOpenGameAddId, Promise<string>>>
 type SignalAliasNestedPathModelMethod = Expect<Equal<ReturnType<typeof $signalAliasGame.info.titleCase>, string>>
 type LocalDollarPrimitive = Expect<Equal<ReturnType<typeof $destructuredLocalScore.get>, number>>
 type LocalDollarString = Expect<Equal<ReturnType<typeof $destructuredLocalTitle.get>, string>>

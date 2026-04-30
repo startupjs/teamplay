@@ -160,25 +160,26 @@ const UserCard = observer(function UserCard ({ $user }: { $user: Signal<UserDoc>
 
 `Signal<UserDoc>` also includes the generated document model methods when `UserDoc` matches one known collection document type.
 
-For query or list props, use the array document type. The item signals keep the document model methods:
+For query, collection, or list props, use the array document type. The signal keeps the collection model methods, and item signals keep the document model methods:
 
 ```ts
 function UsersList ({ $users }: { $users: Signal<UserDoc[]> }) {
+  $users.addNew()
+
   for (const $user of $users) {
     $user.displayName()
   }
 }
 ```
 
-`Signal<UserDoc[]>` is intentionally a general array/query signal type. It does not promise collection-only methods such as `addNew()`. When a component specifically needs the collection signal, use the inferred collection type:
+This also works for query results from `sub()` and `useSub()`:
 
 ```ts
-import { $ } from 'teamplay'
-
-type UsersSignal = typeof $.users
+const $activeUsers = await sub($.users, { active: true })
+$activeUsers.addNew()
 ```
 
-If two collections have exactly the same document type, TeamPlay cannot safely infer which model methods belong to `Signal<T>`, so it falls back to the plain typed signal shape.
+If two collections have exactly the same document type, TeamPlay cannot safely infer which collection model belongs to `Signal<T>`, so it falls back to the plain typed signal shape.
 
 ## Local Signals
 

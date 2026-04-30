@@ -60,13 +60,14 @@ export function useAsyncSub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export function useAsyncSub<
   TDocument,
+  TCollectionModel extends new (...args: any[]) => any,
   TDocumentModel extends new (...args: any[]) => any,
   TCollectionPath extends WildcardSignalPath
 > (
-  signal: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
+  signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>,
   options?: UseSubOptions
-): CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath>
+): CollectionQuerySignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>
 
 /**
  * Subscribe to a registered collection aggregation in React async mode.
@@ -140,13 +141,14 @@ export default function useSub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export default function useSub<
   TDocument,
+  TCollectionModel extends new (...args: any[]) => any,
   TDocumentModel extends new (...args: any[]) => any,
   TCollectionPath extends WildcardSignalPath
 > (
-  signal: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
+  signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>,
   options?: UseSubOptions
-): CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath>
+): CollectionQuerySignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>
 
 /**
  * Subscribe to a registered collection aggregation in React.

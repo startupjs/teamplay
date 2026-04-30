@@ -36,12 +36,13 @@ export default function sub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export default function sub<
   TDocument,
+  TCollectionModel extends new (...args: any[]) => any,
   TDocumentModel extends new (...args: any[]) => any,
   TCollectionPath extends WildcardSignalPath
 > (
-  $collection: CollectionSignal<TDocument, any, TDocumentModel, TCollectionPath>,
+  $collection: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>
-): CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath> | Promise<CollectionQuerySignal<TDocument, TDocumentModel, TCollectionPath>>
+): CollectionQuerySignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> | Promise<CollectionQuerySignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>>
 
 /**
  * Subscribe to a registered collection aggregation outside React.
