@@ -5,6 +5,7 @@ export { onTransformSchema, setOnTransformSchema } from './lib/onTransformSchema
 export * from './lib/associations.js'
 export { default as GUID_PATTERN } from './lib/GUID_PATTERN.js'
 export { default as pickFormFields } from './lib/pickFormFields.js'
+export { defineSchema, isDefinedSchema } from './lib/defineSchema.ts'
 export {
   JSON_SCHEMA_KEYWORDS,
   getSchemaPropertiesObject,

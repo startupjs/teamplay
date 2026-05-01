@@ -1,1 +1,1 @@
-export default await Promise.resolve(class Users {})
+export default await Promise.resolve(class UsersModel {})

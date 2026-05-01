@@ -2,6 +2,7 @@ const { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSy
 const { dirname, join, relative, resolve: pathResolve } = require('path')
 const parser = require('@babel/parser')
 const JSON_SCHEMA_KEYWORDS = require('@teamplay/schema/json-schema-keywords')
+const pluralize = require('pluralize')
 
 const JS_EXT_REGEX = /\.[mc]?[jt]sx?$/
 const MODEL_PATTERN_REGEX = /^[a-zA-Z0-9$_*.]+$/
@@ -320,6 +321,7 @@ function buildTeamplayEnvContent (models, options = {}) {
   const helperTypes = []
   const manifestLines = []
   const fieldLines = []
+  const schemaModuleLines = []
   let counter = 0
 
   function addImport (filePath, prefix) {
@@ -357,6 +359,11 @@ function buildTeamplayEnvContent (models, options = {}) {
       const docType = `__${toTypeName(collectionName)}Doc`
       const fieldsType = `__${toTypeName(collectionName)}Fields`
       helperTypes.push(`type ${docType} = FromJsonSchema<typeof ${schemaImport}>`)
+      schemaModuleLines.push(buildSchemaDefaultInterface(
+        getRelativeModuleSpecifier(typesDir, schemaPart.value),
+        toDocumentTypeName(collectionName),
+        docType
+      ))
 
       const schemaDocs = extractSchemaDocs(schemaPart.value)
       if (schemaDocs.fields.length) {
@@ -391,6 +398,8 @@ function buildTeamplayEnvContent (models, options = {}) {
     manifestLines.length ? '' : null,
     ...helperTypes,
     helperTypes.length ? '' : null,
+    ...schemaModuleLines,
+    schemaModuleLines.length ? '' : null,
     "declare module 'teamplay' {",
     manifestLines.length ? '  interface TeamplayCollections extends CollectionsFromManifest<__TeamplayModelManifest> {}' : null,
     manifestLines.length ? '  interface TeamplayModels extends PathModelsFromManifest<__TeamplayModelManifest> {}' : null,
@@ -404,6 +413,24 @@ function buildTeamplayEnvContent (models, options = {}) {
 
 function isCollectionPattern (pattern) {
   return pattern && !pattern.includes('*') && !pattern.includes('.')
+}
+
+function getRelativeModuleSpecifier (fromDir, filePath) {
+  let importPath = toImportPath(relative(fromDir, filePath))
+  if (!importPath.startsWith('.')) importPath = './' + importPath
+  return stripJsExtension(importPath)
+}
+
+function stripJsExtension (filePath) {
+  return filePath.replace(JS_EXT_REGEX, '')
+}
+
+function buildSchemaDefaultInterface (moduleSpecifier, interfaceName, docType) {
+  return [
+    `declare module ${JSON.stringify(moduleSpecifier)} {`,
+    `  export default interface ${interfaceName} extends ${docType} {}`,
+    '}'
+  ].join('\n')
 }
 
 function buildFieldsInterface (name, docType, signalPath, fields, typePath = []) {
@@ -462,19 +489,35 @@ function findSchemaObject (ast) {
   let schemaObject
   for (const node of ast.program.body) {
     if (node.type === 'ExportDefaultDeclaration') {
-      const declaration = unwrapExpression(node.declaration)
-      if (declaration.type === 'ObjectExpression') return declaration
+      const declaration = getSchemaObjectExpression(node.declaration)
+      if (declaration) return declaration
     }
     if (node.type === 'VariableDeclaration') {
       for (const declaration of node.declarations) {
-        const init = unwrapExpression(declaration.init)
-        if (declaration.id.type === 'Identifier' && declaration.id.name === 'schema' && init?.type === 'ObjectExpression') {
+        const init = getSchemaObjectExpression(declaration.init)
+        if (declaration.id.type === 'Identifier' && declaration.id.name === 'schema' && init) {
           schemaObject = init
         }
       }
     }
   }
   return schemaObject
+}
+
+function getSchemaObjectExpression (node) {
+  node = unwrapExpression(node)
+  if (node?.type === 'ObjectExpression') return node
+  if (node?.type !== 'CallExpression') return null
+  if (!isDefineSchemaCallee(node.callee)) return null
+  const schemaArg = unwrapExpression(node.arguments?.[0])
+  return schemaArg?.type === 'ObjectExpression' ? schemaArg : null
+}
+
+function isDefineSchemaCallee (callee) {
+  if (callee.type === 'Identifier') return callee.name === 'defineSchema'
+  if (callee.type !== 'MemberExpression') return false
+  const property = callee.property
+  return !callee.computed && property.type === 'Identifier' && property.name === 'defineSchema'
 }
 
 function extractFields (objectExpression, options = {}) {
@@ -602,6 +645,10 @@ function toTypeName (value) {
     .replace(/^[^a-zA-Z_$]+/, '')
     .replace(/[^a-zA-Z0-9_$]+(.)?/g, (_, char = '') => char.toUpperCase())
   return res ? res[0].toUpperCase() + res.slice(1) : 'Model'
+}
+
+function toDocumentTypeName (collectionName) {
+  return toTypeName(pluralize.singular(collectionName))
 }
 
 module.exports = {

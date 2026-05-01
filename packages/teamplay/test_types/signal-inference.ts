@@ -2,14 +2,19 @@ import {
   $,
   Signal,
   addModel,
+  accessControl,
+  __aggregationHeader,
   aggregation,
   defineModels,
+  defineSchema,
   sub,
   useSub,
+  type AccessCreateContext as ExportedAccessCreateContext,
   type CollectionsFromManifest,
   type FromJsonSchema,
   type JsonSchemaSpec,
   type CollectionQuerySignal,
+  type DefaultAggregationSession,
   type PathModelsFromManifest,
   type TypedAggregationInput,
   type TypedSignal,
@@ -57,6 +62,17 @@ type TypeAssertions = [
   AggregationIndexDocumentModel,
   AggregationDocumentMethods,
   HookAggregationIndexDocumentModel,
+  ExplicitAggregationIndexDocumentModel,
+  ExplicitAggregationDocumentMethods,
+  HeaderAggregationIndexDocumentModel,
+  AggregationSecondGenericSession,
+  AggregationThirdGenericSession,
+  HeaderAggregationSecondGenericSession,
+  ClientAggregationSecondGenericSession,
+  DefaultAggregationSessionUserId,
+  AggregationStatsTotal,
+  AggregationStatsUnread,
+  ExplicitAggregationRowsField,
   LocalPrimitive,
   LocalExplicitBoolean,
   LocalExplicitBooleanSignal,
@@ -122,10 +138,18 @@ type TypeAssertions = [
   NullableObjectSchemaInference,
   SimplifiedKeywordFieldSchemaInference,
   TupleSchemaInference,
+  DefinedSchemaInference,
   AmbiguousDocumentFallbackField,
   AmbiguousArrayFallbackItem,
   TypedAggregationOutputField,
   TypedAggregationOutputMethod,
+  AccessCreateDoc,
+  AccessCreateSession,
+  AccessReadDoc,
+  AccessUpdateOps,
+  AccessDeleteDoc,
+  ExportedAccessContextDoc,
+  AccessDefaultSessionUserId,
   DefinedManifestCollection,
   DefinedManifestDocPathModel,
   DefinedManifestNestedPathModel
@@ -187,6 +211,14 @@ const tupleSchema = {
     { type: 'boolean' }
   ]
 } as const
+
+const definedSchema = defineSchema({
+  status: {
+    type: 'string',
+    enum: ['draft', 'published']
+  },
+  score: { type: 'integer', required: true }
+})
 
 interface Game {
   info: {
@@ -255,25 +287,25 @@ const ambiguousSharedSchema = {
   name: { type: 'string', required: true }
 } as const
 
-class SharedDocsA extends Signal<SharedDocShape[]> {
+class SharedDocsAModel extends Signal<SharedDocShape[]> {
   onlyOnSharedA () {
     return this
   }
 }
 
-class SharedDocA extends Signal<SharedDocShape> {
+class SharedDocAModel extends Signal<SharedDocShape> {
   onlyOnSharedDocA () {
     return this.name.get()
   }
 }
 
-class SharedDocsB extends Signal<SharedDocShape[]> {
+class SharedDocsBModel extends Signal<SharedDocShape[]> {
   onlyOnSharedB () {
     return this
   }
 }
 
-class SharedDocB extends Signal<SharedDocShape> {
+class SharedDocBModel extends Signal<SharedDocShape> {
   onlyOnSharedDocB () {
     return this.name.get()
   }
@@ -316,8 +348,8 @@ declare module 'teamplay' {
   interface TeamplayCollections {
     games: JsonSchemaSpec<typeof gameSchema, typeof GamesModel, typeof GameModel>
     zodGames: ZodSchemaSpec<ZodLikeGame, typeof GamesModel, typeof GameModel>
-    sharedAs: JsonSchemaSpec<typeof ambiguousSharedSchema, typeof SharedDocsA, typeof SharedDocA>
-    sharedBs: JsonSchemaSpec<typeof ambiguousSharedSchema, typeof SharedDocsB, typeof SharedDocB>
+    sharedAs: JsonSchemaSpec<typeof ambiguousSharedSchema, typeof SharedDocsAModel, typeof SharedDocAModel>
+    sharedBs: JsonSchemaSpec<typeof ambiguousSharedSchema, typeof SharedDocsBModel, typeof SharedDocBModel>
   }
 
   interface TeamplayModels {
@@ -479,6 +511,10 @@ type SimplifiedKeywordFieldSchemaInference = Expect<Equal<FromJsonSchema<typeof 
   name?: string
 }>>
 type TupleSchemaInference = Expect<Equal<FromJsonSchema<typeof tupleSchema>, readonly [string, number, boolean]>>
+type DefinedSchemaInference = Expect<Equal<FromJsonSchema<typeof definedSchema>, {
+  status?: 'draft' | 'published'
+  score: number
+}>>
 
 const $queryGames = sub($.games, { status: 'draft' })
 sub($.games, { 'info.maxPlayers': { $gte: 2 }, 'info.title': { $regex: /chess/i } })
@@ -499,6 +535,32 @@ sub($.games, { 'info.maxPlayers': 'two' })
 sub($.games, { status: { $in: ['draft', 'archived'] } })
 const $$activeGames = aggregation('games', ({ active }: { active: boolean }) => [{ $match: { active } }])
 const $aggregationGames = sub($$activeGames, { active: true })
+const $$typedActiveGames = aggregation<Game[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
+const $typedAggregationGames = sub($$typedActiveGames, { active: true })
+const $$headerActiveGames = __aggregationHeader<Game[]>({ collection: 'games', name: '$$active' })
+const $headerAggregationGames = sub($$headerActiveGames, { active: true })
+interface AggregationSessionShape {
+  userId?: string
+  role: 'admin' | 'member'
+}
+const $$secondGenericSessionGames = aggregation<Game[], AggregationSessionShape>((_params, { session }) => {
+  const role = session.role
+  return [{ $match: { role } }]
+})
+const $$thirdGenericSessionGames = aggregation<Game[], 'games', AggregationSessionShape>((_params, { collection, session }) => {
+  const gamesCollection = collection
+  const role = session.role
+  return [{ $match: { collection: gamesCollection, role } }]
+})
+const $$headerSessionGames = __aggregationHeader<Game[], AggregationSessionShape>({ collection: 'games', name: '$$active' })
+const $$clientSecondGenericSessionGames = aggregation<Game[], AggregationSessionShape>('games', (_params, { session }) => {
+  const role = session.role
+  return [{ $match: { role } }]
+})
+const $$notificationStats = aggregation<{ total: number, currentDay: number, unread: number }>('games', () => [])
+const $notificationStats = sub($$notificationStats, {})
+const $$roleCountRows = aggregation<RoleCount[]>('games', () => [])
+const $roleCountRows = sub($$roleCountRows, {})
 const $$roleCounts = null as unknown as TypedAggregationInput<RoleCount, typeof RoleCountModel>
 const $roleCounts = sub($$roleCounts, { active: true })
 function useHookAggregationGames () {
@@ -506,13 +568,19 @@ function useHookAggregationGames () {
 }
 const $hookQueryGame = (null as unknown as ReturnType<typeof useHookQueryGames>)[0]
 const $aggregationGame = (null as unknown as AggregationGames)[0]
+const $typedAggregationGame = (null as unknown as TypedAggregationGames)[0]
 const $hookAggregationGame = (null as unknown as ReturnType<typeof useHookAggregationGames>)[0]
 
 type QueryGames = AwaitedSub<typeof $queryGames>
 type AggregationGames = AwaitedSub<typeof $aggregationGames>
+type TypedAggregationGames = AwaitedSub<typeof $typedAggregationGames>
+type HeaderAggregationGames = AwaitedSub<typeof $headerAggregationGames>
+type NotificationStats = AwaitedSub<typeof $notificationStats>
+type RoleCountRows = AwaitedSub<typeof $roleCountRows>
 type RoleCounts = AwaitedSub<typeof $roleCounts>
 type QueryGameItem = QueryGames extends Iterable<infer Item> ? Item : never
 const $roleCount = (null as unknown as RoleCounts)[0]
+const $roleCountRow = (null as unknown as RoleCountRows)[0]
 type QuerySignalType = Expect<Equal<QueryGames, CollectionQuerySignal<Game, typeof GamesModel, typeof GameModel, readonly ['games']>>>
 type QueryIndexDocumentModel = Expect<Equal<ReturnType<QueryGames[0]['info']['title']['get']>, string>>
 type QueryIteratorDocumentModel = Expect<Equal<ReturnType<QueryGameItem['info']['title']['get']>, string>>
@@ -520,10 +588,71 @@ type HookQueryIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookQueryGame
 type AggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $aggregationGame.info.title.get>, string>>
 type AggregationDocumentMethods = Expect<Equal<ReturnType<typeof $aggregationGame.start>, Promise<void>>>
 type HookAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookAggregationGame.info.maxPlayers.get>, number>>
+type ExplicitAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $typedAggregationGame.info.title.get>, string>>
+type ExplicitAggregationDocumentMethods = Expect<Equal<ReturnType<typeof $typedAggregationGame.start>, Promise<void>>>
+type HeaderAggregationIndexDocumentModel = Expect<Equal<ReturnType<HeaderAggregationGames[0]['info']['title']['get']>, string>>
+type AggregationSecondGenericSession = Expect<Equal<typeof $$secondGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type AggregationThirdGenericSession = Expect<Equal<typeof $$thirdGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type HeaderAggregationSecondGenericSession = Expect<Equal<typeof $$headerSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type ClientAggregationSecondGenericSession = Expect<Equal<typeof $$clientSecondGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type DefaultAggregationSessionUserId = Expect<Equal<DefaultAggregationSession['userId'], string | undefined>>
+type AggregationStatsTotal = Expect<Equal<ReturnType<NotificationStats['total']['get']>, number>>
+type AggregationStatsUnread = Expect<Equal<ReturnType<NotificationStats['unread']['get']>, number>>
+type ExplicitAggregationRowsField = Expect<Equal<ReturnType<typeof $roleCountRow.count.get>, number>>
 type QueryNestedPathModelMethod = Expect<Equal<ReturnType<typeof $hookQueryGame.info.titleCase>, string>>
 type AggregationNestedPathModelMethod = Expect<Equal<ReturnType<typeof $aggregationGame.info.tags[0]['label']>, string>>
 type TypedAggregationOutputField = Expect<Equal<ReturnType<typeof $roleCount.count.get>, number>>
 type TypedAggregationOutputMethod = Expect<Equal<ReturnType<typeof $roleCount.label>, string>>
+const gameAccess = accessControl<Game, { userId?: string }>({
+  create ({ newDoc, session, type }) {
+    const operation: 'create' = type
+    void operation
+    return Boolean(session.userId && newDoc.info.title)
+  },
+  read ({ doc }) {
+    return doc.info.maxPlayers > 0
+  },
+  update: {
+    fn ({ doc, newDoc, ops }) {
+      return ops.length > 0 && doc.info.title !== newDoc.info.title
+    }
+  },
+  delete ({ doc }) {
+    return doc.status !== 'started'
+  }
+})
+accessControl<Game, { userId?: string }, string>({
+  read: 'admin'
+})
+accessControl<Game>({
+  read ({ session }) {
+    const userId = session.userId
+    return Boolean(userId)
+  },
+  create ({ newDoc }) {
+    // @ts-expect-error create access receives newDoc, not doc
+    return Boolean(newDoc.info.title && newDoc.doc)
+  }
+})
+accessControl<Game>({
+  // @ts-expect-error accessControl only accepts create/read/update/delete rules
+  publish: true
+})
+type AccessCreateRule = Extract<Exclude<typeof gameAccess.create, boolean | undefined>, (context: any) => any>
+type AccessCreateContext = AccessCreateRule extends (context: infer Context) => any ? Context : never
+type AccessReadRule = Extract<Exclude<typeof gameAccess.read, boolean | undefined>, (context: any) => any>
+type AccessReadContext = AccessReadRule extends (context: infer Context) => any ? Context : never
+type AccessUpdateRule = Extract<Exclude<typeof gameAccess.update, boolean | undefined>, { fn: (context: any) => any }>
+type AccessUpdateContext = AccessUpdateRule extends { fn: (context: infer Context) => any } ? Context : never
+type AccessDeleteRule = Extract<Exclude<typeof gameAccess.delete, boolean | undefined>, (context: any) => any>
+type AccessDeleteContext = AccessDeleteRule extends (context: infer Context) => any ? Context : never
+type AccessCreateDoc = Expect<Equal<AccessCreateContext['newDoc'], Game>>
+type AccessCreateSession = Expect<Equal<AccessCreateContext['session'], { userId?: string }>>
+type AccessReadDoc = Expect<Equal<AccessReadContext['doc'], Game>>
+type AccessUpdateOps = Expect<Equal<AccessUpdateContext['ops'], unknown[]>>
+type AccessDeleteDoc = Expect<Equal<AccessDeleteContext['doc'], Game>>
+type ExportedAccessContextDoc = Expect<Equal<ExportedAccessCreateContext<Game>['newDoc'], Game>>
+type AccessDefaultSessionUserId = Expect<Equal<ExportedAccessCreateContext<Game>['session']['userId'], string | undefined>>
 declare const $resolvedQueryGames: QueryGames
 const $firstQueryGame = $resolvedQueryGames.reduce(($firstGame, $secondGame) => $firstGame)
 const $resolvedOpenQueryGames = $resolvedQueryGames.findOpenGames()

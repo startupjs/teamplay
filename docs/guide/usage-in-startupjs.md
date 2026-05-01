@@ -2,7 +2,7 @@
 
 StartupJS uses TeamPlay as its signal and ORM layer. In StartupJS apps, use the same model conventions as TeamPlay, but import app-facing APIs from `startupjs`.
 
-For the full model convention, read [ORM](/guide/orm). For generated types and `Signal<T>` examples, read [TypeScript Support](/guide/typescript-support).
+For the full model convention, read [ORM](/orm/index). For generated types and `Signal<T>` examples, read [TypeScript Support](/guide/typescript-support).
 
 ## Imports
 
@@ -36,16 +36,15 @@ Pure TeamPlay apps use a manual `models.setup.ts` file. StartupJS apps should no
 
 ```ts
 // models/tasks/schema.ts
-import { type FromJsonSchema } from 'startupjs'
+import { defineSchema } from 'startupjs'
 
-const schema = {
+const schema = defineSchema({
   title: { type: 'string', required: true },
   done: { type: 'boolean' },
   createdAt: { type: 'number', required: true }
-} as const
+})
 
 export default schema
-export type TaskDoc = FromJsonSchema<typeof schema>
 ```
 
 StartupJS commonly uses TeamPlay's simplified schema format, where the top-level object is the document fields. If you write full JSON Schema, use `type: 'object'` at the root and put fields under `properties`.
@@ -55,9 +54,9 @@ StartupJS commonly uses TeamPlay's simplified schema format, where the top-level
 ```ts
 // models/tasks/index.ts
 import { Signal } from 'startupjs'
-import type { TaskDoc } from './schema.ts'
+import type Task from './schema.ts'
 
-export default class Tasks extends Signal<TaskDoc[]> {
+export default class TasksModel extends Signal<Task[]> {
   async addNew (title: string) {
     return await this.add({
       title,
@@ -73,9 +72,9 @@ export default class Tasks extends Signal<TaskDoc[]> {
 ```ts
 // models/tasks/[id].ts
 import { Signal } from 'startupjs'
-import type { TaskDoc } from './schema.ts'
+import type Task from './schema.ts'
 
-export default class Task extends Signal<TaskDoc> {
+export default class TaskModel extends Signal<Task> {
   async toggle () {
     await this.done.set(!this.done.get())
   }
@@ -117,16 +116,16 @@ TaskRow($task=$task)
 
 ```tsx
 import { observer, pug, type Signal } from 'startupjs'
-import type { TaskDoc } from '../models/tasks/schema.ts'
+import type Task from '../models/tasks/schema.ts'
 
-const TaskRow = observer(function TaskRow ({ $task }: { $task: Signal<TaskDoc> }) {
+const TaskRow = observer(function TaskRow ({ $task }: { $task: Signal<Task> }) {
   return pug`
     Span= $task.title.get()
   `
 })
 ```
 
-`Signal<TaskDoc>` includes schema fields and document model methods when `TaskDoc` maps to one known collection.
+`Signal<Task>` includes schema fields and document model methods when `Task` maps to one known collection.
 
 ## Subscriptions Outside React
 
@@ -156,7 +155,7 @@ export default {
 }
 ```
 
-Access rules live in `models/<collection>/access.ts`; aggregation files are named `$$name.ts`. See [ORM](/guide/orm#access-rules) and [ORM aggregations](/guide/orm#aggregations) for examples.
+Access rules live in `models/<collection>/access.ts`; aggregation files are named `$$name.ts`. See [Access Control](/orm/access-control) and [Aggregations](/orm/aggregations) for examples.
 
 ## Typechecking
 

@@ -1,6 +1,6 @@
-import { type FromJsonSchema } from 'teamplay'
+import { defineSchema, type FromJsonSchema } from 'teamplay'
 
-const schema = {
+const schema = defineSchema({
   title: {
     type: 'string',
     required: true,
@@ -48,7 +48,7 @@ const schema = {
     }
   },
   createdAt: { type: 'number', required: true }
-} as const
+})
 
 export default schema
-export type EventDoc = FromJsonSchema<typeof schema>
+export default interface Event extends FromJsonSchema<typeof schema> {}

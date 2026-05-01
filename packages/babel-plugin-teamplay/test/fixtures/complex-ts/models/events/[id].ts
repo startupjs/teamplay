@@ -1,7 +1,7 @@
 import { Signal } from 'teamplay'
-import type { EventDoc } from './schema.ts'
+import type Event from './schema.ts'
 
-export default class Event extends Signal<EventDoc> {
+export default class EventModel extends Signal<Event> {
   titleUpper () {
     return this.title.get().toUpperCase()
   }

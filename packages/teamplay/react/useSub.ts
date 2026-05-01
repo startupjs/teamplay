@@ -8,7 +8,6 @@ import * as promiseBatcher from './promiseBatcher.js'
 import renderAttemptDestroyer from './renderAttemptDestroyer.js'
 import { markCompatComponent } from './compatComponentRegistry.js'
 import type {
-  CollectionAggregationSignal,
   CollectionSignal,
   DocumentSignal,
   QueryParams,
@@ -18,7 +17,6 @@ import type {
   TypedAggregationSignal,
   WildcardSignalPath
 } from '../orm/Signal.ts'
-import type { TeamplayCollections } from '../index.ts'
 
 export interface UseSubOptions {
   /** Return `undefined` while loading instead of throwing a Suspense promise. */
@@ -74,11 +72,11 @@ export function useAsyncSub<
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export function useAsyncSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: RegisteredAggregationInput<TCollection>,
+export function useAsyncSub<TCollection extends string, TOutput = unknown> (
+  signal: RegisteredAggregationInput<TCollection, TOutput>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): CollectionAggregationSignal<TCollection>
+): SubResult<RegisteredAggregationInput<TCollection, TOutput>>
 
 /**
  * Subscribe to a client aggregation in React async mode.
@@ -86,11 +84,11 @@ export function useAsyncSub<TCollection extends keyof TeamplayCollections & stri
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export function useAsyncSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: ClientAggregationFunction<TCollection>,
+export function useAsyncSub<TOutput, TCollection extends string> (
+  signal: ClientAggregationFunction<TOutput, TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): CollectionAggregationSignal<TCollection>
+): SubResult<ClientAggregationFunction<TOutput, TCollection>>
 
 /**
  * Subscribe to an aggregation with explicit output typing in React async mode.
@@ -110,11 +108,11 @@ export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export function useAsyncSub (
-  signal: AggregationFunction,
+export function useAsyncSub<TOutput = unknown, TCollection extends string = string> (
+  signal: AggregationFunction<TOutput, TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): SubResult<AggregationFunction, Record<string, any> | undefined>
+): SubResult<AggregationFunction<TOutput, TCollection>, Record<string, any> | undefined>
 
 export function useAsyncSub (signal, params, options) {
   return useSub(signal, params, { ...options, async: true })
@@ -155,11 +153,11 @@ export default function useSub<
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export default function useSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: RegisteredAggregationInput<TCollection>,
+export default function useSub<TCollection extends string, TOutput = unknown> (
+  signal: RegisteredAggregationInput<TCollection, TOutput>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): CollectionAggregationSignal<TCollection>
+): SubResult<RegisteredAggregationInput<TCollection, TOutput>>
 
 /**
  * Subscribe to a client aggregation in React.
@@ -167,11 +165,11 @@ export default function useSub<TCollection extends keyof TeamplayCollections & s
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export default function useSub<TCollection extends keyof TeamplayCollections & string> (
-  signal: ClientAggregationFunction<TCollection>,
+export default function useSub<TOutput, TCollection extends string> (
+  signal: ClientAggregationFunction<TOutput, TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): CollectionAggregationSignal<TCollection>
+): SubResult<ClientAggregationFunction<TOutput, TCollection>>
 
 /**
  * Subscribe to an aggregation with explicit output typing in React.
@@ -191,11 +189,11 @@ export default function useSub<TDocument, TDocumentModel extends new (...args: a
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export default function useSub (
-  signal: AggregationFunction,
+export default function useSub<TOutput = unknown, TCollection extends string = string> (
+  signal: AggregationFunction<TOutput, TCollection>,
   params?: Record<string, any>,
   options?: UseSubOptions
-): SubResult<AggregationFunction, Record<string, any> | undefined>
+): SubResult<AggregationFunction<TOutput, TCollection>, Record<string, any> | undefined>
 
 export default function useSub (signal, params, options) {
   if (USE_DEFERRED_VALUE) {

@@ -33,6 +33,7 @@ export type {
   JsonSchemaSpec,
   MaybePromise,
   MaybePromiseSubResult,
+  PublicSignal,
   RegisteredAggregationInput,
   QuerySignal,
   SignalChild,

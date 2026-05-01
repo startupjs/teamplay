@@ -1,1 +1,1 @@
-export default class Users {}
+export default class UsersModel {}

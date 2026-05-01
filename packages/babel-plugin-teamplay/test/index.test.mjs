@@ -1,8 +1,9 @@
 import babel from '@babel/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { cpSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import plugin from '../index.js'
@@ -16,7 +17,10 @@ const {
 } = loader
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = join(TEST_DIR, '../../..')
+const TSC_BIN = join(REPO_ROOT, 'node_modules/typescript/bin/tsc')
 const FIXTURES_DIR = join(TEST_DIR, 'fixtures')
+const SOURCE_FILE_REGEX = /\.[mc]?[jt]sx?$/
 const require = createRequire(import.meta.url)
 
 describe('babel-plugin-teamplay', () => {
@@ -69,6 +73,70 @@ describe('babel-plugin-teamplay', () => {
     expect(readFileSync(filePath, 'utf8')).toMatchSnapshot()
   })
 
+  it('generates schema default interfaces which work through resolved module identity', () => {
+    useFixture(root, 'complex-ts')
+    generateTeamplayEnv({ root })
+    linkNodeModules(root)
+    mkdirSync(join(root, 'app', 'nested'), { recursive: true })
+    writeFileSync(join(root, 'app-relative.ts'), `
+      import { Signal } from 'teamplay'
+      import Event from './models/events/schema'
+      import AliasEvent from '@/models/events/schema'
+
+      const schemaType: 'string' = Event.title.type
+      const aliasSchemaType: 'string' = AliasEvent.title.type
+      const event: Event = { title: 'Launch', createdAt: 1 }
+      const aliasEvent: AliasEvent = event
+      const $event = null as unknown as Signal<Event>
+      const title: string = $event.title.get()
+
+      class EventModel extends Signal<Event> {
+        getTitle () {
+          return this.title.get()
+        }
+      }
+
+      const model = null as unknown as EventModel
+      const modelTitle: string = model.getTitle()
+
+      // @ts-expect-error generated default interface should reject wrong field types
+      const badEvent: Event = { title: 123, createdAt: 1 }
+
+      void schemaType
+      void aliasSchemaType
+      void aliasEvent
+      void title
+      void modelTitle
+      void badEvent
+    `)
+    writeFileSync(join(root, 'app', 'nested', 'nested-relative.ts'), `
+      import Event from '../../models/events/schema.ts'
+
+      const event: Event = { title: 'Nested', createdAt: 2 }
+      // @ts-expect-error resolved relative imports with extensions should use the same default interface
+      const badEvent: Event = { title: 'Nested', createdAt: 'today' }
+
+      void event
+      void badEvent
+    `)
+    writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        allowImportingTsExtensions: true,
+        baseUrl: '.',
+        paths: { '@/*': ['./*'] },
+        skipLibCheck: true,
+        ignoreDeprecations: '6.0'
+      },
+      include: ['**/*.ts', 'teamplay-env.d.ts']
+    }, null, 2))
+
+    expect(() => runTsc(root)).not.toThrow()
+  })
+
   it('does not rewrite teamplay-env.d.ts when generated content is unchanged', () => {
     useFixture(root, 'complex-ts')
     const filePath = generateTeamplayEnv({ root })
@@ -82,18 +150,21 @@ describe('babel-plugin-teamplay', () => {
 
   it('loads file-based models directly in Node', async () => {
     useFixture(root, 'simple-js')
+    linkNodeModules(root)
 
     expect(summarizeLoadedModels(await loadFileBasedModels({ root }))).toMatchSnapshot()
   })
 
   it('loads file-based models synchronously in Node', () => {
     useFixture(root, 'simple-js')
+    linkNodeModules(root)
 
     expect(summarizeLoadedModels(loadFileBasedModelsSync({ root }))).toMatchSnapshot()
   })
 
   it('exports synchronous Node file-based models', () => {
     useFixture(root, 'simple-js')
+    linkNodeModules(root)
     const previousCwd = process.cwd()
     process.chdir(root)
     try {
@@ -116,24 +187,26 @@ describe('babel-plugin-teamplay', () => {
   it('eliminates server-only model code for client builds', () => {
     expect(transformModelCode(`
       import { aggregation, accessControl, serverOnly } from 'teamplay'
+      type User = { active: boolean }
 
-      export const $$active = aggregation(({ active }) => [{ $match: { active } }])
+      export const $$active = aggregation<User[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
       export const access = accessControl({ create: () => true })
       export const secret = serverOnly(() => 'secret')
     `, {
       root,
-      filename: join(root, 'models', 'users.js')
+      filename: join(root, 'models', 'users.ts')
     })).toMatchSnapshot()
   })
 
   it('eliminates default aggregation files for client builds', () => {
     expect(transformModelCode(`
       import { aggregation } from 'startupjs'
+      type User = { active: boolean }
 
-      export default aggregation(({ active }) => [{ $match: { active } }])
+      export default aggregation<User[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
     `, {
       root,
-      filename: join(root, 'model', 'users', '$$active.js'),
+      filename: join(root, 'model', 'users', '$$active.ts'),
       fallbackModelsFolders: ['model']
     })).toMatchSnapshot()
   })
@@ -149,6 +222,30 @@ describe('babel-plugin-teamplay', () => {
       filename: join(root, 'node_modules', '@startupjs', 'plugin-example', 'model', 'users.js'),
       fallbackModelsFolders: ['model']
     })).toMatchSnapshot()
+  })
+
+  it('snapshots client-transformed complex TypeScript model fixtures', () => {
+    useFixture(root, 'complex-ts')
+
+    const output = transformFixtureModelFiles(root)
+
+    expect(output['models/events/$$active.ts']).toContain('__aggregationHeader<Event[], EventSession>')
+    expect(output['models/events/$$active.ts']).not.toContain('$match')
+    expect(output['models/events/access.ts']).not.toContain('accessControl')
+    expect(output['models/events/access.ts']).not.toContain('session')
+    expect(output).toMatchSnapshot()
+  })
+
+  it('snapshots client-transformed simple JavaScript model fixtures', () => {
+    useFixture(root, 'simple-js')
+
+    const output = transformFixtureModelFiles(root)
+
+    expect(output['models/users/$$active.js']).toContain('__aggregationHeader')
+    expect(output['models/users/$$active.js']).not.toContain('$match')
+    expect(output['models/users/access.js']).not.toContain('accessControl')
+    expect(output['models/users/access.js']).not.toContain('session')
+    expect(output).toMatchSnapshot()
   })
 
   it('keeps model server code when clientOnly is false', () => {
@@ -225,9 +322,44 @@ function transformModelCode (code, options) {
     filename: options.filename,
     babelrc: false,
     configFile: false,
+    parserOpts: {
+      plugins: ['typescript']
+    },
     plugins: [[plugin, options]]
   })
   return result.code
+}
+
+function transformFixtureModelFiles (root) {
+  const files = getSourceFiles(join(root, 'models'))
+  return Object.fromEntries(
+    files.map(filePath => [
+      toSnapshotPath(root, filePath),
+      `\n${transformModelCode(readFileSync(filePath, 'utf8'), {
+        root,
+        filename: filePath,
+        types: false
+      })}\n`
+    ])
+  )
+}
+
+function getSourceFiles (folder) {
+  const files = []
+  for (const filename of readdirSync(folder).sort()) {
+    const filePath = join(folder, filename)
+    const stat = lstatSync(filePath)
+    if (stat.isDirectory()) {
+      files.push(...getSourceFiles(filePath))
+    } else if (SOURCE_FILE_REGEX.test(filename)) {
+      files.push(filePath)
+    }
+  }
+  return files
+}
+
+function toSnapshotPath (root, filePath) {
+  return relative(root, filePath).replace(/\\/g, '/')
 }
 
 function summarizeLoadedModels (models) {
@@ -249,10 +381,29 @@ function summarizeLoadedValue (value) {
   if (typeof value === 'function') {
     return { type: 'function', name: value.name }
   }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, child]) => [key, summarizeLoadedValue(child)])
+    )
+  }
   return value
 }
 
 function useFixture (root, name) {
   cpSync(join(FIXTURES_DIR, name), root, { recursive: true })
   mkdirSync(join(root, 'src'), { recursive: true })
+}
+
+function linkNodeModules (root) {
+  symlinkSync(join(REPO_ROOT, 'node_modules'), join(root, 'node_modules'), 'dir')
+}
+
+function runTsc (root) {
+  execFileSync(process.execPath, [TSC_BIN, '--noEmit', '--project', join(root, 'tsconfig.json')], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: 'pipe'
+  })
 }

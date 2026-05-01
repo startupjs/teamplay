@@ -37,13 +37,13 @@ Many app configs already include root `.d.ts` files through `**/*.ts` or `**/*.t
 
 ## Infer Document Types From Schemas
 
-Use `FromJsonSchema` to derive the document type from the schema:
+With file-based models, TeamPlay generates a default document type for every collection schema module. Define the schema with `defineSchema()` and export it as default:
 
 ```ts
 // models/users/schema.ts
-import { type FromJsonSchema } from 'teamplay'
+import { defineSchema } from 'teamplay'
 
-const schema = {
+const schema = defineSchema({
   name: {
     type: 'string',
     required: true,
@@ -52,21 +52,28 @@ const schema = {
   },
   email: { type: 'string' },
   createdAt: { type: 'number', required: true }
-} as const
+})
 
 export default schema
-export type UserDoc = FromJsonSchema<typeof schema>
 ```
 
-`UserDoc` becomes:
+After `teamplay-env.d.ts` is generated, the schema module's default export is also usable as the document type:
 
 ```ts
-type UserDoc = {
+import type User from './models/users/schema.ts'
+```
+
+`User` becomes:
+
+```ts
+type User = {
   name: string
   email?: string
   createdAt: number
 }
 ```
+
+Plain exported schema objects still work for backward compatibility, but `defineSchema()` is the conventional form and preserves literal inference without `as const`.
 
 ## Type Model Classes
 
@@ -75,10 +82,10 @@ Collection models extend `Signal<Document[]>`:
 ```ts
 // models/users/index.ts
 import { Signal } from 'teamplay'
-import type { UserDoc } from './schema.ts'
+import type User from './schema.ts'
 
-export default class Users extends Signal<UserDoc[]> {
-  async addNew (user: Omit<UserDoc, 'createdAt'>) {
+export default class UsersModel extends Signal<User[]> {
+  async addNew (user: Omit<User, 'createdAt'>) {
     return await this.add({
       ...user,
       createdAt: Date.now()
@@ -92,9 +99,9 @@ Document models extend `Signal<Document>`:
 ```ts
 // models/users/[id].ts
 import { Signal } from 'teamplay'
-import type { UserDoc } from './schema.ts'
+import type User from './schema.ts'
 
-export default class User extends Signal<UserDoc> {
+export default class UserModel extends Signal<User> {
   displayName () {
     return this.name.get()
   }
@@ -144,26 +151,49 @@ await sub($.users, {
 })
 ```
 
+Aggregation output types are output-first:
+
+```ts
+import { aggregation, sub } from 'teamplay'
+import type User from '../models/users/schema.ts'
+
+const $$activeUsers = aggregation<User[]>(({ orgId }: { orgId: string }) => [
+  { $match: { orgId, active: true } }
+])
+
+const $activeUsers = await sub($$activeUsers, { orgId })
+```
+
+For grouped or metadata output, pass that full result shape:
+
+```ts
+const $$notificationStats = aggregation<{ total: number, unread: number }>(() => [])
+const $stats = await sub($$notificationStats)
+
+$stats.total.get()  // number
+$stats.unread.get() // number
+```
+
 ## Type Component Props
 
 Use `Signal<T>` for signal props:
 
 ```tsx
 import { observer, type Signal } from 'teamplay'
-import type { UserDoc } from '../models/users/schema.ts'
+import type User from '../models/users/schema.ts'
 
-const UserCard = observer(function UserCard ({ $user }: { $user: Signal<UserDoc> }) {
+const UserCard = observer(function UserCard ({ $user }: { $user: Signal<User> }) {
   $user.displayName()
   return $user.name.get()
 })
 ```
 
-`Signal<UserDoc>` also includes the generated document model methods when `UserDoc` matches one known collection document type.
+`Signal<User>` also includes the generated document model methods when `User` matches one known collection document type.
 
 For query, collection, or list props, use the array document type. The signal keeps the collection model methods, and item signals keep the document model methods:
 
 ```ts
-function UsersList ({ $users }: { $users: Signal<UserDoc[]> }) {
+function UsersList ({ $users }: { $users: Signal<User[]> }) {
   $users.addNew()
 
   for (const $user of $users) {
@@ -198,7 +228,7 @@ $draft.name.get() // string
 You can also provide the type explicitly:
 
 ```ts
-const $newUser = $<UserDoc>()
+const $newUser = $<User>()
 const $showModal = $<boolean>()
 ```
 
@@ -215,11 +245,11 @@ models/games/[id]/players/[playerId].ts -> games.*.players.*
 ```ts
 // models/games/[id]/players/[playerId].ts
 import { Signal } from 'teamplay'
-import type { GameDoc } from '../../schema.ts'
+import type Game from '../../schema.ts'
 
-type GamePlayerDoc = GameDoc['players'][number]
+type GamePlayer = Game['players'][number]
 
-export default class GamePlayer extends Signal<GamePlayerDoc> {
+export default class GamePlayerModel extends Signal<GamePlayer> {
   displayName () {
     return this.robot.get() ? `${this.name.get()} (bot)` : this.name.get()
   }
@@ -273,16 +303,22 @@ If the schema is dynamic or cannot be parsed safely, field JSDoc is skipped but 
 
 ## How The Generated File Works
 
-`teamplay-env.d.ts` augments the `teamplay` module:
+`teamplay-env.d.ts` augments the `teamplay` module and each schema module:
 
 ```ts
+type UserSchema = typeof import('./models/users/schema').default
+
+declare module './models/users/schema' {
+  export default interface User extends FromJsonSchema<UserSchema> {}
+}
+
 declare module 'teamplay' {
   interface TeamplayCollections {
-    users: JsonSchemaSpec<typeof schema, typeof Users, typeof User>
+    users: JsonSchemaSpec<typeof schema, typeof UsersModel, typeof UserModel>
   }
 
   interface TeamplayModels {
-    'games.*.players.*': typeof GamePlayer
+    'games.*.players.*': typeof GamePlayerModel
   }
 
   interface TeamplaySignalFields {
@@ -291,6 +327,7 @@ declare module 'teamplay' {
 }
 ```
 
+- Schema module augmentation makes `import type User from './models/users/schema.ts'` work.
 - `TeamplayCollections` registers collection schemas, collection model classes, and document model classes.
 - `TeamplayModels` registers extra model classes below documents.
 - `TeamplaySignalFields` preserves schema field JSDoc in signal completions.
@@ -325,12 +362,12 @@ For schemas, prefer `JsonSchemaSpec`:
 ```ts
 import type { JsonSchemaSpec } from 'teamplay'
 import schema from '../models/users/schema.ts'
-import Users from '../models/users/index.ts'
-import User from '../models/users/[id].ts'
+import UsersModel from '../models/users/index.ts'
+import UserModel from '../models/users/[id].ts'
 
 declare module 'teamplay' {
   interface TeamplayCollections {
-    users: JsonSchemaSpec<typeof schema, typeof Users, typeof User>
+    users: JsonSchemaSpec<typeof schema, typeof UsersModel, typeof UserModel>
   }
 }
 ```

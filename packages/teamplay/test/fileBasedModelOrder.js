@@ -53,8 +53,8 @@ describe('file-based model initialization order', () => {
 
     assert.deepEqual(result, {
       keys: EXPECTED_COMPLEX_KEYS,
-      collectionClassName: 'Events',
-      documentClassName: 'Event'
+      collectionClassName: 'EventsModel',
+      documentClassName: 'EventModel'
     })
   })
 

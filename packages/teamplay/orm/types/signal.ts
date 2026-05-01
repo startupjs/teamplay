@@ -82,6 +82,33 @@ type SignalFieldsForPath<TPath extends WildcardSignalPath> =
 
 export type AnySignal = Signal<any>
 
+type IsAny<TValue> = 0 extends (1 & TValue) ? true : false
+
+type IsUnknown<TValue> =
+  IsAny<TValue> extends true
+    ? false
+    : unknown extends TValue
+      ? true
+      : false
+
+type IsEqual<TValue, TOther> =
+  (<T>() => T extends TValue ? 1 : 2) extends
+  (<T>() => T extends TOther ? 1 : 2)
+    ? (<T>() => T extends TOther ? 1 : 2) extends
+      (<T>() => T extends TValue ? 1 : 2)
+        ? true
+        : false
+    : false
+
+type IsUnion<TValue, TUnion = TValue> =
+  [TValue] extends [never]
+    ? false
+    : TValue extends unknown
+      ? [TUnion] extends [TValue] ? false : true
+      : false
+
+type SingleKey<TKey> = IsUnion<TKey> extends true ? never : TKey
+
 export type SignalKind =
   | 'document'
   | 'collection'
@@ -217,15 +244,82 @@ export type CollectionQuerySignal<
   readonly ids: Signal<Array<string | number>>
 }
 
-export interface RegisteredAggregationInput<TCollection extends string = string> {
+type MatchingDocumentCollectionKeys<TValue> =
+  IsAny<TValue> extends true
+    ? never
+    : {
+        [K in keyof TeamplayCollections & string]:
+        IsEqual<
+          NonNullable<TValue>,
+          NonNullable<CollectionDocument<TeamplayCollections[K]>>
+        > extends true ? K : never
+      }[keyof TeamplayCollections & string]
+
+type MatchingCollectionKeys<TValue> =
+  IsAny<TValue> extends true
+    ? never
+    : NonNullable<TValue> extends ReadonlyArray<infer TDocument>
+      ? MatchingDocumentCollectionKeys<TDocument>
+      : never
+
+type SingleDocumentCollectionKey<TValue> = SingleKey<MatchingDocumentCollectionKeys<TValue>>
+type SingleCollectionKey<TValue> = SingleKey<MatchingCollectionKeys<TValue>>
+
+type DocumentSignalModelForValue<TValue> =
+  [SingleDocumentCollectionKey<TValue>] extends [never]
+    ? typeof Signal
+    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
+      ? CollectionDocumentModel<TeamplayCollections[SingleDocumentCollectionKey<TValue>]>
+      : typeof Signal
+
+type DocumentSignalPathForValue<TValue> =
+  [SingleDocumentCollectionKey<TValue>] extends [never]
+    ? readonly []
+    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
+      ? readonly [SingleDocumentCollectionKey<TValue>, '*']
+      : readonly []
+
+type SignalForDocumentValue<TValue> =
+  TypedSignal<TValue, DocumentSignalModelForValue<TValue>, DocumentSignalPathForValue<TValue>>
+
+type SignalForCollectionArrayValue<TCollection extends keyof TeamplayCollections & string> =
+  CollectionSignal<
+    CollectionDocument<TeamplayCollections[TCollection]>,
+    TeamplayCollections[TCollection] extends CollectionSpec<any, infer CollectionModel, any>
+      ? CollectionModel
+      : typeof Signal,
+    CollectionDocumentModel<TeamplayCollections[TCollection]>,
+    readonly [TCollection]
+  >
+
+type SignalForArrayValue<TValue> =
+  [SingleCollectionKey<TValue>] extends [never]
+    ? SignalForDocumentValue<TValue>
+    : SingleCollectionKey<TValue> extends keyof TeamplayCollections & string
+      ? SignalForCollectionArrayValue<SingleCollectionKey<TValue>>
+      : SignalForDocumentValue<TValue>
+
+export type PublicSignal<TValue = unknown> =
+  IsAny<TValue> extends true
+    ? TypedSignal<TValue>
+    : NonNullable<TValue> extends ReadonlyArray<any>
+      ? SignalForArrayValue<TValue>
+      : SignalForDocumentValue<TValue>
+
+export interface RegisteredAggregationInput<
+  TCollection extends string = string,
+  TOutput = unknown
+> {
   readonly __isAggregation: true
   readonly collection: TCollection
+  readonly __teamplayAggregationOutput?: TOutput
 }
 
 export interface TypedAggregationInput<
   TDocument = unknown,
   TDocumentModel extends SignalClass<any> = typeof Signal
 > extends RegisteredAggregationInput {
+  readonly __teamplayTypedAggregationInput: true
   readonly __teamplayDocument?: TDocument
   readonly __teamplayDocumentModel?: TDocumentModel
 }
@@ -240,21 +334,31 @@ export type CollectionAggregationSignal<TCollection extends keyof TeamplayCollec
 export type TypedAggregationSignal<TDocument, TDocumentModel extends SignalClass<any>> =
   AggregationSignal<TDocument, TDocumentModel>
 
+export type AggregationOutputSignal<TOutput> =
+  IsAny<TOutput> extends true
+    ? QuerySignal
+    : NonNullable<TOutput> extends ReadonlyArray<infer TDocument>
+      ? AggregationSignal<TDocument, DocumentSignalModelForValue<TDocument>, DocumentSignalPathForValue<TDocument>>
+      : SignalForDocumentValue<TOutput>
+
+type RegisteredAggregationSignal<TCollection extends string, TOutput> =
+  IsUnknown<TOutput> extends true
+    ? TCollection extends keyof TeamplayCollections & string
+      ? CollectionAggregationSignal<TCollection>
+      : QuerySignal
+    : AggregationOutputSignal<TOutput>
+
 export type MaybePromise<TValue> = TValue | Promise<TValue>
 
 export type SubResult<TSignal, TParams = undefined> =
-  TSignal extends TypedAggregationInput<infer TDocument, infer TDocumentModel>
-    ? TypedAggregationSignal<TDocument, TDocumentModel>
-    : TSignal extends RegisteredAggregationInput<infer TCollection>
-      ? TCollection extends keyof TeamplayCollections & string
-        ? CollectionAggregationSignal<TCollection>
-        : QuerySignal
-      : TSignal extends ClientAggregationFunction<infer TCollection>
-        ? TCollection extends keyof TeamplayCollections & string
-          ? CollectionAggregationSignal<TCollection>
-          : QuerySignal
-        : TSignal extends AggregationFunction
-          ? QuerySignal
+  TSignal extends ClientAggregationFunction<infer TOutput, infer TCollection>
+    ? RegisteredAggregationSignal<TCollection, TOutput>
+    : TSignal extends AggregationFunction<infer TOutput, any>
+      ? IsUnknown<TOutput> extends true ? QuerySignal : AggregationOutputSignal<TOutput>
+      : TSignal extends TypedAggregationInput<infer TDocument, infer TDocumentModel>
+        ? TypedAggregationSignal<TDocument, TDocumentModel>
+        : TSignal extends RegisteredAggregationInput<infer TCollection, infer TOutput>
+          ? RegisteredAggregationSignal<TCollection, TOutput>
           : [TParams] extends [undefined]
               ? TSignal extends DocumentSignal<any, any, any>
                 ? TSignal

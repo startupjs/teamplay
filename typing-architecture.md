@@ -32,6 +32,137 @@ The best path forward is to make runtime modules typed and export reusable type 
 4. Move path, alias, model-pattern, and schema-normalization rules into shared modules used by runtime, Babel generation, and type helpers.
 5. Keep `teamplay-env.d.ts` as the static bridge, but generate less bespoke type code.
 
+## Current State After The First Refactor
+
+We are moving in the right direction. The first architecture pass made several important improvements:
+
+- Type facts for file-based models now live in TeamPlay helper types instead of being fully hardcoded in generated declarations.
+- `sub()` and `useSub()` now share common result helper types for the cases where TypeScript inference stays good.
+- Signal kinds now have a central `SignalKind` / `SignalForKind` core.
+- Array readers and array mutators are separated in the type model, and top-level collection/query/aggregation signals no longer expose runtime-invalid array mutators.
+- Runtime schema shape detection has a shared home in `@teamplay/schema`, and the Babel plugin reuses the shared JSON Schema keyword list.
+- `addModel.ts`, `initModels.ts`, and `utils/aggregation.ts` are now checked TypeScript rather than unchecked public contracts.
+
+This is the correct kind of progress: we did not try to eliminate the static bridge, because TeamPlay's proxy and file-system conventions make that impossible. Instead, we made the bridge more mechanical and pushed interpretation into checked TeamPlay modules.
+
+The remaining problem is that several central public files still carry `@ts-nocheck` and several type rules still model desired UX rather than mechanically reflecting runtime behavior. That is normal at this stage, but it should guide the next iteration.
+
+## Next Direction
+
+The next iteration should prioritize three things.
+
+### 1. Make The Public Runtime Surface Checked
+
+The highest-leverage next step is removing `@ts-nocheck` from files that already contain public type declarations:
+
+- `packages/teamplay/index.ts`
+- `packages/teamplay/orm/sub.ts`
+- `packages/teamplay/react/useSub.ts`
+- eventually `packages/teamplay/orm/SignalBase.ts`
+
+This matters more than adding new type features. If these files are checked, future runtime edits are much more likely to fail during development when they drift from the public type model.
+
+The practical way to do this is to split type-only facade logic out of runtime entry files. For example, the public `Signal<T>` facade and root collection derivation can move into checked type modules imported by `index.ts`. Then `index.ts` can mostly be runtime exports plus type re-exports.
+
+### 2. Add Runtime Signal Descriptors
+
+`SignalKind` exists in the type system, but runtime still expresses kind decisions implicitly:
+
+- collection signals are paths with one public segment,
+- document signals are public paths with collection + id,
+- query signals are collection-path signals branded with query symbols,
+- aggregation signals are `$aggregations.<hash>` paths branded with aggregation symbols,
+- nested array fields are regular document/value signals whose current value is an array.
+
+Adding an internal runtime descriptor would make those decisions explicit:
+
+```ts
+type SignalRuntimeKind =
+  | 'root'
+  | 'collection'
+  | 'document'
+  | 'nestedValue'
+  | 'localArray'
+  | 'query'
+  | 'aggregation'
+
+interface SignalRuntimeDescriptor {
+  kind: SignalRuntimeKind
+  segments: Array<string | number>
+  collectionName?: string
+  documentId?: string | number
+  itemPattern?: Array<string | number>
+}
+```
+
+The type system cannot directly infer from runtime descriptors, but aligning names and tests around the same concepts will make drift much easier to spot.
+
+### 3. Improve Ambiguous Internals Without Weakening The Object-Tree API
+
+Some type complexity exists because the public runtime API is very dynamic. The biggest examples are:
+
+- `$.users[id]` requires a broad string index type, which collides with special properties like `ids`, `extra`, and method names.
+- aggregation rows are usually document-row-like and should feel similar to query output, but some aggregations return arbitrary metadata objects.
+- `Signal<T>` is both the model base class constructor type and the public prop facade type.
+
+The object-tree API is central to TeamPlay's UX. Users should be able to think of `$` as one large reactive object, where collections, documents, and nested fields are accessed with normal property/index syntax. We should not add a separate `$.users.doc(id)` style API just to make types easier.
+
+Instead, the next public API candidates should solve real authoring problems without changing that mental model:
+
+- a first-class typed aggregation output path for arbitrary grouped/metadata results, while keeping document-row-like output as the default,
+- a `defineSchema()` helper as the conventional schema authoring entry point, if it can reduce or hide explicit `FromJsonSchema` usage.
+
+For schema typing, there is an important TypeScript limitation: a default-imported schema value cannot normally be used directly as a type name. A plain `export default defineSchema(...)` only exports a value, so `import Game from './schema'` followed by `Signal<Game>` would normally fail.
+
+There is, however, a promising convention: TypeScript allows a default value export and a default interface export in the same module because the interface is type-only.
+
+```ts
+const schema = defineSchema({
+  title: { type: 'string', required: true }
+})
+
+export default schema
+export default interface Game extends FromJsonSchema<typeof schema> {}
+```
+
+Then consumers can write:
+
+```ts
+import Game from '@/models/games/schema'
+
+class GameModel extends Signal<Game> {}
+function printGames ($games: Signal<Game[]>) {}
+```
+
+This preserves the desired `Signal<Game>` UX without making users write `typeof` at call sites. TeamPlay generates this default interface in `teamplay-env.d.ts`; schema source files are not modified.
+
+The generator can do this without modifying schema source files by emitting a module augmentation in `teamplay-env.d.ts`:
+
+```ts
+export {}
+
+type GamesSchema = typeof import('./models/games/schema').default
+
+declare module './models/games/schema' {
+  export default interface Game extends FromJsonSchema<GamesSchema> {}
+}
+```
+
+This makes a normal import work as both a runtime value and a type:
+
+```ts
+import Game from '@/models/games/schema'
+
+Game.title // runtime schema value
+const $game: Signal<Game> = $(...)
+```
+
+The generator should prefer relative module specifiers by default, computed from `teamplay-env.d.ts` to the schema source file. This avoids depending on app-specific aliases such as `@`.
+
+The important constraint is that TypeScript must be able to resolve the augmentation specifier to the schema source file. The import string does not have to be textually identical. In a normal project, augmenting `./models/games/schema` from the root env file also applies when user code imports `@/models/games/schema`, `./models/games/schema`, `../../models/games/schema`, or `../../models/games/schema.ts`, as long as all specifiers resolve to the same file in the same TypeScript program.
+
+Configuration is still useful for generated env files outside the project root, monorepos, symlinked packages, or any setup where the computed relative specifier would not resolve to the same module identity.
+
 ## Current Runtime Architecture
 
 ### Signal Construction
@@ -555,10 +686,28 @@ This does not eliminate type-level branching, but it removes duplicated overload
 The aggregation runtime already brands functions and headers. The type metadata can be made stronger:
 
 ```ts
-interface AggregationFunction<TCollection, TOutput = CollectionDocument<TCollection>, TModel = CollectionDocumentModel<TCollection>> { ... }
+interface AggregationFunction<TOutput = unknown, TCollection extends string = string, TModel = typeof Signal> { ... }
+interface AggregationMeta<TCollection extends string, TOutput = Array<CollectionDocument<TCollection>>> { ... }
 ```
 
-Then an aggregation can carry output type explicitly without relying on `TypedAggregationInput` as a separate shape.
+Then an aggregation can carry output type explicitly without relying on `TypedAggregationInput` as a separate shape. The generic should represent the full signal value, not just a row type, because aggregations can return either an array of rows or a single metadata object. The common collection-registered case should still default to document-row-like array output, because most aggregations are consumed like query results. Arbitrary metadata/grouped output should be explicit:
+
+```ts
+const stats = aggregation<{ total: number, currentDay: number, unread: number }>(() => [
+  // pipeline
+])
+
+const rows = aggregation<Array<{ _id: string, total: number }>>(() => [
+  // pipeline
+])
+```
+
+The first public generic on `aggregation<...>()` should represent output shape. Today the first generic effectively represents collection name, so this is a type-level migration for anyone who explicitly wrote `aggregation<'games'>`. The new convention is more consistent with the rest of TeamPlay's typing model:
+
+```ts
+aggregation<Game[]>()
+aggregation<{ total: number, unread: number }>()
+```
 
 #### Schema Definition Helper
 
@@ -572,7 +721,18 @@ const schema = defineSchema({
 type UserDoc = InferSchema<typeof schema>
 ```
 
-`defineSchema()` can be a no-op or can attach normalized metadata. The important part is that runtime and type inference would have one preferred entry point.
+`defineSchema()` should stay optional for backward compatibility. Existing plain exported schema objects must continue to work.
+
+The first runtime implementation should be intentionally small:
+
+- return the schema object unchanged,
+- preserve literal schema types with a `const` generic,
+- mark the object in a `WeakSet` or equivalent internal registry,
+- let `initModels()` warn in development when it sees a schema that was not passed through `defineSchema()`.
+
+That marker is runtime logic, but it does not change schema behavior. It only lets TeamPlay guide users toward the conventional path. More aggressive runtime validation, normalization, freezing, or metadata attachment can come later if it clearly improves safety.
+
+The desired `Signal<Game>` syntax should come from generated default interface augmentation in `teamplay-env.d.ts`, not from `defineSchema()` itself.
 
 ### Poor Candidates
 
@@ -719,7 +879,7 @@ interface SignalRuntimeDescriptor {
 
 ### 5. Align Aggregation Runtime And Type Semantics
 
-We need a product decision here.
+The product direction is that aggregation output is usually row-like and should feel similar to query output by default. Some aggregations return arbitrary objects, and those need an explicit output type.
 
 Current behavior:
 
@@ -727,22 +887,12 @@ Current behavior:
 - Aggregation rows can call document methods only when `_id` or `id` is present.
 - Types assume collection-document rows for registered collection aggregations.
 
-Possible directions:
+Decisions:
 
-1. Keep current runtime and make types stricter.
-   - Aggregation top-level remains array-like only.
-   - Row document methods require typed aggregation metadata or a branded document-output aggregation.
-2. Change runtime to make top-level aggregation signals collection-like.
-   - Then `Signal<UserDoc[]>` and aggregation results can consistently expose collection model methods.
-   - Need careful mutator rules because aggregation results are projections, not collections.
-3. Keep optimistic default but document it as convention.
-   - Aggregations under a collection are assumed to return document-like rows unless typed otherwise.
-   - Runtime errors remain possible for grouped/projection rows without `_id`.
-
-Recommendation:
-
-- Short term: keep current optimistic UX, but add type tests and docs for `TypedAggregationInput` or a better typed `aggregation<TCollection, TOutput>()`.
-- Long term: introduce explicit aggregation output typing and maybe a runtime flag/header that says whether the aggregation returns documents or arbitrary rows.
+- Keep optimistic document-row-like output for registered collection aggregations by default.
+- Add explicit output typing for grouped/projection/metadata aggregations with `aggregation<TOutput>(...)`.
+- Preserve array-like top-level aggregation signals unless runtime behavior intentionally changes later.
+- Consider a runtime header flag that distinguishes document-row output from arbitrary rows, so server/client transforms and TypeScript metadata stay aligned.
 
 ### 6. Centralize Schema Introspection
 
@@ -751,7 +901,7 @@ Create a shared schema-introspection module used by:
 - runtime `transformSchema()`,
 - `FromJsonSchema` documentation and tests,
 - Babel field JSDoc extraction,
-- possible future `defineSchema()`.
+- `defineSchema()` as the conventional schema authoring helper.
 
 The runtime and Babel code can literally share JavaScript functions for:
 

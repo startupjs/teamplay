@@ -5,7 +5,7 @@
 //   This is done to simplify the API.
 //   In future, we might want to separate the plain JS and React APIs
 import type * as React from 'react'
-import RuntimeSignal, { SEGMENTS, Signal as BaseSignalClass } from './orm/Signal.ts'
+import RuntimeSignal, { SEGMENTS } from './orm/Signal.ts'
 import { getRootSignal as _getRootSignal, GLOBAL_ROOT_ID } from './orm/Root.ts'
 import universal$ from './react/universal$.js'
 import useApi from './react/useApi.js'
@@ -30,6 +30,7 @@ import type {
   ModelEntry,
   ModelManifest,
   PathModelsFromManifest,
+  PublicSignal,
   WildcardPathSegment,
   WildcardSignalPath,
   AppendPath,
@@ -54,87 +55,7 @@ export interface TeamplayCollections {}
 export interface TeamplayModels {}
 export interface TeamplaySignalFields {}
 
-type IsAny<TValue> = 0 extends (1 & TValue) ? true : false
-
-type IsEqual<TValue, TOther> =
-  (<T>() => T extends TValue ? 1 : 2) extends
-  (<T>() => T extends TOther ? 1 : 2)
-    ? (<T>() => T extends TOther ? 1 : 2) extends
-      (<T>() => T extends TValue ? 1 : 2)
-        ? true
-        : false
-    : false
-
-type IsUnion<TValue, TUnion = TValue> =
-  [TValue] extends [never]
-    ? false
-    : TValue extends unknown
-      ? [TUnion] extends [TValue] ? false : true
-      : false
-
-type SingleKey<TKey> = IsUnion<TKey> extends true ? never : TKey
-
-type MatchingDocumentCollectionKeys<TValue> =
-  IsAny<TValue> extends true
-    ? never
-    : {
-        [K in keyof TeamplayCollections & string]:
-        IsEqual<
-          NonNullable<TValue>,
-          NonNullable<CollectionDocument<TeamplayCollections[K]>>
-        > extends true ? K : never
-      }[keyof TeamplayCollections & string]
-
-type MatchingCollectionKeys<TValue> =
-  IsAny<TValue> extends true
-    ? never
-    : NonNullable<TValue> extends ReadonlyArray<infer TDocument>
-      ? MatchingDocumentCollectionKeys<TDocument>
-      : never
-
-type SingleDocumentCollectionKey<TValue> = SingleKey<MatchingDocumentCollectionKeys<TValue>>
-type SingleCollectionKey<TValue> = SingleKey<MatchingCollectionKeys<TValue>>
-
-type DocumentSignalModelForValue<TValue> =
-  [SingleDocumentCollectionKey<TValue>] extends [never]
-    ? typeof BaseSignalClass
-    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
-      ? CollectionDocumentModel<TeamplayCollections[SingleDocumentCollectionKey<TValue>]>
-      : typeof BaseSignalClass
-
-type DocumentSignalPathForValue<TValue> =
-  [SingleDocumentCollectionKey<TValue>] extends [never]
-    ? readonly []
-    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
-      ? readonly [SingleDocumentCollectionKey<TValue>, '*']
-      : readonly []
-
-type SignalForDocumentValue<TValue> =
-  TypedSignal<TValue, DocumentSignalModelForValue<TValue>, DocumentSignalPathForValue<TValue>>
-
-type SignalForCollectionArrayValue<TCollection extends keyof TeamplayCollections & string> =
-  CollectionSignal<
-    CollectionDocument<TeamplayCollections[TCollection]>,
-    TeamplayCollections[TCollection] extends CollectionSpec<any, infer CollectionModel, any>
-      ? CollectionModel
-      : typeof BaseSignalClass,
-    CollectionDocumentModel<TeamplayCollections[TCollection]>,
-    readonly [TCollection]
-  >
-
-type SignalForArrayValue<TValue> =
-  [SingleCollectionKey<TValue>] extends [never]
-    ? SignalForDocumentValue<TValue>
-    : SingleCollectionKey<TValue> extends keyof TeamplayCollections & string
-      ? SignalForCollectionArrayValue<SingleCollectionKey<TValue>>
-      : SignalForDocumentValue<TValue>
-
-export type Signal<TValue = unknown> =
-  IsAny<TValue> extends true
-    ? TypedSignal<TValue>
-    : NonNullable<TValue> extends ReadonlyArray<any>
-      ? SignalForArrayValue<TValue>
-      : SignalForDocumentValue<TValue>
+export type Signal<TValue = unknown> = PublicSignal<TValue>
 
 export interface LocalSignalFactory {
   (): any
@@ -171,6 +92,7 @@ export type {
   ModelManifest,
   CollectionsFromManifest,
   PathModelsFromManifest,
+  PublicSignal,
   WildcardPathSegment,
   WildcardSignalPath,
   AppendPath,
@@ -303,9 +225,33 @@ export {
 } from './orm/connection.ts'
 export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.js'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.ts'
-export { GUID_PATTERN, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
+export { GUID_PATTERN, defineSchema, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'
 export { accessControl } from '@teamplay/utils/accessControl'
+export type {
+  AggregationCallback,
+  AggregationContext,
+  AggregationFunction,
+  AggregationMeta,
+  AggregationParams,
+  AggregationQuery,
+  ClientAggregationFunction,
+  DefaultAggregationSession
+} from '@teamplay/utils/aggregation'
+export type {
+  AccessControl,
+  AccessControlRules,
+  AccessCreateContext,
+  AccessDecision,
+  AccessDeleteContext,
+  AccessOperation,
+  AccessReadContext,
+  AccessRule,
+  AccessUpdateContext,
+  AccessValidator,
+  AccessValidatorObject,
+  DefaultAccessSession
+} from '@teamplay/utils/accessControl'
 
 export function batch (fn) {
   return $.batch(fn)

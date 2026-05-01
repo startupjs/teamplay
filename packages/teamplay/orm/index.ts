@@ -17,6 +17,7 @@ export type {
   ModelEntry,
   ModelManifest,
   PathModelsFromManifest,
+  PublicSignal,
   WildcardPathSegment,
   WildcardSignalPath,
   AppendPath,
@@ -44,3 +45,4 @@ export {
   getModels,
   resetModelsForTests
 } from './initModels.ts'
+export { defineSchema } from '@teamplay/schema'

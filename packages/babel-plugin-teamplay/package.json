@@ -19,7 +19,8 @@
     "@babel/parser": "^7.0.0",
     "@babel/traverse": "^7.0.0",
     "@startupjs/babel-plugin-eliminator": "^0.62.0-alpha.0",
-    "@teamplay/schema": "^0.4.0-alpha.9"
+    "@teamplay/schema": "^0.4.0-alpha.9",
+    "pluralize": "^8.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.9.0",

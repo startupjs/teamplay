@@ -1,1 +1,5 @@
-export default { pipeline: [{ $match: { active: true } }] }
+import { aggregation } from 'teamplay'
+
+export default aggregation(function activeUsers () {
+  return [{ $match: { active: true } }]
+})

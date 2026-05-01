@@ -2,7 +2,10 @@
 
 exports[`babel-plugin-teamplay > eliminates default aggregation files for client builds 1`] = `
 "import { __aggregationHeader } from 'startupjs';
-export default __aggregationHeader({
+type User = {
+  active: boolean;
+};
+export default __aggregationHeader<User[]>({
   collection: "users/$$active".split(/[\\\\/\\.]/).at(-2),
   name: "users/$$active".split(/[\\\\/\\.]/).at(-1)
 });"
@@ -10,7 +13,10 @@ export default __aggregationHeader({
 
 exports[`babel-plugin-teamplay > eliminates server-only model code for client builds 1`] = `
 "import { __aggregationHeader } from 'teamplay';
-export const $$active = __aggregationHeader({
+type User = {
+  active: boolean;
+};
+export const $$active = __aggregationHeader<User[]>({
   collection: "users",
   name: "$$active"
 });
@@ -27,20 +33,21 @@ exports[`babel-plugin-teamplay > exports synchronous Node file-based models 1`] 
 {
   "users": {
     "$$active": {
-      "pipeline": [
-        {
-          "$match": {
-            "active": true,
-          },
-        },
-      ],
+      "name": "activeUsers",
+      "type": "function",
     },
     "__esModule": true,
     "access": {
       "create": true,
+      "delete": false,
+      "read": true,
+      "update": {
+        "name": "update",
+        "type": "function",
+      },
     },
     "default": {
-      "name": "Users",
+      "name": "UsersModel",
       "type": "function",
     },
     "schema": {
@@ -272,6 +279,10 @@ interface __EventsFields_Details {
   readonly "$summary": SignalChild<NonNullable<NonNullable<__EventsDoc>["details"]>["summary"], readonly ["events", "*", "details", "summary"]>
 }
 
+declare module "./models/events/schema" {
+  export default interface Event extends __EventsDoc {}
+}
+
 declare module 'teamplay' {
   interface TeamplayCollections extends CollectionsFromManifest<__TeamplayModelManifest> {}
   interface TeamplayModels extends PathModelsFromManifest<__TeamplayModelManifest> {}
@@ -293,20 +304,21 @@ exports[`babel-plugin-teamplay > loads file-based models directly in Node 1`] = 
 {
   "users": {
     "$$active": {
-      "pipeline": [
-        {
-          "$match": {
-            "active": true,
-          },
-        },
-      ],
+      "name": "activeUsers",
+      "type": "function",
     },
     "__esModule": true,
     "access": {
       "create": true,
+      "delete": false,
+      "read": true,
+      "update": {
+        "name": "update",
+        "type": "function",
+      },
     },
     "default": {
-      "name": "Users",
+      "name": "UsersModel",
       "type": "function",
     },
     "schema": {
@@ -340,20 +352,21 @@ exports[`babel-plugin-teamplay > loads file-based models synchronously in Node 1
 {
   "users": {
     "$$active": {
-      "pipeline": [
-        {
-          "$match": {
-            "active": true,
-          },
-        },
-      ],
+      "name": "activeUsers",
+      "type": "function",
     },
     "__esModule": true,
     "access": {
       "create": true,
+      "delete": false,
+      "read": true,
+      "update": {
+        "name": "update",
+        "type": "function",
+      },
     },
     "default": {
-      "name": "Users",
+      "name": "UsersModel",
       "type": "function",
     },
     "schema": {
@@ -380,6 +393,165 @@ exports[`babel-plugin-teamplay > loads file-based models synchronously in Node 1
       "type": "function",
     },
   },
+}
+`;
+
+exports[`babel-plugin-teamplay > snapshots client-transformed complex TypeScript model fixtures 1`] = `
+{
+  "models/-helpers/format.ts": "
+export default function formatTitle(title: string) {
+  return title.trim();
+}
+",
+  "models/events/$$active.ts": "
+import { __aggregationHeader } from 'teamplay';
+import type Event from './schema.ts';
+interface EventSession {
+  userId?: string;
+  role?: 'admin' | 'member';
+}
+export default __aggregationHeader<Event[], EventSession>({
+  collection: "events/$$active".split(/[\\\\/\\.]/).at(-2),
+  name: "events/$$active".split(/[\\\\/\\.]/).at(-1)
+});
+",
+  "models/events/[id].ts": "
+import { Signal } from 'teamplay';
+import type Event from './schema.ts';
+export default class EventModel extends Signal<Event> {
+  titleUpper() {
+    return this.title.get().toUpperCase();
+  }
+}
+",
+  "models/events/[id]/comments/[commentId].ts": "
+import { Signal } from 'teamplay';
+export interface EventComment {
+  message: string;
+}
+export default class EventCommentModel extends Signal<EventComment> {
+  preview() {
+    return this.message.get().slice(0, 10);
+  }
+}
+",
+  "models/events/access.ts": "
+export default undefined;
+",
+  "models/events/index.ts": "
+import { Signal } from 'teamplay';
+import type Event from './schema.ts';
+export default class EventsModel extends Signal<Event[]> {
+  async addNew(event: Omit<Event, 'createdAt'>) {
+    return await this.add({
+      ...event,
+      createdAt: Date.now()
+    });
+  }
+}
+",
+  "models/events/schema.ts": "
+import { defineSchema, type FromJsonSchema } from 'teamplay';
+const schema = defineSchema({
+  title: {
+    type: 'string',
+    required: true,
+    label: 'Event title',
+    description: 'Visible public event name'
+  },
+  description: {
+    type: 'string',
+    label: 'Event description'
+  },
+  type: {
+    type: 'string',
+    label: 'Event type'
+  },
+  required: {
+    type: 'boolean',
+    label: 'Requires approval'
+  },
+  enum: {
+    type: 'string',
+    label: 'Enum named field'
+  },
+  const: {
+    type: 'number',
+    label: 'Const named field'
+  },
+  properties: {
+    type: 'object',
+    label: 'Event properties',
+    properties: {
+      color: {
+        type: 'string',
+        label: 'Color'
+      }
+    }
+  },
+  active: {
+    type: 'boolean'
+  },
+  details: {
+    type: 'object',
+    properties: {
+      summary: {
+        type: 'string',
+        label: 'Summary'
+      }
+    }
+  },
+  createdAt: {
+    type: 'number',
+    required: true
+  }
+});
+export default schema;
+export default interface Event extends FromJsonSchema<typeof schema> {}
+",
+}
+`;
+
+exports[`babel-plugin-teamplay > snapshots client-transformed simple JavaScript model fixtures 1`] = `
+{
+  "models/-helpers/format.js": "
+export default function format() {}
+",
+  "models/users/$$active.js": "
+import { __aggregationHeader } from 'teamplay';
+export default __aggregationHeader({
+  collection: "users/$$active".split(/[\\\\/\\.]/).at(-2),
+  name: "users/$$active".split(/[\\\\/\\.]/).at(-1)
+});
+",
+  "models/users/[id].js": "
+export default class User {}
+",
+  "models/users/access.js": "
+export default undefined;
+",
+  "models/users/index.js": "
+export default class UsersModel {}
+",
+  "models/users/schema.js": "
+const schema = {
+  name: {
+    type: 'string',
+    label: 'User name',
+    description: 'Public display name'
+  },
+  profile: {
+    type: 'object',
+    properties: {
+      bio: {
+        type: 'string',
+        label: 'Bio'
+      }
+    }
+  }
+};
+export default schema;
+",
 }
 `;
 
