@@ -1,4 +1,3 @@
-// @ts-nocheck
 // NOTE:
 //   $() and sub() are currently set to be universal ones which work in both
 //   plain JS and React environments. In React they are tied to the observer() HOC.
@@ -31,18 +30,26 @@ import type {
   ModelManifest,
   PathModelsFromManifest,
   PublicSignal,
+  LocalSignalFactory,
+  RootCollections,
+  RootSignal,
   WildcardPathSegment,
   WildcardSignalPath,
   AppendPath,
   QueryParams,
   QuerySignal,
   RegisteredAggregationInput,
-  Signal as BaseSignalInstance,
   SignalChild,
+  SignalArrayMutatorMethods,
+  SignalArrayReaderMethods,
   SignalClass,
+  SignalCollectionMethods,
   SignalConstructor,
   SignalForKind,
   SignalKind,
+  SignalMetadataMethods,
+  SignalStringMutatorMethods,
+  SignalValueMethods,
   SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
@@ -57,22 +64,6 @@ export interface TeamplaySignalFields {}
 
 export type Signal<TValue = unknown> = PublicSignal<TValue>
 
-export interface LocalSignalFactory {
-  (): any
-  <TValue>(): TypedSignal<TValue>
-  <TValue>(factory: () => TValue): TypedSignal<TValue>
-  <TValue>(value: TValue): TypedSignal<TValue>
-}
-
-export type RootCollections<TCollections extends Record<string, any> = TeamplayCollections> = {
-  readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
-} & {
-  readonly [K in keyof TCollections & string as `$${K}`]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
-}
-
-export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
-  BaseSignalInstance<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
-
 export type {
   AnySignal,
   ArraySignal,
@@ -80,6 +71,7 @@ export type {
   CollectionDocumentModel,
   CollectionSignal,
   CollectionSpec,
+  CollectionSignalFromSpec,
   CollectionAggregationSignal,
   CollectionQuerySignal,
   DocumentSignal,
@@ -91,19 +83,28 @@ export type {
   ModelEntry,
   ModelManifest,
   CollectionsFromManifest,
+  LocalSignalFactory,
   PathModelsFromManifest,
   PublicSignal,
+  RootCollections,
+  RootSignal,
   WildcardPathSegment,
   WildcardSignalPath,
   AppendPath,
   QueryParams,
   QuerySignal,
   RegisteredAggregationInput,
+  SignalArrayMutatorMethods,
+  SignalArrayReaderMethods,
   SignalClass,
   SignalChild,
   SignalConstructor,
+  SignalCollectionMethods,
   SignalForKind,
   SignalKind,
+  SignalMetadataMethods,
+  SignalStringMutatorMethods,
+  SignalValueMethods,
   SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
@@ -157,7 +158,8 @@ export {
 } from './orm/initModels.ts'
 export { default as signal } from './orm/getSignal.ts'
 export { GLOBAL_ROOT_ID } from './orm/Root.ts'
-export const $: RootSignal = _getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ }) as RootSignal
+const getRuntimeRootSignal = _getRootSignal as (options: Record<string, any>) => unknown
+export const $: RootSignal = getRuntimeRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ }) as RootSignal
 export const $root: RootSignal = $
 export const model: RootSignal = $
 export default $
@@ -172,7 +174,7 @@ export {
   default as useSuspendMemo,
   useSuspendMemoByKey
 } from './react/useSuspendMemo.js'
-export const observer = runtimeObserver as ObserverFunction
+export const observer = runtimeObserver as unknown as ObserverFunction
 export {
   useValue,
   useValue$,
@@ -253,19 +255,23 @@ export type {
   DefaultAccessSession
 } from '@teamplay/utils/accessControl'
 
-export function batch (fn) {
-  return $.batch(fn)
+export function batch (): undefined
+export function batch<TResult> (fn: () => TResult): TResult
+export function batch<TResult> (fn?: () => TResult): TResult | undefined {
+  return fn == null ? $.batch() : $.batch(fn)
 }
 
-export function batchModel (fn) {
-  return $.batch(fn)
+export function batchModel (): undefined
+export function batchModel<TResult> (fn: () => TResult): TResult
+export function batchModel<TResult> (fn?: () => TResult): TResult | undefined {
+  return fn == null ? $.batch() : $.batch(fn)
 }
 
-export function serverOnly (value) {
+export function serverOnly<TValue> (value: TValue): TValue {
   return value
 }
 
-export function clone (value) {
+export function clone<TValue> (value: TValue): TValue {
   if (typeof globalThis.structuredClone === 'function') {
     try {
       return globalThis.structuredClone(value)
@@ -275,12 +281,12 @@ export function clone (value) {
   return JSON.parse(JSON.stringify(value))
 }
 
-export function initLocalCollection (name) {
+export function initLocalCollection (name: string): any {
   if (typeof name !== 'string') throw Error('initLocalCollection() expects a collection name')
   if (!name) return
   const segments = name.split('.').filter(Boolean)
   if (!segments.length) return
-  let $cursor = $
+  let $cursor: any = $
   for (const segment of segments) {
     $cursor = $cursor[segment]
   }
@@ -291,7 +297,7 @@ export function initLocalCollection (name) {
 export { useApi }
 
 export function getRootSignal<TCollections extends Record<string, any> = TeamplayCollections> (options?: Record<string, any>): RootSignal<TCollections> {
-  return _getRootSignal({
+  return getRuntimeRootSignal({
     rootFunction: universal$,
     ...options
   }) as RootSignal<TCollections>

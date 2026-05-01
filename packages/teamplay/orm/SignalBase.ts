@@ -50,6 +50,7 @@ import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallba
 import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
 import { runInBatch } from './batchScheduler.js'
 import { isPrivateCollectionSegments } from './rootScope.js'
+import { isPublicCollection } from './signalPathKind.ts'
 import {
   arrayInsertPrivateData,
   arrayMovePrivateData,
@@ -779,15 +780,7 @@ export function isPublicDocumentSignal ($signal) {
   return $signal instanceof Signal && $signal[SEGMENTS].length === 2 && isPublicCollection($signal[SEGMENTS][0])
 }
 
-export function isPublicCollection (collectionName) {
-  if (!collectionName) return false
-  return !isPrivateCollection(collectionName)
-}
-
-export function isPrivateCollection (collectionName) {
-  if (!collectionName) return false
-  return /^[_$]/.test(collectionName)
-}
+export { isPrivateCollection, isPublicCollection } from './signalPathKind.ts'
 
 const ERRORS = {
   noRootFunction: `

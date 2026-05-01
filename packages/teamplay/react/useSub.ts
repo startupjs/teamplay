@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import sub from '../orm/sub.ts'
@@ -29,13 +28,13 @@ export interface UseSubOptions {
   compatAttemptCleanup?: boolean
 }
 
-let TEST_THROTTLING = false
+let TEST_THROTTLING: false | number = false
 
 // experimental feature to leverage useDeferredValue() to handle re-subscriptions.
 // Currently it does lead to issues with extra rerenders and requires further investigation
-let USE_DEFERRED_VALUE = true
+let USE_DEFERRED_VALUE: boolean = true
 // by default we want to defer stuff if possible instead of throwing promises
-let DEFAULT_DEFER = true
+let DEFAULT_DEFER: boolean = true
 
 /**
  * Subscribe to a document signal in React async mode.
@@ -114,7 +113,7 @@ export function useAsyncSub<TOutput = unknown, TCollection extends string = stri
   options?: UseSubOptions
 ): SubResult<AggregationFunction<TOutput, TCollection>, Record<string, any> | undefined>
 
-export function useAsyncSub (signal, params, options) {
+export function useAsyncSub (signal: any, params?: any, options?: UseSubOptions): any {
   return useSub(signal, params, { ...options, async: true })
 }
 
@@ -195,7 +194,7 @@ export default function useSub<TOutput = unknown, TCollection extends string = s
   options?: UseSubOptions
 ): SubResult<AggregationFunction<TOutput, TCollection>, Record<string, any> | undefined>
 
-export default function useSub (signal, params, options) {
+export default function useSub (signal: any, params?: any, options?: UseSubOptions): any {
   if (USE_DEFERRED_VALUE) {
     return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
   } else {
@@ -204,8 +203,12 @@ export default function useSub (signal, params, options) {
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
-export function useSubDeferred (signal, params, { async = false, defer, batch = false, compatAttemptCleanup = false } = {}) {
-  const $signalRef = useRef()
+export function useSubDeferred (
+  signal: any,
+  params?: any,
+  { async = false, defer, batch = false, compatAttemptCleanup = false }: UseSubOptions = {}
+): any {
+  const $signalRef = useRef<any>()
   const componentId = useId()
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()
@@ -255,11 +258,15 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
 
 // classic version which initially throws promise for Suspense
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (signal, params, { async = false, batch = false, compatAttemptCleanup = false } = {}) {
+export function useSubClassic (
+  signal: any,
+  params?: any,
+  { async = false, batch = false, compatAttemptCleanup = false }: UseSubOptions = {}
+): any {
   const id = executionContextTracker.newHookId()
   const componentId = useId()
-  const cache = useCache()
-  const activePromiseRef = useRef()
+  const cache = useCache(undefined)
+  const activePromiseRef = useRef<any>()
   const scheduleUpdate = useScheduleUpdate()
   if (compatAttemptCleanup) markCompatComponent(componentId)
   if (batch) promiseBatcher.activate()
@@ -311,33 +318,34 @@ export function useSubClassic (signal, params, { async = false, batch = false, c
   }
 }
 
-export function setTestThrottling (ms) {
+export function setTestThrottling (ms: number): void {
   if (typeof ms !== 'number') throw Error('setTestThrottling() accepts only a number in ms')
   if (ms === 0) throw Error('setTestThrottling(0) is not allowed, use resetTestThrottling() instead')
   if (ms < 0) throw Error('setTestThrottling() accepts only a positive number in ms')
   TEST_THROTTLING = ms
 }
-export function resetTestThrottling () {
+export function resetTestThrottling (): void {
   TEST_THROTTLING = false
 }
-export function setUseDeferredValue (value) {
+export function setUseDeferredValue (value: boolean): void {
   USE_DEFERRED_VALUE = value
 }
-export function setDefaultDefer (value) {
+export function setDefaultDefer (value: boolean): void {
   DEFAULT_DEFER = value
 }
 
 // throttle to simulate slow network
-function maybeThrottle (promise) {
-  if (!TEST_THROTTLING) return promise
+function maybeThrottle<TValue> (promise: Promise<TValue>): Promise<TValue> {
+  const delay = TEST_THROTTLING
+  if (delay === false) return promise
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       promise.then(resolve, reject)
-    }, TEST_THROTTLING)
+    }, delay)
   })
 }
 
-function registerCompatAttemptCleanup (signal, params) {
+function registerCompatAttemptCleanup (signal: any, params: any): void {
   // Compat hooks don't build per-hook init objects like Racer.
   // We still need a marker so trapRender can defer observer-shell cleanup
   // only when a real attempt cleanup exists.

@@ -1,0 +1,2 @@
+declare const renderAttemptDestroyer: any
+export default renderAttemptDestroyer

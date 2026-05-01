@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { isAggregationHeader, isAggregationFunction, isClientAggregationFunction } from '@teamplay/utils/aggregation'
 import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } from './Signal.ts'
@@ -83,7 +82,7 @@ export default function sub<
   params: QueryParams<TDocument>
 ): MaybePromiseSubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
 
-export default function sub ($signal, params) {
+export default function sub ($signal: any, params?: any): any {
   // TODO: temporarily disable support for multiple subscriptions
   //       since this has to be properly cached using useDeferredSignal() in useSub()
   // if (Array.isArray($signal)) {
@@ -93,10 +92,14 @@ export default function sub ($signal, params) {
   // }
   if (Array.isArray($signal)) throw Error('sub() does not support multiple subscriptions yet')
   if (isPublicDocumentSignal($signal)) {
-    if (arguments.length > 1) throw Error(ERRORS.subDocArguments(...arguments))
+    if (arguments.length > 1) {
+      throw Error(ERRORS.subDocArguments($signal, ...Array.prototype.slice.call(arguments, 1)))
+    }
     return doc$($signal)
   } else if (isPublicCollectionSignal($signal)) {
-    if (arguments.length !== 2) throw Error(ERRORS.subQueryArguments(...arguments))
+    if (arguments.length !== 2) {
+      throw Error(ERRORS.subQueryArguments($signal, params, ...Array.prototype.slice.call(arguments, 2)))
+    }
     return query$($signal, params)
   } else if (isClientAggregationFunction($signal)) {
     return getAggregationFromFunction($signal, $signal.collection, params)
@@ -123,28 +126,31 @@ export default function sub ($signal, params) {
   }
 }
 
-function getAggregationFromFunction (fn, collection, params) {
-  params = sanitizeAggregationParams(params) // clones it, so mutation becomes safe
+function getAggregationFromFunction (
+  fn: AggregationFunction<any, any> | ClientAggregationFunction<any, any>,
+  collection: string,
+  params?: Record<string, any>
+): any {
+  const aggregationParams = sanitizeAggregationParams(params) as Record<string, any> // clones it, so mutation becomes safe
   let session
-  if (params.$session) {
-    session = params.$session
-    delete params.$session
+  if (aggregationParams.$session) {
+    session = aggregationParams.$session
+    delete aggregationParams.$session
   }
   session ??= {}
   // should match the context in @teamplay/backend/features/serverAggregate.js
   const context = { collection, session, isServer }
-  params = fn(params, context)
-  if (Array.isArray(params)) params = { $aggregate: params }
-  return aggregation$(collection, params)
+  const result = fn(aggregationParams, context)
+  return aggregation$(collection, Array.isArray(result) ? { $aggregate: result } : result)
 }
 
-function doc$ ($doc) {
+function doc$ ($doc: any): any {
   const promise = docSubscriptions.subscribe($doc)
   if (!promise) return $doc
   return new Promise(resolve => promise.then(() => resolve($doc)))
 }
 
-function query$ ($collection, params) {
+function query$ ($collection: any, params: any): any {
   const collectionName = $collection[SEGMENTS][0]
   if (typeof params !== 'object') throw Error(ERRORS.queryParamsObject(collectionName, params))
   const signalOptions = getQuerySignalOptions($collection)
@@ -155,14 +161,14 @@ function query$ ($collection, params) {
   return new Promise(resolve => promise.then(() => resolve($query)))
 }
 
-function aggregation$ (collectionName, params, signalOptions) {
+function aggregation$ (collectionName: string, params: any, signalOptions?: Record<string, any>): any {
   const $aggregationQuery = getAggregationSignal(collectionName, params, signalOptions)
   const promise = aggregationSubscriptions.subscribe($aggregationQuery)
   if (!promise) return $aggregationQuery
   return new Promise(resolve => promise.then(() => resolve($aggregationQuery)))
 }
 
-function api$ (fn, args) {
+function api$ (fn: Function, args: any): never {
   throw Error('sub() for async functions is not implemented yet')
 }
 
@@ -171,30 +177,30 @@ function api$ (fn, args) {
 // which breaks logic of setting default values in the aggregation function.
 // That's why we have to explicitly remove 'undefined' values from the aggregation params.
 // This can be easily done by serializing and deserializing it to JSON.
-function sanitizeAggregationParams (params) {
-  return JSON.parse(JSON.stringify(params))
+function sanitizeAggregationParams<TParams> (params: TParams): TParams {
+  return JSON.parse(JSON.stringify(params) as string)
 }
 
-function getQuerySignalOptions ($collection) {
+function getQuerySignalOptions ($collection: any): { root: any } | undefined {
   const $root = getRoot($collection)
   if (!$root) return undefined
   return { root: $root }
 }
 
 const ERRORS = {
-  subDocArguments: ($signal, ...args) => `
+  subDocArguments: ($signal: any, ...args: any[]) => `
     sub($doc) accepts only 1 argument - the document signal to subscribe to
     Doc: ${$signal[SEGMENTS]}
     Got args: ${[$signal, ...args]}
   `,
-  subQueryArguments: ($signal, params, ...args) => `
+  subQueryArguments: ($signal: any, params: any, ...args: any[]) => `
     sub($collection, params) accepts 2 arguments - the collection signal and an object with query params.
     If you want to subscribe to all documents in a collection, pass an empty object: sub($collection, {}).
     Collection: ${$signal[SEGMENTS]}
     Params: ${params}
     Got args: ${[$signal, params, ...args]}
   `,
-  queryParamsObject: (collectionName, params) => `
+  queryParamsObject: (collectionName: string, params: any) => `
     sub($collection, params):
       Params must be an object.
       If you want to subscribe to all documents in a collection, pass an empty object: sub($collection, {}).
@@ -203,7 +209,7 @@ const ERRORS = {
         collectionName: ${collectionName}
         params: ${params}
   `,
-  gotAggregationFunction: aggregationFn => `
+  gotAggregationFunction: (aggregationFn: Function) => `
     sub(_aggregation, params):
       Got aggregation function itself instead of the aggregation header.
       Looks like client-side code transformation did not work properly and your
@@ -214,7 +220,7 @@ const ERRORS = {
       Got:
         ${aggregationFn.toString()}
   `,
-  subServerAggregationCollection: ($signal, params) => `
+  subServerAggregationCollection: ($signal: Function, params: any) => `
     sub(_aggregation, params):
       Server-side aggregation function must receive the collection name from the params.
       Make sure you pass the collection name as $collection in the params object

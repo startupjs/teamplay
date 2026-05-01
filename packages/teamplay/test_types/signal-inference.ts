@@ -87,6 +87,8 @@ type TypeAssertions = [
   QueryResultAcceptedAsSignalArray,
   QueryCollectionModelMethod,
   QueryCollectionAdd,
+  QueryArrayMutatorBlocked,
+  AggregationArrayMutatorBlocked,
   HookQueryCollectionModelMethod,
   CollectionSignalArrayMapDocumentModel,
   SignalAliasNestedPathModelMethod,
@@ -106,6 +108,9 @@ type TypeAssertions = [
   NestedAssignReturnsVoidPromise,
   NestedPopReturnsItem,
   NestedShiftReturnsItem,
+  NestedArrayPushParameter,
+  NestedArrayPopReturn,
+  CollectionArrayMutatorBlocked,
   NestedArrayMapLabels,
   NestedArrayReduceItem,
   QueryLoopTitle,
@@ -477,6 +482,9 @@ type DocAssignReturnsVoidPromise = Expect<Equal<typeof docAssignResult, Promise<
 type NestedAssignReturnsVoidPromise = Expect<Equal<typeof nestedAssignResult, Promise<void>>>
 type NestedPopReturnsItem = Expect<Equal<PromiseValue<typeof poppedTag>, string | undefined>>
 type NestedShiftReturnsItem = Expect<Equal<PromiseValue<typeof shiftedTag>, string | undefined>>
+type NestedArrayPushParameter = Expect<Equal<Parameters<typeof $game.info.tags.push>[0], string>>
+type NestedArrayPopReturn = Expect<Equal<PromiseValue<ReturnType<typeof $game.info.tags.pop>>, string | undefined>>
+type CollectionArrayMutatorBlocked = Expect<Equal<NonNullable<typeof $games.push>, never>>
 type NestedArrayMapLabels = Expect<Equal<typeof nestedTagLabels[number], string>>
 type NestedArrayReduceItem = Expect<Equal<ReturnType<typeof nestedReducedTag.get>, string>>
 type BatchKeepsCallbackReturn = Expect<Equal<typeof batchTitle, string>>
@@ -686,6 +694,8 @@ const hookOpenQueryAddId = $hookOpenQueryGames.add({
 type QueryArrayReduceNoInitial = Expect<Equal<ReturnType<typeof $firstQueryGame.info.title.get>, string>>
 type QueryCollectionModelMethod = Expect<Equal<HasFindOpenGames<QueryGames>, true>>
 type QueryCollectionAdd = Expect<Equal<typeof resolvedOpenQueryAddId, Promise<string>>>
+type QueryArrayMutatorBlocked = Expect<Equal<NonNullable<QueryGames['push']>, never>>
+type AggregationArrayMutatorBlocked = Expect<Equal<NonNullable<AggregationGames['push']>, never>>
 type HookQueryCollectionModelMethod = Expect<Equal<typeof hookOpenQueryAddId, Promise<string>>>
 
 async function queryLoopAssertions () {

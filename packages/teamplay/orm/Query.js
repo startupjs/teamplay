@@ -12,6 +12,7 @@ import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
 import { getScopedSignalHash, normalizeRootId } from './rootScope.js'
 import { getRoot, ROOT_ID, getRootTransportMode } from './Root.ts'
 import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.js'
+import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
 import {
   delPrivateData,
   getPrivateData,
@@ -948,6 +949,11 @@ export function getQuerySignal (collectionName, params, options) {
   $query[COLLECTION_NAME] ??= collectionName
   $query[PARAMS] ??= params
   $query[HASH] ??= transportHash
+  setSignalRuntimeDescriptor($query, {
+    kind: 'query',
+    collectionName,
+    itemPattern: [collectionName, '*']
+  })
   return $query
 }
 

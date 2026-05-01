@@ -75,30 +75,30 @@ The first pass moved the largest type facts closer to TeamPlay-owned modules, bu
 
 ## Phase 8: Type-Check Public Entry And Subscription Runtime
 
-- [ ] Split public `Signal<T>` facade helpers out of `packages/teamplay/index.ts` into checked type modules.
-- [ ] Remove `@ts-nocheck` from `packages/teamplay/index.ts`, or reduce it to the smallest unavoidable runtime section.
-- [ ] Remove `@ts-nocheck` from `packages/teamplay/orm/sub.ts`.
-- [ ] Remove `@ts-nocheck` from `packages/teamplay/react/useSub.ts`.
-- [ ] Keep direct overloads only where they materially improve VS Code display quality.
-- [ ] Run `npm run lint`.
-- [ ] Run `npm run test-types` from `packages/teamplay`.
-- [ ] Run focused subscription tests and the full suite before committing.
+- [x] Split public `Signal<T>` facade helpers out of `packages/teamplay/index.ts` into checked type modules.
+- [x] Remove `@ts-nocheck` from `packages/teamplay/index.ts`, or reduce it to the smallest unavoidable runtime section.
+- [x] Remove `@ts-nocheck` from `packages/teamplay/orm/sub.ts`.
+- [x] Remove `@ts-nocheck` from `packages/teamplay/react/useSub.ts`.
+- [x] Keep direct overloads only where they materially improve VS Code display quality.
+- [x] Run `npm run lint`.
+- [x] Run `npm run test-types` from `packages/teamplay`.
+- [x] Run focused subscription tests and the full suite before committing.
 
 ## Phase 9: Signal Runtime Descriptors
 
-- [ ] Add an internal `SignalRuntimeKind` / descriptor helper for document, collection, query, aggregation, local array, and nested value signals.
-- [ ] Use the descriptor in query and aggregation constructors/tests to make runtime signal kind decisions explicit.
-- [ ] Align `SignalKind` / `SignalForKind` with the descriptor names.
-- [ ] Add tests for descriptor output on root, collection, document, query, aggregation, and nested array paths.
-- [ ] Run focused server tests around query, aggregation, and array mutators.
+- [x] Add an internal `SignalRuntimeKind` / descriptor helper for document, collection, query, aggregation, local array, and nested value signals.
+- [x] Use the descriptor in query and aggregation constructors/tests to make runtime signal kind decisions explicit.
+- [x] Align `SignalKind` / `SignalForKind` with the descriptor names.
+- [x] Add tests for descriptor output on root, collection, document, query, aggregation, and nested array paths.
+- [x] Run focused server tests around query, aggregation, and array mutators.
 
 ## Phase 10: Base Signal Method Contracts
 
-- [ ] Extract checked base method interfaces for value methods, array readers, array mutators, string mutators, collection methods, and metadata methods.
-- [ ] Use those interfaces in `types/signal.ts` instead of manually naming method groups with string unions where possible.
-- [ ] Start removing `@ts-nocheck` from `packages/teamplay/orm/SignalBase.ts` in narrow slices.
-- [ ] Add type assertions that nested array fields keep mutators while top-level collection/query/aggregation signals block them.
-- [ ] Run `npm run test-types` and focused mutator runtime tests.
+- [x] Extract checked base method interfaces for value methods, array readers, array mutators, string mutators, collection methods, and metadata methods.
+- [x] Use those interfaces in `types/signal.ts` instead of manually naming method groups with string unions where possible.
+- [x] Start removing `@ts-nocheck` from `packages/teamplay/orm/SignalBase.ts` in narrow slices.
+- [x] Add type assertions that nested array fields keep mutators while top-level collection/query/aggregation signals block them.
+- [x] Run `npm run test-types` and focused mutator runtime tests.
 
 ## Phase 11: Aggregation Typing Redesign
 
@@ -114,8 +114,8 @@ The first pass moved the largest type facts closer to TeamPlay-owned modules, bu
 
 - [x] Do not add `$.users.doc(id)` / `$.users.$doc(id)` unless there is a separate product decision. It weakens the "one big object tree" mental model.
 - [x] Keep `$.users[id]` as the conventional document access API.
-- [ ] Improve type precision around broad string index access internally where possible without changing the public object-tree UX.
-- [ ] Add regression tests for collisions between dynamic document ids and special collection properties like `ids`, `extra`, and model methods.
+- [x] Improve type precision around broad string index access internally where possible without changing the public object-tree UX.
+- [x] Add regression tests for collisions between dynamic document ids and special collection properties like `ids`, `extra`, and model methods.
 
 ## Phase 13: Schema Definition And Type Fixtures
 
@@ -130,5 +130,5 @@ The first pass moved the largest type facts closer to TeamPlay-owned modules, bu
 - [x] Use existing `root` / `typesFile` config for nonstandard source roots and monorepos where the computed relative specifier needs a different base.
 - [x] Keep `Signal<Game>` / `extends Signal<Game>` as the target UX for document typing.
 - [x] Ensure `defineSchema()` preserves literal types while leaving runtime schema normalization unchanged.
-- [ ] Add paired runtime/type fixtures for full object schema, shorthand schema, keyword-named fields, nested objects, arrays, tuples, nullable values, `enum`, `const`, and unsupported dynamic schemas.
-- [ ] Consider moving type tests into smaller fixture files once the single executable spec becomes too large to maintain.
+- [x] Add paired runtime/type fixtures for full object schema, shorthand schema, keyword-named fields, nested objects, arrays, tuples, nullable values, `enum`, `const`, and unsupported dynamic schemas.
+- [x] Consider moving type tests into smaller fixture files once the single executable spec becomes too large to maintain.

@@ -13,6 +13,7 @@ import {
 import Signal, { SEGMENTS } from './Signal.ts'
 import { getIdFieldsForSegments, isPlainObject } from './idFields.js'
 import { delPrivateData, getPrivateData, setPrivateData } from './privateData.js'
+import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
 
 export const IS_AGGREGATION = Symbol('is aggregation signal')
 export const AGGREGATIONS = '$aggregations'
@@ -72,6 +73,11 @@ export function getAggregationSignal (collectionName, params, options) {
   $aggregation[COLLECTION_NAME] ??= collectionName
   $aggregation[PARAMS] ??= params
   $aggregation[HASH] ??= transportHash
+  setSignalRuntimeDescriptor($aggregation, {
+    kind: 'aggregation',
+    collectionName,
+    itemPattern: [collectionName, '*']
+  })
   return $aggregation
 }
 

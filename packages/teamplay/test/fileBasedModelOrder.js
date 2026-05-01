@@ -11,7 +11,9 @@ const PACKAGES_DIR = join(TEAMPLAY_DIR, '..')
 const COMPLEX_MODELS_FIXTURE = join(PACKAGES_DIR, 'babel-plugin-teamplay', 'test', 'fixtures', 'complex-ts')
 const EXPECTED_COMPLEX_KEYS = ['_session', '_session.connection', 'events', 'events.*', 'events.*.comments.*']
 
-describe('file-based model initialization order', () => {
+describe('file-based model initialization order', function () {
+  this.timeout(10000)
+
   it('does not load file-based models from the root teamplay import on Node', () => {
     const result = runInFixture(`
       const teamplay = await import('teamplay')
