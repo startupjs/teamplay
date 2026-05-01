@@ -28,7 +28,7 @@ models/
     index.ts
     [id].ts
     access.ts
-    $$active.ts
+    _active.ts
 ```
 
 Create a shared setup file:
@@ -75,11 +75,13 @@ models/users/index.ts       -> users
 models/users/[id].ts        -> users.*
 models/users/schema.ts      -> schema for users
 models/users/access.ts      -> access rules for users
-models/users/$$active.ts    -> aggregation for users
+models/users/_active.ts     -> aggregation for users
 models/users/-helpers.ts    -> ignored
+models/_session/index.ts    -> _session
 ```
 
 Use `[id]` for wildcard path segments. Do not use `*` in filenames.
+Private collections such as `_session/` are regular model paths; `_name.ts` becomes an aggregation only directly inside a public top-level collection.
 
 Read more in [File-Based Models](/orm/file-based-models).
 
@@ -160,10 +162,10 @@ Read more in [Queries](/orm/queries).
 
 ## Aggregations
 
-Aggregation files start with `$$` and live under the collection folder:
+Aggregation files start with `_` and live under the collection folder:
 
 ```ts
-// models/users/$$byRole.ts
+// models/users/_byRole.ts
 import { aggregation } from 'teamplay'
 
 interface RoleCount {

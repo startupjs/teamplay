@@ -123,12 +123,12 @@ describe('Aggregation in React', () => {
     $item2.set({ name: 'Gadget', active: true, price: 200 })
     await wait()
 
-    const $$activeItems = aggregation(({ active }) => {
+    const _activeItems = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
 
     const Component = observer(() => {
-      const $items = useSub($$activeItems, { $collection: 'aggReact1', active: true })
+      const $items = useSub(_activeItems, { $collection: 'aggReact1', active: true })
       return el('span', {}, $items.map($i => $i.name.get()).sort().join(','))
     }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
 
@@ -156,13 +156,13 @@ describe('Aggregation parameter changes', () => {
     $b.set({ name: 'Beta', category: 'y' })
     await wait()
 
-    const $$byCat = aggregation(({ category }) => {
+    const _byCat = aggregation(({ category }) => {
       return [{ $match: { category } }]
     })
 
     const Component = observer(() => {
       const $cat = $('x')
-      const $items = useSub($$byCat, { $collection: 'aggParam1', category: $cat.get() })
+      const $items = useSub(_byCat, { $collection: 'aggParam1', category: $cat.get() })
       return fr(
         el('span', { id: 'out' }, $items.map($i => $i.name.get()).join(',')),
         el('button', { id: 'switchY', onClick: () => $cat.set('y') }),
@@ -466,14 +466,14 @@ describe('useAsyncSub with aggregation', () => {
     $x2.set({ name: 'X2', active: true })
     await wait()
 
-    const $$active = aggregation(({ active }) => {
+    const _active = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
 
     let renders = 0
     const Component = observer(() => {
       renders++
-      const $items = useAsyncSub($$active, { $collection: 'asyncAgg1', active: true })
+      const $items = useAsyncSub(_active, { $collection: 'asyncAgg1', active: true })
       if (!$items) return el('span', {}, 'Waiting...')
       return el('span', {}, $items.map($i => $i.name.get()).sort().join(','))
     })

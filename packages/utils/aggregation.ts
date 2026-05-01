@@ -1,7 +1,7 @@
 export const isAggregationFlag = '__isAggregation' as const
 export const isClientAggregationFlag = '__isClientAggregation' as const
 
-/** Parameters passed by `sub($$aggregation, params)` or `useSub($$aggregation, params)`. */
+/** Parameters passed by `sub(_aggregation, params)` or `useSub(_aggregation, params)`. */
 export type AggregationParams = Record<string, any>
 
 /** Query object returned by an aggregation callback. */
@@ -28,7 +28,7 @@ export interface AggregationContext<
 /**
  * Function passed to `aggregation()`.
  *
- * @param params Parameters from `sub($$aggregation, params)` or `useSub($$aggregation, params)`.
+ * @param params Parameters from `sub(_aggregation, params)` or `useSub(_aggregation, params)`.
  * @param context Runtime context with `{ collection, session, isServer }`.
  * @returns A Mongo aggregation pipeline array, or an aggregation query object such as `{ $aggregate: [...] }`.
  */

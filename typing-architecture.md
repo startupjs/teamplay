@@ -264,7 +264,7 @@ The Babel plugin and Node loader discover file-based models from `models/` or fa
     default: Users,
     schema,
     access,
-    $$active
+    _active
   },
   'users.*': {
     default: User

@@ -440,10 +440,10 @@ describe('$sub() function. Aggregations', () => {
   afterEachTestGc()
 
   it('subscribe to aggregation, modify it', async () => {
-    const $$activeGames = aggregation(({ active }) => {
+    const _activeGames = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { $collection: gamesCollection, active: true })
+    const $activeGames = await sub(_activeGames, { $collection: gamesCollection, active: true })
     const rootId = getRoot($activeGames)?.[ROOT_ID]
     assert.equal($activeGames.get().length, 2)
     assert.deepEqual(
@@ -469,35 +469,35 @@ describe('$sub() function. Aggregations', () => {
   })
 
   it('.getId() on a signal from aggregation should return the id of the document', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub(_activeGames, { active: true })
     assert.equal($activeGames[0].getId(), '_1')
     assert.equal($activeGames[1].getId(), '_2')
   })
 
   it('aggregation should be iterable', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub(_activeGames, { active: true })
     assert.equal([...$activeGames].length, 2)
   })
 
   it('aggregation should support .map()', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub(_activeGames, { active: true })
     assert.deepEqual($activeGames.map($game => $game.name.get()).sort(), ['Game 1', 'Game 2'])
   })
 
   it('aggregation forwards optional array method arguments', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub(_activeGames, { active: true })
     const labels = $activeGames.map(function ($game) {
       return `${this.prefix}${$game.name.get()}`
     }, { prefix: '#' })

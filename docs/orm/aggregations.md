@@ -6,10 +6,10 @@ Use regular [Queries](/orm/queries) for simple `$match` and `$sort` cases.
 
 ## Define An Aggregation
 
-Aggregation files start with `$$` and live under the collection folder:
+Aggregation files start with `_` and live under the collection folder:
 
 ```ts
-// models/users/$$byRole.ts
+// models/users/_byRole.ts
 import { aggregation } from 'teamplay'
 
 interface ByRoleParams {
@@ -31,7 +31,7 @@ export default aggregation<RoleCount[]>(({ orgId }: ByRoleParams, { session }) =
 })
 ```
 
-The file name becomes the aggregation name. `models/users/$$byRole.ts` is registered as `byRole` on the `users` collection.
+The file name becomes the aggregation name. `models/users/_byRole.ts` is registered as `_byRole` on the `users` collection.
 
 ## Subscribe
 
@@ -39,18 +39,18 @@ Import the aggregation and subscribe to it:
 
 ```ts
 import { sub } from 'teamplay'
-import $$byRole from '../models/users/$$byRole.ts'
+import _byRole from '../models/users/_byRole.ts'
 
-const $roles = await sub($$byRole, { orgId })
+const $roles = await sub(_byRole, { orgId })
 ```
 
 In React:
 
 ```tsx
 import { useSub } from 'teamplay'
-import $$byRole from '../models/users/$$byRole.ts'
+import _byRole from '../models/users/_byRole.ts'
 
-const $roles = useSub($$byRole, { orgId })
+const $roles = useSub(_byRole, { orgId })
 ```
 
 ## Callback Arguments
@@ -65,7 +65,7 @@ aggregation<Output>((params, context) => {
 })
 ```
 
-`params` is the object passed to `sub($$aggregation, params)` or `useSub($$aggregation, params)`.
+`params` is the object passed to `sub(_aggregation, params)` or `useSub(_aggregation, params)`.
 
 `context` contains:
 
@@ -128,7 +128,7 @@ export default aggregation<{ total: number, unread: number }>(() => [])
 Then the subscribed signal follows that shape:
 
 ```ts
-const $stats = await sub($$notificationStats)
+const $stats = await sub(_notificationStats)
 
 $stats.total.get()
 $stats.unread.get()
@@ -179,8 +179,8 @@ Aggregation files contain server code. The TeamPlay Babel plugin replaces `aggre
 ```ts
 __aggregationHeader<User[], Session>({
   collection: 'users',
-  name: '$$byRole'
+  name: '_byRole'
 })
 ```
 
-The server pipeline implementation is removed from the client bundle. This is why aggregation functions should be defined in `models/<collection>/$$name.ts` files and imported from there.
+The server pipeline implementation is removed from the client bundle. This is why aggregation functions should be defined in `models/<collection>/_name.ts` files and imported from there.

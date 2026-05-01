@@ -157,18 +157,18 @@ Aggregation output types are output-first:
 import { aggregation, sub } from 'teamplay'
 import type User from '../models/users/schema.ts'
 
-const $$activeUsers = aggregation<User[]>(({ orgId }: { orgId: string }) => [
+const _activeUsers = aggregation<User[]>(({ orgId }: { orgId: string }) => [
   { $match: { orgId, active: true } }
 ])
 
-const $activeUsers = await sub($$activeUsers, { orgId })
+const $activeUsers = await sub(_activeUsers, { orgId })
 ```
 
 For grouped or metadata output, pass that full result shape:
 
 ```ts
-const $$notificationStats = aggregation<{ total: number, unread: number }>(() => [])
-const $stats = await sub($$notificationStats)
+const _notificationStats = aggregation<{ total: number, unread: number }>(() => [])
+const $stats = await sub(_notificationStats)
 
 $stats.total.get()  // number
 $stats.unread.get() // number

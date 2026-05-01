@@ -8,6 +8,7 @@ const JS_EXT_REGEX = /\.[mc]?[jt]sx?$/
 const MODEL_PATTERN_REGEX = /^[a-zA-Z0-9$_*.]+$/
 const MODEL_MAGIC_IMPORT_REGEX = /['"](?:teamplay|startupjs)['"]/
 const warnedFallbackFolders = new Set()
+const warnedLegacyAggregationFiles = new Set()
 
 function toImportPath (filePath) {
   return filePath.replace(/\\/g, '/')
@@ -191,6 +192,7 @@ function getFilesRecursive (folder) {
 }
 
 function getModelPattern (filePath, options = {}) {
+  options = normalizeOptions(options)
   const info = getModelsFolderInfo(options)
   let pattern = toImportPath(relative(info.folder, filePath))
   if (pattern.includes('*')) {
@@ -208,6 +210,7 @@ function getModelPattern (filePath, options = {}) {
   }
   if (pattern === 'index') pattern = ''
   if (/\.index$/.test(pattern)) pattern = pattern.replace(/\.index$/, '')
+  warnIfLegacyAggregationFile(pattern, filePath, options)
   return pattern
 }
 
@@ -219,7 +222,7 @@ function sanitizeAndMergeModelPatterns (modelPatterns) {
     let pattern = sections.join('.')
     let type
     let method = 'push'
-    if (/^\$\$/.test(lastSection)) type = 'aggregation'
+    if (isAggregationPattern(sections, lastSection)) type = 'aggregation'
     else if (lastSection === 'schema') type = 'schema'
     else if (lastSection === 'access') type = 'access'
     else {
@@ -231,6 +234,38 @@ function sanitizeAndMergeModelPatterns (modelPatterns) {
     res[pattern][method]({ type, name: lastSection, value })
   }
   return res
+}
+
+function isAggregationName (name) {
+  return /^_/.test(name) || isLegacyAggregationName(name)
+}
+
+function isAggregationPattern (parentSections, name) {
+  return (
+    isAggregationName(name) &&
+    parentSections.length === 1 &&
+    parentSections[0] &&
+    !parentSections[0].startsWith('_')
+  )
+}
+
+function isLegacyAggregationName (name) {
+  return /^\$\$/.test(name)
+}
+
+function warnIfLegacyAggregationFile (pattern, filePath, options) {
+  const sections = pattern.split('.')
+  const lastSection = sections.pop()
+  if (!isAggregationPattern(sections, lastSection) || !isLegacyAggregationName(lastSection)) return
+  const warningKey = pathResolve(filePath)
+  if (warnedLegacyAggregationFiles.has(warningKey)) return
+  warnedLegacyAggregationFiles.add(warningKey)
+  const oldPath = toImportPath(relative(options.root, filePath))
+  const newPath = oldPath.replace(/(^|\/)\$\$/, '$1_')
+  options.warn(
+    `[teamplay] Legacy aggregation filename "${oldPath}" is deprecated. ` +
+    `Rename it to "${newPath}". Aggregation files should use "_" prefix.`
+  )
 }
 
 function discoverModels (options = {}) {
@@ -306,13 +341,12 @@ function generateTeamplayEnv (options = {}) {
   const models = discoverModels(options)
   const content = buildTeamplayEnvContent(models, options)
   const filePath = pathResolve(options.root, options.typesFile)
-  mkdirSync(dirname(filePath), { recursive: true })
-  if (existsSync(filePath) && readFileSync(filePath, 'utf8') === content) return filePath
-  writeFileSync(filePath, content)
+  writeGeneratedFile(filePath, content)
   return filePath
 }
 
 function buildTeamplayEnvContent (models, options = {}) {
+  options = normalizeOptions(options)
   const root = options.root || process.cwd()
   const typesFile = pathResolve(root, options.typesFile || 'teamplay-env.d.ts')
   const typesDir = dirname(typesFile)
@@ -409,6 +443,12 @@ function buildTeamplayEnvContent (models, options = {}) {
     '}',
     ''
   ].filter(line => line != null).join('\n')
+}
+
+function writeGeneratedFile (filePath, content) {
+  mkdirSync(dirname(filePath), { recursive: true })
+  if (existsSync(filePath) && readFileSync(filePath, 'utf8') === content) return
+  writeFileSync(filePath, content)
 }
 
 function isCollectionPattern (pattern) {

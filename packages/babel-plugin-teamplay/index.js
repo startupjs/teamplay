@@ -146,8 +146,21 @@ function loadVirtualModelsRequireContext ($import, { $program, filename, t, temp
         let pattern = sections.join('.')
         let type
         let method = 'push'
-        if (/^\\$\\$/.test(lastSection)) type = 'aggregation'
-        else if (lastSection === 'schema') type = 'schema'
+        if (
+          (/^_/.test(lastSection) || /^\\$\\$/.test(lastSection)) &&
+          sections.length === 1 &&
+          sections[0] &&
+          !sections[0].startsWith('_')
+        ) {
+          type = 'aggregation'
+          if (/^\\$\\$/.test(lastSection)) {
+            console.warn(
+              '[teamplay] Legacy aggregation filename "' + value + '" is deprecated. ' +
+              'Rename it to "' + value.replace(/(^|[\\\\/])\\$\\$/, '$1_') + '". ' +
+              'Aggregation files should use "_" prefix.'
+            )
+          }
+        } else if (lastSection === 'schema') type = 'schema'
         else if (lastSection === 'access') type = 'access'
         else {
           type = 'model'

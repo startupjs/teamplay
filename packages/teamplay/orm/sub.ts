@@ -204,7 +204,7 @@ const ERRORS = {
         params: ${params}
   `,
   gotAggregationFunction: aggregationFn => `
-    sub($$aggregation, params):
+    sub(_aggregation, params):
       Got aggregation function itself instead of the aggregation header.
       Looks like client-side code transformation did not work properly and your
       aggregation() function was not transformed into an __aggregationHeader().
@@ -215,11 +215,11 @@ const ERRORS = {
         ${aggregationFn.toString()}
   `,
   subServerAggregationCollection: ($signal, params) => `
-    sub($$aggregation, params):
+    sub(_aggregation, params):
       Server-side aggregation function must receive the collection name from the params.
       Make sure you pass the collection name as $collection in the params object
       when running aggregation from the server code:
-      sub($$aggregation, { $collection: 'collectionName', ...actualParams })
+      sub(_aggregation, { $collection: 'collectionName', ...actualParams })
 
       Got:
         Aggregation: ${$signal}

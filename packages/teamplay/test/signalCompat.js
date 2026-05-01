@@ -1867,8 +1867,8 @@ describe('SignalCompat public mutators', () => {
     await $game1.set({ name: 'Agg One', active: true })
     await $game2.set({ name: 'Agg Two', active: true })
 
-    const $$agg = aggregation(({ active }) => [{ $match: { active } }])
-    const $agg = await sub($$agg, { $collection: 'compatGames', active: true })
+    const _agg = aggregation(({ active }) => [{ $match: { active } }])
+    const $agg = await sub(_agg, { $collection: 'compatGames', active: true })
     const results = $agg.get()
     assert.ok(results.length >= 2)
     assert.ok(results.every(doc => doc._id))

@@ -66,6 +66,36 @@ describe('babel-plugin-teamplay', () => {
     expect(warnings).toMatchSnapshot()
   })
 
+  it('supports legacy $$ aggregation files with a warning', () => {
+    const warnings = []
+    useFixture(root, 'legacy-aggregation-js')
+
+    const models = discoverModels({ root, warn: message => warnings.push(message) })
+
+    expect(Object.keys(models)).toEqual(['users'])
+    expect(models.users.map(part => `${part.type}:${part.name}`)).toEqual(['aggregation:$$active'])
+    expect(warnings).toMatchSnapshot()
+  })
+
+  it('treats private collections starting with _ as model paths', () => {
+    useFixture(root, 'complex-ts')
+
+    const models = discoverModels({ root })
+
+    expect(models._session.map(part => `${part.type}:${part.name}`)).toEqual(['model:_session'])
+    expect(models['_session.connection'].map(part => `${part.type}:${part.name}`)).toEqual(['model:connection'])
+    expect(models.events.map(part => `${part.type}:${part.name}`)).toContain('aggregation:_active')
+  })
+
+  it('supports dot notation without confusing private collections and aggregations', () => {
+    useFixture(root, 'dot-notation-ts')
+
+    const models = discoverModels({ root })
+
+    expect(models['_session.connection'].map(part => `${part.type}:${part.name}`)).toEqual(['model:connection'])
+    expect(models.events.map(part => `${part.type}:${part.name}`)).toEqual(['aggregation:_active'])
+  })
+
   it('generates teamplay-env.d.ts with schema field jsdoc', () => {
     useFixture(root, 'complex-ts')
     const filePath = generateTeamplayEnv({ root })
@@ -82,11 +112,13 @@ describe('babel-plugin-teamplay', () => {
       import { Signal } from 'teamplay'
       import Event from './models/events/schema'
       import AliasEvent from '@/models/events/schema'
+      import _active from '@/models/events/_active.ts'
 
       const schemaType: 'string' = Event.title.type
       const aliasSchemaType: 'string' = AliasEvent.title.type
       const event: Event = { title: 'Launch', createdAt: 1 }
       const aliasEvent: AliasEvent = event
+      const activeRows: NonNullable<typeof _active.__teamplayAggregationOutput> = [event]
       const $event = null as unknown as Signal<Event>
       const title: string = $event.title.get()
 
@@ -101,13 +133,17 @@ describe('babel-plugin-teamplay', () => {
 
       // @ts-expect-error generated default interface should reject wrong field types
       const badEvent: Event = { title: 123, createdAt: 1 }
+      // @ts-expect-error generated aggregation alias should keep the aggregation output type
+      const badActiveRows: NonNullable<typeof _active.__teamplayAggregationOutput> = [{ title: 123, createdAt: 1 }]
 
       void schemaType
       void aliasSchemaType
       void aliasEvent
+      void activeRows
       void title
       void modelTitle
       void badEvent
+      void badActiveRows
     `)
     writeFileSync(join(root, 'app', 'nested', 'nested-relative.ts'), `
       import Event from '../../models/events/schema.ts'
@@ -189,7 +225,7 @@ describe('babel-plugin-teamplay', () => {
       import { aggregation, accessControl, serverOnly } from 'teamplay'
       type User = { active: boolean }
 
-      export const $$active = aggregation<User[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
+      export const _active = aggregation<User[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
       export const access = accessControl({ create: () => true })
       export const secret = serverOnly(() => 'secret')
     `, {
@@ -206,7 +242,7 @@ describe('babel-plugin-teamplay', () => {
       export default aggregation<User[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
     `, {
       root,
-      filename: join(root, 'model', 'users', '$$active.ts'),
+      filename: join(root, 'model', 'users', '_active.ts'),
       fallbackModelsFolders: ['model']
     })).toMatchSnapshot()
   })
@@ -229,8 +265,8 @@ describe('babel-plugin-teamplay', () => {
 
     const output = transformFixtureModelFiles(root)
 
-    expect(output['models/events/$$active.ts']).toContain('__aggregationHeader<Event[], EventSession>')
-    expect(output['models/events/$$active.ts']).not.toContain('$match')
+    expect(output['models/events/_active.ts']).toContain('__aggregationHeader<Event[], EventSession>')
+    expect(output['models/events/_active.ts']).not.toContain('$match')
     expect(output['models/events/access.ts']).not.toContain('accessControl')
     expect(output['models/events/access.ts']).not.toContain('session')
     expect(output).toMatchSnapshot()
@@ -241,8 +277,8 @@ describe('babel-plugin-teamplay', () => {
 
     const output = transformFixtureModelFiles(root)
 
-    expect(output['models/users/$$active.js']).toContain('__aggregationHeader')
-    expect(output['models/users/$$active.js']).not.toContain('$match')
+    expect(output['models/users/_active.js']).toContain('__aggregationHeader')
+    expect(output['models/users/_active.js']).not.toContain('$match')
     expect(output['models/users/access.js']).not.toContain('accessControl')
     expect(output['models/users/access.js']).not.toContain('session')
     expect(output).toMatchSnapshot()

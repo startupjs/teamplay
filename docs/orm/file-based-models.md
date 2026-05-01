@@ -21,7 +21,7 @@ models/
     index.ts
     [id].ts
     access.ts
-    $$active.ts
+    _active.ts
     -helpers.ts
 ```
 
@@ -32,7 +32,7 @@ models/users/index.ts       -> users
 models/users/[id].ts        -> users.*
 models/users/schema.ts      -> schema for users
 models/users/access.ts      -> access rules for users
-models/users/$$active.ts    -> aggregation for users
+models/users/_active.ts     -> aggregation for users
 models/users/-helpers.ts    -> ignored
 ```
 
@@ -40,15 +40,20 @@ Rules:
 
 - `index.ts` maps to the containing path.
 - `[id]` maps to `*`.
-- `schema.ts`, `access.ts`, and `$$name.ts` merge into the collection model object.
+- `schema.ts`, `access.ts`, and `_name.ts` merge into the collection model object.
+- `_name.ts` is treated as an aggregation only directly inside a public top-level collection. Private collections such as `_session/` are regular model paths.
 - Files or folders starting with `-` are ignored.
 - `*` is not allowed in filenames. Use `[id]` instead.
+
+Legacy `$$name.ts` aggregation files are still loaded, but TeamPlay prints a warning. Rename them to `_name.ts`.
 
 Nested paths work the same way:
 
 ```txt
 models/games/[id]/players/[playerId].ts -> games.*.players.*
 ```
+
+Dots in filenames are also path separators, so `models/_session.connection.ts` maps to `_session.connection` and `models/users._active.ts` maps to the `_active` aggregation on `users`.
 
 ## Generated Types
 

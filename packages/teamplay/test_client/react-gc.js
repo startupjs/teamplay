@@ -102,9 +102,9 @@ describe('GC cleanup: aggregation subscriptions', () => {
     $item.set({ name: 'Item1', active: true })
     await wait()
 
-    const $$agg = aggregation(({ active }) => [{ $match: { active } }])
+    const _agg = aggregation(({ active }) => [{ $match: { active } }])
     const Component = observer(() => {
-      const $items = useSub($$agg, { $collection: collection, active: true })
+      const $items = useSub(_agg, { $collection: collection, active: true })
       return el('span', {}, $items.get()?.length ?? 'loading')
     }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
 
@@ -276,9 +276,9 @@ describe('GC cleanup: repeated mount/unmount cycles', () => {
 
     for (let i = 0; i < 3; i++) {
       const minScore = i * 10
-      const $$agg = aggregation(({ minScore }) => [{ $match: { score: { $gte: minScore } } }])
+      const _agg = aggregation(({ minScore }) => [{ $match: { score: { $gte: minScore } } }])
       const Component = observer(() => {
-        const $items = useSub($$agg, { $collection: collection, minScore })
+        const $items = useSub(_agg, { $collection: collection, minScore })
         return el('span', {}, String($items.get()?.length ?? 'loading'))
       }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
       const { unmount } = render(el(Component))
@@ -364,7 +364,7 @@ describe('GC cleanup: switching subscription targets', () => {
 describe('GC cleanup: mixed subscription types in one component', () => {
   it('all subscription types clean up on unmount', async () => {
     const collection = 'gcMixed1'
-    const $$agg = aggregation(({ active }) => [{ $match: { active } }])
+    const _agg = aggregation(({ active }) => [{ $match: { active } }])
 
     // Record baseline before any subscriptions
     const initialDocs = docSubscriptions.docs.size
@@ -375,7 +375,7 @@ describe('GC cleanup: mixed subscription types in one component', () => {
     const Component = observer(() => {
       const $doc = useSub($[collection].m1)
       const $query = useSub($[collection], { active: true })
-      const $agg = useSub($$agg, { $collection: collection, active: true })
+      const $agg = useSub(_agg, { $collection: collection, active: true })
       return fr(
         el('span', { id: 'doc' }, $doc.name.get() || 'empty'),
         el('span', { id: 'query' }, String($query.map($u => $u.name.get()).join(','))),

@@ -223,10 +223,10 @@ describe('GC Cleanup Tests', () => {
 
       // Create aggregation in a scope
       await (async () => {
-        const $$activeGames = aggregation(({ active }) => {
+        const _activeGames = aggregation(({ active }) => {
           return [{ $match: { active } }]
         })
-        const $activeGames = await sub($$activeGames, { $collection: collection, active: true })
+        const $activeGames = await sub(_activeGames, { $collection: collection, active: true })
         ownerKey = getScopedSignalHash(getRoot($activeGames)?.[ROOT_ID], transportHash, 'queryOwner')
         assert.equal($activeGames.get().length, 2, 'aggregation returns 2 docs')
 
@@ -370,10 +370,10 @@ describe('GC Cleanup Tests', () => {
       // Create and destroy aggregation subscriptions in a loop
       for (let minScore = 0; minScore < 3; minScore++) {
         await (async () => {
-          const $$games = aggregation(({ minScore }) => {
+          const _games = aggregation(({ minScore }) => {
             return [{ $match: { score: { $gte: minScore } } }]
           })
-          const $games = await sub($$games, { $collection: collection, minScore: minScore * 10 })
+          const $games = await sub(_games, { $collection: collection, minScore: minScore * 10 })
           assert.ok($games.get().length >= 1, `aggregation for minScore ${minScore * 10} returns docs`)
         })()
         // Signal goes out of scope

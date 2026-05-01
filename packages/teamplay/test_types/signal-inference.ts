@@ -533,38 +533,38 @@ sub($.games, { stauts: 'draft' })
 sub($.games, { 'info.maxPlayers': 'two' })
 // @ts-expect-error query operators should follow the field value type
 sub($.games, { status: { $in: ['draft', 'archived'] } })
-const $$activeGames = aggregation('games', ({ active }: { active: boolean }) => [{ $match: { active } }])
-const $aggregationGames = sub($$activeGames, { active: true })
-const $$typedActiveGames = aggregation<Game[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
-const $typedAggregationGames = sub($$typedActiveGames, { active: true })
-const $$headerActiveGames = __aggregationHeader<Game[]>({ collection: 'games', name: '$$active' })
-const $headerAggregationGames = sub($$headerActiveGames, { active: true })
+const _activeGames = aggregation('games', ({ active }: { active: boolean }) => [{ $match: { active } }])
+const $aggregationGames = sub(_activeGames, { active: true })
+const _typedActiveGames = aggregation<Game[]>(({ active }: { active: boolean }) => [{ $match: { active } }])
+const $typedAggregationGames = sub(_typedActiveGames, { active: true })
+const _headerActiveGames = __aggregationHeader<Game[]>({ collection: 'games', name: '_active' })
+const $headerAggregationGames = sub(_headerActiveGames, { active: true })
 interface AggregationSessionShape {
   userId?: string
   role: 'admin' | 'member'
 }
-const $$secondGenericSessionGames = aggregation<Game[], AggregationSessionShape>((_params, { session }) => {
+const _secondGenericSessionGames = aggregation<Game[], AggregationSessionShape>((_params, { session }) => {
   const role = session.role
   return [{ $match: { role } }]
 })
-const $$thirdGenericSessionGames = aggregation<Game[], 'games', AggregationSessionShape>((_params, { collection, session }) => {
+const _thirdGenericSessionGames = aggregation<Game[], 'games', AggregationSessionShape>((_params, { collection, session }) => {
   const gamesCollection = collection
   const role = session.role
   return [{ $match: { collection: gamesCollection, role } }]
 })
-const $$headerSessionGames = __aggregationHeader<Game[], AggregationSessionShape>({ collection: 'games', name: '$$active' })
-const $$clientSecondGenericSessionGames = aggregation<Game[], AggregationSessionShape>('games', (_params, { session }) => {
+const _headerSessionGames = __aggregationHeader<Game[], AggregationSessionShape>({ collection: 'games', name: '_active' })
+const _clientSecondGenericSessionGames = aggregation<Game[], AggregationSessionShape>('games', (_params, { session }) => {
   const role = session.role
   return [{ $match: { role } }]
 })
-const $$notificationStats = aggregation<{ total: number, currentDay: number, unread: number }>('games', () => [])
-const $notificationStats = sub($$notificationStats, {})
-const $$roleCountRows = aggregation<RoleCount[]>('games', () => [])
-const $roleCountRows = sub($$roleCountRows, {})
-const $$roleCounts = null as unknown as TypedAggregationInput<RoleCount, typeof RoleCountModel>
-const $roleCounts = sub($$roleCounts, { active: true })
+const _notificationStats = aggregation<{ total: number, currentDay: number, unread: number }>('games', () => [])
+const $notificationStats = sub(_notificationStats, {})
+const _roleCountRows = aggregation<RoleCount[]>('games', () => [])
+const $roleCountRows = sub(_roleCountRows, {})
+const _roleCounts = null as unknown as TypedAggregationInput<RoleCount, typeof RoleCountModel>
+const $roleCounts = sub(_roleCounts, { active: true })
 function useHookAggregationGames () {
-  return useSub($$activeGames, { active: true })
+  return useSub(_activeGames, { active: true })
 }
 const $hookQueryGame = (null as unknown as ReturnType<typeof useHookQueryGames>)[0]
 const $aggregationGame = (null as unknown as AggregationGames)[0]
@@ -591,10 +591,10 @@ type HookAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookAgg
 type ExplicitAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $typedAggregationGame.info.title.get>, string>>
 type ExplicitAggregationDocumentMethods = Expect<Equal<ReturnType<typeof $typedAggregationGame.start>, Promise<void>>>
 type HeaderAggregationIndexDocumentModel = Expect<Equal<ReturnType<HeaderAggregationGames[0]['info']['title']['get']>, string>>
-type AggregationSecondGenericSession = Expect<Equal<typeof $$secondGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
-type AggregationThirdGenericSession = Expect<Equal<typeof $$thirdGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
-type HeaderAggregationSecondGenericSession = Expect<Equal<typeof $$headerSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
-type ClientAggregationSecondGenericSession = Expect<Equal<typeof $$clientSecondGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type AggregationSecondGenericSession = Expect<Equal<typeof _secondGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type AggregationThirdGenericSession = Expect<Equal<typeof _thirdGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type HeaderAggregationSecondGenericSession = Expect<Equal<typeof _headerSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
+type ClientAggregationSecondGenericSession = Expect<Equal<typeof _clientSecondGenericSessionGames['__teamplayAggregationSession'], AggregationSessionShape | undefined>>
 type DefaultAggregationSessionUserId = Expect<Equal<DefaultAggregationSession['userId'], string | undefined>>
 type AggregationStatsTotal = Expect<Equal<ReturnType<NotificationStats['total']['get']>, number>>
 type AggregationStatsUnread = Expect<Equal<ReturnType<NotificationStats['unread']['get']>, number>>
@@ -723,7 +723,7 @@ async function queryLoopAssertions () {
 }
 
 async function aggregationLoopAssertions () {
-  const $activeGames = await sub($$activeGames, { active: true })
+  const $activeGames = await sub(_activeGames, { active: true })
   let loopTitle = ''
   let destructuredTitle = ''
   let poppedTag: string | undefined
@@ -748,7 +748,7 @@ async function aggregationLoopAssertions () {
 function useHookSignalChainAssertions () {
   const $hookDraftGames = useSub($.games, { status: 'draft' })
   const hookQueryTitles = $hookDraftGames.map($hookDraftGame => $hookDraftGame.info.title.get())
-  const $hookActiveGames = useSub($$activeGames, { active: true })
+  const $hookActiveGames = useSub(_activeGames, { active: true })
   const hookAggregationTitle = $hookActiveGames.reduce(($firstGame, $secondGame) => $firstGame).titleFromThis()
 
   return {

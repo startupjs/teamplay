@@ -23,7 +23,7 @@ models/users/schema.ts
 models/users/index.ts
 models/users/[id].ts
 models/users/access.ts
-models/users/$$active.ts
+models/users/_active.ts
 ```
 
 StartupJS still supports the legacy `model/` folder as a fallback. If that fallback is used, TeamPlay prints a warning asking you to migrate to `models/`.
@@ -155,7 +155,7 @@ export default {
 }
 ```
 
-Access rules live in `models/<collection>/access.ts`; aggregation files are named `$$name.ts`. See [Access Control](/orm/access-control) and [Aggregations](/orm/aggregations) for examples.
+Access rules live in `models/<collection>/access.ts`; aggregation files are named `_name.ts`. See [Access Control](/orm/access-control) and [Aggregations](/orm/aggregations) for examples.
 
 ## Typechecking
 

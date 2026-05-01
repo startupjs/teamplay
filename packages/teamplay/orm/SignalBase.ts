@@ -80,7 +80,7 @@ export class Signal<TValue = unknown> extends Function {
   /** Association metadata registered for this model class. */
   static associations = []
   /** Path segments from the root signal to this signal. */
-  declare readonly [SEGMENTS]: Array<string | number>
+  readonly [SEGMENTS]: Array<string | number>
 
   /**
    * Add association metadata to this model class.
