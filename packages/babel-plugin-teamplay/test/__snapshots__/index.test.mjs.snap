@@ -29,6 +29,13 @@ exports[`babel-plugin-teamplay > eliminates server-only model code from nested p
 export const secret = undefined;"
 `;
 
+exports[`babel-plugin-teamplay > eliminates serverOnly code outside model folders based on source usage 1`] = `
+"import { Signal } from 'startupjs';
+export default class FileModel extends Signal {
+  getBlob = undefined;
+}"
+`;
+
 exports[`babel-plugin-teamplay > exports synchronous Node file-based models 1`] = `
 {
   "users": {

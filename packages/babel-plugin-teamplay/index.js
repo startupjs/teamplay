@@ -6,7 +6,6 @@ const {
   getModelEliminationTransformFunctionCalls,
   getModelsFolderInfo,
   getRelativeModelPath,
-  isModelFile,
   normalizeOptions
 } = require('./loader')
 
@@ -19,7 +18,7 @@ module.exports = function teamplayBabelPlugin (api, rawOptions = {}) {
   const options = normalizeOptions(rawOptions)
   const modelEliminator = options.clientOnly
     ? eliminatorPlugin(api, {
-      shouldTransformFileChecker: (filename, code) => isModelFile(filename, code, options),
+      shouldTransformFileChecker: options.shouldTransformFileChecker,
       transformFunctionCalls: getModelEliminationTransformFunctionCalls()
     })
     : null

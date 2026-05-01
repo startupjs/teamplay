@@ -7,6 +7,7 @@ const pluralize = require('pluralize')
 const JS_EXT_REGEX = /\.[mc]?[jt]sx?$/
 const MODEL_PATTERN_REGEX = /^[a-zA-Z0-9$_*.]+$/
 const MODEL_MAGIC_IMPORT_REGEX = /['"](?:teamplay|startupjs)['"]/
+const MODEL_ELIMINATION_FUNCTION_REGEX = /\b(?:aggregation|serverOnly|accessControl)\b/
 const warnedFallbackFolders = new Set()
 const warnedLegacyAggregationFiles = new Set()
 
@@ -24,6 +25,7 @@ function normalizeOptions (options = {}) {
     autoInit: options.autoInit !== false,
     clientOnly: options.clientOnly !== false,
     useRequireContext: Boolean(options.useRequireContext),
+    shouldTransformFileChecker: options.shouldTransformFileChecker || shouldTransformClientCode,
     warn: options.warn || console.warn
   }
 }
@@ -85,6 +87,14 @@ function isModelFile (filename, code, options = {}) {
   if (!hasModelFolderInPath(pathResolve(options.root, filename), modelFolders)) return false
   if (code != null && !MODEL_MAGIC_IMPORT_REGEX.test(code)) return false
   return true
+}
+
+function shouldTransformClientCode (_filename, code) {
+  return Boolean(
+    code &&
+    MODEL_MAGIC_IMPORT_REGEX.test(code) &&
+    MODEL_ELIMINATION_FUNCTION_REGEX.test(code)
+  )
 }
 
 function hasModelFolderInPath (filename, modelFolders) {
@@ -707,5 +717,6 @@ module.exports = {
   loadFileBasedModelsSync,
   normalizeOptions,
   sanitizeAndMergeModelPatterns,
+  shouldTransformClientCode,
   toImportPath
 }

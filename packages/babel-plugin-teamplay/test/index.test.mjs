@@ -260,6 +260,22 @@ describe('babel-plugin-teamplay', () => {
     })).toMatchSnapshot()
   })
 
+  it('eliminates serverOnly code outside model folders based on source usage', () => {
+    expect(transformModelCode(`
+      import { serverOnly, Signal } from 'startupjs'
+      import { getFileBlob } from './providers/index.js'
+
+      export default class FileModel extends Signal {
+        getBlob = serverOnly(function () {
+          return getFileBlob(this.storageType.get(), this.getId())
+        })
+      }
+    `, {
+      root,
+      filename: join(root, 'node_modules', '@startupjs-ui', 'file-input', 'files.plugin.js')
+    })).toMatchSnapshot()
+  })
+
   it('snapshots client-transformed complex TypeScript model fixtures', () => {
     useFixture(root, 'complex-ts')
 
