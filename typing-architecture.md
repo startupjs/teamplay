@@ -109,6 +109,17 @@ The next `SignalBase.ts` slice moved array-reader path selection behind a checke
 
 This continues to improve maintainability without changing the object-tree UX. For users, `$query.map($doc => ...)`, `[...$array]`, and `$.collection[id]` behave the same. For maintainers, another repeated decision inside `SignalBase.ts` is now isolated and testable. The next careful boundary should be read dispatch (`get`, `peek`, and `getIds`), because it touches root snapshots, query docs, private storage, aggregation ids, and fallback behavior that deserve explicit regression tests before more code moves.
 
+## Current State After Read Dispatch Slice
+
+The read-dispatch boundary has now moved into checked code:
+
+- `signalReads.ts` owns the shared decisions for root logical snapshots, query document reads, private-storage reads, public-storage reads, query-id fallback reads, aggregation id extraction, and non-query `getIds()` fallback reporting.
+- `SignalBase.ts` still owns the public method names and argument validation, but `get()`, `peek()`, `[GET]`, and `getIds()` now delegate the storage-routing logic.
+- Focused tests cover structural routing and runtime behavior for root snapshots, query docs, query ids, private storage, aggregation ids, and invalid `getIds()` calls.
+- The console warning/error hooks are still invoked dynamically, preserving the previous testability and host integration behavior.
+
+This is still aligned with the product direction: the end-user API remains the object tree (`$`, `$.collection[id]`, query signals, and local private paths), while another high-risk branch in `SignalBase.ts` is documented and checked. The next `SignalBase.ts` work should stay similarly narrow. Mutation dispatch is larger and more side-effectful than read dispatch, so it should only move after adding focused tests around id-field no-ops, public/private storage selection, root/collection protection, and query/aggregation mutation guards.
+
 ## Next Direction After Round 2
 
 The next iteration should be a consolidation pass. The goal is not to invent a new typing model; it is to make the current model harder to break and easier to extend.

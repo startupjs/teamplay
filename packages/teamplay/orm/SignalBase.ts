@@ -33,7 +33,7 @@ import {
 import getSignal, { rawSignal } from './getSignal.ts'
 import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
-import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
+import { AGGREGATIONS, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.ts'
 import { isPrivateMutationForbidden } from './connection.ts'
 import {
@@ -78,6 +78,11 @@ import {
   runSignalArrayMethod
 } from './signalArrayReaders.ts'
 import {
+  getSignalIds,
+  getSignalValue,
+  readSignalValue
+} from './signalReads.ts'
+import {
   arrayInsertPrivateData,
   arrayMovePrivateData,
   arrayPopPrivateData,
@@ -110,7 +115,33 @@ const SIGNAL_ARRAY_READER_CONTEXT = {
       : _get(getSignalStorageSegments($signal))
   },
   createSignal: getSignal,
-  warn: console.warn
+  warn (message, ...args) {
+    console.warn(message, ...args)
+  }
+}
+
+const SIGNAL_READ_CONTEXT = {
+  getOwningRootId ($signal) {
+    const $root = getRoot($signal) || $signal
+    return $root?.[ROOT_ID]
+  },
+  getStorageSegments: getSignalStorageSegments,
+  isPrivateSegments: isPrivateSignalSegments,
+  readLogicalRootSnapshot (rootId, raw) {
+    return getLogicalRootSnapshot(rootId, raw ? dataTreeRaw : undefined)
+  },
+  readPrivateData (rootId, segments, raw) {
+    return getPrivateData(rootId, segments, raw)
+  },
+  readPublicData (segments, method) {
+    return method(segments)
+  },
+  warn (message, ...args) {
+    console.warn(message, ...args)
+  },
+  error (message) {
+    console.error(message)
+  }
 }
 
 export class Signal<TValue = unknown> extends Function {
@@ -200,65 +231,19 @@ export class Signal<TValue = unknown> extends Function {
    */
   [GET] (method: (segments: Array<string | number>) => TValue): TValue {
     if (arguments.length > 1) throw Error('Signal[GET]() only accepts method as an argument')
-    if (this[SEGMENTS].length === 0) {
-      const $root = getRoot(this) || this
-      return getLogicalRootSnapshot($root?.[ROOT_ID], method === getRaw ? dataTreeRaw : undefined)
-    }
-    if (this[IS_QUERY]) {
-      const $root = getRoot(this) || this
-      return getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'docs'], method === getRaw)
-    }
-    if (isPrivateSignalSegments(this[SEGMENTS])) {
-      const $root = getRoot(this) || this
-      return getPrivateData($root?.[ROOT_ID], this[SEGMENTS], method === getRaw)
-    }
-    return method(getSignalStorageSegments(this))
+    return readSignalValue(this, SIGNAL_READ_CONTEXT, method, getRaw)
   }
 
   /** Read the current value and track it for reactive rendering. */
   get (): TValue {
     if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
-    if (this[SEGMENTS].length === 3 && this[SEGMENTS][0] === QUERIES && this[SEGMENTS][2] === 'ids') {
-      // TODO: This should never happen, but in reality it happens sometimes
-      // Patch getting query ids because sometimes for some reason we are not getting them
-      const ids = this[GET](_get)
-      if (!Array.isArray(ids)) {
-        console.warn('Signal.get() on Query didn\'t find ids', this[SEGMENTS])
-        return []
-      }
-      return ids
-    }
-    if (this[SEGMENTS].length === 3 && this[SEGMENTS][0] === QUERIES && this[SEGMENTS][2] === 'extra') {
-      return this[GET](_get)
-    }
-    return this[GET](_get)
+    return getSignalValue(this, SIGNAL_READ_CONTEXT, _get, getRaw)
   }
 
   /** Return document ids for a query or aggregation signal. */
   getIds (): Array<string | number> {
     if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
-    if (this[IS_QUERY]) {
-      const $root = getRoot(this) || this
-      const ids = getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'ids'])
-      if (!Array.isArray(ids)) {
-        // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal.getIds() on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
-        return []
-      }
-      return ids
-    } else if (this[IS_AGGREGATION]) {
-      const $root = getRoot(this) || this
-      const docs = getPrivateData($root?.[ROOT_ID], this[SEGMENTS])
-      if (!Array.isArray(docs)) return []
-      return docs.map(doc => doc._id || doc.id)
-    } else {
-      // TODO: this should throw an error in the future
-      console.error(
-        'Signal.getIds() can only be used on query signals or aggregation signals. ' +
-        'Received a regular signal: ' + JSON.stringify(this[SEGMENTS])
-      )
-      return []
-    }
+    return getSignalIds(this, SIGNAL_READ_CONTEXT)
   }
 
   /** Read the current value without tracking it for reactive rendering. */
