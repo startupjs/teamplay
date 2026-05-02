@@ -131,6 +131,16 @@ The first mutation slice intentionally stayed smaller than the full mutator surf
 
 This keeps the runtime behavior and UX stable while reducing another repeated decision inside `SignalBase.ts`. The next mutation work should avoid pulling in all array/string/increment behavior at once. A good next boundary is a shared checked helper for the repeated array/string/increment "skip protected id fields, pick public/private storage, respect publicOnly" decision after tests pin each operation family.
 
+## Current State After Storage Mutation Routing Slice
+
+The remaining repeated mutator-routing decision is now shared:
+
+- `signalStorageMutations.ts` owns the common "protected id-field no-op, public handler, private handler, or `publicOnly` rejection" branch used by array mutators, string mutators, and `increment()`.
+- `SignalBase.ts` still owns each mutator's user-facing validation and operation-specific behavior, including numeric argument checks, current-value checks for `increment()`, and exact public/private operation callbacks.
+- Focused tests cover the structural routing helper and the existing runtime id-field, public/private, array/string, increment, and `publicOnly` behavior.
+
+This is a better maintenance boundary than a large mutator rewrite. End users still get the same methods and error behavior, while maintainers now have one checked place for the storage-routing rule that many mutators share. The next `SignalBase.ts` work should probably pause before proxy `apply` extraction; the remaining proxy method-binding behavior is more dynamic and should only move after tests pin aggregation row method binding, model-method collisions, and Compat fallback behavior.
+
 ## Next Direction After Round 2
 
 The next iteration should be a consolidation pass. The goal is not to invent a new typing model; it is to make the current model harder to break and easier to extend.

@@ -248,8 +248,16 @@ The next pass should be smaller than this one and should avoid a whole-file `Sig
 ## Suggested Next Task Set After Value Mutation Slice
 
 - [ ] Do the manual VS Code/editor display pass that cannot be verified reliably through automated tests.
-- [ ] Extract a shared checked helper for the repeated array/string/increment mutator routing only after focused tests pin protected id-field no-ops, public/private routing, and `publicOnly` rejection for each operation family.
+- [x] Extract a shared checked helper for the repeated array/string/increment mutator routing only after focused tests pin protected id-field no-ops, public/private routing, and `publicOnly` rejection for each operation family.
 - [x] Convert `idFields` from JavaScript to TypeScript instead of adding a declaration shim for the new checked mutation helper.
+- [ ] Investigate whether special-property typing can be improved further without changing `$.collection[id]`.
+- [ ] Shrink generated `teamplay-env.d.ts` where helper types can take over interpretation without losing field JSDoc or readable hover output.
+- [ ] Continue reviewing user-facing docs for object-tree examples and remove any stale non-object-tree guidance.
+
+## Suggested Next Task Set After Storage Mutation Routing Slice
+
+- [ ] Do the manual VS Code/editor display pass that cannot be verified reliably through automated tests.
+- [ ] Pause before extracting proxy `apply` behavior until tests pin aggregation row method binding, model-method collisions, and Compat fallback method lookup.
 - [ ] Investigate whether special-property typing can be improved further without changing `$.collection[id]`.
 - [ ] Shrink generated `teamplay-env.d.ts` where helper types can take over interpretation without losing field JSDoc or readable hover output.
 - [ ] Continue reviewing user-facing docs for object-tree examples and remove any stale non-object-tree guidance.

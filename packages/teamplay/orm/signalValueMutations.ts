@@ -4,6 +4,10 @@ import {
   isPublicDocPath,
   normalizeIdFields
 } from './idFields.ts'
+import {
+  ensurePrivateMutationAllowed,
+  type SignalStorageMutationContext
+} from './signalStorageMutations.ts'
 import { SEGMENTS } from './signalSymbols.ts'
 import type { PathSegment } from './types/path.ts'
 
@@ -11,10 +15,8 @@ export interface SignalValueMutationOwner {
   readonly [SEGMENTS]: PathSegment[]
 }
 
-export interface SignalValueMutationContext<TSignal extends SignalValueMutationOwner> {
-  getOwningRootId: ($signal: TSignal) => string | undefined
-  isPublicCollection: (segment: PathSegment | undefined) => boolean
-  isPrivateMutationForbidden: () => boolean
+export interface SignalValueMutationContext<TSignal extends SignalValueMutationOwner>
+  extends SignalStorageMutationContext<TSignal> {
   setPublicDoc: (segments: PathSegment[], value: unknown) => Promise<unknown> | unknown
   setPrivateData: (
     rootId: string | undefined,
@@ -67,14 +69,4 @@ export async function deleteSignalValue<TSignal extends SignalValueMutationOwner
 
   ensurePrivateMutationAllowed(context)
   context.deletePrivateData(context.getOwningRootId($signal), segments)
-}
-
-function ensurePrivateMutationAllowed<TSignal extends SignalValueMutationOwner> (
-  context: SignalValueMutationContext<TSignal>
-): void {
-  if (!context.isPrivateMutationForbidden()) return
-  throw Error(`
-    Can't modify private collections data when 'publicOnly' is enabled.
-    On the server you can only work with public collections.
-  `)
 }

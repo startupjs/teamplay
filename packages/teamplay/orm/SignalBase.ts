@@ -39,7 +39,6 @@ import { isPrivateMutationForbidden } from './connection.ts'
 import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
-  isIdFieldPath,
   prepareAddPayload,
   resolveAddDocId
 } from './idFields.ts'
@@ -80,6 +79,7 @@ import {
   getSignalValue,
   readSignalValue
 } from './signalReads.ts'
+import { runSignalStorageMutation } from './signalStorageMutations.ts'
 import {
   deleteSignalValue,
   setSignalValue
@@ -381,22 +381,22 @@ export class Signal<TValue = unknown> extends Function {
   async push (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown> {
     if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
     const segments = ensureArraySignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayPushPublic(segments, value)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return arrayPushPrivateData(getSignalOwningRootId(this), segments, value)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _arrayPushPublic(segments, value),
+      private: (rootId, segments) => arrayPushPrivateData(rootId, segments, value)
+    })
+    return result.value
   }
 
   /** Remove and return the last item from an array signal. */
   async pop (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown> {
     if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
     const segments = ensureArraySignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayPopPublic(segments)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return arrayPopPrivateData(getSignalOwningRootId(this), segments)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _arrayPopPublic(segments),
+      private: (rootId, segments) => arrayPopPrivateData(rootId, segments)
+    })
+    return result.value
   }
 
   /**
@@ -406,22 +406,22 @@ export class Signal<TValue = unknown> extends Function {
   async unshift (value: NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item : unknown): Promise<unknown> {
     if (arguments.length > 1) throw Error('Signal.unshift() expects a single argument')
     const segments = ensureArraySignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayUnshiftPublic(segments, value)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return arrayUnshiftPrivateData(getSignalOwningRootId(this), segments, value)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _arrayUnshiftPublic(segments, value),
+      private: (rootId, segments) => arrayUnshiftPrivateData(rootId, segments, value)
+    })
+    return result.value
   }
 
   /** Remove and return the first item from an array signal. */
   async shift (): Promise<NonNullable<TValue> extends ReadonlyArray<infer Item> ? Item | undefined : unknown> {
     if (arguments.length > 0) throw Error('Signal.shift() does not accept any arguments')
     const segments = ensureArraySignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayShiftPublic(segments)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return arrayShiftPrivateData(getSignalOwningRootId(this), segments)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _arrayShiftPublic(segments),
+      private: (rootId, segments) => arrayShiftPrivateData(rootId, segments)
+    })
+    return result.value
   }
 
   /**
@@ -436,11 +436,11 @@ export class Signal<TValue = unknown> extends Function {
       throw Error('Signal.insert() expects a numeric index')
     }
     const segments = ensureArraySignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayInsertPublic(segments, index, values)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return arrayInsertPrivateData(getSignalOwningRootId(this), segments, index, values)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _arrayInsertPublic(segments, index, values),
+      private: (rootId, segments) => arrayInsertPrivateData(rootId, segments, index, values)
+    })
+    return result.value
   }
 
   /**
@@ -455,11 +455,11 @@ export class Signal<TValue = unknown> extends Function {
       throw Error('Signal.remove() expects a numeric index')
     }
     const segments = ensureArraySignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayRemovePublic(segments, index, howMany)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return arrayRemovePrivateData(getSignalOwningRootId(this), segments, index, howMany)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _arrayRemovePublic(segments, index, howMany),
+      private: (rootId, segments) => arrayRemovePrivateData(rootId, segments, index, howMany)
+    })
+    return result.value
   }
 
   /**
@@ -475,11 +475,11 @@ export class Signal<TValue = unknown> extends Function {
       throw Error('Signal.move() expects numeric from/to')
     }
     const segments = ensureArraySignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _arrayMovePublic(segments, from, to, howMany)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return arrayMovePrivateData(getSignalOwningRootId(this), segments, from, to, howMany)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _arrayMovePublic(segments, from, to, howMany),
+      private: (rootId, segments) => arrayMovePrivateData(rootId, segments, from, to, howMany)
+    })
+    return result.value
   }
 
   /**
@@ -494,11 +494,11 @@ export class Signal<TValue = unknown> extends Function {
       throw Error('Signal.stringInsert() expects a numeric index')
     }
     const segments = ensureValueSignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _stringInsertPublic(segments, index, text)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return stringInsertPrivateData(getSignalOwningRootId(this), segments, index, text)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _stringInsertPublic(segments, index, text),
+      private: (rootId, segments) => stringInsertPrivateData(rootId, segments, index, text)
+    })
+    return result.value
   }
 
   /**
@@ -513,11 +513,11 @@ export class Signal<TValue = unknown> extends Function {
       throw Error('Signal.stringRemove() expects a numeric index')
     }
     const segments = ensureValueSignalTarget(this)
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return
-    if (isPublicCollection(segments[0])) return _stringRemovePublic(segments, index, howMany)
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    return stringRemovePrivateData(getSignalOwningRootId(this), segments, index, howMany)
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: segments => _stringRemovePublic(segments, index, howMany),
+      private: (rootId, segments) => stringRemovePrivateData(rootId, segments, index, howMany)
+    })
+    return result.value
   }
 
   /**
@@ -533,15 +533,18 @@ export class Signal<TValue = unknown> extends Function {
     if (typeof currentValue !== 'number') throw Error('Signal.increment() tried to increment a non-number value')
     const segments = this[SEGMENTS]
     if (segments.length === 0) throw Error('Can\'t increment the root signal data')
-    const idFields = getIdFieldsForSegments(segments)
-    if (isIdFieldPath(segments, idFields)) return currentValue
-    if (isPublicCollection(segments[0])) {
-      await _incrementPublic(segments, value)
-      return currentValue + value
-    }
-    if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-    setReplacePrivateData(getSignalOwningRootId(this), segments, currentValue + value)
-    return currentValue + value
+    const result = await runSignalStorageMutation(this, SIGNAL_VALUE_MUTATION_CONTEXT, segments, {
+      public: async segments => {
+        await _incrementPublic(segments, value)
+        return currentValue + value
+      },
+      private: (rootId, segments) => {
+        setReplacePrivateData(rootId, segments, currentValue + value)
+        return currentValue + value
+      }
+    })
+    if (result.skipped) return currentValue
+    return result.value
   }
 
   /**
@@ -698,10 +701,6 @@ const ERRORS = {
   noRootFunction: `
     Root signal does not have a root function set.
     You must use getRootSignal({ rootId, rootFunction }) to create a root signal.
-  `,
-  publicOnly: `
-    Can't modify private collections data when 'publicOnly' is enabled.
-    On the server you can only work with public collections.
   `,
   noSignalKey: ($signal, key) => `Method "${key}" does not exist on signal "${$signal[SEGMENTS].join('.')}"`,
   aggregationSetter: (segments, key) => `
