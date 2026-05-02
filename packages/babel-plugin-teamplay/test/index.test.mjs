@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
 import plugin from '../index.js'
 import loader from '../loader.js'
 import modelPatternRules from '../modelPatternRules.js'
@@ -19,6 +20,7 @@ const {
 } = loader
 const {
   getModelPatternFromRelativePath,
+  getRequireContextModelPatternHelperSource,
   sanitizeAndMergeModelPatterns: sanitizeModelPatterns
 } = modelPatternRules
 
@@ -108,6 +110,37 @@ describe('babel-plugin-teamplay', () => {
     expect(models['users.*'].map(part => `${part.type}:${part.name}`)).toEqual(['model:*'])
     expect(models['_session.connection'].map(part => `${part.type}:${part.name}`)).toEqual(['model:connection'])
     expect(models['events.*.comments.*'].map(part => `${part.type}:${part.name}`)).toEqual(['model:*'])
+  })
+
+  it('keeps generated require.context model-pattern helpers aligned with shared rules', () => {
+    const generatedHelpers = getGeneratedRequireContextHelpers()
+    const paths = [
+      'index.ts',
+      'users/index.ts',
+      'users/[id].ts',
+      'events/[id]/comments/[commentId].ts',
+      './_session/connection.ts',
+      'events/[id]/index.ts',
+      'users/-helpers/format.ts'
+    ]
+
+    for (const path of paths) {
+      expect(generatedHelpers.getPattern(path)).toEqual(getModelPatternFromRelativePath(path))
+    }
+
+    expect(() => generatedHelpers.getPattern('users/*.ts')).toThrow(/Instead of '\*' in model filename use '\[id\]'/)
+    expect(() => generatedHelpers.getPattern('users/bad-name.ts')).toThrow(/Invalid model filename pattern/)
+
+    const modelPatterns = {
+      users: './users/index.ts',
+      'users.*': './users/[id].ts',
+      'users.schema': './users/schema.ts',
+      'users.access': './users/access.ts',
+      'users._active': './users/_active.ts',
+      '_session.connection': './_session/connection.ts'
+    }
+    expect(summarizeModelPatternParts(generatedHelpers.sanitizeAndMerge(modelPatterns)))
+      .toEqual(summarizeModelPatternParts(sanitizeModelPatterns(modelPatterns)))
   })
 
   it('supports legacy $$ aggregation files with a warning', () => {
@@ -501,6 +534,30 @@ function summarizeLoadedModels (models) {
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([name, value]) => [name, summarizeLoadedValue(value)])
         )
+      ])
+  )
+}
+
+function getGeneratedRequireContextHelpers () {
+  return runInNewContext(`${getRequireContextModelPatternHelperSource()}
+    ({
+      getPattern: __teamplayGetModelPattern,
+      sanitizeAndMerge: __teamplaySanitizeAndMergeModelPatterns
+    })
+  `, { console })
+}
+
+function summarizeModelPatternParts (models) {
+  return Object.fromEntries(
+    Object.entries(models)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([pattern, parts]) => [
+        pattern,
+        parts.map(part => ({
+          type: part.type,
+          name: part.name,
+          value: part.value
+        }))
       ])
   )
 }

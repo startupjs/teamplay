@@ -22,6 +22,7 @@ export type {
   WildcardPathSegment,
   WildcardSignalPath,
   AppendPath,
+  JoinPath,
   QueryParams,
   QuerySignal,
   RegisteredAggregationInput,

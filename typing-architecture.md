@@ -88,6 +88,17 @@ The most important remaining technical debt is still `SignalBase.ts` itself. The
 
 One practical limitation remains in the Babel plugin: the injected `require.context` helper is still self-contained generated client code, so it cannot directly import the shared Node-side utility. Its behavior is still covered by snapshots and should either stay tested against the shared rule fixtures or be generated from the same source in a later pass.
 
+## Current State After Metadata Slice
+
+This slice continued the same consolidation direction:
+
+- `SignalBase.ts` now delegates read-only metadata behavior (`path`, `leaf`, `parent`, `getId`, `getCollection`, and `getAssociations`) to checked helpers in `signalMetadata.ts`.
+- Focused metadata tests cover structural helper behavior, real signal methods, static collection overrides, associations, and aggregation-row ids routed back to source documents.
+- The generated `require.context` helper now comes from the shared model-pattern rule module, with a parity test that executes the generated helper source and compares it to the Node-side rules.
+- `JoinPath` is exported from the public package surface and covered by both internal and external type fixtures, aligning type-level path joining with the runtime path-pattern helper.
+
+This still looks like the right direction for end-user UX: the object-tree API stays unchanged, but the internal rules behind that API are easier to test and harder to drift. The next `SignalBase.ts` slices should continue to avoid proxy-heavy rewrites until the read dispatch and array reader behavior are isolated with focused tests.
+
 ## Next Direction After Round 2
 
 The next iteration should be a consolidation pass. The goal is not to invent a new typing model; it is to make the current model harder to break and easier to extend.

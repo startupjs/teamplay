@@ -21,6 +21,7 @@ import $, {
   useTriggerUpdate,
   type FromJsonSchema,
   type JsonSchemaSpec,
+  type JoinPath,
   type RuntimeSignalInstance,
   type SignalBaseInstance,
   type SignalModelConstructor,
@@ -42,6 +43,7 @@ const userSchema = defineSchema({
 
 type UserDoc = FromJsonSchema<typeof userSchema>
 type _schemaInference = Assert<IsEqual<UserDoc, { name: string, age?: number }>>
+type _pathPatternJoin = Assert<IsEqual<JoinPath<readonly ['users', '*', 'tags', number]>, 'users.*.tags.*'>>
 
 class Users extends BaseModel<UserDoc[]> {}
 class User extends Signal<UserDoc> {}

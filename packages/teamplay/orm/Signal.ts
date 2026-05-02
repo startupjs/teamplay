@@ -21,6 +21,7 @@ export type {
 } from './types/baseMethods.ts'
 export type {
   AppendPath,
+  JoinPath,
   PathSegment,
   SignalPath,
   WildcardPathSegment,

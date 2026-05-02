@@ -15,6 +15,7 @@ import {
   type JsonSchemaSpec,
   type CollectionQuerySignal,
   type DefaultAggregationSession,
+  type JoinPath,
   type PathModelsFromManifest,
   type QuerySignal,
   type TypedAggregationInput,
@@ -33,6 +34,7 @@ type Extends<A, B> = A extends B ? true : false
 type AwaitedSub<T> = T extends Promise<infer Value> ? Value : T
 type PromiseValue<T> = T extends Promise<infer Value> ? Value : never
 type HasFindOpenGames<T> = T extends { findOpenGames: (...args: unknown[]) => unknown } ? true : false
+type PathPatternJoin = Expect<Equal<JoinPath<readonly ['games', '*', 'players', number]>, 'games.*.players.*'>>
 
 // Public Signal<T> is intentionally a registry-based facade. When T maps to
 // exactly one generated collection document type it exposes that model; when
@@ -40,6 +42,7 @@ type HasFindOpenGames<T> = T extends { findOpenGames: (...args: unknown[]) => un
 // signal fields to avoid guessing the wrong model.
 type TypeAssertions = [
   GameSchemaInference,
+  PathPatternJoin,
   TitleValue,
   MaxPlayersValue,
   StatusValue,

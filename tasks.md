@@ -160,7 +160,7 @@ Round 3 should be a consolidation pass. The typing UX is now much closer to the 
 - [x] Move descriptor/path/method guard helpers out of `SignalBase.ts` into checked modules where that can be done without changing runtime behavior.
 - [x] Type the array-target and value-target guard helpers that back mutator dispatch.
 - [x] Type metadata helpers and symbol-keyed state access through small internal interfaces.
-- [ ] Convert one narrow `SignalBase.ts` method group at a time, starting with the least proxy-heavy methods.
+- [x] Convert one narrow `SignalBase.ts` method group at a time, starting with the least proxy-heavy methods.
 - [x] Add focused runtime tests for any touched array, query, aggregation, and metadata behavior.
 - [x] Run `npm run lint`, `npm run test-types` from `packages/teamplay`, and focused runtime tests after each slice.
 
@@ -177,7 +177,7 @@ Round 3 should be a consolidation pass. The typing UX is now much closer to the 
 - [x] Create or extend a shared path/model-pattern utility for `[id] -> *`, `index`, ignored `-` files, invalid wildcard filenames, and path tuple to pattern string.
 - [x] Centralize root alias behavior such as `$session -> _session`.
 - [x] Use the shared utilities from runtime loading, Babel generation, and tests where practical.
-- [ ] Keep type-level path joining in conditional types, but align names and fixture cases with the runtime utilities.
+- [x] Keep type-level path joining in conditional types, but align names and fixture cases with the runtime utilities.
 - [x] Add fixtures for nested models, ignored files, aliases, invalid names, and nonstandard `root` / `typesFile` layouts.
 
 ## Phase 19: Schema Parity Matrix
@@ -190,10 +190,10 @@ Round 3 should be a consolidation pass. The typing UX is now much closer to the 
 ## Phase 20: Generated Type And Package Surface Hygiene
 
 - [ ] Shrink generated `teamplay-env.d.ts` further where helper types can own interpretation.
-- [ ] Validate generated schema-module augmentations with relative imports, alias imports, explicit extensions, and monorepo-style output locations.
+- [x] Validate generated schema-module augmentations with relative imports, alias imports, explicit extensions, and monorepo-style output locations.
 - [x] Add a package-surface fixture for strict external projects using modern module resolution.
 - [x] Review emitted declarations for accidental `any` leaks on exported APIs.
-- [ ] Update TypeScript support docs for the generated env file, schema default interfaces, and known module-resolution requirements.
+- [x] Update TypeScript support docs for the generated env file, schema default interfaces, and known module-resolution requirements.
 
 ## Phase 21: Documentation And Migration Guidance
 
@@ -216,7 +216,15 @@ The next pass should be smaller than this one and should avoid a whole-file `Sig
 ## Suggested Next Task Set After This Slice
 
 - [ ] Do the manual VS Code/editor display pass that cannot be verified reliably through automated tests.
-- [ ] Convert another narrow `SignalBase.ts` method group, preferably metadata/read-only methods before proxy-heavy mutation logic.
-- [ ] Add parity tests or source generation for the injected `require.context` model-pattern helper so it cannot drift from `modelPatternRules.js`.
+- [x] Convert another narrow `SignalBase.ts` method group, preferably metadata/read-only methods before proxy-heavy mutation logic.
+- [x] Add parity tests or source generation for the injected `require.context` model-pattern helper so it cannot drift from `modelPatternRules.js`.
 - [ ] Shrink generated `teamplay-env.d.ts` further where helper types can own interpretation without hurting editor display.
 - [ ] Keep examples centered on the object-tree UX while reviewing the remaining user-facing docs.
+
+## Suggested Next Task Set After Metadata Slice
+
+- [ ] Do the manual VS Code/editor display pass that cannot be verified reliably through automated tests.
+- [ ] Convert the next `SignalBase.ts` method group only after choosing a small behavioral boundary, likely read dispatch (`get`/`peek`/`getIds`) or array readers.
+- [ ] Investigate whether special-property typing can be improved further without changing `$.collection[id]`.
+- [ ] Shrink generated `teamplay-env.d.ts` where helper types can take over interpretation without losing field JSDoc or readable hover output.
+- [ ] Continue reviewing user-facing docs for object-tree examples and remove any stale non-object-tree guidance.

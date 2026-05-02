@@ -66,6 +66,14 @@ import {
   isPrivateSignalSegments
 } from './signalRuntimeAccess.ts'
 import {
+  getSignalAssociations,
+  getSignalCollection,
+  getSignalId,
+  getSignalLeaf,
+  getSignalParentSegments,
+  getSignalPath
+} from './signalMetadata.ts'
+import {
   arrayInsertPrivateData,
   arrayMovePrivateData,
   arrayPopPrivateData,
@@ -121,15 +129,13 @@ export class Signal<TValue = unknown> extends Function {
   /** Return the dot-separated path of this signal from the root data tree. */
   path (): string {
     if (arguments.length > 0) throw Error('Signal.path() does not accept any arguments')
-    return this[SEGMENTS].join('.')
+    return getSignalPath(this)
   }
 
   /** Return the last segment of this signal path, or an empty string for the root signal. */
   leaf (): string {
     if (arguments.length > 0) throw Error('Signal.leaf() does not accept any arguments')
-    const segments = this[SEGMENTS]
-    if (segments.length === 0) return ''
-    return String(segments[segments.length - 1])
+    return getSignalLeaf(this)
   }
 
   /**
@@ -137,20 +143,12 @@ export class Signal<TValue = unknown> extends Function {
    * @param levels Number of parent levels to walk upward. Defaults to `1`.
    */
   parent (levels = 1): Signal {
-    if (arguments.length > 1) throw Error('Signal.parent() expects a single argument')
-    if (arguments.length === 0) levels = 1
-    if (typeof levels !== 'number' || !Number.isFinite(levels) || !Number.isInteger(levels)) {
-      throw Error('Signal.parent() expects an integer argument')
-    }
-    if (levels < 1) throw Error('Signal.parent() expects a positive integer')
+    const targetSegments = getSignalParentSegments(this, levels, arguments.length)
     const $root = getRoot(this) || this
-    const segments = this[SEGMENTS]
-    if (segments.length === 0) return $root
-    const targetLength = Math.max(0, segments.length - levels)
-    if (targetLength === 0) return $root
+    if (targetSegments.length === 0) return $root
     let $cursor = $root
-    for (let i = 0; i < targetLength; i++) {
-      $cursor = $cursor[segments[i]]
+    for (const segment of targetSegments) {
+      $cursor = $cursor[segment]
     }
     return $cursor
   }
@@ -249,37 +247,19 @@ export class Signal<TValue = unknown> extends Function {
 
   /** Return the document id represented by this document signal. */
   getId (): string | number {
-    if (this[SEGMENTS].length === 0) throw Error('Can\'t get the id of the root signal')
-    if (this[SEGMENTS].length === 1) throw Error('Can\'t get the id of a collection')
-    if (this[SEGMENTS][0] === AGGREGATIONS && this[SEGMENTS].length === 3) {
-      // use get() instead of the default getRaw() to trigger observability on changes
-      // This is required since within aggregation array results docs can change their position
-      const $root = getRoot(this) || this
-      return getAggregationDocId(this[SEGMENTS], $root?.[ROOT_ID])
-    }
-    return this[SEGMENTS][this[SEGMENTS].length - 1]
+    const $root = getRoot(this) || this
+    return getSignalId(this, $root?.[ROOT_ID])
   }
 
   /** Return the public collection name this signal belongs to. */
   getCollection (): string {
-    if (this[SEGMENTS].length === 0) throw Error('Can\'t get the collection of the root signal')
-    if (this[SEGMENTS][0] === AGGREGATIONS) {
-      return getAggregationCollectionName(this[SEGMENTS])
-    }
-    // Racer compatibility:
-    // prefer static model collection (when model is mounted on alternative paths,
-    // e.g. `_virtualFields.*` -> model with `static collection = 'fields'`).
-    const collectionFromModel = this.constructor?.collection
-    if (typeof collectionFromModel === 'string' && collectionFromModel) {
-      return collectionFromModel
-    }
-    return this[SEGMENTS][0]
+    return getSignalCollection(this)
   }
 
   /** Return association metadata registered on this signal's model class. */
   getAssociations (): readonly unknown[] {
     const $raw = rawSignal(this) || this
-    return $raw.constructor.associations || []
+    return getSignalAssociations($raw)
   }
 
   /** Iterate child document signals for query signals, or item signals for array signals. */
