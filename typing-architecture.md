@@ -86,7 +86,7 @@ The follow-up slice kept the same public UX and focused on reducing duplicated r
 
 The most important remaining technical debt is still `SignalBase.ts` itself. The checked helper boundary is better, but the proxy class, extremely-late method binding, and method implementations should continue to move in narrow tested groups rather than through a whole-file conversion.
 
-One practical limitation remains in the Babel plugin: the injected `require.context` helper is still self-contained generated client code, so it cannot directly import the shared Node-side utility. Its behavior is still covered by snapshots and should either stay tested against the shared rule fixtures or be generated from the same source in a later pass.
+The previous Babel plugin limitation around injected `require.context` helper drift is now addressed by generating that helper source from the shared model-pattern rule module and executing the generated source in parity tests.
 
 ## Current State After Metadata Slice
 
@@ -98,6 +98,16 @@ This slice continued the same consolidation direction:
 - `JoinPath` is exported from the public package surface and covered by both internal and external type fixtures, aligning type-level path joining with the runtime path-pattern helper.
 
 This still looks like the right direction for end-user UX: the object-tree API stays unchanged, but the internal rules behind that API are easier to test and harder to drift. The next `SignalBase.ts` slices should continue to avoid proxy-heavy rewrites until the read dispatch and array reader behavior are isolated with focused tests.
+
+## Current State After Array Reader Slice
+
+The next `SignalBase.ts` slice moved array-reader path selection behind a checked helper:
+
+- `signalArrayReaders.ts` now owns the shared logic for turning query ids or array indexes into child signals for `[Symbol.iterator]`, `map`, `reduce`, and `find`.
+- `SignalBase.ts` still owns root lookup, private/public storage reads, and proxy creation callbacks, keeping the new helper focused on reader semantics rather than construction side effects.
+- Focused tests cover structural helper behavior, missing query-id fallbacks and warnings, private array readers, and query readers. Existing local array, query, and aggregation reader tests stayed green.
+
+This continues to improve maintainability without changing the object-tree UX. For users, `$query.map($doc => ...)`, `[...$array]`, and `$.collection[id]` behave the same. For maintainers, another repeated decision inside `SignalBase.ts` is now isolated and testable. The next careful boundary should be read dispatch (`get`, `peek`, and `getIds`), because it touches root snapshots, query docs, private storage, aggregation ids, and fallback behavior that deserve explicit regression tests before more code moves.
 
 ## Next Direction After Round 2
 

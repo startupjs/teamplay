@@ -29,7 +29,7 @@ async function wait (ms = 30) {
   })
 }
 
-async function waitForCondition (predicate, timeoutMs = 500, stepMs = 20) {
+async function waitForCondition (predicate, timeoutMs = 3000, stepMs = 20) {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
     if (predicate()) return

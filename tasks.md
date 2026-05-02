@@ -224,7 +224,15 @@ The next pass should be smaller than this one and should avoid a whole-file `Sig
 ## Suggested Next Task Set After Metadata Slice
 
 - [ ] Do the manual VS Code/editor display pass that cannot be verified reliably through automated tests.
-- [ ] Convert the next `SignalBase.ts` method group only after choosing a small behavioral boundary, likely read dispatch (`get`/`peek`/`getIds`) or array readers.
+- [x] Convert the next `SignalBase.ts` method group only after choosing a small behavioral boundary, likely read dispatch (`get`/`peek`/`getIds`) or array readers.
+- [ ] Investigate whether special-property typing can be improved further without changing `$.collection[id]`.
+- [ ] Shrink generated `teamplay-env.d.ts` where helper types can take over interpretation without losing field JSDoc or readable hover output.
+- [ ] Continue reviewing user-facing docs for object-tree examples and remove any stale non-object-tree guidance.
+
+## Suggested Next Task Set After Array Reader Slice
+
+- [ ] Do the manual VS Code/editor display pass that cannot be verified reliably through automated tests.
+- [ ] Convert read dispatch next (`get`, `peek`, and `getIds`) only after adding focused tests for root logical snapshots, query docs, private storage, aggregation ids, and non-query fallback behavior.
 - [ ] Investigate whether special-property typing can be improved further without changing `$.collection[id]`.
 - [ ] Shrink generated `teamplay-env.d.ts` where helper types can take over interpretation without losing field JSDoc or readable hover output.
 - [ ] Continue reviewing user-facing docs for object-tree examples and remove any stale non-object-tree guidance.

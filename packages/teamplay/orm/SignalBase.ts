@@ -74,6 +74,10 @@ import {
   getSignalPath
 } from './signalMetadata.ts'
 import {
+  iterateSignalArrayChildren,
+  runSignalArrayMethod
+} from './signalArrayReaders.ts'
+import {
   arrayInsertPrivateData,
   arrayMovePrivateData,
   arrayPopPrivateData,
@@ -90,6 +94,24 @@ import {
 } from './privateData.js'
 
 export { SEGMENTS, ARRAY_METHOD, GET, GETTERS, DEFAULT_GETTERS }
+
+const SIGNAL_ARRAY_READER_CONTEXT = {
+  getRoot ($signal) {
+    return getRoot($signal)
+  },
+  readQueryIds ($signal) {
+    const $root = getRoot($signal) || $signal
+    return getPrivateData($root?.[ROOT_ID], [QUERIES, $signal[HASH], 'ids'])
+  },
+  readArrayValue ($signal) {
+    const $root = getRoot($signal) || $signal
+    return isPrivateSignalSegments($signal[SEGMENTS])
+      ? getPrivateData($root?.[ROOT_ID], $signal[SEGMENTS])
+      : _get(getSignalStorageSegments($signal))
+  },
+  createSignal: getSignal,
+  warn: console.warn
+}
 
 export class Signal<TValue = unknown> extends Function {
   /** Fields that are treated as document ids and mirror the document id segment. */
@@ -264,48 +286,17 @@ export class Signal<TValue = unknown> extends Function {
 
   /** Iterate child document signals for query signals, or item signals for array signals. */
   * [Symbol.iterator] (): IterableIterator<Signal> {
-    if (this[IS_QUERY]) {
-      const $root = getRoot(this) || this
-      const ids = getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'ids'])
-      if (!Array.isArray(ids)) {
-        // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal iterator on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'])
-        return
-      }
-      for (const id of ids) yield getSignal(getRoot(this), [this[SEGMENTS][0], id])
-    } else {
-      const $root = getRoot(this) || this
-      const items = isPrivateSignalSegments(this[SEGMENTS])
-        ? getPrivateData($root?.[ROOT_ID], this[SEGMENTS])
-        : _get(getSignalStorageSegments(this))
-      if (!Array.isArray(items)) return
-      for (let i = 0; i < items.length; i++) yield getSignal(getRoot(this), [...this[SEGMENTS], i])
-    }
+    yield * iterateSignalArrayChildren(this, SIGNAL_ARRAY_READER_CONTEXT, {
+      message: 'Signal iterator on Query didn\'t find ids'
+    })
   }
 
   /** Internal helper used to run array-style methods on query and array signals. */
   [ARRAY_METHOD] (method: string, nonArrayReturnValue: unknown, ...args: unknown[]): unknown {
-    if (this[IS_QUERY]) {
-      const collection = this[SEGMENTS][0]
-      const $root = getRoot(this) || this
-      const ids = getPrivateData($root?.[ROOT_ID], [QUERIES, this[HASH], 'ids'])
-      if (!Array.isArray(ids)) {
-        // TODO: This should never happen, but in reality it happens sometimes
-        console.warn('Signal array method on Query didn\'t find ids', [QUERIES, this[HASH], 'ids'], method)
-        return nonArrayReturnValue
-      }
-      return ids.map(
-        id => getSignal(getRoot(this), [collection, id])
-      )[method](...args)
-    }
-    const $root = getRoot(this) || this
-    const items = isPrivateSignalSegments(this[SEGMENTS])
-      ? getPrivateData($root?.[ROOT_ID], this[SEGMENTS])
-      : _get(getSignalStorageSegments(this))
-    if (!Array.isArray(items)) return nonArrayReturnValue
-    return Array(items.length).fill().map(
-      (_, index) => getSignal(getRoot(this), [...this[SEGMENTS], index])
-    )[method](...args)
+    return runSignalArrayMethod(this, SIGNAL_ARRAY_READER_CONTEXT, method, nonArrayReturnValue, args, {
+      message: 'Signal array method on Query didn\'t find ids',
+      method
+    })
   }
 
   /**
