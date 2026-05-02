@@ -4,7 +4,11 @@ export const fullObjectSchema = defineSchema({
   type: 'object',
   required: ['title', 'meta'],
   properties: {
-    title: { type: 'string' },
+    title: {
+      type: 'string',
+      label: 'Full object title',
+      description: 'Title text shown in generated field docs.'
+    },
     score: { type: 'integer' },
     meta: {
       type: 'object',
@@ -21,12 +25,20 @@ export const fullObjectSchema = defineSchema({
 } as const)
 
 export const shorthandSchema = defineSchema({
-  title: { type: 'string', required: true },
+  title: {
+    type: 'string',
+    required: true,
+    label: 'Shorthand title'
+  },
   score: { type: 'integer' }
 })
 
 export const keywordNamedFieldsSchema = defineSchema({
-  title: { type: 'string', required: true },
+  title: {
+    type: 'string',
+    required: true,
+    description: 'Keyword fixture title.'
+  },
   description: { type: 'string' },
   type: { type: 'string' },
   required: { type: 'boolean' },
@@ -43,7 +55,11 @@ export const nestedObjectsAndArraysSchema = defineSchema({
     type: 'object',
     required: true,
     properties: {
-      name: { type: 'string', required: true },
+      name: {
+        type: 'string',
+        required: true,
+        label: 'Team name'
+      },
       players: {
         type: 'array',
         items: {
@@ -94,34 +110,66 @@ export const schemaRuntimeFixtureMatrix = [
     schema: fullObjectSchema,
     transform: true,
     expectedPropertyKeys: ['title', 'score', 'meta'],
-    expectedRequired: ['title', 'meta']
+    expectedRequired: ['title', 'meta'],
+    generatedEnv: {
+      collectionName: 'schemaFullObjects',
+      expectedFieldNames: ['title', 'score', 'meta'],
+      expectedJsdocSnippets: ['Full object title', 'Title text shown in generated field docs.']
+    }
   },
   {
     name: 'shorthand schema',
     schema: shorthandSchema,
     transform: true,
     expectedPropertyKeys: ['title', 'score'],
-    expectedRequired: ['title']
+    expectedRequired: ['title'],
+    generatedEnv: {
+      collectionName: 'schemaShorthands',
+      expectedFieldNames: ['title', 'score'],
+      expectedJsdocSnippets: ['Shorthand title']
+    }
   },
   {
     name: 'keyword-named fields schema',
     schema: keywordNamedFieldsSchema,
     transform: true,
     expectedPropertyKeys: ['title', 'description', 'type', 'required', 'properties'],
-    expectedRequired: ['title']
+    expectedRequired: ['title'],
+    generatedEnv: {
+      collectionName: 'schemaKeywordFields',
+      expectedFieldNames: ['title', 'description', 'type', 'required', 'properties'],
+      expectedJsdocSnippets: ['Keyword fixture title.']
+    }
   },
   {
     name: 'nested object and array schema',
     schema: nestedObjectsAndArraysSchema,
     transform: true,
     expectedPropertyKeys: ['team'],
-    expectedRequired: ['team']
+    expectedRequired: ['team'],
+    generatedEnv: {
+      collectionName: 'schemaNestedObjects',
+      expectedFieldNames: ['team', 'name', 'players'],
+      expectedJsdocSnippets: ['Team name']
+    }
   },
   {
     name: 'unsupported dynamic schema',
     schema: unsupportedDynamicSchema,
     transform: false,
     expectedPropertyKeys: [],
-    expectedRequired: []
+    expectedRequired: [],
+    generatedEnv: {
+      collectionName: 'schemaDynamic',
+      source: [
+        "import { defineSchema } from 'teamplay'",
+        '',
+        "const buildSchema = () => ({ title: { type: 'string' } })",
+        '',
+        'export default defineSchema(buildSchema())',
+        ''
+      ].join('\n'),
+      expectedFieldNames: []
+    }
   }
 ] as const

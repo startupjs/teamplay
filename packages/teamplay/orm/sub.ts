@@ -1,8 +1,9 @@
 import { isAggregationHeader, isAggregationFunction, isClientAggregationFunction } from '@teamplay/utils/aggregation'
-import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
+import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } from './Signal.ts'
 import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
+import type { QuerySignalOptions } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
 import { getRoot } from './Root.ts'
 import isServer from '../utils/isServer.ts'
@@ -31,7 +32,7 @@ export default function sub<
   TDocumentModel extends SignalModelConstructor<TDocument>
 > (
   $aggregation: TypedAggregationInput<TDocument, TDocumentModel>,
-  params?: Record<string, any>
+  params?: AggregationParams
 ): MaybePromise<TypedAggregationSignal<TDocument, TDocumentModel>>
 
 /**
@@ -41,7 +42,7 @@ export default function sub<
  */
 export default function sub<TCollection extends string, TOutput = unknown> (
   $aggregation: RegisteredAggregationInput<TCollection, TOutput>,
-  params?: Record<string, any>
+  params?: AggregationParams
 ): MaybePromise<SubResult<RegisteredAggregationInput<TCollection, TOutput>>>
 
 /**
@@ -51,7 +52,7 @@ export default function sub<TCollection extends string, TOutput = unknown> (
  */
 export default function sub<TOutput, TCollection extends string> (
   $aggregation: ClientAggregationFunction<TOutput, TCollection>,
-  params?: Record<string, any>
+  params?: AggregationParams
 ): MaybePromise<SubResult<ClientAggregationFunction<TOutput, TCollection>>>
 
 /**
@@ -61,7 +62,7 @@ export default function sub<TOutput, TCollection extends string> (
  */
 export default function sub<TOutput = unknown, TCollection extends string = string> (
   $aggregation: AggregationFunction<TOutput, TCollection>,
-  params?: Record<string, any>
+  params?: AggregationParams
 ): MaybePromise<SubResult<AggregationFunction<TOutput, TCollection>>>
 
 /**
@@ -87,7 +88,7 @@ export default function sub<
   params: QueryParams<TDocument>
 ): MaybePromiseSubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
 
-export default function sub ($signal: any, params?: any): any {
+export default function sub ($signal: unknown, params?: unknown): unknown {
   // TODO: temporarily disable support for multiple subscriptions
   //       since this has to be properly cached using useDeferredSignal() in useSub()
   // if (Array.isArray($signal)) {
@@ -96,35 +97,38 @@ export default function sub ($signal: any, params?: any): any {
   //   return res
   // }
   if (Array.isArray($signal)) throw Error('sub() does not support multiple subscriptions yet')
-  if (isPublicDocumentSignal($signal)) {
+  if (isRuntimePublicDocumentSignal($signal)) {
     if (arguments.length > 1) {
-      throw Error(ERRORS.subDocArguments($signal, ...Array.prototype.slice.call(arguments, 1)))
+      throw Error(ERRORS.subDocArguments($signal, ...Array.from(arguments).slice(1)))
     }
     return doc$($signal)
-  } else if (isPublicCollectionSignal($signal)) {
+  } else if (isRuntimePublicCollectionSignal($signal)) {
     if (arguments.length !== 2) {
-      throw Error(ERRORS.subQueryArguments($signal, params, ...Array.prototype.slice.call(arguments, 2)))
+      throw Error(ERRORS.subQueryArguments($signal, params, ...Array.from(arguments).slice(2)))
     }
     return query$($signal, params)
   } else if (isClientAggregationFunction($signal)) {
     return getAggregationFromFunction($signal, $signal.collection, params)
   } else if (isAggregationHeader($signal)) {
-    params = {
+    const aggregationParams = {
       $aggregationName: $signal.name,
       $params: sanitizeAggregationParams(params)
     }
-    return aggregation$($signal.collection, params)
+    return aggregation$($signal.collection, aggregationParams)
   } else if (isAggregationFunction($signal)) {
     if (isServer) {
-      if (!params?.$collection) throw Error(ERRORS.subServerAggregationCollection($signal, params))
-      params = { ...params }
-      const collection = params.$collection
-      delete params.$collection
-      return getAggregationFromFunction($signal, collection, params)
+      const serverParams = asRecord(params)
+      const collection = serverParams?.$collection
+      if (typeof collection !== 'string' || !collection) {
+        throw Error(ERRORS.subServerAggregationCollection($signal, params))
+      }
+      const aggregationParams = { ...serverParams }
+      delete aggregationParams.$collection
+      return getAggregationFromFunction($signal, collection, aggregationParams)
     } else {
       throw Error(ERRORS.gotAggregationFunction($signal))
     }
-  } else if (typeof $signal === 'function' && !($signal instanceof Signal)) {
+  } else if (isApiFunction($signal)) {
     return api$($signal, params)
   } else {
     throw Error('Invalid args passed for sub()')
@@ -132,13 +136,13 @@ export default function sub ($signal: any, params?: any): any {
 }
 
 function getAggregationFromFunction (
-  fn: AggregationFunction<any, any> | ClientAggregationFunction<any, any>,
+  fn: AggregationFunction<unknown, string> | ClientAggregationFunction<unknown, string>,
   collection: string,
-  params?: Record<string, any>
-): any {
-  const aggregationParams = sanitizeAggregationParams(params) as Record<string, any> // clones it, so mutation becomes safe
-  let session
-  if (aggregationParams.$session) {
+  params?: unknown
+): SignalBaseInstance | Promise<SignalBaseInstance> {
+  const aggregationParams = sanitizeAggregationParams(params) as AggregationParams
+  let session: unknown
+  if (isRecord(aggregationParams) && aggregationParams.$session) {
     session = aggregationParams.$session
     delete aggregationParams.$session
   }
@@ -149,31 +153,37 @@ function getAggregationFromFunction (
   return aggregation$(collection, Array.isArray(result) ? { $aggregate: result } : result)
 }
 
-function doc$ ($doc: any): any {
+function doc$ ($doc: SignalBaseInstance): SignalBaseInstance | Promise<SignalBaseInstance> {
   const promise = docSubscriptions.subscribe($doc)
   if (!promise) return $doc
   return new Promise(resolve => promise.then(() => resolve($doc)))
 }
 
-function query$ ($collection: any, params: any): any {
+function query$ ($collection: SignalBaseInstance, params: unknown): SignalBaseInstance | Promise<SignalBaseInstance> {
   const collectionName = $collection[SEGMENTS][0]
+  if (typeof collectionName !== 'string') throw Error(ERRORS.queryCollectionName($collection))
   if (typeof params !== 'object') throw Error(ERRORS.queryParamsObject(collectionName, params))
   const signalOptions = getQuerySignalOptions($collection)
-  if (params?.$aggregate || params?.$aggregationName) return aggregation$(collectionName, params, signalOptions)
+  const queryParams = params as Record<string, unknown> | null
+  if (queryParams?.$aggregate || queryParams?.$aggregationName) return aggregation$(collectionName, params, signalOptions)
   const $query = getQuerySignal(collectionName, params, signalOptions)
   const promise = querySubscriptions.subscribe($query)
   if (!promise) return $query
   return new Promise(resolve => promise.then(() => resolve($query)))
 }
 
-function aggregation$ (collectionName: string, params: any, signalOptions?: Record<string, any>): any {
+function aggregation$ (
+  collectionName: string,
+  params: unknown,
+  signalOptions?: QuerySignalOptions
+): SignalBaseInstance | Promise<SignalBaseInstance> {
   const $aggregationQuery = getAggregationSignal(collectionName, params, signalOptions)
   const promise = aggregationSubscriptions.subscribe($aggregationQuery)
   if (!promise) return $aggregationQuery
   return new Promise(resolve => promise.then(() => resolve($aggregationQuery)))
 }
 
-function api$ (fn: Function, args: any): never {
+function api$ (_fn: (...args: unknown[]) => unknown, _args: unknown): never {
   throw Error('sub() for async functions is not implemented yet')
 }
 
@@ -186,10 +196,30 @@ function sanitizeAggregationParams<TParams> (params: TParams): TParams {
   return JSON.parse(JSON.stringify(params) as string)
 }
 
-function getQuerySignalOptions ($collection: any): { root: any } | undefined {
+function getQuerySignalOptions ($collection: SignalBaseInstance): QuerySignalOptions | undefined {
   const $root = getRoot($collection)
   if (!$root) return undefined
   return { root: $root }
+}
+
+function isRecord (value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function asRecord (value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+function isRuntimePublicDocumentSignal (value: unknown): value is SignalBaseInstance {
+  return isPublicDocumentSignal(value)
+}
+
+function isRuntimePublicCollectionSignal (value: unknown): value is SignalBaseInstance {
+  return isPublicCollectionSignal(value)
+}
+
+function isApiFunction (value: unknown): value is (...args: unknown[]) => unknown {
+  return typeof value === 'function' && !(value instanceof Signal)
 }
 
 const ERRORS = {
@@ -205,7 +235,14 @@ const ERRORS = {
     Params: ${params}
     Got args: ${[$signal, params, ...args]}
   `,
-  queryParamsObject: (collectionName: string, params: any) => `
+  queryCollectionName: ($signal: SignalBaseInstance) => `
+    sub($collection, params):
+      Collection signal must have a string collection name.
+
+      Got:
+        path: ${$signal[SEGMENTS]}
+  `,
+  queryParamsObject: (collectionName: string, params: unknown) => `
     sub($collection, params):
       Params must be an object.
       If you want to subscribe to all documents in a collection, pass an empty object: sub($collection, {}).
@@ -214,7 +251,7 @@ const ERRORS = {
         collectionName: ${collectionName}
         params: ${params}
   `,
-  gotAggregationFunction: (aggregationFn: Function) => `
+  gotAggregationFunction: (aggregationFn: AggregationFunction) => `
     sub(_aggregation, params):
       Got aggregation function itself instead of the aggregation header.
       Looks like client-side code transformation did not work properly and your
@@ -225,7 +262,7 @@ const ERRORS = {
       Got:
         ${aggregationFn.toString()}
   `,
-  subServerAggregationCollection: ($signal: Function, params: any) => `
+  subServerAggregationCollection: ($signal: AggregationFunction, params: unknown) => `
     sub(_aggregation, params):
       Server-side aggregation function must receive the collection name from the params.
       Make sure you pass the collection name as $collection in the params object

@@ -73,6 +73,21 @@ The most important remaining boundary is `SignalBase.ts`. That file owns proxy b
 
 The main TypeScript limitation that remains intentional is broad collection indexing. `$.users[id]` depends on a broad string index, so TypeScript cannot perfectly distinguish every possible document id from special properties like `ids`, `extra`, or model method names. The current direction is to keep named special properties precise, cover collisions at runtime, and preserve the object-tree access model instead of adding a less natural document accessor solely for TypeScript.
 
+## Current State After Follow-Up Consolidation
+
+The follow-up slice kept the same public UX and focused on reducing duplicated runtime facts:
+
+- `sub.ts` and `useSub.ts` implementation bodies now use `unknown`, `AggregationParams`, and small runtime guards instead of broad implementation-body `any`.
+- Signal symbols now live in a checked module, and `SignalBase.ts` delegates symbol-keyed segment access, query-state mutation guards, private path detection, storage-segment access, and owning-root id lookup to checked helpers.
+- File-model pattern rules for `[id] -> *`, `index`, ignored `-` files, invalid wildcard filenames, aggregation/schema/access grouping, and collection-pattern checks now live in a shared Babel plugin utility used by Node loading, generated env discovery, static import generation, and tests.
+- Runtime path tuple to pattern-string joining is covered in `signalPathRules.ts`.
+- The schema fixture matrix now also drives Babel/JSDoc and generated-env tests, including the expected fallback for dynamic schemas.
+- User-facing docs now call out query `ids` / `extra`, generated schema module setup, and the intentional broad-indexing limitation.
+
+The most important remaining technical debt is still `SignalBase.ts` itself. The checked helper boundary is better, but the proxy class, extremely-late method binding, and method implementations should continue to move in narrow tested groups rather than through a whole-file conversion.
+
+One practical limitation remains in the Babel plugin: the injected `require.context` helper is still self-contained generated client code, so it cannot directly import the shared Node-side utility. Its behavior is still covered by snapshots and should either stay tested against the shared rule fixtures or be generated from the same source in a later pass.
+
 ## Next Direction After Round 2
 
 The next iteration should be a consolidation pass. The goal is not to invent a new typing model; it is to make the current model harder to break and easier to extend.

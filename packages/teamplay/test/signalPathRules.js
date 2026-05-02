@@ -3,6 +3,7 @@ import { describe, it } from 'mocha'
 import {
   maybeTransformToArrayIndex,
   normalizeSignalPropertyKey,
+  pathSegmentsToPattern,
   transformRootDollarAlias
 } from '../orm/signalPathRules.ts'
 
@@ -24,5 +25,12 @@ describe('signal path rules', () => {
     assert.equal(maybeTransformToArrayIndex('12'), 12)
     assert.equal(maybeTransformToArrayIndex('01'), '01')
     assert.equal(maybeTransformToArrayIndex('-1'), '-1')
+  })
+
+  it('joins runtime path tuples into model pattern strings', () => {
+    assert.equal(pathSegmentsToPattern([]), '')
+    assert.equal(pathSegmentsToPattern(['games']), 'games')
+    assert.equal(pathSegmentsToPattern(['games', '*', 'players', '*']), 'games.*.players.*')
+    assert.equal(pathSegmentsToPattern(['games', 'game-1', 'players', 0]), 'games.game-1.players.*')
   })
 })

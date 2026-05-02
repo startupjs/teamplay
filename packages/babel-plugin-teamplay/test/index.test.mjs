@@ -8,6 +8,8 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import plugin from '../index.js'
 import loader from '../loader.js'
+import modelPatternRules from '../modelPatternRules.js'
+import { schemaRuntimeFixtureMatrix } from '../../teamplay/test/schemaFixtureMatrix.ts'
 
 const {
   discoverModels,
@@ -15,6 +17,10 @@ const {
   loadFileBasedModels,
   loadFileBasedModelsSync
 } = loader
+const {
+  getModelPatternFromRelativePath,
+  sanitizeAndMergeModelPatterns: sanitizeModelPatterns
+} = modelPatternRules
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(TEST_DIR, '../../..')
@@ -66,6 +72,44 @@ describe('babel-plugin-teamplay', () => {
     expect(warnings).toMatchSnapshot()
   })
 
+  it('normalizes file model paths with shared pattern rules', () => {
+    expect(getModelPatternFromRelativePath('index.ts')).toBe('')
+    expect(getModelPatternFromRelativePath('users/index.ts')).toBe('users')
+    expect(getModelPatternFromRelativePath('users/[id].ts')).toBe('users.*')
+    expect(getModelPatternFromRelativePath('events/[id]/comments/[commentId].ts')).toBe('events.*.comments.*')
+    expect(getModelPatternFromRelativePath('./_session/connection.ts')).toBe('_session.connection')
+    expect(getModelPatternFromRelativePath('events/[id]/index.ts')).toBe('events.*')
+    expect(getModelPatternFromRelativePath('users/-helpers/format.ts')).toBeNull()
+    expect(getModelPatternFromRelativePath('users/-format.ts')).toBeNull()
+  })
+
+  it('rejects invalid file model path patterns with shared errors', () => {
+    expect(() => getModelPatternFromRelativePath('users/*.ts')).toThrow(/Instead of '\*' in model filename use '\[id\]'/)
+    expect(() => getModelPatternFromRelativePath('users/bad-name.ts')).toThrow(/Invalid model filename pattern: users\.bad-name/)
+  })
+
+  it('merges model, schema, access, and aggregation files through shared pattern rules', () => {
+    const models = sanitizeModelPatterns({
+      users: '/models/users/index.ts',
+      'users.*': '/models/users/[id].ts',
+      'users.schema': '/models/users/schema.ts',
+      'users.access': '/models/users/access.ts',
+      'users._active': '/models/users/_active.ts',
+      '_session.connection': '/models/_session/connection.ts',
+      'events.*.comments.*': '/models/events/[id]/comments/[commentId].ts'
+    })
+
+    expect(models.users.map(part => `${part.type}:${part.name}`)).toEqual([
+      'model:users',
+      'schema:schema',
+      'access:access',
+      'aggregation:_active'
+    ])
+    expect(models['users.*'].map(part => `${part.type}:${part.name}`)).toEqual(['model:*'])
+    expect(models['_session.connection'].map(part => `${part.type}:${part.name}`)).toEqual(['model:connection'])
+    expect(models['events.*.comments.*'].map(part => `${part.type}:${part.name}`)).toEqual(['model:*'])
+  })
+
   it('supports legacy $$ aggregation files with a warning', () => {
     const warnings = []
     useFixture(root, 'legacy-aggregation-js')
@@ -101,6 +145,25 @@ describe('babel-plugin-teamplay', () => {
     const filePath = generateTeamplayEnv({ root })
 
     expect(readFileSync(filePath, 'utf8')).toMatchSnapshot()
+  })
+
+  it('generates env field metadata from the shared schema fixture matrix', () => {
+    writeSchemaMatrixModels(root)
+    const filePath = generateTeamplayEnv({ root })
+    const content = readFileSync(filePath, 'utf8')
+
+    for (const fixture of schemaRuntimeFixtureMatrix) {
+      const generatedEnv = fixture.generatedEnv
+      if (!generatedEnv) continue
+      expect(content).toContain(JSON.stringify(generatedEnv.collectionName))
+      for (const fieldName of generatedEnv.expectedFieldNames) {
+        expect(content).toContain(`readonly ${JSON.stringify(fieldName)}:`)
+        expect(content).toContain(`readonly ${JSON.stringify(`$${fieldName}`)}:`)
+      }
+      for (const snippet of generatedEnv.expectedJsdocSnippets || []) {
+        expect(content).toContain(snippet)
+      }
+    }
   })
 
   it('generates schema default interfaces which work through resolved module identity', () => {
@@ -182,6 +245,19 @@ describe('babel-plugin-teamplay', () => {
     generateTeamplayEnv({ root })
 
     expect(statSync(filePath).mtime.getTime()).toBe(oldTime.getTime())
+  })
+
+  it('generates env imports relative to a custom typesFile location', () => {
+    useFixture(root, 'complex-ts')
+    const filePath = generateTeamplayEnv({
+      root,
+      typesFile: 'types/generated/teamplay-env.d.ts'
+    })
+    const content = readFileSync(filePath, 'utf8')
+
+    expect(toSnapshotPath(root, filePath)).toBe('types/generated/teamplay-env.d.ts')
+    expect(content).toContain('from "../../models/events/schema.ts"')
+    expect(content).toContain('declare module "../../models/events/schema"')
   })
 
   it('loads file-based models directly in Node', async () => {
@@ -446,6 +522,38 @@ function summarizeLoadedValue (value) {
 function useFixture (root, name) {
   cpSync(join(FIXTURES_DIR, name), root, { recursive: true })
   mkdirSync(join(root, 'src'), { recursive: true })
+}
+
+function writeSchemaMatrixModels (root) {
+  for (const fixture of schemaRuntimeFixtureMatrix) {
+    const generatedEnv = fixture.generatedEnv
+    if (!generatedEnv) continue
+    const folder = join(root, 'models', generatedEnv.collectionName)
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, 'index.ts'), [
+      "import { Signal } from 'teamplay'",
+      '',
+      `export default class ${toClassName(generatedEnv.collectionName)} extends Signal {}`,
+      ''
+    ].join('\n'))
+    writeFileSync(join(folder, 'schema.ts'), generatedEnv.source || buildStaticSchemaSource(fixture.schema))
+  }
+}
+
+function buildStaticSchemaSource (schema) {
+  return [
+    "import { defineSchema } from 'teamplay'",
+    '',
+    `export default defineSchema(${JSON.stringify(schema, null, 2)} as const)`,
+    ''
+  ].join('\n')
+}
+
+function toClassName (value) {
+  const name = value
+    .replace(/^[^a-zA-Z_$]+/, '')
+    .replace(/[^a-zA-Z0-9_$]+(.)?/g, (_, char = '') => char.toUpperCase())
+  return name ? name[0].toUpperCase() + name.slice(1) : 'Model'
 }
 
 function linkNodeModules (root) {

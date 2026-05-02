@@ -31,3 +31,9 @@ export function normalizeSignalPropertyKey (
 ): string | number {
   return maybeTransformToArrayIndex(transformRootDollarAlias(segments, key))
 }
+
+export function pathSegmentsToPattern (segments: readonly PathSegment[]): string {
+  return segments
+    .map(segment => typeof segment === 'number' ? '*' : String(segment))
+    .join('.')
+}
