@@ -120,6 +120,17 @@ The read-dispatch boundary has now moved into checked code:
 
 This is still aligned with the product direction: the end-user API remains the object tree (`$`, `$.collection[id]`, query signals, and local private paths), while another high-risk branch in `SignalBase.ts` is documented and checked. The next `SignalBase.ts` work should stay similarly narrow. Mutation dispatch is larger and more side-effectful than read dispatch, so it should only move after adding focused tests around id-field no-ops, public/private storage selection, root/collection protection, and query/aggregation mutation guards.
 
+## Current State After Value Mutation Slice
+
+The first mutation slice intentionally stayed smaller than the full mutator surface:
+
+- `signalValueMutations.ts` now owns routing for `set()` and `del()`, including root protection, whole-public-collection delete protection, protected id-field no-ops, public document id normalization, public/private storage selection, and `publicOnly` private-write rejection.
+- `idFields` is now a checked TypeScript module, avoiding a new declaration shim for the shared id-field and public-document-path rules.
+- `SignalBase.ts` still owns public method names and arity checks, while delegating the side-effect routing for value replacement and deletion.
+- Focused tests cover structural write routing and runtime behavior for private writes plus public id-field no-ops.
+
+This keeps the runtime behavior and UX stable while reducing another repeated decision inside `SignalBase.ts`. The next mutation work should avoid pulling in all array/string/increment behavior at once. A good next boundary is a shared checked helper for the repeated array/string/increment "skip protected id fields, pick public/private storage, respect publicOnly" decision after tests pin each operation family.
+
 ## Next Direction After Round 2
 
 The next iteration should be a consolidation pass. The goal is not to invent a new typing model; it is to make the current model harder to break and easier to extend.

@@ -40,11 +40,9 @@ import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
   isIdFieldPath,
-  isPublicDocPath,
-  normalizeIdFields,
   prepareAddPayload,
   resolveAddDocId
-} from './idFields.js'
+} from './idFields.ts'
 import { isCompatEnv } from './compatEnv.js'
 import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
@@ -82,6 +80,10 @@ import {
   getSignalValue,
   readSignalValue
 } from './signalReads.ts'
+import {
+  deleteSignalValue,
+  setSignalValue
+} from './signalValueMutations.ts'
 import {
   arrayInsertPrivateData,
   arrayMovePrivateData,
@@ -142,6 +144,18 @@ const SIGNAL_READ_CONTEXT = {
   error (message) {
     console.error(message)
   }
+}
+
+const SIGNAL_VALUE_MUTATION_CONTEXT = {
+  getOwningRootId: getSignalOwningRootId,
+  isPublicCollection,
+  isPrivateMutationForbidden,
+  setPublicDoc: _setPublicDoc,
+  setPrivateData,
+  deletePublicDoc (segments) {
+    return _setPublicDoc(segments, undefined, true)
+  },
+  deletePrivateData: delPrivateData
 }
 
 export class Signal<TValue = unknown> extends Function {
@@ -334,18 +348,7 @@ export class Signal<TValue = unknown> extends Function {
    */
   async set (value: TValue): Promise<void> {
     if (arguments.length > 1) throw Error('Signal.set() expects a single argument')
-    if (this[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
-    const idFields = getIdFieldsForSegments(this[SEGMENTS])
-    if (isIdFieldPath(this[SEGMENTS], idFields)) return
-    if (isPublicDocPath(this[SEGMENTS])) {
-      value = normalizeIdFields(value, idFields, this[SEGMENTS][1])
-    }
-    if (isPublicCollection(this[SEGMENTS][0])) {
-      await _setPublicDoc(this[SEGMENTS], value)
-    } else {
-      if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-      setPrivateData(getSignalOwningRootId(this), this[SEGMENTS], value)
-    }
+    await setSignalValue(this, SIGNAL_VALUE_MUTATION_CONTEXT, value)
   }
 
   /**
@@ -556,16 +559,7 @@ export class Signal<TValue = unknown> extends Function {
   /** Delete this document or field. Whole collections and the root signal cannot be deleted. */
   async del (): Promise<void> {
     if (arguments.length > 0) throw Error('Signal.del() does not accept any arguments')
-    if (this[SEGMENTS].length === 0) throw Error('Can\'t delete the root signal data')
-    const idFields = getIdFieldsForSegments(this[SEGMENTS])
-    if (isIdFieldPath(this[SEGMENTS], idFields)) return
-    if (isPublicCollection(this[SEGMENTS][0])) {
-      if (this[SEGMENTS].length === 1) throw Error('Can\'t delete the whole collection')
-      await _setPublicDoc(this[SEGMENTS], undefined, true)
-    } else {
-      if (isPrivateMutationForbidden()) throw Error(ERRORS.publicOnly)
-      delPrivateData(getSignalOwningRootId(this), this[SEGMENTS])
-    }
+    await deleteSignalValue(this, SIGNAL_VALUE_MUTATION_CONTEXT)
   }
 
   // clone () {}

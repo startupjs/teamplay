@@ -11,7 +11,7 @@ import {
   parseQueryHash
 } from './Query.js'
 import Signal, { SEGMENTS } from './Signal.ts'
-import { getIdFieldsForSegments, isPlainObject } from './idFields.js'
+import { getIdFieldsForSegments, isPlainObject } from './idFields.ts'
 import { delPrivateData, getPrivateData, setPrivateData } from './privateData.js'
 import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
 
