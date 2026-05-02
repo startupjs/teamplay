@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import * as promiseBatcher from '../react/promiseBatcher.js'
+import * as promiseBatcher from '../react/promiseBatcher.ts'
 
 describe('promiseBatcher', () => {
   beforeEach(() => {

@@ -13,11 +13,25 @@ import type {
   WildcardSignalPath
 } from './path.ts'
 import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
+import type {
+  SignalArrayMutatorMethods,
+  SignalArrayReaderMethods,
+  SignalCollectionMethods
+} from './baseMethods.ts'
 
-export type SignalClass<TValue = unknown> = new (segments: PathSegment[]) => Signal<TValue>
+export type RuntimeSignalInstance<TValue = unknown> = Signal<TValue>
+
+export type SignalBaseInstance<TValue = unknown> = RuntimeSignalInstance<TValue>
+
+export type SignalModelConstructor<
+  TValue = unknown,
+  TInstance extends RuntimeSignalInstance<TValue> = RuntimeSignalInstance<TValue>
+> = new (segments: PathSegment[]) => TInstance
+
+export type SignalClass<TValue = unknown> = SignalModelConstructor<TValue>
 
 export type SignalInstance<TModel> =
-  TModel extends new (...args: any[]) => infer Instance ? Instance : Signal
+  TModel extends SignalModelConstructor<any, infer Instance> ? Instance : RuntimeSignalInstance
 
 type IsExactlyBaseSignalClass<TModel> =
   [TModel] extends [typeof Signal]
@@ -31,28 +45,16 @@ type SignalModelInstance<TValue, TModel> =
     ? Signal<TValue>
     : Signal<TValue> & SignalInstance<TModel>
 
-type SignalArrayReaderMethodKeys = 'map' | 'reduce' | 'find' | typeof Symbol.iterator
-type SignalArrayMutatorMethodKeys = 'push' | 'pop' | 'unshift' | 'shift' | 'insert' | 'remove' | 'move'
-type SignalCollectionMethodKeys = 'add' | SignalArrayReaderMethodKeys | SignalArrayMutatorMethodKeys
+type SignalArrayReaderMethodKeys = keyof SignalArrayReaderMethods<any>
+type SignalArrayMutatorMethodKeys = keyof SignalArrayMutatorMethods<any>
+type SignalCollectionMethodKeys = keyof SignalCollectionMethods<any>
 type SignalQueryMethodKeys = SignalArrayReaderMethodKeys | SignalArrayMutatorMethodKeys
 
 type BlockedArrayMutators = {
   readonly [K in SignalArrayMutatorMethodKeys]?: never
 }
 
-type SignalArrayLike<TItem> = {
-  readonly [Symbol.iterator]: () => IterableIterator<TItem>
-  map: <TResult>(callback: (value: TItem, index: number, array: TItem[]) => TResult, thisArg?: any) => TResult[]
-  reduce: {
-    (callback: (previousValue: TItem, currentValue: TItem, currentIndex: number, array: TItem[]) => TItem): TItem
-    (callback: (previousValue: TItem, currentValue: TItem, currentIndex: number, array: TItem[]) => TItem, initialValue: TItem): TItem
-    <TResult>(
-      callback: (previousValue: TResult, currentValue: TItem, currentIndex: number, array: TItem[]) => TResult,
-      initialValue: TResult
-    ): TResult
-  }
-  find: (predicate: (value: TItem, index: number, obj: TItem[]) => unknown, thisArg?: any) => TItem | undefined
-}
+type SignalArrayLike<TItem> = SignalArrayReaderMethods<TItem>
 
 type PathModel<
   TValue,
@@ -110,8 +112,11 @@ type IsUnion<TValue, TUnion = TValue> =
 type SingleKey<TKey> = IsUnion<TKey> extends true ? never : TKey
 
 export type SignalKind =
+  | 'root'
   | 'document'
   | 'collection'
+  | 'nestedValue'
+  | 'localArray'
   | 'array'
   | 'query'
   | 'aggregation'
@@ -140,8 +145,11 @@ type CollectionSignalForKind<
   SignalArrayLike<CollectionDocumentSignal<TDocument, TDocumentModel, TPath>> &
   BlockedArrayMutators &
   { add: (value: TDocument) => Promise<string> } &
-  Readonly<Record<string, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>> &
-  Readonly<Record<number, CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>>
+  CollectionDocumentIndex<CollectionDocumentSignal<TDocument, TDocumentModel, TPath>>
+
+type CollectionDocumentIndex<TDocumentSignal> =
+  Readonly<Record<string, TDocumentSignal>> &
+  Readonly<Record<number, TDocumentSignal>>
 
 type ArraySignalForKind<
   TDocument,
@@ -153,13 +161,16 @@ SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
 } &
 BlockedArrayMutators
 
+type QueryMetadataSignals = {
+  readonly ids: Signal<Array<string | number>>
+  readonly extra: Signal<unknown>
+}
+
 type QuerySignalForKind<
   TDocument,
   TDocumentModel extends SignalClass<any>,
   TDocumentPath extends WildcardSignalPath
-> = ArraySignalForKind<TDocument, TDocumentModel, TDocumentPath> & {
-  readonly ids: Signal<Array<string | number>>
-}
+> = ArraySignalForKind<TDocument, TDocumentModel, TDocumentPath> & QueryMetadataSignals
 
 export type SignalForKind<
   TKind extends SignalKind,
@@ -168,19 +179,19 @@ export type SignalForKind<
   TDocumentModel extends SignalClass<any> = typeof Signal,
   TPath extends WildcardSignalPath = readonly []
 > =
-  TKind extends 'document'
-    ? DocumentSignalForKind<TValue, TDocumentModel, TPath>
-    : TKind extends 'collection'
-      ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath>
-      : TKind extends 'array'
-        ? ArraySignalForKind<TValue, TDocumentModel, TPath>
-        : TKind extends 'query' | 'aggregation'
-          ? QuerySignalForKind<TValue, TDocumentModel, TPath>
-          : TKind extends 'collectionQuery'
-            ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath> & {
-              readonly ids: Signal<Array<string | number>>
-            }
-            : never
+  TKind extends 'root'
+    ? Signal<Record<string, unknown>>
+    : TKind extends 'document' | 'nestedValue' | 'localArray'
+      ? DocumentSignalForKind<TValue, TDocumentModel, TPath>
+      : TKind extends 'collection'
+        ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath>
+        : TKind extends 'array'
+          ? ArraySignalForKind<TValue, TDocumentModel, TPath>
+          : TKind extends 'query' | 'aggregation'
+            ? QuerySignalForKind<TValue, TDocumentModel, TPath>
+            : TKind extends 'collectionQuery'
+              ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath> & QueryMetadataSignals
+              : never
 
 export type TypedSignal<
   TValue = unknown,
@@ -240,9 +251,7 @@ export type CollectionQuerySignal<
   TCollectionModel extends SignalClass<any>,
   TDocumentModel extends SignalClass<any>,
   TCollectionPath extends WildcardSignalPath
-> = CollectionSignalForKind<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> & {
-  readonly ids: Signal<Array<string | number>>
-}
+> = CollectionSignalForKind<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> & QueryMetadataSignals
 
 type MatchingDocumentCollectionKeys<TValue> =
   IsAny<TValue> extends true
@@ -305,6 +314,22 @@ export type PublicSignal<TValue = unknown> =
     : NonNullable<TValue> extends ReadonlyArray<any>
       ? SignalForArrayValue<TValue>
       : SignalForDocumentValue<TValue>
+
+export interface LocalSignalFactory {
+  (): any
+  <TValue>(): TypedSignal<TValue>
+  <TValue>(factory: () => TValue): TypedSignal<TValue>
+  <TValue>(value: TValue): TypedSignal<TValue>
+}
+
+export type RootCollections<TCollections extends Record<string, any> = TeamplayCollections> = {
+  readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
+} & {
+  readonly [K in keyof TCollections & string as `$${K}`]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
+}
+
+export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
+  Signal<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
 
 export interface RegisteredAggregationInput<
   TCollection extends string = string,
@@ -427,3 +452,5 @@ export interface SignalConstructor {
   readonly [GETTERS]: typeof Signal[typeof GETTERS]
   addAssociation: typeof Signal.addAssociation
 }
+
+export type RuntimeSignalConstructor = SignalConstructor

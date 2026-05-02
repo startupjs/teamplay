@@ -35,6 +35,8 @@ The plugin writes `teamplay-env.d.ts` in the project root. Make sure your TypeSc
 
 Many app configs already include root `.d.ts` files through `**/*.ts` or `**/*.tsx`; add the file only if your editor or checker does not see it.
 
+If your generated imports include explicit `.ts` extensions, enable a modern resolver such as `moduleResolution: "Bundler"` or `moduleResolution: "NodeNext"`. For projects that import schema modules with explicit `.ts` extensions, also enable `allowImportingTsExtensions`.
+
 ## Infer Document Types From Schemas
 
 With file-based models, TeamPlay generates a default document type for every collection schema module. Define the schema with `defineSchema()` and export it as default:
@@ -213,6 +215,19 @@ Top-level collection, query, and aggregation signals are array-readable with `ma
 
 If two collections have exactly the same document type, TeamPlay cannot safely infer which collection model belongs to `Signal<T>`, so it falls back to the plain typed signal shape.
 
+Query signals have typed metadata children:
+
+```ts
+const ids: string[] = $activeUsers.ids.get()
+const extra = $activeUsers.extra.get()
+```
+
+`ids` and `extra` are reserved on query signals. If a document id has the same name, access it from the collection object tree:
+
+```ts
+const $idsDocument = $.users['ids']
+```
+
 ## Local Signals
 
 Local signals infer types from their initial value:
@@ -373,6 +388,10 @@ declare module 'teamplay' {
 ```
 
 Manual augmentation should match the runtime registration. If the runtime and type registry disagree, TypeScript may suggest methods that are not present at runtime.
+
+## Known Limits
+
+TeamPlay keeps the object-tree document API as `$.users[id]`. TypeScript models that with broad string indexing, so it cannot perfectly distinguish every dynamic document id from every named collection property or model method. Named query metadata such as `ids` and `extra` stays precise, and bracket access is the clearest form when a document id collides with a named property.
 
 ## Schema Type Coverage
 

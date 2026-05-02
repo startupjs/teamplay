@@ -8,8 +8,8 @@ import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { getPrivateData } from '../orm/privateData.js'
 import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../orm/Query.js'
-import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
-import { getRootOwnedRuntimeHashes } from '../orm/rootContext.js'
+import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import { getRootOwnedRuntimeHashes } from '../orm/rootContext.ts'
 import connect from '../connect/test.js'
 
 before(connect)

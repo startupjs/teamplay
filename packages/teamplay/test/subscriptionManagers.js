@@ -34,13 +34,13 @@ import { getConnection } from '../orm/connection.ts'
 import { get as _get } from '../orm/dataTree.js'
 import { getRootSignal, ROOT_ID } from '../orm/Root.ts'
 import { getPrivateData } from '../orm/privateData.js'
-import { getScopedSignalHash } from '../orm/rootScope.js'
+import { getScopedSignalHash } from '../orm/rootScope.ts'
 import connect from '../connect/test.js'
 import {
   getSubscriptionGcDelay,
   setSubscriptionGcDelay,
   __resetSubscriptionGcDelayForTests
-} from '../orm/subscriptionGcDelay.js'
+} from '../orm/subscriptionGcDelay.ts'
 
 before(connect)
 

@@ -5,8 +5,8 @@ import { QUERIES, HASH, PARAMS, COLLECTION_NAME, querySubscriptions } from '../Q
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../Aggregation.js'
 import { getPrivateData, setPrivateData } from '../privateData.js'
 import { getRoot, ROOT_ID } from '../Root.ts'
-import { isRootContextClosed } from '../rootContext.js'
-import { getScopedSignalHash, normalizeRootId } from '../rootScope.js'
+import { isRootContextClosed } from '../rootContext.ts'
+import { getScopedSignalHash, normalizeRootId } from '../rootScope.ts'
 
 let imperativeQueryReadyTimeoutMs = 1000
 

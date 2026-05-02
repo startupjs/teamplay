@@ -17,8 +17,8 @@ import { ROOT, ROOT_ID } from '../orm/Root.ts'
 import { PARAMS, HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
 import { AGGREGATIONS, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { delPrivateData, setPrivateData } from '../orm/privateData.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
-import { __resetRootContextsForTests, getRootContext } from '../orm/rootContext.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import { __resetRootContextsForTests, getRootContext } from '../orm/rootContext.ts'
 import {
   __setImperativeQueryReadyTimeoutForTests,
   __resetImperativeQueryReadyTimeoutForTests

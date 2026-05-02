@@ -70,6 +70,24 @@ const userId = await $activeUsers.addNew({
 
 Top-level query results are array-readable. Array mutators such as `push` and `pop` are only typed on actual array fields, because mutating a query result as an array is not a valid database operation.
 
+## Query Metadata
+
+Query signals expose metadata as named child signals:
+
+```ts
+const ids = $activeUsers.ids.get()
+const extra = $activeUsers.extra.get()
+```
+
+`ids` contains the ordered document ids for the current query result. `extra` contains server-provided metadata such as count results when the query returns it.
+
+These names are reserved on query signals. If a real document id is `ids` or `extra`, access that document through the collection object tree:
+
+```ts
+const $idsDocument = $.users['ids']
+const $extraDocument = $.users['extra']
+```
+
 ## Queries vs Aggregations
 
 Use queries for simple filtering and sorting. Use [Aggregations](/orm/aggregations) for `$group`, `$project`, `$lookup`, `$unwind`, and other pipeline stages.

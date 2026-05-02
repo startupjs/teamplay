@@ -1,5 +1,5 @@
-import { getRootContext } from './rootContext.js'
-import { getPrivateDataSegments, isPrivateCollectionSegments } from './rootScope.js'
+import { getRootContext } from './rootContext.ts'
+import { getPrivateDataSegments, isPrivateCollectionSegments } from './rootScope.ts'
 import {
   arrayInsert as _arrayInsert,
   arrayMove as _arrayMove,

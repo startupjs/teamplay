@@ -1,5 +1,4 @@
-// @ts-nocheck
-import Cache from './Cache.js'
+import Cache from './Cache.ts'
 import Signal, { SEGMENTS, regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.ts'
 import { findModel } from './addModel.ts'
 import { LOCAL } from './$.js'
@@ -9,23 +8,37 @@ import { AGGREGATIONS } from './Aggregation.js'
 import { isCompatEnv } from './compatEnv.js'
 import { getConnection } from './connection.ts'
 import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
-import { getSignalIdentityHash } from './rootScope.js'
-import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.js'
+import { getSignalIdentityHash } from './rootScope.ts'
+import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.ts'
+import type { PathSegment } from './types/path.ts'
+import type { RootSignalRuntime } from './Root.ts'
+import type { SignalModelConstructor } from './Signal.ts'
 
-const PROXIES_CACHE = new Cache()
-const PROXY_TO_SIGNAL = new WeakMap()
+export interface GetSignalOptions {
+  useExtremelyLateBindings?: boolean
+  rootId?: string
+  signalHash?: string
+  proxyHandlers?: ProxyHandler<RootSignalRuntime>
+}
+
+interface ProxyHandlerOptions {
+  useExtremelyLateBindings?: boolean
+}
+
+const PROXIES_CACHE = new Cache<RootSignalRuntime>()
+const PROXY_TO_SIGNAL = new WeakMap<RootSignalRuntime, RootSignalRuntime>()
 
 // extremely late bindings let you use fields in your raw data which have the same name as signal's methods
 const USE_EXTREMELY_LATE_BINDINGS = true
 
 // get proxy-wrapped signal from cache or create a new one
 // TODO: move Private, Public, Local signals out of this file, same as Query has its own signal
-export default function getSignal ($root, segments = [], {
+export default function getSignal ($root?: RootSignalRuntime, segments: PathSegment[] = [], {
   useExtremelyLateBindings = USE_EXTREMELY_LATE_BINDINGS,
   rootId,
   signalHash,
   proxyHandlers = getDefaultProxyHandlers({ useExtremelyLateBindings })
-} = {}) {
+}: GetSignalOptions = {}): RootSignalRuntime {
   if (!($root instanceof Signal)) {
     if (segments.length === 0 && !rootId) throw Error(ERRORS.rootIdRequired)
     if (segments.length >= 1 && isPrivateCollection(segments[0])) {
@@ -46,7 +59,7 @@ export default function getSignal ($root, segments = [], {
   if (proxy) return proxy
 
   const SignalClass = getSignalClass(segments, $root?.[ROOT_ID] || rootId)
-  const signal = new SignalClass(segments)
+  const signal = new SignalClass(segments) as RootSignalRuntime
   proxy = new Proxy(signal, proxyHandlers)
   if (segments.length >= 1) {
     if (isPrivateCollection(segments[0])) {
@@ -64,7 +77,7 @@ export default function getSignal ($root, segments = [], {
   if (!rootClosed && owningRootId != null && owningRootId !== GLOBAL_ROOT_ID) {
     registerRootOwnedSignalHash(owningRootId, signalHash)
   }
-  const dependencies = []
+  const dependencies: RootSignalRuntime[] = []
 
   // if the signal is a child of the local value created through the $() function,
   // we need to add the parent signal ('$local.id') to the dependencies so that it doesn't get garbage collected
@@ -84,12 +97,16 @@ export default function getSignal ($root, segments = [], {
   return proxy
 }
 
-function getDefaultProxyHandlers ({ useExtremelyLateBindings } = {}) {
-  const baseHandlers = useExtremelyLateBindings ? extremelyLateBindings : regularBindings
+function getDefaultProxyHandlers ({
+  useExtremelyLateBindings
+}: ProxyHandlerOptions = {}): ProxyHandler<RootSignalRuntime> {
+  const baseHandlers = (
+    useExtremelyLateBindings ? extremelyLateBindings : regularBindings
+  ) as ProxyHandler<RootSignalRuntime>
   if (!isCompatEnv() || baseHandlers !== extremelyLateBindings) return baseHandlers
   return {
     ...baseHandlers,
-    get (signal, key, receiver) {
+    get (signal: RootSignalRuntime, key: string | symbol, receiver: unknown): unknown {
       if (key === 'connection' && signal[SEGMENTS].length === 0) {
         try {
           return getConnection()
@@ -98,34 +115,40 @@ function getDefaultProxyHandlers ({ useExtremelyLateBindings } = {}) {
         }
       }
       if (key === 'root') return Reflect.get(signal, key, receiver)
-      return baseHandlers.get(signal, key, receiver)
+      return baseHandlers.get
+        ? baseHandlers.get(signal, key, receiver)
+        : Reflect.get(signal, key, receiver)
     }
   }
 }
 
-export function getSignalClass (segments, rootId = GLOBAL_ROOT_ID) {
+export function getSignalClass (
+  segments: PathSegment[],
+  rootId = GLOBAL_ROOT_ID
+): SignalModelConstructor {
   let Model = findModel(segments)
   if (Model) return Model
-  if (!isCompatEnv()) return Signal
+  if (!isCompatEnv()) return Signal as unknown as SignalModelConstructor
   const dereferencedSegments = resolveRefSegmentsSafe(segments, rootId)
   if (dereferencedSegments) {
     Model = findModel(dereferencedSegments)
     if (Model) return Model
   }
-  return Signal
+  return Signal as unknown as SignalModelConstructor
 }
 
-export function rawSignal (proxy) {
-  return PROXY_TO_SIGNAL.get(proxy)
+export function rawSignal (proxy: unknown): RootSignalRuntime | undefined {
+  if (!proxy || (typeof proxy !== 'object' && typeof proxy !== 'function')) return undefined
+  return PROXY_TO_SIGNAL.get(proxy as RootSignalRuntime)
 }
 
 export { PROXIES_CACHE as __DEBUG_SIGNALS_CACHE__ }
-export function purgeSignalHashes (hashes) {
+export function purgeSignalHashes (hashes: Iterable<string>): void {
   for (const hash of hashes) PROXIES_CACHE.delete(hash)
 }
 
 const ERRORS = {
   rootIdRequired: 'Root signal must have a rootId specified',
-  privateCollectionRootIdRequired: segments => `Private collection signal must have a rootId specified. Segments: ${segments}`,
+  privateCollectionRootIdRequired: (segments: readonly PathSegment[]) => `Private collection signal must have a rootId specified. Segments: ${segments}`,
   rootSignalRequired: 'First argument of getSignal() for private collections must be a Root Signal'
 }

@@ -2,11 +2,11 @@ import { isObservable, observable, raw } from '@nx-js/observer-util'
 import { set as _set, del as _del, getRaw as _getRaw } from './dataTree.js'
 import { SEGMENTS } from './Signal.ts'
 import { getConnection } from './connection.ts'
-import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import SubscriptionState from './SubscriptionState.js'
-import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
+import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
-import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
+import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
 import { getRoot, ROOT_ID, GLOBAL_ROOT_ID, getRootTransportMode } from './Root.ts'
 import {
@@ -14,7 +14,7 @@ import {
   unregisterRootOwnedDirectDocSubscription,
   getRootOwnedDirectDocSubscriptions,
   clearRootOwnedDirectDocSubscriptions
-} from './rootContext.js'
+} from './rootContext.ts'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 const DOC_FINALIZATION_TOKENS = new WeakMap()

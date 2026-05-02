@@ -1,22 +1,25 @@
-// @ts-nocheck
 import { useRef, useDeferredValue } from 'react'
-import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
+import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import sub from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer, useId } from './helpers.ts'
-import executionContextTracker from './executionContextTracker.js'
-import * as promiseBatcher from './promiseBatcher.js'
-import renderAttemptDestroyer from './renderAttemptDestroyer.js'
-import { markCompatComponent } from './compatComponentRegistry.js'
+import executionContextTracker from './executionContextTracker.ts'
+import * as promiseBatcher from './promiseBatcher.ts'
+import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
+import { markCompatComponent } from './compatComponentRegistry.ts'
 import type {
   CollectionSignal,
   DocumentSignal,
   QueryParams,
   RegisteredAggregationInput,
+  SignalModelConstructor,
   SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
   WildcardSignalPath
 } from '../orm/Signal.ts'
+
+type RuntimeSub = (signal: unknown, params?: unknown) => unknown
+const runtimeSub = sub as RuntimeSub
 
 export interface UseSubOptions {
   /** Return `undefined` while loading instead of throwing a Suspense promise. */
@@ -29,13 +32,13 @@ export interface UseSubOptions {
   compatAttemptCleanup?: boolean
 }
 
-let TEST_THROTTLING = false
+let TEST_THROTTLING: false | number = false
 
 // experimental feature to leverage useDeferredValue() to handle re-subscriptions.
 // Currently it does lead to issues with extra rerenders and requires further investigation
-let USE_DEFERRED_VALUE = true
+let USE_DEFERRED_VALUE: boolean = true
 // by default we want to defer stuff if possible instead of throwing promises
-let DEFAULT_DEFER = true
+let DEFAULT_DEFER: boolean = true
 
 /**
  * Subscribe to a document signal in React async mode.
@@ -57,8 +60,8 @@ export function useAsyncSub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export function useAsyncSub<
   TDocument,
-  TCollectionModel extends new (...args: any[]) => any,
-  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
   TCollectionPath extends WildcardSignalPath
 > (
   signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
@@ -74,7 +77,7 @@ export function useAsyncSub<
  */
 export function useAsyncSub<TCollection extends string, TOutput = unknown> (
   signal: RegisteredAggregationInput<TCollection, TOutput>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
 ): SubResult<RegisteredAggregationInput<TCollection, TOutput>>
 
@@ -86,7 +89,7 @@ export function useAsyncSub<TCollection extends string, TOutput = unknown> (
  */
 export function useAsyncSub<TOutput, TCollection extends string> (
   signal: ClientAggregationFunction<TOutput, TCollection>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
 ): SubResult<ClientAggregationFunction<TOutput, TCollection>>
 
@@ -96,9 +99,12 @@ export function useAsyncSub<TOutput, TCollection extends string> (
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
+export function useAsyncSub<
+  TDocument,
+  TDocumentModel extends SignalModelConstructor<TDocument>
+> (
   signal: TypedAggregationInput<TDocument, TDocumentModel>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
 ): TypedAggregationSignal<TDocument, TDocumentModel>
 
@@ -110,12 +116,12 @@ export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[
  */
 export function useAsyncSub<TOutput = unknown, TCollection extends string = string> (
   signal: AggregationFunction<TOutput, TCollection>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
-): SubResult<AggregationFunction<TOutput, TCollection>, Record<string, any> | undefined>
+): SubResult<AggregationFunction<TOutput, TCollection>, AggregationParams | undefined>
 
-export function useAsyncSub (signal, params, options) {
-  return useSub(signal, params, { ...options, async: true })
+export function useAsyncSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
+  return runUseSub(signal, params, { ...options, async: true })
 }
 
 /**
@@ -138,8 +144,8 @@ export default function useSub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export default function useSub<
   TDocument,
-  TCollectionModel extends new (...args: any[]) => any,
-  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
   TCollectionPath extends WildcardSignalPath
 > (
   signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
@@ -155,7 +161,7 @@ export default function useSub<
  */
 export default function useSub<TCollection extends string, TOutput = unknown> (
   signal: RegisteredAggregationInput<TCollection, TOutput>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
 ): SubResult<RegisteredAggregationInput<TCollection, TOutput>>
 
@@ -167,7 +173,7 @@ export default function useSub<TCollection extends string, TOutput = unknown> (
  */
 export default function useSub<TOutput, TCollection extends string> (
   signal: ClientAggregationFunction<TOutput, TCollection>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
 ): SubResult<ClientAggregationFunction<TOutput, TCollection>>
 
@@ -177,9 +183,12 @@ export default function useSub<TOutput, TCollection extends string> (
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export default function useSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
+export default function useSub<
+  TDocument,
+  TDocumentModel extends SignalModelConstructor<TDocument>
+> (
   signal: TypedAggregationInput<TDocument, TDocumentModel>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
 ): TypedAggregationSignal<TDocument, TDocumentModel>
 
@@ -191,11 +200,15 @@ export default function useSub<TDocument, TDocumentModel extends new (...args: a
  */
 export default function useSub<TOutput = unknown, TCollection extends string = string> (
   signal: AggregationFunction<TOutput, TCollection>,
-  params?: Record<string, any>,
+  params?: AggregationParams,
   options?: UseSubOptions
-): SubResult<AggregationFunction<TOutput, TCollection>, Record<string, any> | undefined>
+): SubResult<AggregationFunction<TOutput, TCollection>, AggregationParams | undefined>
 
-export default function useSub (signal, params, options) {
+export default function useSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
+  return runUseSub(signal, params, options)
+}
+
+function runUseSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
   if (USE_DEFERRED_VALUE) {
     return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
   } else {
@@ -204,8 +217,12 @@ export default function useSub (signal, params, options) {
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
-export function useSubDeferred (signal, params, { async = false, defer, batch = false, compatAttemptCleanup = false } = {}) {
-  const $signalRef = useRef()
+export function useSubDeferred (
+  signal: unknown,
+  params?: unknown,
+  { async = false, defer, batch = false, compatAttemptCleanup = false }: UseSubOptions = {}
+): unknown {
+  const $signalRef = useRef<unknown>()
   const componentId = useId()
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()
@@ -214,12 +231,12 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
   defer ??= observerDefer ?? DEFAULT_DEFER
   if (defer) {
     signal = useDeferredValue(signal) // eslint-disable-line react-hooks/rules-of-hooks
-    params = useDeferredValue(params ? JSON.stringify(params) : undefined) // eslint-disable-line react-hooks/rules-of-hooks
-    params = params != null ? JSON.parse(params) : undefined
+    const serializedParams = useDeferredValue(params ? JSON.stringify(params) : undefined) // eslint-disable-line react-hooks/rules-of-hooks
+    params = serializedParams != null ? JSON.parse(serializedParams) : undefined
   }
-  const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
+  const promiseOrSignal = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
-  if (promiseOrSignal.then) {
+  if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
     const hasPreviousSignal = !!$signalRef.current
     if (batch) {
@@ -255,17 +272,20 @@ export function useSubDeferred (signal, params, { async = false, defer, batch = 
 
 // classic version which initially throws promise for Suspense
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (signal, params, { async = false, batch = false, compatAttemptCleanup = false } = {}) {
+export function useSubClassic (
+  signal: unknown,
+  params?: unknown,
+  { async = false, batch = false, compatAttemptCleanup = false }: UseSubOptions = {}
+): unknown {
   const id = executionContextTracker.newHookId()
   const componentId = useId()
-  const cache = useCache()
-  const activePromiseRef = useRef()
+  const cache = useCache(undefined)
   const scheduleUpdate = useScheduleUpdate()
   if (compatAttemptCleanup) markCompatComponent(componentId)
   if (batch) promiseBatcher.activate()
-  const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
+  const promiseOrSignal = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
-  if (promiseOrSignal.then) {
+  if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
     if (batch) {
       const hasPreviousSignal = cache.has(id)
@@ -304,40 +324,46 @@ export function useSubClassic (signal, params, { async = false, batch = false, c
   } else {
     const $signal = promiseOrSignal
     if (cache.get(id) !== $signal) {
-      activePromiseRef.current = undefined
       cache.set(id, $signal)
     }
     return $signal
   }
 }
 
-export function setTestThrottling (ms) {
+export function setTestThrottling (ms: number): void {
   if (typeof ms !== 'number') throw Error('setTestThrottling() accepts only a number in ms')
   if (ms === 0) throw Error('setTestThrottling(0) is not allowed, use resetTestThrottling() instead')
   if (ms < 0) throw Error('setTestThrottling() accepts only a positive number in ms')
   TEST_THROTTLING = ms
 }
-export function resetTestThrottling () {
+export function resetTestThrottling (): void {
   TEST_THROTTLING = false
 }
-export function setUseDeferredValue (value) {
+export function setUseDeferredValue (value: boolean): void {
   USE_DEFERRED_VALUE = value
 }
-export function setDefaultDefer (value) {
+export function setDefaultDefer (value: boolean): void {
   DEFAULT_DEFER = value
 }
 
 // throttle to simulate slow network
-function maybeThrottle (promise) {
-  if (!TEST_THROTTLING) return promise
+function maybeThrottle<TValue> (promise: Promise<TValue>): Promise<TValue> {
+  const delay = TEST_THROTTLING
+  if (delay === false) return promise
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       promise.then(resolve, reject)
-    }, TEST_THROTTLING)
+    }, delay)
   })
 }
 
-function registerCompatAttemptCleanup (signal, params) {
+function isThenable<TValue = unknown> (value: unknown): value is Promise<TValue> {
+  return !!value &&
+    (typeof value === 'object' || typeof value === 'function') &&
+    typeof (value as { then?: unknown }).then === 'function'
+}
+
+function registerCompatAttemptCleanup (_signal: unknown, _params: unknown): void {
   // Compat hooks don't build per-hook init objects like Racer.
   // We still need a marker so trapRender can defer observer-shell cleanup
   // only when a real attempt cleanup exists.

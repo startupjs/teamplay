@@ -15,7 +15,9 @@ import {
   type JsonSchemaSpec,
   type CollectionQuerySignal,
   type DefaultAggregationSession,
+  type JoinPath,
   type PathModelsFromManifest,
+  type QuerySignal,
   type TypedAggregationInput,
   type TypedSignal,
   type ZodSchemaSpec
@@ -28,9 +30,11 @@ type Equal<A, B> =
     : false
 
 type Expect<T extends true> = T
+type Extends<A, B> = A extends B ? true : false
 type AwaitedSub<T> = T extends Promise<infer Value> ? Value : T
 type PromiseValue<T> = T extends Promise<infer Value> ? Value : never
-type HasFindOpenGames<T> = T extends { findOpenGames: (...args: any[]) => any } ? true : false
+type HasFindOpenGames<T> = T extends { findOpenGames: (...args: unknown[]) => unknown } ? true : false
+type PathPatternJoin = Expect<Equal<JoinPath<readonly ['games', '*', 'players', number]>, 'games.*.players.*'>>
 
 // Public Signal<T> is intentionally a registry-based facade. When T maps to
 // exactly one generated collection document type it exposes that model; when
@@ -38,6 +42,7 @@ type HasFindOpenGames<T> = T extends { findOpenGames: (...args: any[]) => any } 
 // signal fields to avoid guessing the wrong model.
 type TypeAssertions = [
   GameSchemaInference,
+  PathPatternJoin,
   TitleValue,
   MaxPlayersValue,
   StatusValue,
@@ -87,6 +92,12 @@ type TypeAssertions = [
   QueryResultAcceptedAsSignalArray,
   QueryCollectionModelMethod,
   QueryCollectionAdd,
+  QueryIdsSignal,
+  QueryExtraSignal,
+  CollectionQueryIdsSignal,
+  CollectionQueryExtraSignal,
+  QueryArrayMutatorBlocked,
+  AggregationArrayMutatorBlocked,
   HookQueryCollectionModelMethod,
   CollectionSignalArrayMapDocumentModel,
   SignalAliasNestedPathModelMethod,
@@ -106,6 +117,9 @@ type TypeAssertions = [
   NestedAssignReturnsVoidPromise,
   NestedPopReturnsItem,
   NestedShiftReturnsItem,
+  NestedArrayPushParameter,
+  NestedArrayPopReturn,
+  CollectionArrayMutatorBlocked,
   NestedArrayMapLabels,
   NestedArrayReduceItem,
   QueryLoopTitle,
@@ -477,6 +491,9 @@ type DocAssignReturnsVoidPromise = Expect<Equal<typeof docAssignResult, Promise<
 type NestedAssignReturnsVoidPromise = Expect<Equal<typeof nestedAssignResult, Promise<void>>>
 type NestedPopReturnsItem = Expect<Equal<PromiseValue<typeof poppedTag>, string | undefined>>
 type NestedShiftReturnsItem = Expect<Equal<PromiseValue<typeof shiftedTag>, string | undefined>>
+type NestedArrayPushParameter = Expect<Equal<Parameters<typeof $game.info.tags.push>[0], string>>
+type NestedArrayPopReturn = Expect<Equal<PromiseValue<ReturnType<typeof $game.info.tags.pop>>, string | undefined>>
+type CollectionArrayMutatorBlocked = Expect<Equal<NonNullable<typeof $games.push>, never>>
 type NestedArrayMapLabels = Expect<Equal<typeof nestedTagLabels[number], string>>
 type NestedArrayReduceItem = Expect<Equal<ReturnType<typeof nestedReducedTag.get>, string>>
 type BatchKeepsCallbackReturn = Expect<Equal<typeof batchTitle, string>>
@@ -654,8 +671,13 @@ type AccessDeleteDoc = Expect<Equal<AccessDeleteContext['doc'], Game>>
 type ExportedAccessContextDoc = Expect<Equal<ExportedAccessCreateContext<Game>['newDoc'], Game>>
 type AccessDefaultSessionUserId = Expect<Equal<ExportedAccessCreateContext<Game>['session']['userId'], string | undefined>>
 declare const $resolvedQueryGames: QueryGames
+declare const $plainQuerySignal: QuerySignal
 const $firstQueryGame = $resolvedQueryGames.reduce(($firstGame, $secondGame) => $firstGame)
 const $resolvedOpenQueryGames = $resolvedQueryGames.findOpenGames()
+const $plainQueryIds = $plainQuerySignal.ids
+const $plainQueryExtra = $plainQuerySignal.extra
+const $resolvedQueryIds = $resolvedQueryGames.ids
+const $resolvedQueryExtra = $resolvedQueryGames.extra
 // @ts-expect-error query signals are array-readable but not array-mutable at the top level
 $resolvedQueryGames.push({
   info: {
@@ -686,6 +708,12 @@ const hookOpenQueryAddId = $hookOpenQueryGames.add({
 type QueryArrayReduceNoInitial = Expect<Equal<ReturnType<typeof $firstQueryGame.info.title.get>, string>>
 type QueryCollectionModelMethod = Expect<Equal<HasFindOpenGames<QueryGames>, true>>
 type QueryCollectionAdd = Expect<Equal<typeof resolvedOpenQueryAddId, Promise<string>>>
+type QueryIdsSignal = Expect<Equal<ReturnType<typeof $plainQueryIds.get>, Array<string | number>>>
+type QueryExtraSignal = Expect<Equal<ReturnType<typeof $plainQueryExtra.get>, unknown>>
+type CollectionQueryIdsSignal = Expect<Equal<ReturnType<typeof $resolvedQueryIds.get>, Array<string | number>>>
+type CollectionQueryExtraSignal = Expect<Extends<typeof $resolvedQueryExtra, { get: () => unknown }>>
+type QueryArrayMutatorBlocked = Expect<Equal<NonNullable<QueryGames['push']>, never>>
+type AggregationArrayMutatorBlocked = Expect<Equal<NonNullable<AggregationGames['push']>, never>>
 type HookQueryCollectionModelMethod = Expect<Equal<typeof hookOpenQueryAddId, Promise<string>>>
 
 async function queryLoopAssertions () {

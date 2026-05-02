@@ -1,8 +1,8 @@
 // trap render function (functional component) to block observer updates and activate cache
 // during synchronous rendering
-import executionContextTracker from './executionContextTracker.js'
-import * as promiseBatcher from './promiseBatcher.js'
-import renderAttemptDestroyer from './renderAttemptDestroyer.js'
+import executionContextTracker from './executionContextTracker.ts'
+import * as promiseBatcher from './promiseBatcher.ts'
+import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
 
 export default function trapRender ({ render, cache, destroy, componentId }) {
   return (...args) => {

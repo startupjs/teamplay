@@ -3,16 +3,16 @@ import jsonDiff from 'json0-ot-diff'
 import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.ts'
 import setDiffDeep from '../utils/setDiffDeep.js'
-import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.js'
+import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.ts'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isSilentContextActive } from './Compat/silentContext.js'
 import { isCompatEnv } from './compatEnv.js'
 import { isMissingShareDoc } from './missingDoc.js'
 import {
   getLogicalRootSnapshot as getLogicalRootSnapshotFromTree
-} from './rootScope.js'
-import { getRootContext } from './rootContext.js'
-export { isPrivateCollectionSegments } from './rootScope.js'
+} from './rootScope.ts'
+import { getRootContext } from './rootContext.ts'
+export { isPrivateCollectionSegments } from './rootScope.ts'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 

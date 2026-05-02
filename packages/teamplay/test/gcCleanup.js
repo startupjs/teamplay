@@ -7,7 +7,7 @@ import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import { getRoot, ROOT_ID } from '../orm/Root.ts'
-import { getScopedSignalHash } from '../orm/rootScope.js'
+import { getScopedSignalHash } from '../orm/rootScope.ts'
 import connect from '../connect/test.js'
 
 before(connect)

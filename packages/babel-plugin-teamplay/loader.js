@@ -3,17 +3,20 @@ const { dirname, join, relative, resolve: pathResolve } = require('path')
 const parser = require('@babel/parser')
 const JSON_SCHEMA_KEYWORDS = require('@teamplay/schema/json-schema-keywords')
 const pluralize = require('pluralize')
+const {
+  JS_EXT_REGEX,
+  getModelPatternFromRelativePath,
+  isAggregationPattern,
+  isCollectionPattern,
+  isLegacyAggregationName,
+  sanitizeAndMergeModelPatterns,
+  toImportPath
+} = require('./modelPatternRules')
 
-const JS_EXT_REGEX = /\.[mc]?[jt]sx?$/
-const MODEL_PATTERN_REGEX = /^[a-zA-Z0-9$_*.]+$/
 const MODEL_MAGIC_IMPORT_REGEX = /['"](?:teamplay|startupjs)['"]/
 const MODEL_ELIMINATION_FUNCTION_REGEX = /\b(?:aggregation|serverOnly|accessControl)\b/
 const warnedFallbackFolders = new Set()
 const warnedLegacyAggregationFiles = new Set()
-
-function toImportPath (filePath) {
-  return filePath.replace(/\\/g, '/')
-}
 
 function normalizeOptions (options = {}) {
   return {
@@ -204,63 +207,11 @@ function getFilesRecursive (folder) {
 function getModelPattern (filePath, options = {}) {
   options = normalizeOptions(options)
   const info = getModelsFolderInfo(options)
-  let pattern = toImportPath(relative(info.folder, filePath))
-  if (pattern.includes('*')) {
-    throw Error(`[models] Instead of '*' in model filename use '[id]'. Got: ${pattern}`)
-  }
-  pattern = pattern.replace(/\[[^\]]+\]/g, '*')
-  pattern = pattern.replace(/\.[^.]+$/, '')
-  pattern = pattern.replace(/[\\/]/g, '.')
-  if (pattern.split('.').some(section => section.startsWith('-'))) return null
-  if (!MODEL_PATTERN_REGEX.test(pattern)) {
-    throw Error(
-      `[models] Invalid model filename pattern: ${pattern}\n` +
-      `It has to comply with the following regex: ${MODEL_PATTERN_REGEX.toString()} with '[id]' instead of '*'`
-    )
-  }
-  if (pattern === 'index') pattern = ''
-  if (/\.index$/.test(pattern)) pattern = pattern.replace(/\.index$/, '')
+  const relativePath = toImportPath(relative(info.folder, filePath))
+  const pattern = getModelPatternFromRelativePath(relativePath)
+  if (pattern == null) return null
   warnIfLegacyAggregationFile(pattern, filePath, options)
   return pattern
-}
-
-function sanitizeAndMergeModelPatterns (modelPatterns) {
-  const res = {}
-  for (const [modelPattern, value] of Object.entries(modelPatterns)) {
-    const sections = modelPattern.split('.')
-    const lastSection = sections.pop()
-    let pattern = sections.join('.')
-    let type
-    let method = 'push'
-    if (isAggregationPattern(sections, lastSection)) type = 'aggregation'
-    else if (lastSection === 'schema') type = 'schema'
-    else if (lastSection === 'access') type = 'access'
-    else {
-      type = 'model'
-      pattern = modelPattern
-      method = 'unshift'
-    }
-    res[pattern] ??= []
-    res[pattern][method]({ type, name: lastSection, value })
-  }
-  return res
-}
-
-function isAggregationName (name) {
-  return /^_/.test(name) || isLegacyAggregationName(name)
-}
-
-function isAggregationPattern (parentSections, name) {
-  return (
-    isAggregationName(name) &&
-    parentSections.length === 1 &&
-    parentSections[0] &&
-    !parentSections[0].startsWith('_')
-  )
-}
-
-function isLegacyAggregationName (name) {
-  return /^\$\$/.test(name)
 }
 
 function warnIfLegacyAggregationFile (pattern, filePath, options) {
@@ -459,10 +410,6 @@ function writeGeneratedFile (filePath, content) {
   mkdirSync(dirname(filePath), { recursive: true })
   if (existsSync(filePath) && readFileSync(filePath, 'utf8') === content) return
   writeFileSync(filePath, content)
-}
-
-function isCollectionPattern (pattern) {
-  return pattern && !pattern.includes('*') && !pattern.includes('.')
 }
 
 function getRelativeModuleSpecifier (fromDir, filePath) {
@@ -709,6 +656,7 @@ module.exports = {
   getModelEliminationTransformFunctionCalls,
   getModelFiles,
   getModelPattern,
+  getModelPatternFromRelativePath,
   getModelsFolderInfo,
   getRelativeModelImports,
   getRelativeModelPath,

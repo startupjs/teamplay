@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert'
 import { getRootSignal } from '../index.ts'
 import { del as _del, set as _set } from '../orm/dataTree.js'
 import { getPrivateData, getPrivateDataRawRoot } from '../orm/privateData.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.js'
+import { __resetRootContextsForTests } from '../orm/rootContext.ts'
 
 describe('root-scoped private storage', () => {
   afterEach(() => {

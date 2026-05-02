@@ -12,7 +12,16 @@ export type {
 } from './types/jsonSchema.ts'
 export type { QueryParams } from './types/query.ts'
 export type {
+  SignalArrayMutatorMethods,
+  SignalArrayReaderMethods,
+  SignalCollectionMethods,
+  SignalMetadataMethods,
+  SignalStringMutatorMethods,
+  SignalValueMethods
+} from './types/baseMethods.ts'
+export type {
   AppendPath,
+  JoinPath,
   PathSegment,
   SignalPath,
   WildcardPathSegment,
@@ -34,8 +43,14 @@ export type {
   MaybePromise,
   MaybePromiseSubResult,
   PublicSignal,
+  LocalSignalFactory,
   RegisteredAggregationInput,
+  RuntimeSignalConstructor,
+  RuntimeSignalInstance,
   QuerySignal,
+  RootCollections,
+  RootSignal,
+  SignalBaseInstance,
   SignalChild,
   SignalChildren,
   SignalClass,
@@ -43,6 +58,7 @@ export type {
   SignalForKind,
   SignalKind,
   SignalInstance,
+  SignalModelConstructor,
   SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
