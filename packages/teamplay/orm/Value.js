@@ -1,7 +1,7 @@
 import { SEGMENTS } from './Signal.ts'
 import { getRoot, ROOT_ID } from './Root.ts'
 import { delPrivateData, setPrivateData } from './privateData.js'
-import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 
 export const LOCAL = '$local'
 

@@ -46,14 +46,14 @@ import {
   useSyncEffect
 } from '../index.ts'
 import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.ts'
-import { __resetSuspendMemoForTests } from '../react/useSuspendMemo.js'
+import { __resetSuspendMemoForTests } from '../react/useSuspendMemo.ts'
 import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.ts'
 import trapRender from '../react/trapRender.js'
-import renderAttemptDestroyer from '../react/renderAttemptDestroyer.js'
+import renderAttemptDestroyer from '../react/renderAttemptDestroyer.ts'
 import {
   __resetCompatComponentRegistryForTests,
   markCompatComponent
-} from '../react/compatComponentRegistry.js'
+} from '../react/compatComponentRegistry.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
 import connect from '../connect/test.js'

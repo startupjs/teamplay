@@ -4,7 +4,7 @@
 //       is confusing. It's better to have a separate function for the hook.
 import { useRef } from 'react'
 import sub from '../orm/sub.ts'
-import executionContextTracker from './executionContextTracker.js'
+import executionContextTracker from './executionContextTracker.ts'
 
 // universal versions of sub() which work as a plain function or as a react hook
 export default function universalSub (...args) {

@@ -10,9 +10,9 @@ import { isCompatEnv } from './compatEnv.js'
 import { isMissingShareDoc } from './missingDoc.js'
 import {
   getLogicalRootSnapshot as getLogicalRootSnapshotFromTree
-} from './rootScope.js'
-import { getRootContext } from './rootContext.js'
-export { isPrivateCollectionSegments } from './rootScope.js'
+} from './rootScope.ts'
+import { getRootContext } from './rootContext.ts'
+export { isPrivateCollectionSegments } from './rootScope.ts'
 
 const ALLOW_PARTIAL_DOC_CREATION = false
 

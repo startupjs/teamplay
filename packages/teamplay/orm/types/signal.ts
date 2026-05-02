@@ -19,10 +19,19 @@ import type {
   SignalCollectionMethods
 } from './baseMethods.ts'
 
-export type SignalClass<TValue = unknown> = new (segments: PathSegment[]) => Signal<TValue>
+export type RuntimeSignalInstance<TValue = unknown> = Signal<TValue>
+
+export type SignalBaseInstance<TValue = unknown> = RuntimeSignalInstance<TValue>
+
+export type SignalModelConstructor<
+  TValue = unknown,
+  TInstance extends RuntimeSignalInstance<TValue> = RuntimeSignalInstance<TValue>
+> = new (segments: PathSegment[]) => TInstance
+
+export type SignalClass<TValue = unknown> = SignalModelConstructor<TValue>
 
 export type SignalInstance<TModel> =
-  TModel extends new (...args: any[]) => infer Instance ? Instance : Signal
+  TModel extends SignalModelConstructor<any, infer Instance> ? Instance : RuntimeSignalInstance
 
 type IsExactlyBaseSignalClass<TModel> =
   [TModel] extends [typeof Signal]
@@ -152,13 +161,16 @@ SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
 } &
 BlockedArrayMutators
 
+type QueryMetadataSignals = {
+  readonly ids: Signal<Array<string | number>>
+  readonly extra: Signal<unknown>
+}
+
 type QuerySignalForKind<
   TDocument,
   TDocumentModel extends SignalClass<any>,
   TDocumentPath extends WildcardSignalPath
-> = ArraySignalForKind<TDocument, TDocumentModel, TDocumentPath> & {
-  readonly ids: Signal<Array<string | number>>
-}
+> = ArraySignalForKind<TDocument, TDocumentModel, TDocumentPath> & QueryMetadataSignals
 
 export type SignalForKind<
   TKind extends SignalKind,
@@ -178,9 +190,7 @@ export type SignalForKind<
           : TKind extends 'query' | 'aggregation'
             ? QuerySignalForKind<TValue, TDocumentModel, TPath>
             : TKind extends 'collectionQuery'
-              ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath> & {
-                readonly ids: Signal<Array<string | number>>
-              }
+              ? CollectionSignalForKind<TValue, TCollectionModel, TDocumentModel, TPath> & QueryMetadataSignals
               : never
 
 export type TypedSignal<
@@ -241,9 +251,7 @@ export type CollectionQuerySignal<
   TCollectionModel extends SignalClass<any>,
   TDocumentModel extends SignalClass<any>,
   TCollectionPath extends WildcardSignalPath
-> = CollectionSignalForKind<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> & {
-  readonly ids: Signal<Array<string | number>>
-}
+> = CollectionSignalForKind<TDocument, TCollectionModel, TDocumentModel, TCollectionPath> & QueryMetadataSignals
 
 type MatchingDocumentCollectionKeys<TValue> =
   IsAny<TValue> extends true
@@ -444,3 +452,5 @@ export interface SignalConstructor {
   readonly [GETTERS]: typeof Signal[typeof GETTERS]
   addAssociation: typeof Signal.addAssociation
 }
+
+export type RuntimeSignalConstructor = SignalConstructor

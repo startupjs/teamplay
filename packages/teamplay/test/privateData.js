@@ -4,7 +4,7 @@ import {
   deleteRootContext,
   getRootContext,
   __resetRootContextsForTests
-} from '../orm/rootContext.js'
+} from '../orm/rootContext.ts'
 import {
   arrayPushPrivateData,
   getPrivateData,

@@ -14,15 +14,15 @@ import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { getPrivateData, getPrivateDataRawRoot } from '../orm/privateData.js'
 import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
-import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.js'
+import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.ts'
 import {
   __getRootContextForTests,
   __resetRootContextsForTests,
   getRootOwnedSignalHashes,
   getRootOwnedRuntimeHashes
-} from '../orm/rootContext.js'
-import { getScopedSignalHash } from '../orm/rootScope.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+} from '../orm/rootContext.ts'
+import { getScopedSignalHash } from '../orm/rootScope.ts'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 
 before(connect)
 

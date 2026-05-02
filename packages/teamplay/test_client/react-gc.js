@@ -5,7 +5,7 @@ import { $, useSub, observer, sub, aggregation } from '../index.ts'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import connect from '../connect/test.js'
 

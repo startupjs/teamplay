@@ -24,144 +24,131 @@ The main architectural issue is that a lot of this behavior is expressed in high
 
 Some duplication is unavoidable because TypeScript cannot infer global root paths from runtime calls like `addModel('users.*', User)`. Runtime calls can happen conditionally or in any module, while TypeScript needs a static module shape. The file-based loader and module augmentation are therefore the right class of solution.
 
-The best path forward is to make runtime modules typed and export reusable type facts, then make the generated augmentation reference those facts instead of rebuilding them. In practice this means:
+The best path forward is still to make runtime modules typed and export reusable type facts, then make the generated augmentation reference those facts instead of rebuilding them. After the second refactor, the emphasis changes:
 
-1. Remove `@ts-nocheck` from type-bearing runtime files in small slices.
-2. Collapse duplicated overload logic for `sub()` and `useSub()` into shared result helper types.
-3. Introduce a typed model manifest/helper so runtime file-based models and generated types use the same structural contract.
-4. Move path, alias, model-pattern, and schema-normalization rules into shared modules used by runtime, Babel generation, and type helpers.
-5. Keep `teamplay-env.d.ts` as the static bridge, but generate less bespoke type code.
+1. Continue removing unchecked implementation islands, especially around `SignalBase.ts` and lower-level runtime plumbing.
+2. Replace temporary `.d.ts` shims and broad `any` declarations with narrow contracts that match the JavaScript modules they describe.
+3. Make runtime descriptors, path rules, model-pattern rules, and schema-introspection rules more load-bearing instead of merely descriptive.
+4. Preserve the object-tree authoring model while adding tests around the ambiguous TypeScript edges that the proxy API necessarily creates.
+5. Keep `teamplay-env.d.ts` as the static bridge, but keep shrinking the amount of policy generated into that file.
 
-## Current State After The First Refactor
+## Current State After Round 2
 
-We are moving in the right direction. The first architecture pass made several important improvements:
+The second architecture pass finished the highest-risk public surface work from the previous task list:
 
-- Type facts for file-based models now live in TeamPlay helper types instead of being fully hardcoded in generated declarations.
-- `sub()` and `useSub()` now share common result helper types for the cases where TypeScript inference stays good.
-- Signal kinds now have a central `SignalKind` / `SignalForKind` core.
-- Array readers and array mutators are separated in the type model, and top-level collection/query/aggregation signals no longer expose runtime-invalid array mutators.
-- Runtime schema shape detection has a shared home in `@teamplay/schema`, and the Babel plugin reuses the shared JSON Schema keyword list.
-- `addModel.ts`, `initModels.ts`, and `utils/aggregation.ts` are now checked TypeScript rather than unchecked public contracts.
+- `packages/teamplay/index.ts`, `packages/teamplay/orm/sub.ts`, and `packages/teamplay/react/useSub.ts` are now checked rather than protected by `@ts-nocheck`.
+- Runtime signal descriptors now name root, collection, document, query, aggregation, local array, and nested-value cases.
+- Base signal method contracts live in checked type modules and are reused by `types/signal.ts`.
+- Collection/query/aggregation signals expose array readers without exposing runtime-invalid top-level array mutators.
+- Aggregation typing now defaults to document-row-like output for registered collection aggregations, while allowing explicit arbitrary output with output-first generics.
+- `defineSchema()` is available as the conventional schema helper, and generated env declarations can augment schema modules with default interfaces so `Signal<Game>` remains the target UX.
+- The test suite now covers descriptor behavior, aggregation typing, query/special-property collisions, generated schema augmentations, and more schema runtime/type fixtures.
 
-This is the correct kind of progress: we did not try to eliminate the static bridge, because TeamPlay's proxy and file-system conventions make that impossible. Instead, we made the bridge more mechanical and pushed interpretation into checked TeamPlay modules.
+The important strategic choice still looks right: TeamPlay should not abandon module augmentation or the proxy object-tree API. TypeScript cannot infer a global root object from arbitrary runtime calls, and users should still be able to treat `$` as one large reactive object.
 
-The remaining problem is that several central public files still carry `@ts-nocheck` and several type rules still model desired UX rather than mechanically reflecting runtime behavior. That is normal at this stage, but it should guide the next iteration.
+The remaining work is lower-level and more about maintainability than about new public features. The public facade is much better guarded, but the runtime/type boundary still has temporary shims, broad declarations, and a few places where runtime facts are described twice.
 
-## Next Direction
+Current pressure points:
 
-The next iteration should prioritize three things.
+- `packages/teamplay/orm/SignalBase.ts` is now the only remaining non-Compat `@ts-nocheck` island. It still needs careful checked slices, not a whole-file rewrite.
+- Some implementation bodies still use `any` where runtime inputs are intentionally dynamic, especially `sub.ts`, `useSub.ts`, and aggregation helper internals. These should be tightened only where readability and overload quality stay acceptable.
+- `SignalRuntimeDescriptor` makes runtime signal kind decisions visible, but type helpers do not derive much from it yet.
+- `Signal<T>` remains both the model base-class constructor name and the public value facade. That is good UX, but it should be made more explicit internally before pushing deeper into `SignalBase.ts`.
+- Query metadata is now first-class for `ids` and `extra`, while broad document-id indexing remains an unavoidable ambiguous edge.
+- Schema runtime/type parity now uses a shared matrix for TeamPlay tests, but Babel/JSDoc extraction and generated env tests still need to consume the same cases.
 
-### 1. Make The Public Runtime Surface Checked
+## Current State After Round 3 Consolidation
 
-The highest-leverage next step is removing `@ts-nocheck` from files that already contain public type declarations:
+This iteration reduced the package-surface drift without changing the public object-tree UX:
 
-- `packages/teamplay/index.ts`
-- `packages/teamplay/orm/sub.ts`
-- `packages/teamplay/react/useSub.ts`
-- eventually `packages/teamplay/orm/SignalBase.ts`
+- Converted small non-Compat runtime modules from `.js` to checked `.ts`, including React helpers, observer support utilities, ORM associations, subscription GC delay, server detection, schema internals, root scope/context cleanup, cache/finalization shims, and `getSignal.ts`.
+- Removed broad declaration shims where conversion was practical, and narrowed the remaining JavaScript boundary declarations for `Doc`, `Query`, `Aggregation`, observer wrapping, local `$`, Compat entry points, and `pluralize`.
+- Added `RuntimeSignalInstance`, `SignalBaseInstance`, `SignalModelConstructor`, and related exports so internal constraints no longer have to lean on the public `Signal<T>` facade.
+- Added a strict external-consumer fixture with `allowJs: false` and modern module resolution to catch package export regressions.
+- Modeled query metadata signals for both `ids` and `extra`, with type and runtime coverage for special-property collisions.
+- Moved root alias and numeric property-key normalization into checked helpers, and moved array/value mutation target guards out of `SignalBase.ts`.
+- Added a shared schema fixture matrix used by runtime schema tests and TeamPlay type fixtures.
 
-This matters more than adding new type features. If these files are checked, future runtime edits are much more likely to fail during development when they drift from the public type model.
+The most important remaining boundary is `SignalBase.ts`. That file owns proxy behavior, extremely-late method binding, mutation dispatch, metadata helpers, query/aggregation special properties, and Compat fallbacks. It should be converted in slices with tests around each touched method group.
 
-The practical way to do this is to split type-only facade logic out of runtime entry files. For example, the public `Signal<T>` facade and root collection derivation can move into checked type modules imported by `index.ts`. Then `index.ts` can mostly be runtime exports plus type re-exports.
+The main TypeScript limitation that remains intentional is broad collection indexing. `$.users[id]` depends on a broad string index, so TypeScript cannot perfectly distinguish every possible document id from special properties like `ids`, `extra`, or model method names. The current direction is to keep named special properties precise, cover collisions at runtime, and preserve the object-tree access model instead of adding a less natural document accessor solely for TypeScript.
 
-### 2. Add Runtime Signal Descriptors
+## Next Direction After Round 2
 
-`SignalKind` exists in the type system, but runtime still expresses kind decisions implicitly:
+The next iteration should be a consolidation pass. The goal is not to invent a new typing model; it is to make the current model harder to break and easier to extend.
 
-- collection signals are paths with one public segment,
-- document signals are public paths with collection + id,
-- query signals are collection-path signals branded with query symbols,
-- aggregation signals are `$aggregations.<hash>` paths branded with aggregation symbols,
-- nested array fields are regular document/value signals whose current value is an array.
+### 1. Tighten Temporary JavaScript Declarations
 
-Adding an internal runtime descriptor would make those decisions explicit:
+The new declarations for JavaScript modules were the right bridge for checking public TypeScript entry files. Now they should be narrowed.
 
-```ts
-type SignalRuntimeKind =
-  | 'root'
-  | 'collection'
-  | 'document'
-  | 'nestedValue'
-  | 'localArray'
-  | 'query'
-  | 'aggregation'
+Highest-value targets:
 
-interface SignalRuntimeDescriptor {
-  kind: SignalRuntimeKind
-  segments: Array<string | number>
-  collectionName?: string
-  documentId?: string | number
-  itemPattern?: Array<string | number>
-}
-```
+- `packages/teamplay/orm/Doc.d.ts`
+- `packages/teamplay/orm/Query.d.ts`
+- `packages/teamplay/orm/Aggregation.d.ts`
+- `packages/teamplay/react/*.d.ts`
+- `packages/teamplay/orm/Compat/*.d.ts`
 
-The type system cannot directly infer from runtime descriptors, but aligning names and tests around the same concepts will make drift much easier to spot.
+Each pass should replace broad `any` exports with explicit contracts only as far as the runtime module actually promises them. The right test is an external consumer fixture that imports `teamplay` without `allowJs` and still gets useful public types.
 
-### 3. Improve Ambiguous Internals Without Weakening The Object-Tree API
+### 2. Untangle Runtime Class Contracts From The Public `Signal<T>` Facade
 
-Some type complexity exists because the public runtime API is very dynamic. The biggest examples are:
-
-- `$.users[id]` requires a broad string index type, which collides with special properties like `ids`, `extra`, and method names.
-- aggregation rows are usually document-row-like and should feel similar to query output, but some aggregations return arbitrary metadata objects.
-- `Signal<T>` is both the model base class constructor type and the public prop facade type.
-
-The object-tree API is central to TeamPlay's UX. Users should be able to think of `$` as one large reactive object, where collections, documents, and nested fields are accessed with normal property/index syntax. We should not add a separate `$.users.doc(id)` style API just to make types easier.
-
-Instead, the next public API candidates should solve real authoring problems without changing that mental model:
-
-- a first-class typed aggregation output path for arbitrary grouped/metadata results, while keeping document-row-like output as the default,
-- a `defineSchema()` helper as the conventional schema authoring entry point, if it can reduce or hide explicit `FromJsonSchema` usage.
-
-For schema typing, there is an important TypeScript limitation: a default-imported schema value cannot normally be used directly as a type name. A plain `export default defineSchema(...)` only exports a value, so `import Game from './schema'` followed by `Signal<Game>` would normally fail.
-
-There is, however, a promising convention: TypeScript allows a default value export and a default interface export in the same module because the interface is type-only.
+The public `Signal<T>` alias is intentionally smarter than the runtime constructor instance type. That is the right end-user experience:
 
 ```ts
-const schema = defineSchema({
-  title: { type: 'string', required: true }
-})
-
-export default schema
-export default interface Game extends FromJsonSchema<typeof schema> {}
+class User extends Signal<UserDoc> {}
+function UserCard ({ $user }: { $user: Signal<UserDoc> }) {}
 ```
 
-Then consumers can write:
+Internally, though, this overloading makes it harder to type the runtime base class. The next pass should introduce clearer internal names such as `RuntimeSignalInstance`, `SignalBaseInstance`, or `SignalModelConstructor`, then use the public facade only at API boundaries.
 
-```ts
-import Game from '@/models/games/schema'
+This should happen before a large attempt to remove `@ts-nocheck` from all of `SignalBase.ts`.
 
-class GameModel extends Signal<Game> {}
-function printGames ($games: Signal<Game[]>) {}
-```
+### 3. Make Runtime Descriptors And Path Rules More Load-Bearing
 
-This preserves the desired `Signal<Game>` UX without making users write `typeof` at call sites. TeamPlay generates this default interface in `teamplay-env.d.ts`; schema source files are not modified.
+Descriptors are currently useful for tests and alignment, but the runtime still has multiple places that independently answer questions like "is this a collection path?", "what model pattern does this path imply?", and "what is the document item path for this query row?".
 
-The generator can do this without modifying schema source files by emitting a module augmentation in `teamplay-env.d.ts`:
+The next useful move is a shared path/model-pattern module for:
 
-```ts
-export {}
+- `[id] -> *`
+- `index` mapping to the containing path
+- ignored `-` files
+- invalid wildcard filenames
+- root aliases such as `$session -> _session`
+- path tuple to pattern string
+- descriptor-to-type-kind naming alignment
 
-type GamesSchema = typeof import('./models/games/schema').default
+Type-level helpers will still need conditional types, but the runtime names and test fixtures can be shared.
 
-declare module './models/games/schema' {
-  export default interface Game extends FromJsonSchema<GamesSchema> {}
-}
-```
+### 4. Preserve Object-Tree UX While Narrowing Query Metadata
 
-This makes a normal import work as both a runtime value and a type:
+The object-tree API is still the right user model. We should not add `$.users.doc(id)` just to make TypeScript easier.
 
-```ts
-import Game from '@/models/games/schema'
+The next query typing work should focus on the edges users actually hit:
 
-Game.title // runtime schema value
-const $game: Signal<Game> = $(...)
-```
+- model `$query.extra` explicitly,
+- keep `$query.ids` precise,
+- keep query signals assignable to `Signal<T[]>` where that is already a documented UX goal,
+- add collision tests for document ids named `ids`, `extra`, and model method names.
 
-The generator should prefer relative module specifiers by default, computed from `teamplay-env.d.ts` to the schema source file. This avoids depending on app-specific aliases such as `@`.
+If TypeScript cannot express every collision perfectly, the preferred outcome is clear special-property typing plus runtime regression tests, not a less natural public API.
 
-The important constraint is that TypeScript must be able to resolve the augmentation specifier to the schema source file. The import string does not have to be textually identical. In a normal project, augmenting `./models/games/schema` from the root env file also applies when user code imports `@/models/games/schema`, `./models/games/schema`, `../../models/games/schema`, or `../../models/games/schema.ts`, as long as all specifiers resolve to the same file in the same TypeScript program.
+### 5. Turn Schema Parity Into A Fixture Matrix
 
-Configuration is still useful for generated env files outside the project root, monorepos, symlinked packages, or any setup where the computed relative specifier would not resolve to the same module identity.
+Schema support now spans runtime normalization, `FromJsonSchema`, Babel/JSDoc extraction, and generated module augmentation. The next improvement is a single matrix of supported and intentionally degraded schema cases.
+
+The matrix should include:
+
+- full object schema,
+- TeamPlay shorthand schema,
+- keyword-named fields,
+- nested objects,
+- arrays and tuples,
+- nullable values,
+- `enum` and `const`,
+- unsupported dynamic schema expressions.
+
+Each fixture should state the runtime shape, inferred TypeScript shape, generated field metadata, and expected fallback when static analysis cannot safely infer the schema.
 
 ## Current Runtime Architecture
 
@@ -451,19 +438,19 @@ It also parses simple schema files to generate JSDoc mixin types for fields. Thi
 
 | Area | Runtime source | Type source | Drift risk | Notes |
 | --- | --- | --- | --- | --- |
-| Base signal methods | `SignalBase.ts` | Same file plus wrappers in `types/signal.ts` | Medium | Method signatures are close to runtime, but file has `@ts-nocheck` and wrappers override array methods. |
+| Base signal methods | `SignalBase.ts` | Checked contracts plus wrappers in `types/signal.ts` | Medium | Method contracts are extracted, but the runtime base implementation is still mostly unchecked. |
 | Proxy child access | `extremelyLateBindings.get/apply` | `SignalChildren`, `SignalFieldsForPath` | High | Proxy behavior cannot be inferred automatically. Keep a mapped type, but centralize alias rules. |
 | Root `$` collections | Runtime `addModel/initModels` | `TeamplayCollections` augmentation | Unavoidable | TypeScript needs static global declarations. |
 | Model pattern matching | `findModel()` | `JoinPath` plus `TeamplayModels` keys | Medium | Both use `*`, but matching implementation and type joining are separate. |
-| Collection signal shape | `SignalBase.add`, proxy, model class | `CollectionSignal` | Medium | Mostly stable, but query semantics recently required type changes. |
+| Collection signal shape | `SignalBase.add`, proxy, model class | `CollectionSignal` | Medium | More precise after method-group extraction; still manual. |
 | Query top-level model methods | `getQuerySignal()` path `[collection]` | `CollectionQuerySignal` | Medium | Now aligned, but manual. |
 | Query item methods | `SignalBase[ARRAY_METHOD]` maps ids to `[collection, id]` | `SignalArrayLike<DocumentSignal<...>>` | Medium | Manual but clear. |
-| Collection/query mutators | `ensureArrayTarget()` rejects root, collection, and query array mutators | inherited base `Signal<T[]>` methods | High | Collection-shaped types can currently expose mutators that runtime rejects. |
-| Query special fields | query proxy handles `ids` and `extra` specially | `ids` is explicit; broad string index can still imply document signals | High | `extra` is not modeled well, and `ids` intersects with string document indexing. |
-| Aggregation top-level behavior | `getAggregationSignal()` path `['$aggregations', hash]` | `AggregationSignal` | High | Type is array-like; runtime top-level is not collection model. |
-| Aggregation row method fallback | `extremelyLateBindings.apply()` | `CollectionAggregationSignal` item model | High | Type assumes rows are document-like; runtime requires `_id` or `id`. |
-| `sub()` behavior | Runtime branch checks | overload list in `sub.ts` | Medium | Same function contains both, but unchecked due `@ts-nocheck`. |
-| `useSub()` behavior | wraps `sub()` | duplicated overload list | High | Overloads duplicate `sub()` and can drift. |
+| Collection/query mutators | `ensureArrayTarget()` rejects root, collection, and query array mutators | split array reader/mutator contracts | Low/Medium | Top-level collection/query/aggregation mutators are blocked at the type level; keep regression tests around runtime guards. |
+| Query special fields | query proxy handles `ids` and `extra` specially | `ids` is explicit; broad string index can still imply document signals | High | `extra` is still not modeled well, and broad string document access makes special names inherently delicate. |
+| Aggregation top-level behavior | `getAggregationSignal()` path `['$aggregations', hash]` plus descriptor | `AggregationSignal` and explicit output generics | Medium | Output-first generics cover arbitrary metadata, but runtime/type alignment remains manual. |
+| Aggregation row method fallback | `extremelyLateBindings.apply()` | collection aggregation item model | Medium | Default registered output is document-row-like; arbitrary output must be explicit. |
+| `sub()` behavior | Runtime branch checks | checked overload list plus shared result helpers | Medium | Checked now, but direct overloads remain for editor display quality. |
+| `useSub()` behavior | wraps `sub()` | checked overload list plus shared result helpers | Medium | Checked now, but overload drift is still possible when new subscription kinds are added. |
 | Local `$()` signals | `universal$`, local storage | `LocalSignalFactory` | Medium | Explicit generic and inferred initial values are independent of runtime state. |
 | JSON Schema normalization | `transformSchema.js` | `FromJsonSchema` | High | Separate implementations. Simplified/full detection must stay aligned. |
 | Schema field JSDoc | none at runtime | Babel AST parser | Medium | Best effort only; should reuse schema introspection rules. |
@@ -471,23 +458,23 @@ It also parses simple schema files to generate JSDoc mixin types for fields. Thi
 | Aggregation headers | `aggregation()` and Babel eliminator | `AggregationFunction`, `RegisteredAggregationInput` | Medium | Client/server transform shapes must stay aligned. |
 | Manual model registration | `addModel(pattern, Model)` | checks `TeamplayModels` path keys only | Medium | Nested model paths are checked, but collection pattern registration is not strongly tied to `TeamplayCollections`. |
 | Association helpers | `@teamplay/schema` runtime returns JSON Schema objects | `.d.ts` declarations | Low/Medium | Small and currently direct, but declarations are separate from JS implementation. |
+| JavaScript module declarations | JS modules under `orm`, `react`, and `schema` | adjacent `.d.ts` shims | Medium/High | Necessary for external TypeScript consumers, but broad `any` exports should be narrowed over time. |
 
 ## Current Pain Points
 
 ### 1. `@ts-nocheck` Hides Runtime/Type Drift
 
-Many files with exported type-bearing runtime APIs still have `@ts-nocheck`:
+The highest-risk public entry files are now checked, but several central runtime modules still have `@ts-nocheck` or rely on unchecked JavaScript boundaries:
 
-- `packages/teamplay/index.ts`
 - `packages/teamplay/orm/SignalBase.ts`
-- `packages/teamplay/orm/sub.ts`
-- `packages/teamplay/react/useSub.ts`
-- `packages/teamplay/orm/addModel.ts`
-- `packages/teamplay/orm/initModels.ts`
-- `packages/utils/aggregation.ts`
-- `packages/utils/accessControl.ts`
+- `packages/teamplay/orm/getSignal.ts`
+- `packages/teamplay/orm/Root.ts`
+- `packages/teamplay/orm/connection.ts`
+- `packages/teamplay/orm/index.ts`
+- `packages/teamplay/react/helpers.ts`
+- `packages/schema/index.ts`
 
-This lets us write TypeScript syntax in implementation files, but TypeScript is not checking whether overload bodies, generic return types, or runtime values actually agree.
+The next pass should continue in small slices. A full `SignalBase.ts` conversion is still risky until the runtime constructor contracts are clearer.
 
 ### 2. `Signal<T>` Is A Facade, Not The Runtime Class
 
@@ -507,19 +494,17 @@ Runtime `Signal` is a constructor. Type `Signal<T>` is a higher-level facade tha
 
 This is good UX, but it means the public type named `Signal` is no longer a direct instance type for the runtime base class. That is manageable, but it should be intentional and documented internally.
 
-### 3. Query And Aggregation Types Are Manually Aligned
+### 3. Runtime Descriptors Are Not Yet Load-Bearing Enough
 
-The runtime decision that query signals use `[collectionName]` is encoded manually in `CollectionQuerySignal`.
+`SignalRuntimeDescriptor` makes root, collection, document, query, aggregation, local-array, and nested-value cases explicit. That is useful for tests, but the descriptor does not yet drive much implementation or type derivation.
 
-If runtime query representation changes, TypeScript will not fail automatically. Type tests should catch common examples, but the architecture has no single source of truth.
+The next goal is to make descriptors and shared path/model-pattern utilities answer more runtime questions, so future changes are not encoded once in runtime branches and again in type helpers.
 
-Aggregation is even more fragile because the current type surface intentionally models desired UX more than strict runtime guarantees.
+### 4. Subscription Overloads Are Checked But Still Manual
 
-### 4. `sub()` And `useSub()` Have Duplicated Overloads
+`sub()`, `useSub()`, and `useAsyncSub()` now share result helper types and their implementation files are checked. Direct overloads remain because they improve VS Code display quality and inference in some cases.
 
-`useSub()` returns the same signal shape as `sub()` for the same inputs, but its overloads are manually copied. `useAsyncSub()` copies them again.
-
-Any new subscription kind currently requires edits in multiple places.
+Any new subscription kind still requires care in multiple overload lists. The practical answer is not to remove all overloads, but to keep the branch-result helpers authoritative and add type tests whenever a subscription shape changes.
 
 ### 5. Schema Runtime And Schema Types Are Separate
 
@@ -529,7 +514,7 @@ Type schema inference lives in `packages/teamplay/orm/types/jsonSchema.ts`.
 
 Generated field JSDoc parsing lives in `packages/babel-plugin-teamplay/loader.js`.
 
-All three understand similar concepts: simplified schemas, full object schemas, properties, required fields, and UI metadata. They are not sharing a single schema-introspection module.
+These paths now share some runtime schema helpers, but they still cannot literally share one implementation because `FromJsonSchema` is type-level and the Babel parser is AST-based. They need a shared support matrix so improvements and intentional limitations stay visible.
 
 ### 6. The Model Loader Generates Concrete Type Lines
 
@@ -542,20 +527,11 @@ users: JsonSchemaSpec<typeof schema, typeof Users, typeof User>
 
 This is readable, but it means the generator needs to understand collection patterns, document patterns, schemas, nested models, and field JSDoc. Some of that knowledge also exists in runtime discovery and runtime registration.
 
-### 7. Collection-Shaped Types Still Expose Some Runtime-Invalid Methods
+### 7. Method Groups Are Better, But The Base Runtime Is Still Unchecked
 
-`CollectionSignal` is built from `Signal<TDocument[]>`, so it inherits base array mutators such as `push()`, `pop()`, `insert()`, `remove()`, and `move()`.
+Array readers and mutators are now split in the type model, and collection/query/aggregation top-level signals no longer expose runtime-invalid mutators. That matches the UX we want.
 
-Runtime rejects those methods for collection and query signals:
-
-```ts
-function ensureArrayTarget ($signal) {
-  if ($signal[SEGMENTS].length < 2) throw Error('Can\'t mutate array on a collection or root signal')
-  if ($signal[IS_QUERY]) throw Error('Array mutators can\'t be used on a query signal')
-}
-```
-
-The intended collection mutation API is `add()` for creating documents and document-level methods for editing documents. The types should eventually omit array mutators from collection and query top-level signals while keeping array iteration methods.
+The remaining problem is implementation confidence. `SignalBase.ts` still owns the actual method dispatch and proxy behavior, so future work should move more method guards and descriptor/path helpers into checked modules before attempting a broad conversion.
 
 ### 8. Broad String Indexing Collides With Special Signal Properties
 
@@ -578,161 +554,68 @@ The type system explicitly adds `ids`, but `extra` is not modeled as a query-ext
 
 `addModel()` validates `TeamplayModels` entries for nested patterns, but collection patterns such as `users` are not strongly checked against `TeamplayCollections`.
 
-This is acceptable for the file-based path because generated root types are the primary source of truth. For manual registration, `defineModels()` would give us a better place to type-check collection model, document model, schema, access, and aggregation parts together.
+This is acceptable for the file-based path because generated root types are the primary source of truth. `defineModels()` gives manual users a better local contract, but it still cannot create global `$` root typings without module augmentation.
 
-## What Can Be Moved Into Runtime Code
+## What Should Move Next
 
-Not every type rule can move into runtime code, but several can.
+Not every type rule can move into runtime code, but the next good candidates are now narrower than they were in the first pass.
 
 ### Good Candidates
 
-#### Base Method Signatures
+#### Runtime Class And Constructor Contracts
 
-Base methods should live only on `SignalBase.ts`, and TypeScript should check the file.
+The public `Signal<T>` facade should remain optimized for users. Internal runtime modules need more literal names for what they actually consume and construct:
 
-Current status:
+- runtime signal instance,
+- runtime signal constructor,
+- model constructor,
+- base method-bearing instance,
+- proxy child/facade shape.
 
-- Good: method signatures are close to the implementation.
-- Problem: `@ts-nocheck` disables validation.
-- Plan: remove `@ts-nocheck` from `SignalBase.ts` in stages.
+These contracts should live near the runtime modules that use them. That makes later `SignalBase.ts` checking less likely to fight the public facade.
 
-Expected result:
+#### Descriptor And Path Helpers
 
-- JSDoc, argument types, and return types live with the actual method implementation.
-- Wrapper types only adapt proxy behavior, not base method behavior.
+`SignalRuntimeDescriptor` exists, and path/model-pattern behavior is now the best remaining policy to centralize:
 
-#### Shared Array Method Types
+- `[id]` maps to `*`,
+- `index` maps to the containing path,
+- segments starting with `-` are ignored,
+- `*` in filenames throws,
+- model pattern syntax validation,
+- path tuple to model pattern string,
+- root `$` aliases like `$session -> _session`.
 
-`SignalBase.ts` and `SignalArrayLike` both define `map`, `reduce`, and `find` behavior.
+Runtime, Babel, Node loader, generated types, and tests should use the same helper names and fixture cases where possible. Type-level path joining still needs conditional types, but it should mirror checked runtime utilities.
 
-We can extract a shared interface:
+#### JavaScript Boundary Declarations
 
-```ts
-export interface SignalArrayMethods<TItem> {
-  readonly [Symbol.iterator]: () => IterableIterator<TItem>
-  map<TResult>(callback: (value: TItem, index: number, array: TItem[]) => TResult, thisArg?: any): TResult[]
-  reduce: ...
-  find(...)
-}
-```
+The public TypeScript files now depend on adjacent declarations for JavaScript modules. Those declarations should move from "enough to compile" toward "small, truthful contracts".
 
-Then runtime `Signal` can implement the untyped/base version and proxy wrappers can specialize it with item type.
+Prefer:
 
-#### Collection-Safe Method Sets
+- exported structural interfaces for the pieces callers use,
+- `unknown` for intentionally dynamic values,
+- branded internal symbols only when runtime code really exposes them,
+- external consumer tests that catch package-surface regressions.
 
-Base `Signal<T[]>` has both array iteration methods and array mutators. Collection/query signals should expose iteration methods but not array mutators.
+#### Schema Fixture Matrix
 
-Extract explicit method groups:
+Runtime schema transformation, `FromJsonSchema`, Babel JSDoc extraction, and generated schema-module augmentation cannot literally share one implementation. They can share one fixture matrix.
 
-```ts
-type SignalArrayReaders<TItem> = Pick<..., 'map' | 'reduce' | 'find' | typeof Symbol.iterator>
-type SignalArrayMutators<TItem> = Pick<..., 'push' | 'pop' | 'insert' | 'remove' | 'move' | ...>
-```
+The next step is to make every supported schema case state:
 
-Then:
+- runtime transform output,
+- inferred document type,
+- generated field metadata,
+- expected fallback when static analysis is impossible.
 
-- local array signals use readers and mutators,
-- nested array field signals use readers and mutators,
-- collection signals use readers plus `add()`,
-- query signals use readers plus query metadata,
-- aggregation signals use readers plus aggregation metadata.
+### Already Moved Far Enough For Now
 
-This matches runtime guards more precisely.
-
-#### Path And Pattern Rules
-
-The following should be centralized:
-
-- `[id]` maps to `*`
-- `index` maps to the containing path
-- segments starting with `-` are ignored
-- `*` in filenames throws
-- model pattern syntax validation
-- path tuple to model pattern string
-- root `$` aliases like `$session -> _session`
-
-Runtime, Babel, Node loader, generated types, and tests should all import from the same path/model-pattern module where possible.
-
-For type-level path joining, we still need conditional types. But the runtime constants and helper names can live next to their type equivalents.
-
-#### Subscription Result Types
-
-`sub()`, `useSub()`, and `useAsyncSub()` should share one exported type helper:
-
-```ts
-type SubResult<TSignal, TParams> = ...
-type MaybePromise<T> = T | Promise<T>
-```
-
-Then:
-
-```ts
-function sub<TSignal, TParams = undefined>(
-  signal: TSignal,
-  params?: TParams
-): MaybePromise<SubResult<TSignal, TParams>>
-
-function useSub<TSignal, TParams = undefined>(
-  signal: TSignal,
-  params?: TParams,
-  options?: UseSubOptions
-): SubResult<TSignal, TParams>
-```
-
-This does not eliminate type-level branching, but it removes duplicated overload lists.
-
-#### Aggregation Metadata
-
-The aggregation runtime already brands functions and headers. The type metadata can be made stronger:
-
-```ts
-interface AggregationFunction<TOutput = unknown, TCollection extends string = string, TModel = typeof Signal> { ... }
-interface AggregationMeta<TCollection extends string, TOutput = Array<CollectionDocument<TCollection>>> { ... }
-```
-
-Then an aggregation can carry output type explicitly without relying on `TypedAggregationInput` as a separate shape. The generic should represent the full signal value, not just a row type, because aggregations can return either an array of rows or a single metadata object. The common collection-registered case should still default to document-row-like array output, because most aggregations are consumed like query results. Arbitrary metadata/grouped output should be explicit:
-
-```ts
-const stats = aggregation<{ total: number, currentDay: number, unread: number }>(() => [
-  // pipeline
-])
-
-const rows = aggregation<Array<{ _id: string, total: number }>>(() => [
-  // pipeline
-])
-```
-
-The first public generic on `aggregation<...>()` should represent output shape. Today the first generic effectively represents collection name, so this is a type-level migration for anyone who explicitly wrote `aggregation<'games'>`. The new convention is more consistent with the rest of TeamPlay's typing model:
-
-```ts
-aggregation<Game[]>()
-aggregation<{ total: number, unread: number }>()
-```
-
-#### Schema Definition Helper
-
-A runtime helper can preserve literal schema types and feed runtime normalization:
-
-```ts
-const schema = defineSchema({
-  name: { type: 'string', required: true }
-})
-
-type UserDoc = InferSchema<typeof schema>
-```
-
-`defineSchema()` should stay optional for backward compatibility. Existing plain exported schema objects must continue to work.
-
-The first runtime implementation should be intentionally small:
-
-- return the schema object unchanged,
-- preserve literal schema types with a `const` generic,
-- mark the object in a `WeakSet` or equivalent internal registry,
-- let `initModels()` warn in development when it sees a schema that was not passed through `defineSchema()`.
-
-That marker is runtime logic, but it does not change schema behavior. It only lets TeamPlay guide users toward the conventional path. More aggressive runtime validation, normalization, freezing, or metadata attachment can come later if it clearly improves safety.
-
-The desired `Signal<Game>` syntax should come from generated default interface augmentation in `teamplay-env.d.ts`, not from `defineSchema()` itself.
+- Subscription result helpers now exist and public subscription files are checked. Keep direct overloads where editor display quality is better.
+- Array reader/mutator groups now match the collection/query/aggregation runtime guard behavior. Keep testing the guard behavior, but do not churn this surface without a real UX reason.
+- Aggregation output-first generics now cover arbitrary metadata output. Further aggregation type work should follow runtime semantics, not lead them.
+- `defineSchema()` now exists and preserves literal schema values. Future schema work should focus on parity fixtures and docs, not changing the helper's runtime semantics.
 
 ### Poor Candidates
 
@@ -756,271 +639,77 @@ TypeScript cannot infer dynamic proxy child properties from the `get` trap. We w
 
 If a schema file builds an object dynamically, TypeScript and the Babel generator cannot reliably extract field JSDoc. Users should provide explicit types or accept reduced editor metadata.
 
-## Proposed Target Architecture
+## Target Architecture Status
 
-### 1. Runtime Core Becomes Type-Checked
+### Runtime Core
 
-Move type-bearing runtime modules toward checked TypeScript.
-
-Start with:
-
-- `SignalBase.ts`
-- `Signal.ts`
-- `addModel.ts`
-- `initModels.ts`
-- `sub.ts`
-- `useSub.ts`
-- `utils/aggregation.ts`
-
-Keep compatibility JS untouched until the non-compat core is stable.
+`addModel.ts`, `initModels.ts`, `utils/aggregation.ts`, `index.ts`, `sub.ts`, `useSub.ts`, `Root.ts`, `rootContext.ts`, `rootScope.ts`, `getSignal.ts`, React helpers, and schema internals are now checked. `SignalBase.ts` still needs incremental conversion.
 
 Target state:
 
-- The base class implementation owns base method signatures.
-- Subscription functions own runtime and type-level input/result logic in one module.
-- `addModel()` and `initModels()` have checked runtime contracts.
+- the base class implementation owns base method signatures,
+- checked helper modules own path, descriptor, and guard decisions,
+- subscription functions keep runtime and type-level input/result logic close together,
+- temporary `.d.ts` shims are narrowed or removed as JS modules become checked, with Compat shims kept only as a temporary bridge until compatibility mode is removed.
 
-### 2. Introduce A Model Manifest Contract
+### Model Manifest And Generated Env Types
 
-Define a single structural contract for model objects:
+`ModelEntry`, `ModelManifest`, `defineModels()`, `CollectionsFromManifest<T>`, and `PathModelsFromManifest<T>` now exist. The generated env file delegates more interpretation to TeamPlay-owned helper types.
 
-```ts
-interface ModelEntry {
-  default?: SignalClass<any>
-  schema?: unknown
-  access?: unknown
-  [aggregationName: `$$${string}`]: unknown
-}
+The remaining target is to shrink generated declarations further where helper types can own policy, while keeping concrete imports for facts that only the generator can discover.
 
-type ModelManifest = Record<string, ModelEntry>
-```
+### Signal Kind And Descriptor Semantics
 
-Then add helper types:
+`SignalKind`, `SignalForKind`, and `SignalRuntimeDescriptor` now provide shared vocabulary for signal shapes. The remaining target is to make descriptor/path helpers more load-bearing and to keep type-level kind names aligned with runtime descriptor names.
 
-```ts
-type CollectionsFromManifest<TManifest> = ...
-type PathModelsFromManifest<TManifest> = ...
-type SignalFieldsFromManifest<TManifest> = ...
-```
+### Aggregation Semantics
 
-The generated `teamplay-env.d.ts` can become more mechanical:
+The current product direction is stable:
 
-```ts
-import type { CollectionsFromManifest, PathModelsFromManifest } from 'teamplay'
-import type models from './path/to/generated-models-type'
+- registered collection aggregations are document-row-like by default,
+- arbitrary grouped or metadata output should be explicit with `aggregation<TOutput>(...)`,
+- top-level aggregation signals remain array-like unless runtime behavior intentionally changes later.
 
-declare module 'teamplay' {
-  interface TeamplayCollections extends CollectionsFromManifest<typeof models> {}
-  interface TeamplayModels extends PathModelsFromManifest<typeof models> {}
-}
-```
+If aggregation runtime headers later distinguish document-row output from arbitrary rows, TypeScript metadata should follow that runtime fact.
 
-The exact generated file may still need concrete imports for schemas and model classes, but the logic for turning a manifest into type registries should live in TeamPlay, not inside the generator string builder.
+### Schema Semantics
 
-### 3. Use `defineModels()` For Manual And Generated Models
+Schema shape detection has a shared runtime home, `defineSchema()` is the recommended authoring helper, and generated schema-module default interfaces preserve the desired `Signal<Game>` UX.
 
-Add an optional helper:
+The remaining target is not a larger helper API; it is fixture-driven parity across runtime transform, type inference, Babel extraction, and generated env declarations. Runtime and TeamPlay type tests now share a matrix; Babel/JSDoc and generated-env tests should be moved onto that matrix next.
 
-```ts
-const models = defineModels({
-  users: {
-    default: Users,
-    schema
-  },
-  'users.*': {
-    default: User
-  }
-})
+## Completed Refactoring Plan
 
-initModels(models)
-```
+The first thirteen task phases are complete and are tracked in [tasks.md](./tasks.md). Round 3 is partially complete and should continue from the remaining unchecked tasks plus the suggested next task set. In summary, the completed phases:
 
-Benefits:
+- locked the current `Signal<T>` facade semantics with type tests,
+- checked the public entry and subscription runtime files,
+- introduced shared subscription result helpers,
+- added model manifest helpers,
+- centralized signal-kind type shapes,
+- split array readers from array mutators,
+- added runtime signal descriptors,
+- extracted base signal method contracts,
+- redesigned aggregation generics around explicit output,
+- preserved object-tree document access,
+- added `defineSchema()`,
+- generated schema-module default interfaces, and
+- expanded schema/runtime/type fixtures.
 
-- Manual users get type checking on the runtime model object.
-- Generated file-based models can use the same shape.
-- `initModels()` can accept `ModelManifest` and preserve the same type parameter for downstream helpers.
-
-This does not replace module augmentation for the global `$`, but it gives the generator a typed source to derive from.
-
-### 4. Centralize Signal Kind Semantics
-
-Introduce explicit signal-kind type helpers:
-
-```ts
-type SignalKind = 'value' | 'document' | 'collection' | 'query' | 'aggregation'
-
-type SignalForKind<TKind, TValue, TCollectionModel, TDocumentModel, TPath> = ...
-```
-
-Then define public aliases from this:
-
-```ts
-type DocumentSignal<...> = SignalForKind<'document', ...>
-type CollectionSignal<...> = SignalForKind<'collection', ...>
-type CollectionQuerySignal<...> = SignalForKind<'query', ...>
-type AggregationSignal<...> = SignalForKind<'aggregation', ...>
-```
-
-This makes query and aggregation differences explicit instead of hidden in separate intersections.
-
-Runtime can also use a parallel descriptor:
-
-```ts
-interface SignalRuntimeDescriptor {
-  kind: SignalKind
-  segments: Array<string | number>
-  collectionName?: string
-  itemSegments?: Array<string | number>
-}
-```
-
-`getQuerySignal()` and `getAggregationSignal()` would become the canonical places defining those descriptors.
-
-### 5. Align Aggregation Runtime And Type Semantics
-
-The product direction is that aggregation output is usually row-like and should feel similar to query output by default. Some aggregations return arbitrary objects, and those need an explicit output type.
-
-Current behavior:
-
-- Top-level aggregation signals are not collection model signals.
-- Aggregation rows can call document methods only when `_id` or `id` is present.
-- Types assume collection-document rows for registered collection aggregations.
-
-Decisions:
-
-- Keep optimistic document-row-like output for registered collection aggregations by default.
-- Add explicit output typing for grouped/projection/metadata aggregations with `aggregation<TOutput>(...)`.
-- Preserve array-like top-level aggregation signals unless runtime behavior intentionally changes later.
-- Consider a runtime header flag that distinguishes document-row output from arbitrary rows, so server/client transforms and TypeScript metadata stay aligned.
-
-### 6. Centralize Schema Introspection
-
-Create a shared schema-introspection module used by:
-
-- runtime `transformSchema()`,
-- `FromJsonSchema` documentation and tests,
-- Babel field JSDoc extraction,
-- `defineSchema()` as the conventional schema authoring helper.
-
-The runtime and Babel code can literally share JavaScript functions for:
-
-- detecting full object schema vs simplified schema,
-- listing fields,
-- finding required fields,
-- extracting `label` and `description`,
-- stripping UI-only metadata.
-
-Type-level `FromJsonSchema` cannot call runtime functions, but its tests should be generated from or paired with the same runtime fixtures.
-
-### 7. Make Generated Types Smaller
-
-Generated declarations should avoid embedding too much policy. Prefer generated facts plus TeamPlay-owned derivation helpers.
-
-Current generated facts:
-
-- collection name,
-- schema import,
-- collection model import,
-- document model import,
-- nested model import,
-- field JSDoc interfaces.
-
-Keep those facts, but move transformation logic into exported helper types:
-
-```ts
-type CollectionSpecFromParts<TSchema, TCollectionModel, TDocumentModel> = ...
-type GeneratedSignalFields<TDoc, TDocs> = ...
-```
-
-The generator should discover and import; TeamPlay should interpret.
-
-## Suggested Refactoring Plan
-
-### Phase 1: Stabilize And Document Current Semantics
-
-This document is the first step.
-
-Follow-up tasks:
-
-- Add a short internal note in type tests explaining that `Signal<T>` is a facade over generated registries.
-- Add explicit type tests for ambiguous duplicate document shapes.
-- Add explicit type tests for aggregation output assumptions.
-
-### Phase 2: Remove `@ts-nocheck` From Small Runtime Files
-
-Start with files that are already close to valid TypeScript:
-
-1. `packages/utils/aggregation.ts`
-2. `packages/teamplay/orm/addModel.ts`
-3. `packages/teamplay/orm/initModels.ts`
-4. `packages/teamplay/orm/Signal.ts`
-
-Then move to:
-
-5. `packages/teamplay/orm/sub.ts`
-6. `packages/teamplay/react/useSub.ts`
-7. `packages/teamplay/orm/SignalBase.ts`
-
-Do this incrementally. Do not try to type the whole proxy runtime in one change.
-
-### Phase 3: Share Subscription Result Types
-
-Introduce:
-
-```ts
-type SubResult<TSignal, TParams = undefined> = ...
-type AsyncSubResult<TSignal, TParams = undefined> = SubResult<TSignal, TParams> | undefined
-```
-
-Use those from:
-
-- `sub.ts`
-- `useSub.ts`
-- `useAsyncSub()`
-
-Keep overloads only if editor display quality suffers without them.
-
-### Phase 4: Add Model Manifest Helpers
-
-Add:
-
-- `ModelEntry`
-- `ModelManifest`
-- `defineModels()`
-- `CollectionsFromManifest<T>`
-- `PathModelsFromManifest<T>`
-
-Then update the Babel generator to use these helpers in generated declarations.
-
-This is the highest-leverage refactor for reducing generated type complexity.
-
-### Phase 5: Split Signal Kind Types
-
-Refactor `types/signal.ts` so collection, query, aggregation, document, and local-array behavior are built from one `SignalForKind` core.
-
-This should make future runtime changes, like collection-like aggregation signals, a one-place type update.
-
-### Phase 6: Schema Helper And Shared Introspection
-
-Add `defineSchema()` and shared introspection utilities.
-
-Move Babel JSDoc extraction to the shared schema introspection rules where possible.
-
-Keep `FromJsonSchema` focused on TeamPlay's supported subset and test it against fixtures that also pass runtime `transformSchema()`.
+The next plan should start from the remaining Round 3 items and "Suggested Next Task Set" in [tasks.md](./tasks.md), not from the historical phases above.
 
 ## Testing Strategy
 
 The current `packages/teamplay/test_types/signal-inference.ts` is valuable and should stay as the executable type spec.
 
-Add coverage in these areas:
+Keep expanding coverage in these areas:
 
+- External consumer imports of `teamplay` without `allowJs`, especially across the temporary `.d.ts` shims.
 - Ambiguous document shape fallback for `Signal<T>` and `Signal<T[]>`.
-- Query collection model methods on `sub()` and `useSub()`.
+- Query collection model methods, `ids`, `extra`, and collision cases on `sub()` and `useSub()`.
 - Aggregation rows with document-like output and arbitrary output.
-- Manual model manifest helper once it exists.
-- Generated `teamplay-env.d.ts` using helper types rather than concrete policy.
-- Schema runtime/type fixture pairs.
+- Generated `teamplay-env.d.ts` helper use, schema module augmentation, and nonstandard `root` / `typesFile` layouts.
+- Schema runtime/type fixture pairs that share a single support matrix.
 
 For every runtime behavior change in signal shape, add one type assertion next to an existing runtime test or in the type spec.
 
@@ -1038,7 +727,7 @@ Tradeoff: local arrays of the same document shape may receive collection methods
 
 Current answer: not yet at runtime.
 
-The type system should not move further until runtime semantics are decided. If top-level aggregation signals become collection-like, update `AggregationSignal` through the future `SignalForKind` core.
+The type system should not move further until runtime semantics are decided. If top-level aggregation signals become collection-like, update `AggregationSignal` through the existing `SignalForKind` core.
 
 ### Should Manual `addModel()` Produce Types?
 
@@ -1080,7 +769,7 @@ When adding schema features:
 
 ### Manifest Helpers
 
-The first refactor moved model manifest interpretation into TeamPlay-owned helper types:
+The earlier refactors moved model manifest interpretation into TeamPlay-owned helper types:
 
 - `ModelEntry` and `ModelManifest` describe the runtime object consumed by `initModels()`.
 - `defineModels()` is a typed no-op for manual model manifests.
@@ -1119,8 +808,8 @@ The Babel plugin still needs AST-specific traversal for static schema files, but
 
 ## Bottom Line
 
-The current type system is a strong first version, but it is still a facade assembled from several independent type modules. That is normal for a proxy-based ORM, but we should reduce policy duplication.
+The current type system is a strong proxy-friendly facade, and the second refactor moved the most visible public surfaces into checked code. The next quality jump is deeper: reduce temporary JavaScript shims, make descriptors/path/schema rules shared and testable, and keep the object-tree UX stable while narrowing the ambiguous edges.
 
-The most important architectural move is not to eliminate `teamplay-env.d.ts`; it is to make `teamplay-env.d.ts` a thin manifest bridge and move interpretation into TeamPlay-owned, checked TypeScript modules.
+The most important architectural move is still not to eliminate `teamplay-env.d.ts`; it is to keep making `teamplay-env.d.ts` a thin manifest bridge while moving interpretation into TeamPlay-owned, checked TypeScript modules.
 
-The second most important move is to type-check the runtime modules that already carry public method signatures. Once `SignalBase.ts`, `sub.ts`, and `useSub.ts` are checked, future runtime edits are much more likely to fail at compile time when they break the public typing model.
+The second most important move is to type-check the remaining runtime modules that carry public method signatures or shape decisions. Once `SignalBase.ts` and the lower-level signal/path/runtime helpers are checked in narrow slices, future runtime edits are much more likely to fail at compile time when they break the public typing model.

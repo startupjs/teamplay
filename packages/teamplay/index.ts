@@ -6,9 +6,9 @@
 import type * as React from 'react'
 import RuntimeSignal, { SEGMENTS } from './orm/Signal.ts'
 import { getRootSignal as _getRootSignal, GLOBAL_ROOT_ID } from './orm/Root.ts'
-import universal$ from './react/universal$.js'
-import useApi from './react/useApi.js'
-import runtimeObserver from './react/observer.js'
+import universal$ from './react/universal$.ts'
+import useApi from './react/useApi.ts'
+import runtimeObserver from './react/observer.ts'
 import type {
   AnySignal,
   ArraySignal,
@@ -31,6 +31,8 @@ import type {
   PathModelsFromManifest,
   PublicSignal,
   LocalSignalFactory,
+  RuntimeSignalConstructor,
+  RuntimeSignalInstance,
   RootCollections,
   RootSignal,
   WildcardPathSegment,
@@ -40,6 +42,7 @@ import type {
   QuerySignal,
   RegisteredAggregationInput,
   SignalChild,
+  SignalBaseInstance,
   SignalArrayMutatorMethods,
   SignalArrayReaderMethods,
   SignalClass,
@@ -48,6 +51,7 @@ import type {
   SignalForKind,
   SignalKind,
   SignalMetadataMethods,
+  SignalModelConstructor,
   SignalStringMutatorMethods,
   SignalValueMethods,
   SubResult,
@@ -86,6 +90,8 @@ export type {
   LocalSignalFactory,
   PathModelsFromManifest,
   PublicSignal,
+  RuntimeSignalConstructor,
+  RuntimeSignalInstance,
   RootCollections,
   RootSignal,
   WildcardPathSegment,
@@ -96,6 +102,7 @@ export type {
   RegisteredAggregationInput,
   SignalArrayMutatorMethods,
   SignalArrayReaderMethods,
+  SignalBaseInstance,
   SignalClass,
   SignalChild,
   SignalConstructor,
@@ -103,6 +110,7 @@ export type {
   SignalForKind,
   SignalKind,
   SignalMetadataMethods,
+  SignalModelConstructor,
   SignalStringMutatorMethods,
   SignalValueMethods,
   SubResult,
@@ -173,7 +181,7 @@ export {
 export {
   default as useSuspendMemo,
   useSuspendMemoByKey
-} from './react/useSuspendMemo.js'
+} from './react/useSuspendMemo.ts'
 export const observer = runtimeObserver as unknown as ObserverFunction
 export {
   useValue,
@@ -225,7 +233,8 @@ export {
   publicOnly,
   setPublicOnly
 } from './orm/connection.ts'
-export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.js'
+export type { TeamplayConnection, TeamplayShareDoc } from './orm/connection.ts'
+export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.ts'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.ts'
 export { GUID_PATTERN, defineSchema, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'

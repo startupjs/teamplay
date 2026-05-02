@@ -4,33 +4,32 @@ import {
   isJsonSchemaKeyword,
   transformSchema
 } from '@teamplay/schema'
+import {
+  fullObjectSchema,
+  keywordNamedFieldsSchema,
+  nestedObjectsAndArraysSchema,
+  schemaRuntimeFixtureMatrix,
+  shorthandSchema
+} from './schemaFixtureMatrix.ts'
 
 describe('schema introspection helpers', () => {
-  it('normalizes full object and shorthand object schemas consistently', () => {
-    const fullObjectSchema = {
-      type: 'object',
-      required: ['title', 'meta'],
-      properties: {
-        title: { type: 'string' },
-        score: { type: 'integer' },
-        meta: {
-          type: 'object',
-          required: ['createdAt'],
-          properties: {
-            createdAt: { type: 'number' },
-            flags: {
-              type: 'array',
-              items: { type: 'string' }
-            }
-          }
-        }
+  it('matches the shared schema runtime fixture matrix', () => {
+    for (const fixture of schemaRuntimeFixtureMatrix) {
+      const schema = fixture.transform
+        ? transformSchema(fixture.schema)
+        : fixture.schema
+      assert.deepEqual(
+        Object.keys(getSchemaPropertiesObject(schema)),
+        fixture.expectedPropertyKeys,
+        fixture.name
+      )
+      if (fixture.transform) {
+        assert.deepEqual(schema.required || [], fixture.expectedRequired, fixture.name)
       }
     }
-    const shorthandSchema = {
-      title: { type: 'string', required: true },
-      score: { type: 'integer' }
-    }
+  })
 
+  it('normalizes full object and shorthand object schemas consistently', () => {
     const transformedFull = transformSchema(fullObjectSchema)
     const transformedShorthand = transformSchema(shorthandSchema)
 
@@ -44,20 +43,7 @@ describe('schema introspection helpers', () => {
   })
 
   it('matches simplified keyword-field schema rules used by type inference', () => {
-    const schema = {
-      title: { type: 'string', required: true },
-      description: { type: 'string' },
-      type: { type: 'string' },
-      required: { type: 'boolean' },
-      properties: {
-        type: 'object',
-        properties: {
-          color: { type: 'string', required: true }
-        }
-      }
-    }
-
-    const transformed = transformSchema(schema)
+    const transformed = transformSchema(keywordNamedFieldsSchema)
 
     assert.equal(isJsonSchemaKeyword('properties'), true)
     assert.equal(transformed.type, 'object')
@@ -74,23 +60,11 @@ describe('schema introspection helpers', () => {
   })
 
   it('keeps nested objects, arrays, tuples, nullable values, enum, and const schema metadata intact', () => {
-    const schema = {
+    const transformed = transformSchema({
       team: {
-        type: 'object',
-        required: true,
+        ...nestedObjectsAndArraysSchema.team,
         properties: {
-          name: { type: 'string', required: true },
-          players: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['id'],
-              properties: {
-                id: { type: 'string' },
-                active: { type: 'boolean' }
-              }
-            }
-          },
+          ...nestedObjectsAndArraysSchema.team.properties,
           tuple: {
             type: 'array',
             items: [
@@ -104,9 +78,7 @@ describe('schema introspection helpers', () => {
           source: { const: 'system' }
         }
       }
-    }
-
-    const transformed = transformSchema(schema)
+    })
     const team = transformed.properties.team
 
     assert.deepEqual(transformed.required, ['team'])

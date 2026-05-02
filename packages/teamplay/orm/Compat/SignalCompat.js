@@ -35,9 +35,9 @@ import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
 import { runInBatch } from '../batchScheduler.js'
 import { runInSilentContext, runInModelEventsSilentContext, isSilentContextActive } from './silentContext.js'
-import universal$ from '../../react/universal$.js'
-import { getRootContext } from '../rootContext.js'
-import disposeRootContext from '../disposeRootContext.js'
+import universal$ from '../../react/universal$.ts'
+import { getRootContext } from '../rootContext.ts'
+import disposeRootContext from '../disposeRootContext.ts'
 import {
   arrayInsertPrivateData,
   arrayMovePrivateData,

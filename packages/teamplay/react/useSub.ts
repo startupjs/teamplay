@@ -2,15 +2,16 @@ import { useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import sub from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer, useId } from './helpers.ts'
-import executionContextTracker from './executionContextTracker.js'
-import * as promiseBatcher from './promiseBatcher.js'
-import renderAttemptDestroyer from './renderAttemptDestroyer.js'
-import { markCompatComponent } from './compatComponentRegistry.js'
+import executionContextTracker from './executionContextTracker.ts'
+import * as promiseBatcher from './promiseBatcher.ts'
+import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
+import { markCompatComponent } from './compatComponentRegistry.ts'
 import type {
   CollectionSignal,
   DocumentSignal,
   QueryParams,
   RegisteredAggregationInput,
+  SignalModelConstructor,
   SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
@@ -56,8 +57,8 @@ export function useAsyncSub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export function useAsyncSub<
   TDocument,
-  TCollectionModel extends new (...args: any[]) => any,
-  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
   TCollectionPath extends WildcardSignalPath
 > (
   signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
@@ -95,7 +96,10 @@ export function useAsyncSub<TOutput, TCollection extends string> (
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export function useAsyncSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
+export function useAsyncSub<
+  TDocument,
+  TDocumentModel extends SignalModelConstructor<TDocument>
+> (
   signal: TypedAggregationInput<TDocument, TDocumentModel>,
   params?: Record<string, any>,
   options?: UseSubOptions
@@ -137,8 +141,8 @@ export default function useSub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export default function useSub<
   TDocument,
-  TCollectionModel extends new (...args: any[]) => any,
-  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
   TCollectionPath extends WildcardSignalPath
 > (
   signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
@@ -176,7 +180,10 @@ export default function useSub<TOutput, TCollection extends string> (
  * @param params Parameters passed to the aggregation.
  * @param options Subscription behavior options.
  */
-export default function useSub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
+export default function useSub<
+  TDocument,
+  TDocumentModel extends SignalModelConstructor<TDocument>
+> (
   signal: TypedAggregationInput<TDocument, TDocumentModel>,
   params?: Record<string, any>,
   options?: UseSubOptions

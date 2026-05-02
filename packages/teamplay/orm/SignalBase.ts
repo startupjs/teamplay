@@ -49,8 +49,13 @@ import { isCompatEnv } from './compatEnv.js'
 import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 import { compatStartOnRoot, compatStopOnRoot, joinScopePath } from './Compat/startStopCompat.js'
 import { runInBatch } from './batchScheduler.js'
-import { isPrivateCollectionSegments } from './rootScope.js'
+import { isPrivateCollectionSegments } from './rootScope.ts'
 import { isPublicCollection } from './signalPathKind.ts'
+import {
+  ensureArrayTargetSegments,
+  ensureValueTargetSegments
+} from './signalMutationGuards.ts'
+import { normalizeSignalPropertyKey } from './signalPathRules.ts'
 import {
   arrayInsertPrivateData,
   arrayMovePrivateData,
@@ -608,15 +613,11 @@ export class Signal<TValue = unknown> extends Function {
 }
 
 function ensureArrayTarget ($signal) {
-  if ($signal[SEGMENTS].length < 2) throw Error('Can\'t mutate array on a collection or root signal')
-  if ($signal[IS_QUERY]) throw Error('Array mutators can\'t be used on a query signal')
-  return $signal[SEGMENTS]
+  return ensureArrayTargetSegments($signal[SEGMENTS], !!$signal[IS_QUERY])
 }
 
 function ensureValueTarget ($signal) {
-  if ($signal[SEGMENTS].length < 2) throw Error('Can\'t mutate on a collection or root signal')
-  if ($signal[IS_QUERY]) throw Error('Mutators can\'t be used on a query signal')
-  return $signal[SEGMENTS]
+  return ensureValueTargetSegments($signal[SEGMENTS], !!$signal[IS_QUERY])
 }
 
 function getStorageSegmentsForSignal ($signal, segments = $signal[SEGMENTS]) {
@@ -739,8 +740,7 @@ export const extremelyLateBindings = {
     if (typeof key === 'symbol') return Reflect.get(signal, key, receiver)
     if (key === 'then') return undefined // handle checks for whether the symbol is a Promise
     if (key === 'constructor') return signal.constructor
-    key = transformAlias(signal[SEGMENTS], key)
-    key = maybeTransformToArrayIndex(key)
+    key = normalizeSignalPropertyKey(signal[SEGMENTS], key)
     if (signal[IS_QUERY]) {
       if (key === 'ids') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'ids'])
       if (key === 'extra') return getSignal(getRoot(signal), [QUERIES, signal[HASH], 'extra'])
@@ -749,28 +749,6 @@ export const extremelyLateBindings = {
     return getSignal(getRoot(signal), [...signal[SEGMENTS], key])
   }
 }
-
-const REGEX_POSITIVE_INTEGER = /^(?:0|[1-9]\d*)$/
-// Transform the key to a number if it's a positive integer.
-// Otherwise the key must be a string.
-function maybeTransformToArrayIndex (key) {
-  if (typeof key === 'string' && REGEX_POSITIVE_INTEGER.test(key)) return +key
-  return key
-}
-
-const transformAlias = (({
-  collectionsMapping = {
-    session: '_session',
-    page: '_page',
-    render: '$render',
-    system: '$system'
-  },
-  regex$ = /^\$/
-} = {}) => (segments, key) => {
-  if (regex$.test(key)) key = key.slice(1)
-  if (segments.length === 0) key = collectionsMapping[key] || key
-  return key
-})()
 
 export function isPublicCollectionSignal ($signal) {
   return $signal instanceof Signal && $signal[SEGMENTS].length === 1 && isPublicCollection($signal[SEGMENTS][0])

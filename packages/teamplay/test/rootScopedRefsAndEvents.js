@@ -5,7 +5,7 @@ import { del as _del, set as _set } from '../orm/dataTree.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetSilentContextForTests } from '../orm/Compat/silentContext.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.js'
+import { __resetRootContextsForTests } from '../orm/rootContext.ts'
 
 const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 

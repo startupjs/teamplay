@@ -1,10 +1,9 @@
-// @ts-nocheck
-export { default as ajv } from './lib/ajv.js'
-export { default as transformSchema } from './lib/transformSchema.js'
-export { onTransformSchema, setOnTransformSchema } from './lib/onTransformSchema.js'
-export * from './lib/associations.js'
-export { default as GUID_PATTERN } from './lib/GUID_PATTERN.js'
-export { default as pickFormFields } from './lib/pickFormFields.js'
+export { default as ajv } from './lib/ajv.ts'
+export { default as transformSchema } from './lib/transformSchema.ts'
+export { onTransformSchema, setOnTransformSchema } from './lib/onTransformSchema.ts'
+export * from './lib/associations.ts'
+export { default as GUID_PATTERN } from './lib/GUID_PATTERN.ts'
+export { default as pickFormFields } from './lib/pickFormFields.ts'
 export { defineSchema, isDefinedSchema } from './lib/defineSchema.ts'
 export {
   JSON_SCHEMA_KEYWORDS,
@@ -12,4 +11,4 @@ export {
   getSimplifiedSchemaRequiredFields,
   isFullObjectSchema,
   isJsonSchemaKeyword
-} from './lib/schemaIntrospection.js'
+} from './lib/schemaIntrospection.ts'

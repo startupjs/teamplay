@@ -69,9 +69,9 @@ This checklist executes the plan from [typing-architecture.md](./typing-architec
 - [x] Remove stale helper types once newer shared helpers replace them.
 - [x] Run full TeamPlay test suite before committing major slices.
 
-## Next Iteration Priorities
+## Round 2 Priorities (Complete)
 
-The first pass moved the largest type facts closer to TeamPlay-owned modules, but several public surfaces are still unchecked or still depend on detached facade logic. The next pass should focus on runtime files that already contain public type declarations and on public APIs that can reduce proxy/index-signature ambiguity.
+The first pass moved the largest type facts closer to TeamPlay-owned modules. Round 2 checked the most visible public surfaces, added runtime descriptors, tightened collection/query/aggregation method shapes, and improved schema authoring UX.
 
 ## Phase 8: Type-Check Public Entry And Subscription Runtime
 
@@ -132,3 +132,83 @@ The first pass moved the largest type facts closer to TeamPlay-owned modules, bu
 - [x] Ensure `defineSchema()` preserves literal types while leaving runtime schema normalization unchanged.
 - [x] Add paired runtime/type fixtures for full object schema, shorthand schema, keyword-named fields, nested objects, arrays, tuples, nullable values, `enum`, `const`, and unsupported dynamic schemas.
 - [x] Consider moving type tests into smaller fixture files once the single executable spec becomes too large to maintain.
+
+## Next Iteration Priorities
+
+Round 3 should be a consolidation pass. The typing UX is now much closer to the desired public model, so the next work should make that model easier to maintain: narrow temporary declarations, clarify the runtime/public `Signal` boundary, make path and descriptor rules more shared, and strengthen edge-case tests around query metadata and schema generation.
+
+## Phase 14: Tighten Internal JavaScript Declarations
+
+- [x] Inventory adjacent `.d.ts` shims under `packages/teamplay/orm`, `packages/teamplay/react`, and `packages/schema`.
+- [x] Replace broad `any` declarations in `Doc.d.ts`, `Query.d.ts`, and `Aggregation.d.ts` with the narrowest exported contracts that match the JavaScript modules.
+- [x] Replace broad React helper declarations with contracts for the public helper behavior they actually expose.
+- [x] Keep intentionally dynamic internals typed as `unknown` or small structural interfaces instead of pretending full precision.
+- [x] Add an external TypeScript consumer fixture that imports `teamplay` without `allowJs` and validates the public package surface.
+- [x] Run `npm run test-types` from `packages/teamplay`.
+- [x] Run the external consumer fixture after each declaration slice.
+
+## Phase 15: Separate Runtime Signal Contracts From The Public Facade
+
+- [x] Introduce explicit internal names for the runtime instance and constructor contracts, such as `RuntimeSignalInstance`, `SignalBaseInstance`, and `SignalModelConstructor`.
+- [x] Keep the public `Signal<T>` facade focused on end-user value typing, model props, and `extends Signal<T>` UX.
+- [x] Update model class constraints to use constructor/runtime contracts where appropriate instead of relying on the public facade everywhere.
+- [x] Add type tests for `class Model extends Signal<Doc>`, function props typed as `Signal<Doc>`, and local `$()` values that should not become collection-like.
+- [ ] Confirm VS Code display quality for common `Signal<T>`, `Signal<T[]>`, `sub()`, and `useSub()` examples before continuing deeper.
+
+## Phase 16: Continue Checked Slices Around `SignalBase.ts`
+
+- [x] Move descriptor/path/method guard helpers out of `SignalBase.ts` into checked modules where that can be done without changing runtime behavior.
+- [x] Type the array-target and value-target guard helpers that back mutator dispatch.
+- [ ] Type metadata helpers and symbol-keyed state access through small internal interfaces.
+- [ ] Convert one narrow `SignalBase.ts` method group at a time, starting with the least proxy-heavy methods.
+- [x] Add focused runtime tests for any touched array, query, aggregation, and metadata behavior.
+- [x] Run `npm run lint`, `npm run test-types` from `packages/teamplay`, and focused runtime tests after each slice.
+
+## Phase 17: Query Metadata And Broad Index UX
+
+- [x] Model `$query.extra` explicitly without weakening query-as-`Signal<T[]>` assignability.
+- [x] Keep `$query.ids` precise and covered by both type and runtime tests.
+- [x] Add collision tests for document ids named `ids`, `extra`, and collection/model method names.
+- [ ] Investigate whether special-property typing can be improved while preserving `$.users[id]` as the conventional document-access API.
+- [x] Document any TypeScript limitation that remains intentionally unsolved.
+
+## Phase 18: Shared Path, Pattern, And Alias Rules
+
+- [ ] Create or extend a shared path/model-pattern utility for `[id] -> *`, `index`, ignored `-` files, invalid wildcard filenames, and path tuple to pattern string.
+- [x] Centralize root alias behavior such as `$session -> _session`.
+- [ ] Use the shared utilities from runtime loading, Babel generation, and tests where practical.
+- [ ] Keep type-level path joining in conditional types, but align names and fixture cases with the runtime utilities.
+- [ ] Add fixtures for nested models, ignored files, aliases, invalid names, and nonstandard `root` / `typesFile` layouts.
+
+## Phase 19: Schema Parity Matrix
+
+- [ ] Build a reusable schema fixture matrix that records runtime transform output, inferred TypeScript shape, generated JSDoc metadata, and expected fallback behavior.
+- [x] Cover full object schema, shorthand schema, keyword-named fields, nested objects, arrays, tuples, nullable values, `enum`, `const`, and unsupported dynamic schemas.
+- [ ] Use the matrix from schema runtime tests, Babel plugin tests, and `packages/teamplay` type tests where practical.
+- [ ] Document the supported static schema subset and the recommended explicit type fallback for dynamic schemas.
+
+## Phase 20: Generated Type And Package Surface Hygiene
+
+- [ ] Shrink generated `teamplay-env.d.ts` further where helper types can own interpretation.
+- [ ] Validate generated schema-module augmentations with relative imports, alias imports, explicit extensions, and monorepo-style output locations.
+- [x] Add a package-surface fixture for strict external projects using modern module resolution.
+- [x] Review emitted declarations for accidental `any` leaks on exported APIs.
+- [ ] Update TypeScript support docs for the generated env file, schema default interfaces, and known module-resolution requirements.
+
+## Phase 21: Documentation And Migration Guidance
+
+- [x] Update internal docs to consistently distinguish public `Signal<T>` facade, runtime signal instance, and model constructor contracts.
+- [ ] Update user-facing docs for query metadata, aggregation output generics, `defineSchema()`, and generated schema default interfaces.
+- [ ] Add troubleshooting notes for missing generated env declarations, failed schema module augmentation, and external package import issues.
+- [ ] Keep examples centered on the object-tree UX: `$`, `$.collection[id]`, `sub()`, `useSub()`, and `Signal<SchemaType>`.
+
+## Suggested Next Task Set
+
+The next pass should be smaller than this one and should avoid a whole-file `SignalBase.ts` rewrite.
+
+- [ ] Pick one `SignalBase.ts` method group, add the needed local interfaces, remove checks for that group, and run focused runtime tests immediately.
+- [ ] Replace implementation-body `any` in `sub.ts` and `useSub.ts` with `unknown`, `AggregationParams`, and runtime signal contracts where it does not hurt overload readability.
+- [ ] Extend the shared path utility to file-model pattern rules (`[id]`, `index`, ignored `-` files, invalid wildcard names) and migrate Babel loader tests to the shared fixtures.
+- [ ] Extend `schemaFixtureMatrix.ts` so Babel/JSDoc and generated env tests consume the same cases as runtime and type tests.
+- [ ] Do a manual VS Code/editor display pass for `Signal<T>`, `Signal<T[]>`, `sub()`, `useSub()`, query `ids`/`extra`, and generated schema default interfaces.
+- [ ] Update user-facing TypeScript docs with external-consumer setup, schema augmentation troubleshooting, query metadata examples, and the known broad-indexing limitation.

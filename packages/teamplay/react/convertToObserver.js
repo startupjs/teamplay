@@ -3,11 +3,11 @@ import { observe, unobserve } from '@nx-js/observer-util'
 import _throttle from 'lodash/throttle.js'
 import { createCaches, getDummyCache } from '@teamplay/cache'
 import { __increment, __decrement } from '@teamplay/debug'
-import executionContextTracker from './executionContextTracker.js'
+import executionContextTracker from './executionContextTracker.ts'
 import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helpers.ts'
 import trapRender from './trapRender.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
-import { isCompatComponent, unmarkCompatComponent } from './compatComponentRegistry.js'
+import { isCompatComponent, unmarkCompatComponent } from './compatComponentRegistry.ts'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
 

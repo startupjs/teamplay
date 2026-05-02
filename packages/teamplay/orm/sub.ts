@@ -5,7 +5,7 @@ import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
 import { getRoot } from './Root.ts'
-import isServer from '../utils/isServer.js'
+import isServer from '../utils/isServer.ts'
 import type {
   CollectionSignal,
   DocumentSignal,
@@ -13,6 +13,8 @@ import type {
   MaybePromiseSubResult,
   QueryParams,
   RegisteredAggregationInput,
+  SignalBaseInstance,
+  SignalModelConstructor,
   SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
@@ -24,7 +26,10 @@ import type {
  * @param $aggregation Typed aggregation input.
  * @param params Parameters passed to the aggregation.
  */
-export default function sub<TDocument, TDocumentModel extends new (...args: any[]) => any> (
+export default function sub<
+  TDocument,
+  TDocumentModel extends SignalModelConstructor<TDocument>
+> (
   $aggregation: TypedAggregationInput<TDocument, TDocumentModel>,
   params?: Record<string, any>
 ): MaybePromise<TypedAggregationSignal<TDocument, TDocumentModel>>
@@ -74,8 +79,8 @@ export default function sub<TSignal extends DocumentSignal<any, any, any>> (
  */
 export default function sub<
   TDocument,
-  TCollectionModel extends new (...args: any[]) => any,
-  TDocumentModel extends new (...args: any[]) => any,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
   TCollectionPath extends WildcardSignalPath
 > (
   $collection: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
@@ -188,12 +193,12 @@ function getQuerySignalOptions ($collection: any): { root: any } | undefined {
 }
 
 const ERRORS = {
-  subDocArguments: ($signal: any, ...args: any[]) => `
+  subDocArguments: ($signal: SignalBaseInstance, ...args: unknown[]) => `
     sub($doc) accepts only 1 argument - the document signal to subscribe to
     Doc: ${$signal[SEGMENTS]}
     Got args: ${[$signal, ...args]}
   `,
-  subQueryArguments: ($signal: any, params: any, ...args: any[]) => `
+  subQueryArguments: ($signal: SignalBaseInstance, params: unknown, ...args: unknown[]) => `
     sub($collection, params) accepts 2 arguments - the collection signal and an object with query params.
     If you want to subscribe to all documents in a collection, pass an empty object: sub($collection, {}).
     Collection: ${$signal[SEGMENTS]}

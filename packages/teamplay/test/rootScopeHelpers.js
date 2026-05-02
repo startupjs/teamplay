@@ -10,7 +10,7 @@ import {
   getSignalIdentityHash,
   getScopedSignalHash,
   getRootScopedRegistryKey
-} from '../orm/rootScope.js'
+} from '../orm/rootScope.ts'
 
 describe('rootScope helpers', () => {
   it('normalizes and classifies root ids consistently', () => {
