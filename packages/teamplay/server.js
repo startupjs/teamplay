@@ -1,5 +1,5 @@
 import createChannel from '@teamplay/channel/server'
-import { connection, setConnection, setFetchOnly, setPublicOnly } from './orm/connection.js'
+import { connection, setConnection, setDefaultFetchOnly, setPublicOnly } from './orm/connection.js'
 
 export { default as ShareDB } from 'sharedb'
 export {
@@ -25,7 +25,7 @@ export function initConnection (backend, {
   if (!backend) throw Error('backend is required')
   if (connection) throw Error('Connection already exists')
   setConnection(backend.connect())
-  setFetchOnly(fetchOnly)
+  setDefaultFetchOnly(fetchOnly)
   setPublicOnly(publicOnly)
   return createChannel(backend, options)
 }

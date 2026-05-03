@@ -1,7 +1,10 @@
 import { useRef, useDeferredValue } from 'react'
 import sub from '../orm/sub.js'
-import { useScheduleUpdate, useCache, useDefer } from './helpers.js'
+import { useScheduleUpdate, useCache, useDefer, useId } from './helpers.js'
 import executionContextTracker from './executionContextTracker.js'
+import * as promiseBatcher from './promiseBatcher.js'
+import renderAttemptDestroyer from './renderAttemptDestroyer.js'
+import { markCompatComponent } from './compatComponentRegistry.js'
 
 let TEST_THROTTLING = false
 
@@ -24,10 +27,13 @@ export default function useSub (signal, params, options) {
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
-export function useSubDeferred (signal, params, { async = false, defer } = {}) {
+export function useSubDeferred (signal, params, { async = false, defer, batch = false, compatAttemptCleanup = false } = {}) {
   const $signalRef = useRef() // eslint-disable-line react-hooks/rules-of-hooks
+  const componentId = useId()
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()
+  if (compatAttemptCleanup) markCompatComponent(componentId)
+  if (batch) promiseBatcher.activate()
   defer ??= observerDefer ?? DEFAULT_DEFER
   if (defer) {
     signal = useDeferredValue(signal) // eslint-disable-line react-hooks/rules-of-hooks
@@ -38,10 +44,29 @@ export function useSubDeferred (signal, params, { async = false, defer } = {}) {
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
+    const hasPreviousSignal = !!$signalRef.current
+    if (batch) {
+      // Batch suspense must block only on initial load.
+      // On resubscribe we keep rendering previous signal and refresh in background.
+      if (!hasPreviousSignal) {
+        promiseBatcher.add(promise)
+        if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
+      } else {
+        scheduleUpdate(promise)
+      }
+      if (async) scheduleUpdate(promise)
+      return $signalRef.current
+    }
     if (async) {
       scheduleUpdate(promise)
       return
     }
+    // Keep previous snapshot during update re-subscribe and refresh in background.
+    if (hasPreviousSignal) {
+      scheduleUpdate(promise)
+      return $signalRef.current
+    }
+    if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
     throw promise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
@@ -53,15 +78,32 @@ export function useSubDeferred (signal, params, { async = false, defer } = {}) {
 
 // classic version which initially throws promise for Suspense
 // but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (signal, params, { async = false } = {}) {
+export function useSubClassic (signal, params, { async = false, batch = false, compatAttemptCleanup = false } = {}) {
   const id = executionContextTracker.newHookId()
+  const componentId = useId()
   const cache = useCache()
   const activePromiseRef = useRef()
   const scheduleUpdate = useScheduleUpdate()
+  if (compatAttemptCleanup) markCompatComponent(componentId)
+  if (batch) promiseBatcher.activate()
   const promiseOrSignal = params != null ? sub(signal, params) : sub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (promiseOrSignal.then) {
     const promise = maybeThrottle(promiseOrSignal)
+    if (batch) {
+      const hasPreviousSignal = cache.has(id)
+      // Batch suspense must block only on initial load.
+      // On resubscribe we keep rendering previous signal and refresh in background.
+      if (!hasPreviousSignal) {
+        promiseBatcher.add(promise)
+        if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
+      } else {
+        scheduleUpdate(promise)
+      }
+      if (async) scheduleUpdate(promise)
+      if (hasPreviousSignal) return cache.get(id)
+      return
+    }
     // first time we just throw the promise to be caught by Suspense
     if (!cache.has(id)) {
       // if we are in async mode, we just return nothing and let the user
@@ -72,6 +114,7 @@ export function useSubClassic (signal, params, { async = false } = {}) {
         scheduleUpdate(promise)
         return
       }
+      if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
       // in regular mode we throw the promise to be caught by Suspense
       // this way we guarantee that the signal with all the data
       // will always be there when component is rendered
@@ -115,4 +158,12 @@ function maybeThrottle (promise) {
       promise.then(resolve, reject)
     }, TEST_THROTTLING)
   })
+}
+
+function registerCompatAttemptCleanup (signal, params) {
+  // Compat hooks don't build per-hook init objects like Racer.
+  // We still need a marker so trapRender can defer observer-shell cleanup
+  // only when a real attempt cleanup exists.
+  // This path must not arm suspense-gate keep-alive by itself.
+  renderAttemptDestroyer.armCompatAttemptCleanup()
 }

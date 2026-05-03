@@ -1,6 +1,9 @@
 import { before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
+import { docSubscriptions } from '../orm/Doc.js'
+import { querySubscriptions } from '../orm/Query.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
 
 // the cache is not getting cleared if we just call global.gc()
 // so we need to wait for the next tick before and after calling it.
@@ -22,10 +25,28 @@ import { __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
 const DELAY = 5
 const GC_ITERATIONS = 4
 export async function runGc (iterations = GC_ITERATIONS) {
-  await delay()
-  for (let i = 0; i < iterations; i++) {
-    global.gc()
+  const prevSubscriptionGcDelay = getSubscriptionGcDelay()
+  // Tests expect eager cleanup after GC regardless of compat defaults.
+  setSubscriptionGcDelay(0)
+  try {
     await delay()
+    for (let i = 0; i < iterations; i++) {
+      global.gc()
+      await delay()
+      await docSubscriptions.flushPendingDestroys()
+      await querySubscriptions.flushPendingDestroys()
+    }
+    // Finalizers are not guaranteed to run in the same turn. Do two extra settle cycles
+    // while delay=0 so late GC callbacks don't leave pending destroy timers.
+    for (let i = 0; i < 2; i++) {
+      await delay()
+      global.gc()
+      await delay()
+      await docSubscriptions.flushPendingDestroys()
+      await querySubscriptions.flushPendingDestroys()
+    }
+  } finally {
+    setSubscriptionGcDelay(prevSubscriptionGcDelay)
   }
 }
 

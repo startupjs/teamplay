@@ -110,6 +110,21 @@ describe('observer', () => {
     expect(renders).toBe(2)
   })
 
+  it('does not crash when pending update flushes after unmount', async () => {
+    let $name
+    const Component = observer(() => {
+      $name = $('John')
+      useEffect(() => {
+        $name.set('Jane')
+      }, [])
+      return el('span', {}, $name.get())
+    })
+    const { unmount } = render(el(Component))
+    unmount()
+    await wait()
+    expect(true).toBe(true)
+  })
+
   it('react to signal changes from useLayoutEffect', async () => {
     let renders = 0
     let $name
@@ -193,7 +208,7 @@ describe('$() function for creating values', () => {
     expect(renders).toBe(2)
   })
 
-  it('handles undefined and null values correctly. Null is treated as undefined on .set()', () => {
+  it('handles undefined and null values correctly', () => {
     let $value
     const Component = observer(() => {
       $value = $(undefined)
@@ -204,7 +219,7 @@ describe('$() function for creating values', () => {
 
     act(() => { $value.set(null) })
     rerender(el(Component))
-    expect(container.textContent).toBe('undefined')
+    expect(container.textContent).toBe('')
 
     act(() => { $value.set('defined') })
     rerender(el(Component))

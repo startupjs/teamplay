@@ -16,6 +16,8 @@
     "publish-patch": "dotenv -- npx lerna publish patch --conventional-commits --create-release=github",
     "publish-patch-force": "dotenv -- npx lerna publish patch --force-publish --conventional-commits --create-release=github",
     "publish-breaking-minor": "dotenv -- npx lerna publish minor --conventional-commits --create-release=github",
+    "publish-alpha-breaking-minor": "dotenv -- npx lerna publish preminor --force-publish --preid alpha --dist-tag alpha --no-push",
+    "publish-alpha-patch": "dotenv -- npx lerna publish prerelease --preid alpha --dist-tag alpha --no-push",
     "docs": "rspress dev --port 3010",
     "docs-build": "rspress build",
     "docs-preview": "rspress preview --port 3010"
@@ -46,7 +48,7 @@
   },
   "husky": {
     "hooks": {
-      "pre-commit": "! grep -q '\"resolutions\":' ./package.json || (echo '\\033[0;31mError: \"resolutions\" found in package.json. Remove \"resolutions\" to proceed with commit.\\033[0m' && exit 1) && lint-staged"
+      "pre-commit": "! grep -q '\"resolutions\":' ./package.json || (echo '\\033[0;31mError: \"resolutions\" found in package.json. Remove \"resolutions\" to proceed with commit.\\033[0m' && exit 1) && lint-staged && npm test"
     }
   },
   "packageManager": "yarn@4.12.0+sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8"

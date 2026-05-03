@@ -6,6 +6,8 @@ import { __increment, __decrement } from '@teamplay/debug'
 import executionContextTracker from './executionContextTracker.js'
 import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helpers.js'
 import trapRender from './trapRender.js'
+import { scheduleReaction } from '../orm/batchScheduler.js'
+import { isCompatComponent, unmarkCompatComponent } from './compatComponentRegistry.js'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
 
@@ -32,15 +34,29 @@ export default function convertToObserver (BaseComponent, {
     const reactionRef = useRef()
     const destroyRef = useRef()
     if (!reactionRef.current) {
+      let hasDeferredUpdateAfterExecutionContext = false
       let update = () => {
         // It's important to block updates caused by rendering itself
         // (when the sync rendering is in progress).
-        if (!executionContextTracker.isActive()) triggerUpdate()
+        if (!executionContextTracker.isActive()) {
+          hasDeferredUpdateAfterExecutionContext = false
+          triggerUpdate()
+        } else if (isCompatComponent(componentId)) {
+          if (hasDeferredUpdateAfterExecutionContext) return
+          hasDeferredUpdateAfterExecutionContext = true
+          queueMicrotask(() => {
+            if (!hasDeferredUpdateAfterExecutionContext) return
+            if (executionContextTracker.isActive()) return
+            hasDeferredUpdateAfterExecutionContext = false
+            update()
+          })
+        }
       }
       if (throttle) update = _throttle(update, throttle)
       destroyRef.current = (where) => {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
         destroyRef.current = undefined
+        unmarkCompatComponent(componentId)
         unobserve(reactionRef.current)
         reactionRef.current = undefined
         destroyCache(where)
@@ -52,13 +68,14 @@ export default function convertToObserver (BaseComponent, {
         componentId
       })
       reactionRef.current = observe(trappedRender, {
-        scheduler: update,
+        scheduler: () => scheduleReaction(update),
         lazy: true
       })
     }
 
     // clean up observer on unmount
     useUnmount(() => {
+      unmarkCompatComponent(componentId)
       destroyRef.current?.('useUnmount()')
     })
 

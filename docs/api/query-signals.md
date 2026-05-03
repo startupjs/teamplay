@@ -18,6 +18,14 @@ A signal containing an array of IDs for the documents in the query result.
 const userIds = $activeUsers.ids.get()
 ```
 
+### getIds()
+
+Returns an array of ids for the query results.
+
+```javascript
+const ids = $activeUsers.getIds()
+```
+
 ### map(callback)
 
 Maps over the documents in the query result.
@@ -56,3 +64,4 @@ for (const $user of $activeUsers) {
 
 - Query signals are reactive. Changes to the underlying data or to the query result will automatically update components using the query signal.
 - The documents within a query signal are themselves signals, allowing for nested reactivity.
+ - For public documents in query results, `_id` is available in `get()` results and matches the document id.

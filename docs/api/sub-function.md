@@ -37,3 +37,5 @@ const $activeUsers = await sub($.users, { status: 'active' })
 - The `sub()` function is asynchronous and returns a Promise.
 - When used in React components, it's recommended to use the `useSub()` hook instead, which handles the asynchronous nature of subscriptions in a React-friendly way.
 - Subscribed data is automatically kept in sync with the server.
+- To unsubscribe, call `await $signal.unsubscribe()`.
+- If subscription GC delay is enabled, `unsubscribe()` resolves after delayed cleanup is finished (or canceled by a quick re-subscribe).

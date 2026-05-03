@@ -3,6 +3,7 @@ import Signal, { SEGMENTS, isPublicCollectionSignal, isPublicDocumentSignal } fr
 import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
+import { getRoot } from './Root.js'
 import isServer from '../utils/isServer.js'
 
 export default function sub ($signal, params) {
@@ -19,7 +20,7 @@ export default function sub ($signal, params) {
     return doc$($signal)
   } else if (isPublicCollectionSignal($signal)) {
     if (arguments.length !== 2) throw Error(ERRORS.subQueryArguments(...arguments))
-    return query$($signal[SEGMENTS][0], params)
+    return query$($signal, params)
   } else if (isClientAggregationFunction($signal)) {
     return getAggregationFromFunction($signal, $signal.collection, params)
   } else if (isAggregationHeader($signal)) {
@@ -66,16 +67,19 @@ function doc$ ($doc) {
   return new Promise(resolve => promise.then(() => resolve($doc)))
 }
 
-function query$ (collectionName, params) {
+function query$ ($collection, params) {
+  const collectionName = $collection[SEGMENTS][0]
   if (typeof params !== 'object') throw Error(ERRORS.queryParamsObject(collectionName, params))
-  const $query = getQuerySignal(collectionName, params)
+  const signalOptions = getQuerySignalOptions($collection)
+  if (params?.$aggregate || params?.$aggregationName) return aggregation$(collectionName, params, signalOptions)
+  const $query = getQuerySignal(collectionName, params, signalOptions)
   const promise = querySubscriptions.subscribe($query)
   if (!promise) return $query
   return new Promise(resolve => promise.then(() => resolve($query)))
 }
 
-function aggregation$ (collectionName, params) {
-  const $aggregationQuery = getAggregationSignal(collectionName, params)
+function aggregation$ (collectionName, params, signalOptions) {
+  const $aggregationQuery = getAggregationSignal(collectionName, params, signalOptions)
   const promise = aggregationSubscriptions.subscribe($aggregationQuery)
   if (!promise) return $aggregationQuery
   return new Promise(resolve => promise.then(() => resolve($aggregationQuery)))
@@ -92,6 +96,12 @@ function api$ (fn, args) {
 // This can be easily done by serializing and deserializing it to JSON.
 function sanitizeAggregationParams (params) {
   return JSON.parse(JSON.stringify(params))
+}
+
+function getQuerySignalOptions ($collection) {
+  const $root = getRoot($collection)
+  if (!$root) return undefined
+  return { root: $root }
 }
 
 const ERRORS = {

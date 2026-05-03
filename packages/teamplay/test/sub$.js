@@ -2,9 +2,11 @@ import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, sub, aggregation } from '../index.js'
-import { get as _get } from '../orm/dataTree.js'
+import { get as _get, del as _del } from '../orm/dataTree.js'
 import { getConnection } from '../orm/connection.js'
 import { hashQuery } from '../orm/Query.js'
+import { getPrivateData } from '../orm/privateData.js'
+import { getRoot, ROOT_ID } from '../orm/Root.js'
 import connect from '../connect/test.js'
 
 before(connect)
@@ -17,7 +19,7 @@ function cbPromise (fn) {
 
 function afterEachTestGcShareDb () {
   afterEach(() => {
-    assert.deepEqual(_get(['games']), {}, 'games collection is empty in signal\'s data tree')
+    assert.deepEqual(_get(['games']) || {}, {}, 'games collection is empty in signal\'s data tree')
     assert.equal(Object.keys(getConnection().collections?.games || {}).length, 0, 'no games in ShareDB\'s connection')
   })
 }
@@ -38,14 +40,14 @@ describe('$sub() function', () => {
     assert.equal($game.name.get(), 'Game 1', 'signal has name')
     assert.equal($game.players.get(), 0, 'signal has 0 players')
     assert.deepEqual(
-      _get(['games']), { _1: { name: 'Game 1', players: 0 } },
+      _get(['games']), { _1: { _id: '_1', name: 'Game 1', players: 0 } },
       'signal data tree has one game in the games collection'
     )
     const promise = cbPromise(cb => doc.submitOp([{ p: ['players'], na: 1 }], cb))
     assert.equal($game.players.get(), 1, 'signal has 1 player. Updated synchronously')
     await promise
     assert.equal($game.players.get(), 1, 'signal still has 1 player. (after submitOp finished on the server)')
-    assert.deepEqual($game.get(), { name: 'Game 1', players: 1 }, 'signal has all data')
+    assert.deepEqual($game.get(), { _id: '_1', name: 'Game 1', players: 1 }, 'signal has all data')
     await cbPromise(cb => doc.del(cb))
     assert.equal($game.get(), undefined, 'signal has undefined data after doc is deleted')
   })
@@ -104,22 +106,23 @@ describe('$sub() function. Modifying documents', () => {
     const gameId = '_5'
     const doc = getConnection().get('games', gameId)
     assert.equal(doc.data, undefined, 'doc is initially undefined in sharedb')
-    assert.deepEqual($.games.get(), {}, 'games collection is empty')
+    assert.deepEqual($.games.get() || {}, {}, 'games collection is empty')
     const $game = await sub($.games[gameId])
-    assert.equal(doc.data, undefined, 'subscription itself does not create the doc in sharedb')
+    assert.ok(doc.data, 'subscription materializes an empty missing-doc placeholder in sharedb')
+    assert.deepEqual(doc.data, {}, 'missing-doc placeholder is empty')
     assert.equal($game.get(), undefined, 'signal is undefined')
-    assert.deepEqual($.games.get(), {}, 'games collection is still empty')
+    assert.deepEqual($.games.get() || {}, {}, 'games collection is still empty')
     await $game.set({ name: 'Game 5', players: 0 })
     assert.equal($game.name.get(), 'Game 5')
     assert.equal(doc.data.name, 'Game 5')
-    assert.deepEqual($game.get(), { name: 'Game 5', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 5', players: 0 })
-    assert.deepEqual($.games.get(), { _5: { name: 'Game 5', players: 0 } })
+    assert.deepEqual($game.get(), { _id: '_5', name: 'Game 5', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_5', name: 'Game 5', players: 0 })
+    assert.deepEqual($.games.get(), { _5: { _id: '_5', name: 'Game 5', players: 0 } })
     await $game.name.set('Game 5 Magic')
     assert.equal($game.name.get(), 'Game 5 Magic')
     assert.equal(doc.data.name, 'Game 5 Magic')
-    assert.deepEqual($game.get(), { name: 'Game 5 Magic', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 5 Magic', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_5', name: 'Game 5 Magic', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_5', name: 'Game 5 Magic', players: 0 })
   })
 
   it('.set() to deep modify document', async () => {
@@ -127,13 +130,13 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 6 Alt', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 6 Alt', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 6 Alt', players: 0 })
-    assert.deepEqual($.games.get(), { _6: { name: 'Game 6 Alt', players: 0 } })
+    assert.deepEqual($game.get(), { _id: '_6', name: 'Game 6 Alt', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_6', name: 'Game 6 Alt', players: 0 })
+    assert.deepEqual($.games.get(), { _6: { _id: '_6', name: 'Game 6 Alt', players: 0 } })
     await $game.set({ title: 'My Game', players: 5 })
-    assert.deepEqual($game.get(), { title: 'My Game', players: 5 })
-    assert.deepEqual(doc.data, { title: 'My Game', players: 5 })
-    assert.deepEqual($.games.get(), { _6: { title: 'My Game', players: 5 } })
+    assert.deepEqual($game.get(), { _id: '_6', title: 'My Game', players: 5 })
+    assert.deepEqual(doc.data, { _id: '_6', title: 'My Game', players: 5 })
+    assert.deepEqual($.games.get(), { _6: { _id: '_6', title: 'My Game', players: 5 } })
   })
 
   it('.del() to delete document', async () => {
@@ -141,11 +144,12 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 7', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 7', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 7', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_7', name: 'Game 7', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_7', name: 'Game 7', players: 0 })
     await $game.del()
     assert.equal($game.get(), undefined)
-    assert.equal(doc.data, undefined)
+    assert.ok(doc.data, 'subscribed deleted docs must restore the empty missing-doc placeholder')
+    assert.deepEqual(doc.data, {})
   })
 
   it('.set(undefined) on document should delete it', async () => {
@@ -153,11 +157,12 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 8', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 8', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 8', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_8', name: 'Game 8', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_8', name: 'Game 8', players: 0 })
     await $game.set(undefined)
     assert.equal($game.get(), undefined)
-    assert.equal(doc.data, undefined)
+    assert.ok(doc.data, 'subscribed deleted docs must restore the empty missing-doc placeholder')
+    assert.deepEqual(doc.data, {})
   })
 
   it('.del() on subpath should delete the subpath', async () => {
@@ -165,11 +170,11 @@ describe('$sub() function. Modifying documents', () => {
     const doc = getConnection().get('games', gameId)
     const $game = await sub($.games[gameId])
     await $game.set({ name: 'Game 9', players: 0 })
-    assert.deepEqual($game.get(), { name: 'Game 9', players: 0 })
-    assert.deepEqual(doc.data, { name: 'Game 9', players: 0 })
+    assert.deepEqual($game.get(), { _id: '_9', name: 'Game 9', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_9', name: 'Game 9', players: 0 })
     await $game.name.del()
-    assert.deepEqual($game.get(), { players: 0 })
-    assert.deepEqual(doc.data, { players: 0 })
+    assert.deepEqual($game.get(), { _id: '_9', players: 0 })
+    assert.deepEqual(doc.data, { _id: '_9', players: 0 })
   })
 
   it('.set() on subpath on non-existing document should throw an error', async () => {
@@ -178,6 +183,173 @@ describe('$sub() function. Modifying documents', () => {
     await assert.rejects(async () => {
       await $game.name.set('Game 10')
     }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
+  })
+
+  it('compat: allows immediate subpath set after create() without subscribe', async () => {
+    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
+
+    const gameId = '_compat_create_then_subpath_set'
+    const $game = $.games[gameId]
+
+    await $game.create({ name: 'Created' })
+    await $game.players.set(1)
+
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 1 })
+    const doc = getConnection().get('games', gameId)
+    assert.equal(doc.data.players, 1)
+
+    // Cleanup through normal subscribed path so ShareDB/test GC hooks
+    // can release doc references the same way as other tests.
+    await sub($game)
+    await $game.del()
+  })
+
+  it('compat: allows delayed subpath set after create() without subscribe', async () => {
+    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
+
+    const gameId = '_compat_create_delayed_subpath_set'
+    const $game = $.games[gameId]
+
+    await $game.create({ name: 'Created' })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const connection = getConnection()
+    delete connection.collections.games[gameId]
+    _del(['games', gameId])
+
+    await $game.players.set(2)
+
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 2 })
+    const doc = getConnection().get('games', gameId)
+    assert.equal(doc.data.players, 2)
+
+    await sub($game)
+    await $game.del()
+  })
+
+  it('compat: allows delayed subpath set after add() without subscribe', async () => {
+    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
+
+    const gameId = '_compat_add_delayed_subpath_set'
+    await $.games.add({ _id: gameId, name: 'Added' })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const $game = $.games[gameId]
+    const connection = getConnection()
+    delete connection.collections.games[gameId]
+    _del(['games', gameId])
+
+    await $game.players.set(3)
+
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 3 })
+    const doc = getConnection().get('games', gameId)
+    assert.equal(doc.data.players, 3)
+
+    await sub($game)
+    await $game.del()
+  })
+
+  it('repopulates data tree when doc exists but raw data is missing', async () => {
+    const gameId = '_compat_partial_1'
+    const $game = await sub($.games[gameId])
+    await $game.set({ providers: {} })
+    assert.ok(getConnection().get('games', gameId).data, 'doc data exists')
+    _del(['games', gameId])
+    assert.equal(_get(['games', gameId]), undefined)
+
+    await $game.providers.google.set({ token: 'x' })
+    const rawDoc = _get(['games', gameId])
+    assert.deepEqual(rawDoc.providers.google, { token: 'x' })
+  })
+
+  it('supports array mutators and increment on public docs', async () => {
+    const gameId = '_compat_base_1'
+    const $game = await sub($.games[gameId])
+    await $game.set({ count: 0, list: [1, 2, 3] })
+
+    const inc = await $game.count.increment(2)
+    assert.equal(inc, 2)
+    assert.equal($game.count.get(), 2)
+
+    const len1 = await $game.list.push(4)
+    assert.equal(len1, 4)
+    const len2 = await $game.list.unshift(0)
+    assert.equal(len2, 5)
+    const len3 = await $game.list.insert(2, ['a', 'b'])
+    assert.equal(len3, 7)
+    const popped = await $game.list.pop()
+    assert.equal(popped, 4)
+    const shifted = await $game.list.shift()
+    assert.equal(shifted, 0)
+    const removed = await $game.list.remove(1, 2)
+    assert.deepEqual(removed, ['a', 'b'])
+    const moved = await $game.list.move(1, 0)
+    assert.deepEqual(moved, [2])
+    assert.deepEqual($game.list.get(), [2, 1, 3])
+
+    await $game.del()
+  })
+
+  it('treats missing public numeric paths as zero on increment', async () => {
+    const gameId = '_increment_missing_public_field'
+    const $game = await sub($.games[gameId])
+    await $game.set({ title: 'Game' })
+
+    const direct = await $game.count.increment(1)
+    assert.equal(direct, 1)
+    assert.equal($game.count.get(), 1)
+
+    const nested = await $game.stats.entriesNum.increment(2)
+    assert.equal(nested, 2)
+    assert.equal($game.stats.entriesNum.get(), 2)
+    assert.deepEqual($game.stats.get(), { entriesNum: 2 })
+
+    await $game.del()
+  })
+
+  it('materializes missing public array path on push', async () => {
+    const gameId = '_compat_base_missing_list_1'
+    const $game = await sub($.games[gameId])
+    await $game.set({ count: 0 })
+
+    const len = await $game.list.push(1)
+    assert.equal(len, 1)
+    assert.deepEqual($game.list.get(), [1])
+
+    await $game.del()
+  })
+
+  it('keeps racer-like missing-path semantics for public string/array mutators', async () => {
+    const gameId = '_public_missing_string_array_semantics'
+    const $game = await sub($.games[gameId])
+    await $game.set({ title: 'Game' })
+
+    const prevString = await $game.text.stringInsert(0, 'abc')
+    assert.equal(prevString, undefined)
+    assert.equal($game.text.get(), 'abc')
+
+    const removedMissingString = await $game.missingText.stringRemove(0, 1)
+    assert.equal(removedMissingString, undefined)
+
+    const popMissingArray = await $game.missingList.pop()
+    assert.equal(popMissingArray, undefined)
+    const shiftMissingArray = await $game.missingList.shift()
+    assert.equal(shiftMissingArray, undefined)
+
+    await $game.del()
+  })
+
+  it('supports stringInsert/stringRemove on public docs', async () => {
+    const gameId = '_compat_base_2'
+    const $game = await sub($.games[gameId])
+    await $game.set({ text: 'abc' })
+
+    const prev1 = await $game.text.stringInsert(0, 'X')
+    assert.equal(prev1, 'abc')
+    assert.equal($game.text.get(), 'Xabc')
+    const prev2 = await $game.text.stringRemove(1, 2)
+    assert.equal(prev2, 'Xabc')
+    assert.equal($game.text.get(), 'Xc')
+
+    await $game.del()
   })
 })
 
@@ -198,12 +370,13 @@ describe('$sub() function. Queries', () => {
 
   it('subscribe to query, modify it', async () => {
     const $activeGames = await sub($.games, { active: true })
+    const rootId = getRoot($activeGames)?.[ROOT_ID]
     assert.equal($activeGames.get().length, 2)
-    assert.deepEqual(_get(['$queries']), {
+    assert.deepEqual(getPrivateData(rootId, ['$queries']), {
       [hashQuery('games', { active: true })]: {
         docs: [
-          { name: 'Game 1', active: true },
-          { name: 'Game 2', active: true }
+          { _id: '_1', name: 'Game 1', active: true },
+          { _id: '_2', name: 'Game 2', active: true }
         ],
         ids: ['_1', '_2']
       }
@@ -214,8 +387,8 @@ describe('$sub() function. Queries', () => {
     $activeGames._1.players.set(1)
     assert.equal($game1.players.get(), 1, 'modifying the document through the query signal')
     assert.deepEqual($activeGames.get(), [
-      { name: 'Game 1', active: true, players: 1 },
-      { name: 'Game 2', active: true }
+      { _id: '_1', name: 'Game 1', active: true, players: 1 },
+      { _id: '_2', name: 'Game 2', active: true }
     ], 'query signal has updated data')
   })
 
@@ -256,9 +429,10 @@ describe('$sub() function. Aggregations', () => {
       return [{ $match: { active } }]
     })
     const $activeGames = await sub($$activeGames, { $collection: gamesCollection, active: true })
+    const rootId = getRoot($activeGames)?.[ROOT_ID]
     assert.equal($activeGames.get().length, 2)
     assert.deepEqual(
-      sanitizeAggregations(_get(['$aggregations'])),
+      sanitizeAggregations(getPrivateData(rootId, ['$aggregations']) || {}),
       {
         [hashQuery(gamesCollection, { $aggregate: [{ $match: { active: true } }] })]: [
           { _id: '_1', name: 'Game 1', active: true },

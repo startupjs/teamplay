@@ -1,5 +1,7 @@
+import { isCompatEnv } from './compatEnv.js'
+
 export let connection
-export let fetchOnly
+let defaultFetchOnly
 export let publicOnly
 
 export function setConnection (_connection) {
@@ -11,12 +13,25 @@ export function getConnection () {
   return connection
 }
 
+export function setDefaultFetchOnly (_fetchOnly) {
+  defaultFetchOnly = !!_fetchOnly
+}
+
+export function getDefaultFetchOnly () {
+  return !!defaultFetchOnly
+}
+
+// Deprecated alias kept for internal transition.
 export function setFetchOnly (_fetchOnly) {
-  fetchOnly = _fetchOnly
+  setDefaultFetchOnly(_fetchOnly)
 }
 
 export function setPublicOnly (_publicOnly) {
   publicOnly = _publicOnly
+}
+
+export function isPrivateMutationForbidden () {
+  return !!publicOnly && !isCompatEnv()
 }
 
 const ERRORS = {

@@ -1,10 +1,15 @@
 import Cache from './Cache.js'
-import Signal, { regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.js'
+import Signal, { SEGMENTS, regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.js'
 import { findModel } from './addModel.js'
 import { LOCAL } from './$.js'
 import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.js'
 import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
+import { isCompatEnv } from './compatEnv.js'
+import { getConnection } from './connection.js'
+import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
+import { getSignalIdentityHash } from './rootScope.js'
+import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.js'
 
 const PROXIES_CACHE = new Cache()
 const PROXY_TO_SIGNAL = new WeakMap()
@@ -33,11 +38,13 @@ export default function getSignal ($root, segments = [], {
       }
     }
   }
-  signalHash ??= hashSegments(segments, $root?.[ROOT_ID] || rootId)
-  let proxy = PROXIES_CACHE.get(signalHash)
+  const owningRootId = $root?.[ROOT_ID] || rootId
+  const rootClosed = owningRootId != null && owningRootId !== GLOBAL_ROOT_ID && isRootContextClosed(owningRootId)
+  signalHash ??= getSignalIdentityHash(owningRootId, segments)
+  let proxy = rootClosed ? undefined : PROXIES_CACHE.get(signalHash)
   if (proxy) return proxy
 
-  const SignalClass = getSignalClass(segments)
+  const SignalClass = getSignalClass(segments, $root?.[ROOT_ID] || rootId)
   const signal = new SignalClass(segments)
   proxy = new Proxy(signal, proxyHandlers)
   if (segments.length >= 1) {
@@ -48,8 +55,14 @@ export default function getSignal ($root, segments = [], {
       //       but without it calling the methods of root signal like $.get() doesn't work
       proxy[ROOT] = $root || getSignal(undefined, [], { rootId: GLOBAL_ROOT_ID })
     }
+    signal[ROOT] = proxy[ROOT]
+  } else {
+    signal[ROOT] = proxy
   }
   PROXY_TO_SIGNAL.set(proxy, signal)
+  if (!rootClosed && owningRootId != null && owningRootId !== GLOBAL_ROOT_ID) {
+    registerRootOwnedSignalHash(owningRootId, signalHash)
+  }
   const dependencies = []
 
   // if the signal is a child of the local value created through the $() function,
@@ -59,33 +72,46 @@ export default function getSignal ($root, segments = [], {
   if (segments.length > 2) {
     if (segments[0] === LOCAL) {
       dependencies.push(getSignal($root, segments.slice(0, 2)))
-    } else if (isPublicCollection(segments[0]) || segments[0] === QUERIES || segments[0] === AGGREGATIONS) {
-      dependencies.push(getSignal(undefined, segments.slice(0, 2)))
+    } else if (segments[0] === QUERIES || segments[0] === AGGREGATIONS) {
+      dependencies.push(getSignal(signal[ROOT], segments.slice(0, 2)))
+    } else if (isPublicCollection(segments[0])) {
+      dependencies.push(getSignal(signal[ROOT], segments.slice(0, 2)))
     }
   }
 
-  PROXIES_CACHE.set(signalHash, proxy, dependencies)
+  if (!rootClosed) PROXIES_CACHE.set(signalHash, proxy, dependencies)
   return proxy
 }
 
 function getDefaultProxyHandlers ({ useExtremelyLateBindings } = {}) {
-  return useExtremelyLateBindings ? extremelyLateBindings : regularBindings
-}
-
-function hashSegments (segments, rootId) {
-  if (segments.length === 0) {
-    if (!rootId) throw Error(ERRORS.rootIdRequired)
-    return JSON.stringify({ root: rootId })
-  } else if (isPrivateCollection(segments[0])) {
-    if (!rootId) throw Error(ERRORS.privateCollectionRootIdRequired(segments))
-    return JSON.stringify({ private: [rootId, segments] })
-  } else {
-    return JSON.stringify(segments)
+  const baseHandlers = useExtremelyLateBindings ? extremelyLateBindings : regularBindings
+  if (!isCompatEnv() || baseHandlers !== extremelyLateBindings) return baseHandlers
+  return {
+    ...baseHandlers,
+    get (signal, key, receiver) {
+      if (key === 'connection' && signal[SEGMENTS].length === 0) {
+        try {
+          return getConnection()
+        } catch {
+          return undefined
+        }
+      }
+      if (key === 'root') return Reflect.get(signal, key, receiver)
+      return baseHandlers.get(signal, key, receiver)
+    }
   }
 }
 
-export function getSignalClass (segments) {
-  return findModel(segments) ?? Signal
+export function getSignalClass (segments, rootId = GLOBAL_ROOT_ID) {
+  let Model = findModel(segments)
+  if (Model) return Model
+  if (!isCompatEnv()) return Signal
+  const dereferencedSegments = resolveRefSegmentsSafe(segments, rootId)
+  if (dereferencedSegments) {
+    Model = findModel(dereferencedSegments)
+    if (Model) return Model
+  }
+  return Signal
 }
 
 export function rawSignal (proxy) {
@@ -93,6 +119,9 @@ export function rawSignal (proxy) {
 }
 
 export { PROXIES_CACHE as __DEBUG_SIGNALS_CACHE__ }
+export function purgeSignalHashes (hashes) {
+  for (const hash of hashes) PROXIES_CACHE.delete(hash)
+}
 
 const ERRORS = {
   rootIdRequired: 'Root signal must have a rootId specified',

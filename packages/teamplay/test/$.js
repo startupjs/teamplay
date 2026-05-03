@@ -1,16 +1,19 @@
+import React from 'react'
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
-import { get as _get } from '../orm/dataTree.js'
+import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
+import { GLOBAL_ROOT_ID } from '../orm/Root.js'
 import { LOCAL } from '../orm/$.js'
+import { delPrivateData, getPrivateData } from '../orm/privateData.js'
+import { del as _del, set as _set } from '../orm/dataTree.js'
 import connect from '../connect/test.js'
 
 before(connect)
 
 export function afterEachTestGcLocal () {
   afterEach(async () => {
-    assert.deepEqual(_get([LOCAL]), {}, 'all local data should be GC\'ed')
+    assert.deepEqual(getPrivateData(GLOBAL_ROOT_ID, [LOCAL]) || {}, {}, 'all local data should be GC\'ed')
   })
 }
 
@@ -19,13 +22,13 @@ describe('$() function. Values', () => {
   afterEachTestGcLocal()
 
   it('create local model. Test that data gets deleted after the signal is GC\'ed', async () => {
-    assert.equal(_get([LOCAL]), undefined, 'initially local model is undefined')
+    assert.equal(getPrivateData(GLOBAL_ROOT_ID, [LOCAL]), undefined, 'initially local model is undefined')
     const $value = $()
     $value.set(42)
     assert.equal($value.get(), 42)
     $value.set('hello')
     assert.equal($value.get(), 'hello')
-    assert.deepEqual(_get([LOCAL]), { _0: 'hello' })
+    assert.deepEqual(getPrivateData(GLOBAL_ROOT_ID, [LOCAL]), { _0: 'hello' })
     await runGc()
     assert.equal($value.get(), 'hello')
   })
@@ -88,6 +91,29 @@ describe('$() function. Values', () => {
     assert.equal($firstName.get(), 'John', 'firstName should still be John after GC')
     assert.equal($lastName.get(), 'Smith', 'lastName should still be Smith after GC')
   })
+
+  it('set supports React elements without crashing', async () => {
+    const $state = $({ node: {} })
+    const el1 = React.createElement('div', null, 'hi')
+    const el2 = React.createElement('span', null, 'bye')
+    await $state.node.set(el1)
+    await $state.node.set(el2)
+    assert.equal($state.node.get(), el2)
+  })
+
+  it('set falls back to replace when existing value rejects deep writes', async () => {
+    const guarded = new Proxy({ storeId: 'old' }, {
+      set () {
+        return false
+      }
+    })
+    const $state = $({ node: {} })
+
+    await $state.node.set(guarded)
+    await $state.node.set({ storeId: 'new' })
+
+    assert.deepEqual($state.node.get(), { storeId: 'new' })
+  })
 })
 
 describe.skip('persistance of $() function across component re-renders', () => {
@@ -121,20 +147,73 @@ describe('$() function. Reactions', () => {
   })
 })
 
+describe('Signal array mutators (local)', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('supports array mutators and increment on local signals', async () => {
+    const $list = $([1, 2, 3])
+    const len1 = await $list.push(4)
+    assert.equal(len1, 4)
+    const len2 = await $list.unshift(0)
+    assert.equal(len2, 5)
+    const len3 = await $list.insert(2, ['a', 'b'])
+    assert.equal(len3, 7)
+    const popped = await $list.pop()
+    assert.equal(popped, 4)
+    const shifted = await $list.shift()
+    assert.equal(shifted, 0)
+    const removed = await $list.remove(1, 2)
+    assert.deepEqual(removed, ['a', 'b'])
+    const moved = await $list.move(1, 0)
+    assert.deepEqual(moved, [2])
+    assert.deepEqual($list.get(), [2, 1, 3])
+
+    const $count = $(0)
+    const inc = await $count.increment(2)
+    assert.equal(inc, 2)
+    assert.equal($count.get(), 2)
+  })
+
+  it('supports stringInsert/stringRemove on local signals', async () => {
+    const $text = $('abc')
+    const prev1 = await $text.stringInsert(0, 'X')
+    assert.equal(prev1, 'abc')
+    assert.equal($text.get(), 'Xabc')
+    const prev2 = await $text.stringRemove(1, 2)
+    assert.equal(prev2, 'Xabc')
+    assert.equal($text.get(), 'Xc')
+  })
+
+  it('initializes missing nested array paths for local signals', async () => {
+    const $state = $({})
+
+    const len = await $state.ui.toasts.unshift('first')
+    assert.equal(len, 1)
+    assert.deepEqual($state.ui.toasts.get(), ['first'])
+
+    const popMissing = await $state.ui.other.pop()
+    assert.equal(popMissing, undefined)
+    assert.deepEqual($state.ui.other.get(), [])
+  })
+})
+
 describe('set, get, del on local collections', () => {
   afterEachTestGc()
   afterEachTestGcLocal()
 
-  it('set undefined deletes the key in object', () => {
+  it('set undefined preserves the key in object like racer LocalDoc.set', () => {
     const $obj = $({ a: 1, b: 2 })
     $obj.a.set(undefined)
-    assert.deepEqual($obj.get(), { b: 2 })
+    assert.ok(Object.prototype.hasOwnProperty.call($obj.get(), 'a'))
+    assert.deepEqual($obj.get(), { a: undefined, b: 2 })
   })
 
-  it('set undefined on non-existing key does nothing', () => {
+  it('set undefined on non-existing key materializes the key like racer LocalDoc.set', () => {
     const $obj = $({ a: 1, b: 2 })
     $obj.c.set(undefined)
-    assert.deepEqual($obj.get(), { a: 1, b: 2 })
+    assert.ok(Object.prototype.hasOwnProperty.call($obj.get(), 'c'))
+    assert.deepEqual($obj.get(), { a: 1, b: 2, c: undefined })
   })
 
   it('set undefined sets array\'s element to undefined', () => {
@@ -143,10 +222,17 @@ describe('set, get, del on local collections', () => {
     assert.deepEqual($arr.get(), [undefined, 2])
   })
 
-  it('set undefined on non-existing array index adds an undefined element', () => {
+  it('set undefined on non-existing array index preserves sparse holes like racer LocalDoc.set', () => {
     const $arr = $([1, 2])
     $arr[3].set(undefined)
-    assert.deepEqual($arr.get(), [1, 2, undefined, undefined])
+    const items = $arr.get()
+    assert.equal(items.length, 4)
+    assert.equal(items[0], 1)
+    assert.equal(items[1], 2)
+    assert.equal(items[2], undefined)
+    assert.equal(items[3], undefined)
+    assert.equal(Object.prototype.hasOwnProperty.call(items, 2), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(items, 3), true)
   })
 
   it('del deletes the key in object', () => {
@@ -359,7 +445,7 @@ describe('Signal.assign() function', () => {
   it('verify underlying data tree after assign', async () => {
     const $user = $()
     await $user.assign({ firstName: 'John', lastName: 'Smith' })
-    const localData = _get([LOCAL])
+    const localData = getPrivateData(GLOBAL_ROOT_ID, [LOCAL])
     assert.ok(localData, 'local data should exist')
     // Find the user data in the local tree
     const userKey = Object.keys(localData).find(key => {
@@ -407,5 +493,89 @@ describe('Signal.assign() function', () => {
     assert.equal($user.firstName.get(), 'John')
     assert.equal($user.lastName.get(), 'Smith')
     assert.equal($user.age.get(), 30)
+  })
+})
+
+describe('Signal.batch() function', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('batch executes the callback and returns its result', async () => {
+    const $obj = $()
+    const result = $.batch(() => {
+      $obj.set({ a: 1 })
+      return 'ok'
+    })
+    assert.equal(result, 'ok')
+    assert.deepEqual($obj.get(), { a: 1 })
+  })
+
+  it('batch helper proxies to root batch', () => {
+    const $obj = $()
+    const result = batch(() => {
+      $obj.set({ b: 2 })
+      return 'done'
+    })
+    assert.equal(result, 'done')
+    assert.deepEqual($obj.get(), { b: 2 })
+  })
+
+  it('batchModel helper proxies to root batch', () => {
+    const $obj = $()
+    const result = batchModel(() => {
+      $obj.set({ c: 3 })
+      return 'model'
+    })
+    assert.equal(result, 'model')
+    assert.deepEqual($obj.get(), { c: 3 })
+  })
+})
+
+describe('initLocalCollection()', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('initializes local collection once', () => {
+    const $collection = initLocalCollection('_localTest')
+    assert.deepEqual($collection.get(), {})
+    $collection.set({ a: 1 })
+    const again = initLocalCollection('_localTest')
+    assert.deepEqual(again.get(), { a: 1 })
+  })
+
+  it('global root get/peek include public and local collections', async () => {
+    _set(['users', 'u1'], { name: 'John' })
+    const $message = $('hello')
+    await $._session.userId.set('u1')
+    const $collection = initLocalCollection('_localTest')
+    await $collection.sample.set(123)
+    const localId = $message.path().split('.').pop()
+
+    const snapshot = $.get()
+    const rawSnapshot = $.peek()
+
+    assert.equal(snapshot.users.u1.name, 'John')
+    assert.equal(rawSnapshot.users.u1.name, 'John')
+    assert.equal(snapshot._session.userId, 'u1')
+    assert.equal(rawSnapshot._session.userId, 'u1')
+    assert.equal(snapshot.$local[localId], 'hello')
+    assert.equal(rawSnapshot.$local[localId], 'hello')
+    assert.equal(snapshot._localTest.sample, 123)
+    assert.equal(rawSnapshot._localTest.sample, 123)
+
+    _del(['users'])
+    delPrivateData(GLOBAL_ROOT_ID, ['_session'])
+    delPrivateData(GLOBAL_ROOT_ID, ['_localTest'])
+    delPrivateData(GLOBAL_ROOT_ID, [LOCAL])
+  })
+})
+
+describe('clone()', () => {
+  it('deep clones plain objects', () => {
+    const original = { a: 1, b: { c: 2 } }
+    const copied = clone(original)
+    assert.deepEqual(copied, original)
+    copied.b.c = 3
+    assert.equal(original.b.c, 2)
   })
 })
