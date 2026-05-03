@@ -33,7 +33,21 @@ export default defineConfig({
             { text: 'Usage', link: '/guide/usage' },
             { text: 'React Integration', link: '/guide/react-integration' },
             { text: 'Async Setters', link: '/guide/async-setters' },
+            { text: 'TypeScript Support', link: '/guide/typescript-support' },
+            { text: 'Usage in StartupJS', link: '/guide/usage-in-startupjs' },
             { text: 'Offline Mode', link: '/guide/offline-mode' }
+          ]
+        },
+        {
+          text: 'ORM',
+          items: [
+            { text: 'Overview', link: '/orm/index' },
+            { text: 'File-Based Models', link: '/orm/file-based-models' },
+            { text: 'Schemas', link: '/orm/schemas' },
+            { text: 'Models', link: '/orm/models' },
+            { text: 'Queries', link: '/orm/queries' },
+            { text: 'Aggregations', link: '/orm/aggregations' },
+            { text: 'Access Control', link: '/orm/access-control' }
           ]
         },
         {
@@ -58,7 +72,7 @@ export default defineConfig({
       ]
     },
     nav: [
-      { text: 'Docs', link: '/guide/index', activeMatch: '/guide/.*' },
+      { text: 'Docs', link: '/guide/index', activeMatch: '/(guide|orm)/.*' },
       { text: 'API', link: '/api/root-signal', activeMatch: '/api/.*' }
     ]
   }

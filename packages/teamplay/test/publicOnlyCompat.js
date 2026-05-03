@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal, setPublicOnly } from '../index.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.js'
+import { getRootSignal, setPublicOnly } from '../index.ts'
+import { __resetRootContextsForTests } from '../orm/rootContext.ts'
 
 describe('publicOnly', () => {
   const initialCompatFlag = globalThis.teamplayCompatibilityMode

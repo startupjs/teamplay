@@ -1,24 +1,24 @@
 import { it, describe, afterEach, before, after } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
-import { $, sub, addModel, aggregation, getRootSignal } from '../index.js'
+import { $, sub, addModel, aggregation, getRootSignal } from '../index.ts'
 import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
-import { getConnection, setConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../orm/connection.js'
-import getSignal from '../orm/getSignal.js'
+import { getConnection, setConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../orm/connection.ts'
+import getSignal from '../orm/getSignal.ts'
 import connect from '../connect/test.js'
 import SignalCompat from '../orm/Compat/SignalCompat.js'
-import { Signal as BaseSignal } from '../orm/SignalBase.js'
+import { Signal as BaseSignal } from '../orm/SignalBase.ts'
 import { scheduleReaction } from '../orm/batchScheduler.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { __resetSilentContextForTests, isSilentContextActive } from '../orm/Compat/silentContext.js'
 import { isMissingShareDoc } from '../orm/missingDoc.js'
-import { ROOT, ROOT_ID } from '../orm/Root.js'
+import { ROOT, ROOT_ID } from '../orm/Root.ts'
 import { PARAMS, HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
 import { AGGREGATIONS, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { delPrivateData, setPrivateData } from '../orm/privateData.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
-import { __resetRootContextsForTests, getRootContext } from '../orm/rootContext.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import { __resetRootContextsForTests, getRootContext } from '../orm/rootContext.ts'
 import {
   __setImperativeQueryReadyTimeoutForTests,
   __resetImperativeQueryReadyTimeoutForTests
@@ -1867,8 +1867,8 @@ describe('SignalCompat public mutators', () => {
     await $game1.set({ name: 'Agg One', active: true })
     await $game2.set({ name: 'Agg Two', active: true })
 
-    const $$agg = aggregation(({ active }) => [{ $match: { active } }])
-    const $agg = await sub($$agg, { $collection: 'compatGames', active: true })
+    const _agg = aggregation(({ active }) => [{ $match: { active } }])
+    const $agg = await sub(_agg, { $collection: 'compatGames', active: true })
     const results = $agg.get()
     assert.ok(results.length >= 2)
     assert.ok(results.every(doc => doc._id))

@@ -3,9 +3,14 @@
   "type": "module",
   "version": "0.4.0",
   "description": "Utils to work with json-schema",
-  "main": "index.js",
+  "main": "index.ts",
+  "types": "index.ts",
   "exports": {
-    ".": "./index.js"
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./json-schema-keywords": "./lib/jsonSchemaKeywords.cjs"
   },
   "dependencies": {
     "ajv": "^8.12.0",

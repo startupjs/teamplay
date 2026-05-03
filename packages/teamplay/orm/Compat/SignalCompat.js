@@ -8,13 +8,13 @@ import {
   isPublicCollection,
   isPublicCollectionSignal,
   isPublicDocumentSignal
-} from '../SignalBase.js'
-import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.js'
-import { isPrivateMutationForbidden } from '../connection.js'
+} from '../SignalBase.ts'
+import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.ts'
+import { isPrivateMutationForbidden } from '../connection.ts'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
-import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields, isPlainObject } from '../idFields.js'
+import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields, isPlainObject } from '../idFields.ts'
 import {
   incrementPublic as _incrementPublic,
   arrayPushPublic as _arrayPushPublic,
@@ -35,9 +35,9 @@ import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
 import { runInBatch } from '../batchScheduler.js'
 import { runInSilentContext, runInModelEventsSilentContext, isSilentContextActive } from './silentContext.js'
-import universal$ from '../../react/universal$.js'
-import { getRootContext } from '../rootContext.js'
-import disposeRootContext from '../disposeRootContext.js'
+import universal$ from '../../react/universal$.ts'
+import { getRootContext } from '../rootContext.ts'
+import disposeRootContext from '../disposeRootContext.ts'
 import {
   arrayInsertPrivateData,
   arrayMovePrivateData,

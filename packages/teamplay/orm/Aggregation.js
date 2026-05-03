@@ -1,6 +1,6 @@
 import { raw } from '@nx-js/observer-util'
 import { getRaw } from './dataTree.js'
-import getSignal from './getSignal.js'
+import getSignal from './getSignal.ts'
 import {
   QuerySubscriptions,
   hashQuery,
@@ -10,9 +10,10 @@ import {
   COLLECTION_NAME,
   parseQueryHash
 } from './Query.js'
-import Signal, { SEGMENTS } from './Signal.js'
-import { getIdFieldsForSegments, isPlainObject } from './idFields.js'
+import Signal, { SEGMENTS } from './Signal.ts'
+import { getIdFieldsForSegments, isPlainObject } from './idFields.ts'
 import { delPrivateData, getPrivateData, setPrivateData } from './privateData.js'
+import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
 
 export const IS_AGGREGATION = Symbol('is aggregation signal')
 export const AGGREGATIONS = '$aggregations'
@@ -72,6 +73,11 @@ export function getAggregationSignal (collectionName, params, options) {
   $aggregation[COLLECTION_NAME] ??= collectionName
   $aggregation[PARAMS] ??= params
   $aggregation[HASH] ??= transportHash
+  setSignalRuntimeDescriptor($aggregation, {
+    kind: 'aggregation',
+    collectionName,
+    itemPattern: [collectionName, '*']
+  })
   return $aggregation
 }
 

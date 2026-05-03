@@ -1,17 +1,18 @@
 import { raw } from '@nx-js/observer-util'
 import { set as _set, getRaw } from './dataTree.js'
-import getSignal from './getSignal.js'
-import { getConnection } from './connection.js'
+import getSignal from './getSignal.ts'
+import { getConnection } from './connection.ts'
 import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isCompatEnv } from './compatEnv.js'
 import { docSubscriptions } from './Doc.js'
-import FinalizationRegistry from '../utils/MockFinalizationRegistry.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import SubscriptionState from './SubscriptionState.js'
-import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.js'
-import { getSubscriptionGcDelay } from './subscriptionGcDelay.js'
-import { getScopedSignalHash, normalizeRootId } from './rootScope.js'
-import { getRoot, ROOT_ID, getRootTransportMode } from './Root.js'
-import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.js'
+import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
+import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
+import { getScopedSignalHash, normalizeRootId } from './rootScope.ts'
+import { getRoot, ROOT_ID, getRootTransportMode } from './Root.ts'
+import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.ts'
+import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
 import {
   delPrivateData,
   getPrivateData,
@@ -948,6 +949,11 @@ export function getQuerySignal (collectionName, params, options) {
   $query[COLLECTION_NAME] ??= collectionName
   $query[PARAMS] ??= params
   $query[HASH] ??= transportHash
+  setSignalRuntimeDescriptor($query, {
+    kind: 'query',
+    collectionName,
+    itemPattern: [collectionName, '*']
+  })
   return $query
 }
 

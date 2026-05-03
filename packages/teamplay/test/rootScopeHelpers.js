@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { GLOBAL_ROOT_ID } from '../orm/Root.js'
+import { GLOBAL_ROOT_ID } from '../orm/Root.ts'
 import {
   normalizeRootId,
   isGlobalRootId,
@@ -10,7 +10,7 @@ import {
   getSignalIdentityHash,
   getScopedSignalHash,
   getRootScopedRegistryKey
-} from '../orm/rootScope.js'
+} from '../orm/rootScope.ts'
 
 describe('rootScope helpers', () => {
   it('normalizes and classifies root ids consistently', () => {

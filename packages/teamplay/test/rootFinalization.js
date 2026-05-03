@@ -1,22 +1,22 @@
 import { before, beforeEach, afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal } from '../index.js'
+import { getRootSignal } from '../index.ts'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 import connect from '../connect/test.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import { docSubscriptions } from '../orm/Doc.js'
-import { getConnection } from '../orm/connection.js'
+import { getConnection } from '../orm/connection.ts'
 import { del as _del } from '../orm/dataTree.js'
 import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
 import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
 import { getPrivateDataRawRoot } from '../orm/privateData.js'
 import { HASH as QUERY_HASH, querySubscriptions } from '../orm/Query.js'
-import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.js'
+import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.ts'
 import {
   __getRootContextForTests,
   __resetRootContextsForTests
-} from '../orm/rootContext.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+} from '../orm/rootContext.ts'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 import { runGc } from './_helpers.js'
 
 before(connect)

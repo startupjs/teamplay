@@ -1,4 +1,4 @@
-// simple bundler for client.js with live reload
+// simple bundler for client.jsx with live reload
 import esbuild from 'esbuild'
 import { watch } from 'fs'
 
@@ -26,7 +26,7 @@ export default function serveClient (server) {
 
 async function bundleClientJs () {
   cache ??= esbuild.build({
-    entryPoints: ['./client.js'],
+    entryPoints: ['./client.jsx'],
     bundle: true,
     write: false,
     format: 'esm',
@@ -42,7 +42,7 @@ async function bundleClientJs () {
   return (await cache).outputFiles[0].text
 }
 
-watch('./client.js', () => {
+watch('./client.jsx', () => {
   cache = undefined
   for (const reload of reloadClients) reload()
 })

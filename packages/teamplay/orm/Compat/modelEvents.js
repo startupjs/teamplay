@@ -1,8 +1,8 @@
 import { getRefLinks, getRefRootIds } from './refRegistry.js'
 import { isCompatEnv } from '../compatEnv.js'
 import { isSilentContextActive, isModelEventsSilentContextActive, runInModelEventsSilentContext } from './silentContext.js'
-import { normalizeRootId } from '../rootScope.js'
-import { getRootContext, getRootContexts } from '../rootContext.js'
+import { normalizeRootId } from '../rootScope.ts'
+import { getRootContext, getRootContexts } from '../rootContext.ts'
 import { setReplace as setReplaceInDataTree, del as delFromDataTree } from '../dataTree.js'
 import { setReplacePrivateData, delPrivateData } from '../privateData.js'
 

@@ -1,6 +1,6 @@
-import { GLOBAL_ROOT_ID } from '../Root.js'
-import { normalizeRootId } from '../rootScope.js'
-import { getRootContext, getRootContexts } from '../rootContext.js'
+import { GLOBAL_ROOT_ID } from '../Root.ts'
+import { normalizeRootId } from '../rootScope.ts'
+import { getRootContext, getRootContexts } from '../rootContext.ts'
 
 const EMPTY_MAP = new Map()
 

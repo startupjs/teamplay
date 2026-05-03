@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "allowJs": false,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "types": [
+      "react"
+    ]
+  },
+  "include": [
+    "test_types/external-consumer.ts"
+  ]
+}

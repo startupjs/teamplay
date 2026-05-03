@@ -1,8 +1,8 @@
 // this is just the $() function implementation.
 // The actual $ exported from this package is a Proxy targeting the dataTree root,
 // and this function is an implementation of the `apply` handler for that Proxy.
-import getSignal from './getSignal.js'
-import Signal from './Signal.js'
+import getSignal from './getSignal.ts'
+import Signal from './Signal.ts'
 import { LOCAL, valueSubscriptions } from './Value.js'
 import { reactionSubscriptions } from './Reaction.js'
 

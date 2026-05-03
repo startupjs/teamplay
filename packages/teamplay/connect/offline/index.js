@@ -2,7 +2,7 @@
 // This creates a full sharedb server with mingo database in the browser or react-native app.
 import ShareDbMingo from '@startupjs/sharedb-mingo-memory'
 import ShareBackend from 'sharedb'
-import { connection, setConnection } from '../../orm/connection.js'
+import { connection, setConnection } from '../../orm/connection.ts'
 
 const STORAGE_NAMESPACE = 'teamplay-offline'
 const DOCS_PREFIX = `${STORAGE_NAMESPACE}:docs:`

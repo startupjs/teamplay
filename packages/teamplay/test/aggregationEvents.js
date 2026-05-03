@@ -1,7 +1,7 @@
 import { it, describe, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub, aggregation } from '../index.js'
+import { $, sub, aggregation } from '../index.ts'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
 import connect from '../connect/test.js'
 
@@ -40,10 +40,10 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   afterEachTestGc()
 
   it('basic aggregation subscribe with server-side function', async () => {
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $items = await sub($$items, { $collection: itemsCollection, active: true })
+    const $items = await sub(_items, { $collection: itemsCollection, active: true })
 
     assert.equal($items.get().length, 3, 'should have 3 active items')
 
@@ -60,10 +60,10 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
 
   it('aggregation parameter changes', async () => {
     // Subscribe with active: true
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    let $items = await sub($$items, { $collection: itemsCollection, active: true })
+    let $items = await sub(_items, { $collection: itemsCollection, active: true })
 
     assert.equal($items.get().length, 3, 'should have 3 active items')
     assert.equal(aggregationSubscriptions.queries.size, 1, 'one aggregation query tracked')
@@ -76,7 +76,7 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
     assert.equal(aggregationSubscriptions.queries.size, 0, 'aggregation query cleaned up after GC')
 
     // Resubscribe with different params (active: false)
-    $items = await sub($$items, { $collection: itemsCollection, active: false })
+    $items = await sub(_items, { $collection: itemsCollection, active: false })
 
     assert.equal($items.get().length, 1, 'should have 1 inactive item')
     const results = sanitizeAggregationResult($items.get())
@@ -86,12 +86,12 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation reference counting', async () => {
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
 
     // Subscribe first time
-    let $items1 = await sub($$items, { $collection: itemsCollection, active: true })
+    let $items1 = await sub(_items, { $collection: itemsCollection, active: true })
     assert.equal($items1.get().length, 3)
 
     // Get the hash to check subscription count
@@ -99,7 +99,7 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
     assert.equal(aggregationSubscriptions.subCount.get(hash), 1, 'subscription count is 1')
 
     // Subscribe second time with same params
-    let $items2 = await sub($$items, { $collection: itemsCollection, active: true })
+    let $items2 = await sub(_items, { $collection: itemsCollection, active: true })
     assert.equal($items2.get().length, 3)
 
     // Check if both signals are the same object (due to signal caching)
@@ -152,10 +152,10 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation result updates when underlying data changes', async () => {
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $items = await sub($$items, { $collection: itemsCollection, active: true })
+    const $items = await sub(_items, { $collection: itemsCollection, active: true })
 
     assert.equal($items.get().length, 3, 'initially 3 active items')
 
@@ -175,13 +175,13 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation with $sort', async () => {
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [
         { $match: { active } },
         { $sort: { price: 1 } } // ascending by price
       ]
     })
-    const $items = await sub($$items, { $collection: itemsCollection, active: true })
+    const $items = await sub(_items, { $collection: itemsCollection, active: true })
 
     assert.equal($items.get().length, 3, 'should have 3 active items')
 
@@ -202,11 +202,11 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('GC cleanup for aggregation signals', async () => {
-    const $$items = aggregation(({ category }) => {
+    const _items = aggregation(({ category }) => {
       return [{ $match: { category } }]
     })
 
-    let $items = await sub($$items, { $collection: itemsCollection, category: 'A' })
+    let $items = await sub(_items, { $collection: itemsCollection, category: 'A' })
 
     assert.equal($items.get().length, 2, 'should have 2 items in category A')
     assert.equal(aggregationSubscriptions.queries.size, 1, 'one aggregation query tracked')
@@ -225,16 +225,16 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
 
   it('multiple aggregations on same collection', async () => {
     // First aggregation: active items
-    const $$activeItems = aggregation(({ active }) => {
+    const _activeItems = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeItems = await sub($$activeItems, { $collection: itemsCollection, active: true })
+    const $activeItems = await sub(_activeItems, { $collection: itemsCollection, active: true })
 
     // Second aggregation: category A items
-    const $$categoryAItems = aggregation(({ category }) => {
+    const _categoryAItems = aggregation(({ category }) => {
       return [{ $match: { category } }]
     })
-    const $categoryAItems = await sub($$categoryAItems, { $collection: itemsCollection, category: 'A' })
+    const $categoryAItems = await sub(_categoryAItems, { $collection: itemsCollection, category: 'A' })
 
     // Verify both aggregations work independently
     assert.equal($activeItems.get().length, 3, 'active items aggregation has 3 items')
@@ -271,13 +271,13 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation with $group and $project', async () => {
-    const $$itemsByCategory = aggregation(() => {
+    const _itemsByCategory = aggregation(() => {
       return [
         { $group: { _id: '$category', count: { $sum: 1 }, totalPrice: { $sum: '$price' } } },
         { $sort: { _id: 1 } }
       ]
     })
-    const $itemsByCategory = await sub($$itemsByCategory, { $collection: itemsCollection })
+    const $itemsByCategory = await sub(_itemsByCategory, { $collection: itemsCollection })
 
     const results = sanitizeAggregationResult($itemsByCategory.get())
 
@@ -297,14 +297,14 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation with $limit', async () => {
-    const $$limitedItems = aggregation(({ active }) => {
+    const _limitedItems = aggregation(({ active }) => {
       return [
         { $match: { active } },
         { $sort: { price: -1 } }, // descending by price
         { $limit: 2 }
       ]
     })
-    const $limitedItems = await sub($$limitedItems, { $collection: itemsCollection, active: true })
+    const $limitedItems = await sub(_limitedItems, { $collection: itemsCollection, active: true })
 
     const results = sanitizeAggregationResult($limitedItems.get())
 
@@ -316,10 +316,10 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation result updates when document changes matching criteria', async () => {
-    const $$activeItems = aggregation(({ active }) => {
+    const _activeItems = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeItems = await sub($$activeItems, { $collection: itemsCollection, active: true })
+    const $activeItems = await sub(_activeItems, { $collection: itemsCollection, active: true })
 
     assert.equal($activeItems.get().length, 3, 'initially 3 active items')
 
@@ -346,13 +346,13 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation getIds() returns array of document IDs', async () => {
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [
         { $match: { active } },
         { $sort: { price: 1 } }
       ]
     })
-    const $items = await sub($$items, { $collection: itemsCollection, active: true })
+    const $items = await sub(_items, { $collection: itemsCollection, active: true })
 
     const ids = $items.getIds()
 
@@ -362,10 +362,10 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation is iterable', async () => {
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $items = await sub($$items, { $collection: itemsCollection, active: true })
+    const $items = await sub(_items, { $collection: itemsCollection, active: true })
 
     const itemsArray = [...$items]
     assert.equal(itemsArray.length, 3, 'can spread aggregation into array')
@@ -378,10 +378,10 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
   })
 
   it('aggregation supports .map()', async () => {
-    const $$items = aggregation(({ active }) => {
+    const _items = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $items = await sub($$items, { $collection: itemsCollection, active: true })
+    const $items = await sub(_items, { $collection: itemsCollection, active: true })
 
     const names = $items.map($item => $item.name.get()).sort()
 
