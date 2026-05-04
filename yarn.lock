@@ -3196,12 +3196,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@teamplay/backend@npm:^0.5.0-alpha.0, @teamplay/backend@workspace:packages/backend":
+"@teamplay/backend@npm:^0.5.0-alpha.1, @teamplay/backend@workspace:packages/backend":
   version: 0.0.0-use.local
   resolution: "@teamplay/backend@workspace:packages/backend"
   dependencies:
     "@startupjs/sharedb-mingo-memory": "npm:^4.0.0-2"
-    "@teamplay/schema": "npm:^0.5.0-alpha.0"
+    "@teamplay/schema": "npm:^0.5.0-alpha.1"
     "@teamplay/server-aggregate": "npm:^0.5.0-alpha.0"
     "@teamplay/sharedb-access": "npm:^0.5.0-alpha.0"
     "@teamplay/sharedb-schema": "npm:^0.5.0-alpha.0"
@@ -3243,7 +3243,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@teamplay/schema@npm:^0.5.0-alpha.0, @teamplay/schema@workspace:packages/schema":
+"@teamplay/schema@npm:^0.5.0-alpha.1, @teamplay/schema@workspace:packages/schema":
   version: 0.0.0-use.local
   resolution: "@teamplay/schema@workspace:packages/schema"
   dependencies:
@@ -4707,7 +4707,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"babel-plugin-teamplay@npm:^0.5.0-alpha.0, babel-plugin-teamplay@workspace:packages/babel-plugin-teamplay":
+"babel-plugin-teamplay@npm:^0.5.0-alpha.1, babel-plugin-teamplay@workspace:packages/babel-plugin-teamplay":
   version: 0.0.0-use.local
   resolution: "babel-plugin-teamplay@workspace:packages/babel-plugin-teamplay"
   dependencies:
@@ -4716,7 +4716,7 @@ __metadata:
     "@babel/parser": "npm:^7.0.0"
     "@babel/traverse": "npm:^7.0.0"
     "@startupjs/babel-plugin-eliminator": "npm:^0.62.0-alpha.0"
-    "@teamplay/schema": "npm:^0.5.0-alpha.0"
+    "@teamplay/schema": "npm:^0.5.0-alpha.1"
     pluralize: "npm:^8.0.0"
     vitest: "npm:^4.1.5"
   languageName: unknown
@@ -7206,7 +7206,7 @@ __metadata:
     esbuild: "npm:^0.21.4"
     react: "npm:^18.3.1"
     react-dom: "npm:^18.3.1"
-    teamplay: "npm:^0.5.0-alpha.0"
+    teamplay: "npm:^0.5.0-alpha.1"
   languageName: unknown
   linkType: soft
 
@@ -15809,24 +15809,24 @@ __metadata:
   languageName: node
   linkType: hard
 
-"teamplay@npm:^0.5.0-alpha.0, teamplay@workspace:packages/teamplay":
+"teamplay@npm:^0.5.0-alpha.1, teamplay@workspace:packages/teamplay":
   version: 0.0.0-use.local
   resolution: "teamplay@workspace:packages/teamplay"
   dependencies:
     "@jest/globals": "npm:^30.3.0"
     "@nx-js/observer-util": "npm:^4.1.3"
     "@startupjs/sharedb-mingo-memory": "npm:^4.0.0-2"
-    "@teamplay/backend": "npm:^0.5.0-alpha.0"
+    "@teamplay/backend": "npm:^0.5.0-alpha.1"
     "@teamplay/cache": "npm:^0.5.0-alpha.0"
     "@teamplay/channel": "npm:^0.5.0-alpha.0"
     "@teamplay/debug": "npm:^0.5.0-alpha.0"
-    "@teamplay/schema": "npm:^0.5.0-alpha.0"
+    "@teamplay/schema": "npm:^0.5.0-alpha.1"
     "@teamplay/utils": "npm:^0.5.0-alpha.0"
     "@testing-library/dom": "npm:^10.4.1"
     "@testing-library/react": "npm:^16.3.2"
     "@types/node": "npm:^25.6.0"
     "@types/react": "npm:^18.3.28"
-    babel-plugin-teamplay: "npm:^0.5.0-alpha.0"
+    babel-plugin-teamplay: "npm:^0.5.0-alpha.1"
     c8: "npm:^11.0.0"
     diff-match-patch: "npm:^1.0.5"
     events: "npm:^3.3.0"
