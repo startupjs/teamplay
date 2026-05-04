@@ -1,14 +1,14 @@
 import { it, describe, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { runGc } from './_helpers.js'
-import { $, sub, aggregation, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.ts'
-import { getConnection } from '../orm/connection.ts'
-import { docSubscriptions } from '../orm/Doc.js'
-import { querySubscriptions } from '../orm/Query.js'
-import { aggregationSubscriptions } from '../orm/Aggregation.js'
-import { getRoot, ROOT_ID } from '../orm/Root.ts'
-import { getScopedSignalHash } from '../orm/rootScope.ts'
-import connect from '../connect/test.js'
+import { $, sub, aggregation, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../src/index.ts'
+import { getConnection } from '../src/orm/connection.ts'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { querySubscriptions } from '../src/orm/Query.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { getRoot, ROOT_ID } from '../src/orm/Root.ts'
+import { getScopedSignalHash } from '../src/orm/rootScope.ts'
+import connect from '../src/connect/test.js'
 
 before(connect)
 

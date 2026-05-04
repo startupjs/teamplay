@@ -122,7 +122,7 @@ function runInFixture (source) {
     symlinkSync(TEAMPLAY_DIR, join(root, 'node_modules', 'teamplay'), 'dir')
     symlinkSync(join(PACKAGES_DIR, 'babel-plugin-teamplay'), join(root, 'node_modules', 'babel-plugin-teamplay'), 'dir')
 
-    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', withErrorHandling(source)], {
+    const result = spawnSync(process.execPath, ['-C', 'teamplay-ts', '--input-type=module', '--eval', withErrorHandling(source)], {
       cwd: root,
       encoding: 'utf8',
       env: {

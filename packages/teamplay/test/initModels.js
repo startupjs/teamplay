@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import Signal from '../orm/Signal.ts'
-import initModels, { getModels, resetModelsForTests } from '../orm/initModels.ts'
-import { findModel } from '../orm/addModel.ts'
+import Signal from '../src/orm/Signal.ts'
+import initModels, { getModels, resetModelsForTests } from '../src/orm/initModels.ts'
+import { findModel } from '../src/orm/addModel.ts'
 import { defineSchema } from '@teamplay/schema'
 
 describe('initModels', () => {

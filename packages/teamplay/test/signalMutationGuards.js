@@ -3,7 +3,7 @@ import { describe, it } from 'mocha'
 import {
   ensureArrayTargetSegments,
   ensureValueTargetSegments
-} from '../orm/signalMutationGuards.ts'
+} from '../src/orm/signalMutationGuards.ts'
 
 describe('signal mutation guards', () => {
   it('allows nested value and array paths', () => {

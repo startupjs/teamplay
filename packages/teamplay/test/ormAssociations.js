@@ -1,7 +1,7 @@
 import { describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { addModel, getRootSignal } from '../index.ts'
-import BaseModel, { belongsTo, hasMany, hasOne } from '../orm/index.ts'
+import { addModel, getRootSignal } from '../src/index.ts'
+import BaseModel, { belongsTo, hasMany, hasOne } from '../src/orm/index.ts'
 
 describe('ORM associations', () => {
   it('exposes getAssociations() on model signals', () => {

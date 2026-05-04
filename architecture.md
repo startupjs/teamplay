@@ -72,7 +72,7 @@ The package boundaries mostly follow this layering, but `packages/teamplay` is i
 
 | Package | Role | Main files |
 | --- | --- | --- |
-| `teamplay` | Public runtime package: signals, ORM, React hooks, server/connect facades, model registration, schema/cache re-exports. | [packages/teamplay/index.ts](./packages/teamplay/index.ts), [packages/teamplay/orm](./packages/teamplay/orm), [packages/teamplay/react](./packages/teamplay/react), [packages/teamplay/server.js](./packages/teamplay/server.js), [packages/teamplay/connect/index.js](./packages/teamplay/connect/index.js) |
+| `teamplay` | Public runtime package: signals, ORM, React hooks, server/connect facades, model registration, schema/cache re-exports. | [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts), [packages/teamplay/src/orm](./packages/teamplay/src/orm), [packages/teamplay/src/react](./packages/teamplay/src/react), [packages/teamplay/src/server.js](./packages/teamplay/src/server.js), [packages/teamplay/src/connect/index.js](./packages/teamplay/src/connect/index.js) |
 | `babel-plugin-teamplay` | File-based model discovery and code generation for app model folders. Produces model manifests and generated type env files. | [packages/babel-plugin-teamplay](./packages/babel-plugin-teamplay) |
 | `@teamplay/backend` | ShareDB backend factory with database, pubsub, hooks, access control, schema validation, and server aggregation integration. | [packages/backend/index.js](./packages/backend/index.js) |
 | `@teamplay/channel` | WebSocket/SockJS-compatible client/server channel used by the ShareDB connection. | [packages/channel](./packages/channel) |
@@ -100,7 +100,7 @@ The public `teamplay` package exports multiple surfaces from [packages/teamplay/
 - `teamplay/connect-test` and `teamplay/connect-offline`: test/offline connection variants.
 - `teamplay/cache` and `teamplay/schema`: convenience re-exports.
 
-The main public entry is [packages/teamplay/index.ts](./packages/teamplay/index.ts). It creates the global root signal:
+The main public entry is [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts). It creates the global root signal:
 
 ```ts
 export const $ = getRootSignal({
@@ -136,9 +136,9 @@ const channel = initConnection(backend)
 
 Important files:
 
-- [packages/teamplay/server.js](./packages/teamplay/server.js)
+- [packages/teamplay/src/server.js](./packages/teamplay/src/server.js)
 - [packages/backend/index.js](./packages/backend/index.js)
-- [packages/teamplay/orm/initModels.ts](./packages/teamplay/orm/initModels.ts)
+- [packages/teamplay/src/orm/initModels.ts](./packages/teamplay/src/orm/initModels.ts)
 
 `teamplay/server` wraps `@teamplay/backend`. If `initModels()` has already registered models and `createBackend()` is called without an explicit `models` option, the wrapper passes the initialized model manifest into the backend.
 
@@ -167,14 +167,14 @@ connect({ base: '/channel' })
 
 Important files:
 
-- [packages/teamplay/connect/index.js](./packages/teamplay/connect/index.js)
-- [packages/teamplay/connect/sharedbConnection.cjs](./packages/teamplay/connect/sharedbConnection.cjs)
+- [packages/teamplay/src/connect/index.js](./packages/teamplay/src/connect/index.js)
+- [packages/teamplay/src/connect/sharedbConnection.cjs](./packages/teamplay/src/connect/sharedbConnection.cjs)
 - [packages/channel](./packages/channel)
-- [packages/teamplay/orm/connection.ts](./packages/teamplay/orm/connection.ts)
+- [packages/teamplay/src/orm/connection.ts](./packages/teamplay/src/orm/connection.ts)
 
 `connect()` creates a channel socket, wraps it in a ShareDB-compatible connection adapter, and stores it in the ORM singleton connection. If a connection already exists, it returns without replacing it.
 
-The singleton connection is a current architectural constraint. [packages/teamplay/orm/Root.ts](./packages/teamplay/orm/Root.ts) has TODOs for spawnable/per-root connections, but the current implementation assumes one active connection per runtime environment.
+The singleton connection is a current architectural constraint. [packages/teamplay/src/orm/Root.ts](./packages/teamplay/src/orm/Root.ts) has TODOs for spawnable/per-root connections, but the current implementation assumes one active connection per runtime environment.
 
 ## Models And Manifests
 
@@ -194,14 +194,14 @@ TeamPlay supports file-based models. A model folder is transformed into a manife
 }
 ```
 
-The Babel plugin and loader own discovery/generation. Runtime registration flows through [packages/teamplay/orm/initModels.ts](./packages/teamplay/orm/initModels.ts):
+The Babel plugin and loader own discovery/generation. Runtime registration flows through [packages/teamplay/src/orm/initModels.ts](./packages/teamplay/src/orm/initModels.ts):
 
 - `initModels(models)` stores the manifest and registers every `default` class.
 - `defineModels(models)` is a typed identity helper for explicit manifests.
 - `getModels()` returns the current manifest for server features.
 - `resetModelsForTests()` clears global model registration.
 
-Signal class lookup is handled by [packages/teamplay/orm/addModel.ts](./packages/teamplay/orm/addModel.ts) and [packages/teamplay/orm/getSignal.ts](./packages/teamplay/orm/getSignal.ts). Patterns are path-based:
+Signal class lookup is handled by [packages/teamplay/src/orm/addModel.ts](./packages/teamplay/src/orm/addModel.ts) and [packages/teamplay/src/orm/getSignal.ts](./packages/teamplay/src/orm/getSignal.ts). Patterns are path-based:
 
 - `users` matches the collection signal.
 - `users.*` matches document signals.
@@ -221,11 +221,11 @@ Signals are proxy-wrapped instances. Most user code never sees raw signal instan
 
 Main files:
 
-- [packages/teamplay/orm/getSignal.ts](./packages/teamplay/orm/getSignal.ts)
-- [packages/teamplay/orm/SignalBase.ts](./packages/teamplay/orm/SignalBase.ts)
-- [packages/teamplay/orm/Signal.ts](./packages/teamplay/orm/Signal.ts)
-- [packages/teamplay/orm/Root.ts](./packages/teamplay/orm/Root.ts)
-- [packages/teamplay/orm/rootContext.ts](./packages/teamplay/orm/rootContext.ts)
+- [packages/teamplay/src/orm/getSignal.ts](./packages/teamplay/src/orm/getSignal.ts)
+- [packages/teamplay/src/orm/SignalBase.ts](./packages/teamplay/src/orm/SignalBase.ts)
+- [packages/teamplay/src/orm/Signal.ts](./packages/teamplay/src/orm/Signal.ts)
+- [packages/teamplay/src/orm/Root.ts](./packages/teamplay/src/orm/Root.ts)
+- [packages/teamplay/src/orm/rootContext.ts](./packages/teamplay/src/orm/rootContext.ts)
 
 `getSignal(root, segments, options)` is the signal factory. It:
 
@@ -247,7 +247,7 @@ Every path segment creates another signal. No concrete `users`, `profile`, or `n
 
 ### Method Binding
 
-TeamPlay currently uses "extremely late bindings" in [packages/teamplay/orm/SignalBase.ts](./packages/teamplay/orm/SignalBase.ts). A property access always prefers creating a child signal. If that child signal is called like a function, the proxy `apply` trap can route the call back to a method on the parent signal model.
+TeamPlay currently uses "extremely late bindings" in [packages/teamplay/src/orm/SignalBase.ts](./packages/teamplay/src/orm/SignalBase.ts). A property access always prefers creating a child signal. If that child signal is called like a function, the proxy `apply` trap can route the call back to a method on the parent signal model.
 
 This allows field names and method names to collide without losing object-tree access:
 
@@ -266,7 +266,7 @@ TeamPlay has two runtime storage domains.
 
 ### Public Data Tree
 
-The public data tree lives in [packages/teamplay/orm/dataTree.js](./packages/teamplay/orm/dataTree.js):
+The public data tree lives in [packages/teamplay/src/orm/dataTree.js](./packages/teamplay/src/orm/dataTree.js):
 
 - `dataTreeRaw` is the raw shared object tree.
 - `dataTree` is the observable wrapper.
@@ -285,7 +285,7 @@ Public document ids are strings. Numeric segments are array indices, not documen
 
 ### Root-Scoped Private Data
 
-Private/local data is root-owned and lives in [packages/teamplay/orm/rootContext.ts](./packages/teamplay/orm/rootContext.ts) plus [packages/teamplay/orm/privateData.js](./packages/teamplay/orm/privateData.js).
+Private/local data is root-owned and lives in [packages/teamplay/src/orm/rootContext.ts](./packages/teamplay/src/orm/rootContext.ts) plus [packages/teamplay/src/orm/privateData.js](./packages/teamplay/src/orm/privateData.js).
 
 Private storage is used for:
 
@@ -314,11 +314,11 @@ This is why root identity matters. A query result under one root should not leak
 
 Main files:
 
-- [packages/teamplay/orm/sub.ts](./packages/teamplay/orm/sub.ts)
-- [packages/teamplay/orm/Doc.js](./packages/teamplay/orm/Doc.js)
-- [packages/teamplay/orm/Query.js](./packages/teamplay/orm/Query.js)
-- [packages/teamplay/orm/Aggregation.js](./packages/teamplay/orm/Aggregation.js)
-- [packages/teamplay/react/useSub.ts](./packages/teamplay/react/useSub.ts)
+- [packages/teamplay/src/orm/sub.ts](./packages/teamplay/src/orm/sub.ts)
+- [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js)
+- [packages/teamplay/src/orm/Query.js](./packages/teamplay/src/orm/Query.js)
+- [packages/teamplay/src/orm/Aggregation.js](./packages/teamplay/src/orm/Aggregation.js)
+- [packages/teamplay/src/react/useSub.ts](./packages/teamplay/src/react/useSub.ts)
 
 ### Document Subscription Flow
 
@@ -331,7 +331,7 @@ sub($.users[id])
   -> resolve with the same $doc signal
 ```
 
-[packages/teamplay/orm/Doc.js](./packages/teamplay/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
+[packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
 
 ### Query Subscription Flow
 
@@ -346,7 +346,7 @@ sub($.users, params)
   -> resolve with query signal
 ```
 
-[packages/teamplay/orm/Query.js](./packages/teamplay/orm/Query.js) owns query lifecycle. The query signal itself is path-shaped like the collection, but its data is read through private query materialization:
+[packages/teamplay/src/orm/Query.js](./packages/teamplay/src/orm/Query.js) owns query lifecycle. The query signal itself is path-shaped like the collection, but its data is read through private query materialization:
 
 ```txt
 $queries.<hash>.docs
@@ -370,7 +370,7 @@ sub(aggregationHeader, params)
   -> resolve with aggregation signal
 ```
 
-[packages/teamplay/orm/Aggregation.js](./packages/teamplay/orm/Aggregation.js) extends query behavior. Aggregation output comes from query `extra`, not from normal query `results`. If aggregation rows include `_id` or `id`, the runtime can inject configured id fields and route model method calls back to source documents.
+[packages/teamplay/src/orm/Aggregation.js](./packages/teamplay/src/orm/Aggregation.js) extends query behavior. Aggregation output comes from query `extra`, not from normal query `results`. If aggregation rows include `_id` or `id`, the runtime can inject configured id fields and route model method calls back to source documents.
 
 ## Writes And Mutations
 
@@ -378,13 +378,13 @@ Signal write methods are defined on the runtime signal base and delegated into s
 
 Important files:
 
-- [packages/teamplay/orm/SignalBase.ts](./packages/teamplay/orm/SignalBase.ts)
-- [packages/teamplay/orm/signalReads.ts](./packages/teamplay/orm/signalReads.ts)
-- [packages/teamplay/orm/signalValueMutations.ts](./packages/teamplay/orm/signalValueMutations.ts)
-- [packages/teamplay/orm/signalStorageMutations.ts](./packages/teamplay/orm/signalStorageMutations.ts)
-- [packages/teamplay/orm/signalMutationGuards.ts](./packages/teamplay/orm/signalMutationGuards.ts)
-- [packages/teamplay/orm/dataTree.js](./packages/teamplay/orm/dataTree.js)
-- [packages/teamplay/orm/privateData.js](./packages/teamplay/orm/privateData.js)
+- [packages/teamplay/src/orm/SignalBase.ts](./packages/teamplay/src/orm/SignalBase.ts)
+- [packages/teamplay/src/orm/signalReads.ts](./packages/teamplay/src/orm/signalReads.ts)
+- [packages/teamplay/src/orm/signalValueMutations.ts](./packages/teamplay/src/orm/signalValueMutations.ts)
+- [packages/teamplay/src/orm/signalStorageMutations.ts](./packages/teamplay/src/orm/signalStorageMutations.ts)
+- [packages/teamplay/src/orm/signalMutationGuards.ts](./packages/teamplay/src/orm/signalMutationGuards.ts)
+- [packages/teamplay/src/orm/dataTree.js](./packages/teamplay/src/orm/dataTree.js)
+- [packages/teamplay/src/orm/privateData.js](./packages/teamplay/src/orm/privateData.js)
 
 The mutation layer decides whether a signal path is:
 
@@ -406,7 +406,7 @@ The runtime should route the operation correctly and produce clear errors when a
 
 ## React Integration
 
-React integration lives in [packages/teamplay/react](./packages/teamplay/react). The main public exports are:
+React integration lives in [packages/teamplay/src/react](./packages/teamplay/src/react). The main public exports are:
 
 - `observer()`
 - `useSub()`
@@ -414,7 +414,7 @@ React integration lives in [packages/teamplay/react](./packages/teamplay/react).
 - `useSuspendMemo()`
 - local/session/page/document/query hooks, including compatibility hooks.
 
-`$` and `sub()` are intentionally universal: the root export in [packages/teamplay/index.ts](./packages/teamplay/index.ts) uses `universal$` so the same public API works in plain JS and React environments.
+`$` and `sub()` are intentionally universal: the root export in [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts) uses `universal$` so the same public API works in plain JS and React environments.
 
 React subscriptions must preserve the same runtime signal shapes as `sub()`:
 
@@ -468,7 +468,7 @@ Run Babel plugin tests and TeamPlay type tests for changes in this area.
 
 ## Compatibility Layer
 
-Compatibility code lives under [packages/teamplay/orm/Compat](./packages/teamplay/orm/Compat) and related compat entry points.
+Compatibility code lives under [packages/teamplay/src/orm/Compat](./packages/teamplay/src/orm/Compat) and related compat entry points.
 
 Compat exists to preserve old Racer/StartupJS-style behavior while TeamPlay moves toward the current object-tree signal API. It is temporary and should not be a target for broad TypeScript conversion or large new abstractions.
 
@@ -526,17 +526,17 @@ Use these entry points when deciding where a change belongs.
 
 | Change | Start here | Also check |
 | --- | --- | --- |
-| Public API export | [packages/teamplay/index.ts](./packages/teamplay/index.ts), [packages/teamplay/package.json](./packages/teamplay/package.json) | Type tests, external consumer tests |
-| Signal property access or method binding | [packages/teamplay/orm/SignalBase.ts](./packages/teamplay/orm/SignalBase.ts), [packages/teamplay/orm/getSignal.ts](./packages/teamplay/orm/getSignal.ts) | Proxy/apply tests, compat tests if shared |
-| Signal read behavior | [packages/teamplay/orm/signalReads.ts](./packages/teamplay/orm/signalReads.ts), [packages/teamplay/orm/signalArrayReaders.ts](./packages/teamplay/orm/signalArrayReaders.ts) | Query/aggregation/doc read tests |
-| Signal write behavior | [packages/teamplay/orm/signalValueMutations.ts](./packages/teamplay/orm/signalValueMutations.ts), [packages/teamplay/orm/signalStorageMutations.ts](./packages/teamplay/orm/signalStorageMutations.ts), [packages/teamplay/orm/dataTree.js](./packages/teamplay/orm/dataTree.js) | Public/private mutation tests |
-| Document subscription lifecycle | [packages/teamplay/orm/Doc.js](./packages/teamplay/orm/Doc.js) | Server tests, GC/cleanup tests |
-| Query lifecycle or metadata | [packages/teamplay/orm/Query.js](./packages/teamplay/orm/Query.js), [packages/teamplay/orm/sub.ts](./packages/teamplay/orm/sub.ts) | Query metadata type/runtime tests |
-| Aggregation behavior | [packages/teamplay/orm/Aggregation.js](./packages/teamplay/orm/Aggregation.js), backend server aggregation features | Aggregation row method tests |
-| Root ownership or private data | [packages/teamplay/orm/Root.ts](./packages/teamplay/orm/Root.ts), [packages/teamplay/orm/rootContext.ts](./packages/teamplay/orm/rootContext.ts), [packages/teamplay/orm/privateData.js](./packages/teamplay/orm/privateData.js) | Root cleanup and isolation tests |
+| Public API export | [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts), [packages/teamplay/package.json](./packages/teamplay/package.json) | Type tests, external consumer tests |
+| Signal property access or method binding | [packages/teamplay/src/orm/SignalBase.ts](./packages/teamplay/src/orm/SignalBase.ts), [packages/teamplay/src/orm/getSignal.ts](./packages/teamplay/src/orm/getSignal.ts) | Proxy/apply tests, compat tests if shared |
+| Signal read behavior | [packages/teamplay/src/orm/signalReads.ts](./packages/teamplay/src/orm/signalReads.ts), [packages/teamplay/src/orm/signalArrayReaders.ts](./packages/teamplay/src/orm/signalArrayReaders.ts) | Query/aggregation/doc read tests |
+| Signal write behavior | [packages/teamplay/src/orm/signalValueMutations.ts](./packages/teamplay/src/orm/signalValueMutations.ts), [packages/teamplay/src/orm/signalStorageMutations.ts](./packages/teamplay/src/orm/signalStorageMutations.ts), [packages/teamplay/src/orm/dataTree.js](./packages/teamplay/src/orm/dataTree.js) | Public/private mutation tests |
+| Document subscription lifecycle | [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) | Server tests, GC/cleanup tests |
+| Query lifecycle or metadata | [packages/teamplay/src/orm/Query.js](./packages/teamplay/src/orm/Query.js), [packages/teamplay/src/orm/sub.ts](./packages/teamplay/src/orm/sub.ts) | Query metadata type/runtime tests |
+| Aggregation behavior | [packages/teamplay/src/orm/Aggregation.js](./packages/teamplay/src/orm/Aggregation.js), backend server aggregation features | Aggregation row method tests |
+| Root ownership or private data | [packages/teamplay/src/orm/Root.ts](./packages/teamplay/src/orm/Root.ts), [packages/teamplay/src/orm/rootContext.ts](./packages/teamplay/src/orm/rootContext.ts), [packages/teamplay/src/orm/privateData.js](./packages/teamplay/src/orm/privateData.js) | Root cleanup and isolation tests |
 | Model discovery/generation | [packages/babel-plugin-teamplay](./packages/babel-plugin-teamplay) | Babel tests, generated-env snapshots, type tests |
 | Backend access/schema/aggregation | [packages/backend](./packages/backend), [packages/sharedb-access](./packages/sharedb-access), [packages/sharedb-schema](./packages/sharedb-schema), [packages/server-aggregate](./packages/server-aggregate) | Server tests and model manifest tests |
-| React subscription UX | [packages/teamplay/react](./packages/teamplay/react) | Client tests, suspense/cleanup tests, type tests |
+| React subscription UX | [packages/teamplay/src/react](./packages/teamplay/src/react) | Client tests, suspense/cleanup tests, type tests |
 
 ## Design Principles
 

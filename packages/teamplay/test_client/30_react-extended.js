@@ -44,30 +44,30 @@ import {
   useDidUpdate,
   useOnce,
   useSyncEffect
-} from '../index.ts'
-import { setTestThrottling, resetTestThrottling, useSubClassic } from '../react/useSub.ts'
-import { __resetSuspendMemoForTests } from '../react/useSuspendMemo.ts'
-import { useId, useNow, useTriggerUpdate, useUnmount } from '../react/helpers.ts'
-import trapRender from '../react/trapRender.js'
-import renderAttemptDestroyer from '../react/renderAttemptDestroyer.ts'
+} from '../src/index.ts'
+import { setTestThrottling, resetTestThrottling, useSubClassic } from '../src/react/useSub.ts'
+import { __resetSuspendMemoForTests } from '../src/react/useSuspendMemo.ts'
+import { useId, useNow, useTriggerUpdate, useUnmount } from '../src/react/helpers.ts'
+import trapRender from '../src/react/trapRender.js'
+import renderAttemptDestroyer from '../src/react/renderAttemptDestroyer.ts'
 import {
   __resetCompatComponentRegistryForTests,
   markCompatComponent
-} from '../react/compatComponentRegistry.ts'
+} from '../src/react/compatComponentRegistry.ts'
 import { runGc, cache } from '../test/_helpers.js'
-import { get as _get, set as _set, del as _del } from '../orm/dataTree.js'
-import connect from '../connect/test.js'
-import { SEGMENTS } from '../orm/Signal.ts'
-import { docSubscriptions } from '../orm/Doc.js'
-import { PARAMS as QUERY_PARAMS, querySubscriptions } from '../orm/Query.js'
-import { aggregationSubscriptions, AGGREGATIONS } from '../orm/Aggregation.js'
-import { setPrivateData } from '../orm/privateData.js'
+import { get as _get, set as _set, del as _del } from '../src/orm/dataTree.js'
+import connect from '../src/connect/test.js'
+import { SEGMENTS } from '../src/orm/Signal.ts'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { PARAMS as QUERY_PARAMS, querySubscriptions } from '../src/orm/Query.js'
+import { aggregationSubscriptions, AGGREGATIONS } from '../src/orm/Aggregation.js'
+import { setPrivateData } from '../src/orm/privateData.js'
 import {
   on as onCompatEvent,
   removeListener as removeCompatListener,
   __resetEventsForTests
-} from '../orm/Compat/eventsCompat.js'
-import { __resetCompatWarningsForTests } from '../orm/Compat/hooksCompat.js'
+} from '../src/orm/Compat/eventsCompat.js'
+import { __resetCompatWarningsForTests } from '../src/orm/Compat/hooksCompat.js'
 
 before(connect)
 beforeEach(() => {

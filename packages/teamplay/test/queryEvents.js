@@ -1,11 +1,11 @@
 import { it, describe, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub } from '../index.ts'
-import { getConnection } from '../orm/connection.ts'
-import { querySubscriptions } from '../orm/Query.js'
-import { docSubscriptions } from '../orm/Doc.js'
-import connect from '../connect/test.js'
+import { $, sub } from '../src/index.ts'
+import { getConnection } from '../src/orm/connection.ts'
+import { querySubscriptions } from '../src/orm/Query.js'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import connect from '../src/connect/test.js'
 
 before(connect)
 

@@ -1,17 +1,17 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, describe, it } from 'mocha'
-import { getRootSignal } from '../index.ts'
-import { getAggregationSignal, AGGREGATIONS, IS_AGGREGATION } from '../orm/Aggregation.js'
-import { del as delPublicData, set as setPublicData } from '../orm/dataTree.js'
-import { HASH, IS_QUERY, QUERIES, getQuerySignal } from '../orm/Query.js'
-import { delPrivateData, setPrivateData } from '../orm/privateData.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.ts'
-import { SEGMENTS } from '../orm/Signal.ts'
+import { getRootSignal } from '../src/index.ts'
+import { getAggregationSignal, AGGREGATIONS, IS_AGGREGATION } from '../src/orm/Aggregation.js'
+import { del as delPublicData, set as setPublicData } from '../src/orm/dataTree.js'
+import { HASH, IS_QUERY, QUERIES, getQuerySignal } from '../src/orm/Query.js'
+import { delPrivateData, setPrivateData } from '../src/orm/privateData.js'
+import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
+import { SEGMENTS } from '../src/orm/Signal.ts'
 import {
   getSignalIds,
   getSignalValue,
   readSignalValue
-} from '../orm/signalReads.ts'
+} from '../src/orm/signalReads.ts'
 
 describe('signal read helpers', () => {
   afterEach(() => {

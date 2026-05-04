@@ -21,7 +21,7 @@ The main implementation goal is to move runtime facts closer to checked runtime 
 
 The public typing surface is now mostly in the desired shape:
 
-- `packages/teamplay/index.ts`, `packages/teamplay/orm/sub.ts`, and `packages/teamplay/react/useSub.ts` are checked.
+- `packages/teamplay/src/index.ts`, `packages/teamplay/src/orm/sub.ts`, and `packages/teamplay/src/react/useSub.ts` are checked.
 - Public `Signal<T>` is a registry-based facade over runtime signals, model methods, schema fields, and generated path facts.
 - Runtime/public contracts are separated through names such as `RuntimeSignalInstance`, `SignalBaseInstance`, and `SignalModelConstructor`.
 - Collection, query, and aggregation signal types share central `SignalKind` / `SignalForKind` helpers.
@@ -51,9 +51,9 @@ This is the right direction for maintainability: public UX remains stable, while
 
 Runtime signal creation flows through:
 
-- `packages/teamplay/orm/getSignal.ts`
-- `packages/teamplay/orm/SignalBase.ts`
-- `packages/teamplay/orm/addModel.ts`
+- `packages/teamplay/src/orm/getSignal.ts`
+- `packages/teamplay/src/orm/SignalBase.ts`
+- `packages/teamplay/src/orm/addModel.ts`
 
 `getSignal($root, segments, options)` chooses the runtime class with `getSignalClass(segments)`. `getSignalClass()` calls `findModel(segments)`, which matches patterns registered by `addModel(pattern, Model)`.
 
@@ -152,7 +152,7 @@ Shared model-pattern utilities now cover:
 
 ### Module Augmentation
 
-`packages/teamplay/index.ts` exposes three augmentation interfaces:
+`packages/teamplay/src/index.ts` exposes three augmentation interfaces:
 
 ```ts
 export interface TeamplayCollections {}
@@ -201,7 +201,7 @@ function UserCard ({ $user }: { $user: Signal<UserDoc> }) {
 
 ### Core Signal Types
 
-`packages/teamplay/orm/types/signal.ts` defines the core signal graph:
+`packages/teamplay/src/orm/types/signal.ts` defines the core signal graph:
 
 - `TypedSignal<TValue, TModel, TPath>`
 - `DocumentSignal`

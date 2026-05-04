@@ -7,7 +7,7 @@ import RootContext, {
   getRootOwnedRuntimeHashes,
   __getRootContextForTests,
   __resetRootContextsForTests
-} from '../orm/rootContext.ts'
+} from '../src/orm/rootContext.ts'
 
 describe('RootContext runtime owner', () => {
   afterEach(() => {

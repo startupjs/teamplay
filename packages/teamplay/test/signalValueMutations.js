@@ -1,14 +1,14 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, describe, it } from 'mocha'
-import { getRootSignal } from '../index.ts'
-import { del as delPublicData, get as getPublicData } from '../orm/dataTree.js'
-import { delPrivateData, getPrivateData } from '../orm/privateData.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.ts'
-import { SEGMENTS } from '../orm/Signal.ts'
+import { getRootSignal } from '../src/index.ts'
+import { del as delPublicData, get as getPublicData } from '../src/orm/dataTree.js'
+import { delPrivateData, getPrivateData } from '../src/orm/privateData.js'
+import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
+import { SEGMENTS } from '../src/orm/Signal.ts'
 import {
   deleteSignalValue,
   setSignalValue
-} from '../orm/signalValueMutations.ts'
+} from '../src/orm/signalValueMutations.ts'
 
 describe('signal value mutation helpers', () => {
   afterEach(() => {

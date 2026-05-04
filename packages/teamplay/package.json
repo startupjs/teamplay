@@ -3,16 +3,18 @@
   "version": "0.4.0",
   "description": "Full-stack signals ORM with multiplayer",
   "type": "module",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./index.ts",
-      "default": "./index.ts"
+      "teamplay-ts": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./orm": {
-      "types": "./orm/index.ts",
-      "default": "./orm/index.ts"
+      "teamplay-ts": "./src/orm/index.ts",
+      "types": "./dist/orm/index.d.ts",
+      "default": "./dist/orm/index.js"
     },
     "./babel": "./babel.cjs",
     "./babel/loader": "./babel-loader.cjs",
@@ -20,12 +22,26 @@
       "node": "./file-based-models.node.js",
       "default": "./file-based-models.js"
     },
-    "./connect": "./connect/index.js",
-    "./server": "./server.js",
-    "./connect-test": "./connect/test.js",
+    "./connect": {
+      "teamplay-ts": "./src/connect/index.js",
+      "default": "./dist/connect/index.js"
+    },
+    "./server": {
+      "teamplay-ts": "./src/server.js",
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./connect-test": {
+      "teamplay-ts": "./src/connect/test.js",
+      "default": "./dist/connect/test.js"
+    },
     "./connect-offline": {
-      "react-native": "./connect/offline/react-native.js",
-      "default": "./connect/offline/web.js"
+      "react-native": {
+        "teamplay-ts": "./src/connect/offline/react-native.js",
+        "default": "./dist/connect/offline/react-native.js"
+      },
+      "teamplay-ts": "./src/connect/offline/web.js",
+      "default": "./dist/connect/offline/web.js"
     },
     "./cache": "./cache.js",
     "./schema": "./schema.js"
@@ -34,17 +50,20 @@
     "access": "public"
   },
   "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && rsync -a --include='*/' --include='*.d.ts' --include='*.cjs' --exclude='*' src/ dist/ && node ../../scripts/rewrite-dts-extensions.cjs dist",
+    "prepublishOnly": "npm run build",
     "test": "npm run test-types && npm run test-types:external && npm run test-server && npm run test-client && npm run test-compat",
     "test-types": "tsc -p tsconfig.type-tests.json",
     "test-types:external": "tsc -p tsconfig.external-consumer.json",
-    "test-server": "NODE_OPTIONS=\"--expose-gc\" mocha 'test/[!_]*.js'",
-    "test-server-only": "NODE_OPTIONS=\"--expose-gc\" mocha --grep '@only' 'test/[!_]*.js'",
-    "test-client": "NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest --runInBand",
+    "test-types:dist": "tsc -p tsconfig.external-consumer.dist.json",
+    "test-server": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --expose-gc -C teamplay-ts\" mocha 'test/[!_]*.js'",
+    "test-server-only": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --expose-gc -C teamplay-ts\" mocha --grep '@only' 'test/[!_]*.js'",
+    "test-client": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --expose-gc --experimental-vm-modules -C teamplay-ts\" jest --runInBand",
     "test-compat": "npm run test-server-compat && npm run test-client-compat",
-    "test-server-compat": "TEAMPLAY_COMPAT=1 NODE_OPTIONS=\"--expose-gc\" mocha 'test/[!_]*.js'",
-    "test-client-compat": "TEAMPLAY_COMPAT=1 NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest --runInBand",
-    "coverage-server": "NODE_OPTIONS=\"--expose-gc\" c8 --include 'orm/**' --include 'react/**' --include 'utils/**' mocha 'test/[!_]*.js'",
-    "coverage-client": "NODE_OPTIONS=\"$NODE_OPTIONS --expose-gc --experimental-vm-modules\" jest --coverage --coverageDirectory=coverage-client",
+    "test-server-compat": "TEAMPLAY_COMPAT=1 NODE_OPTIONS=\"${NODE_OPTIONS:-} --expose-gc -C teamplay-ts\" mocha 'test/[!_]*.js'",
+    "test-client-compat": "TEAMPLAY_COMPAT=1 NODE_OPTIONS=\"${NODE_OPTIONS:-} --expose-gc --experimental-vm-modules -C teamplay-ts\" jest --runInBand",
+    "coverage-server": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --expose-gc -C teamplay-ts\" c8 --include 'src/orm/**' --include 'src/react/**' --include 'src/utils/**' mocha 'test/[!_]*.js'",
+    "coverage-client": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --expose-gc --experimental-vm-modules -C teamplay-ts\" jest --coverage --coverageDirectory=coverage-client",
     "coverage": "npm run coverage-server && npm run coverage-client"
   },
   "dependencies": {
@@ -70,12 +89,15 @@
     "@jest/globals": "^30.3.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.6.0",
+    "@types/react": "^18.3.28",
     "c8": "^11.0.0",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
     "mocha": "^11.7.5",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "@react-native-async-storage/async-storage": "*",

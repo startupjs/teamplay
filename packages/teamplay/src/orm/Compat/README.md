@@ -6,14 +6,14 @@ It includes:
 1. `SignalCompat` — a signal class with legacy-style helpers like `.at()` and `.scope()`.
 2. Compat hooks — `useValue`, `useLocal`, `useDoc`, `useQuery`, and related async/batch aliases.
 
-All hooks are re-exported from `packages/teamplay/index.js`.
+All hooks are re-exported from `packages/teamplay/src/index.ts`.
 
 ## Compatibility Mode Signal
 
 Teamplay normally uses `Signal` as the default signal class. In compatibility mode, it switches to `SignalCompat`:
 
 ```js
-// packages/teamplay/orm/Signal.js
+// packages/teamplay/src/orm/Signal.js
 export default globalThis?.teamplayCompatibilityMode ? SignalCompat : Signal
 ```
 

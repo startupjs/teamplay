@@ -1,13 +1,13 @@
 import { createElement as el, Fragment } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, render } from '@testing-library/react'
-import { $, useSub, observer, sub, aggregation } from '../index.ts'
-import { docSubscriptions } from '../orm/Doc.js'
-import { querySubscriptions } from '../orm/Query.js'
-import { aggregationSubscriptions } from '../orm/Aggregation.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import { $, useSub, observer, sub, aggregation } from '../src/index.ts'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { querySubscriptions } from '../src/orm/Query.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 import { runGc, cache } from '../test/_helpers.js'
-import connect from '../connect/test.js'
+import connect from '../src/connect/test.js'
 
 before(connect)
 const baselineGcDelay = getSubscriptionGcDelay()

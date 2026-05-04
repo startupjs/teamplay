@@ -1,7 +1,7 @@
 const { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } = require('fs')
 const { dirname, join, relative, resolve: pathResolve } = require('path')
 const parser = require('@babel/parser')
-const JSON_SCHEMA_KEYWORDS = require('@teamplay/schema/json-schema-keywords')
+const jsonSchemaKeywordsModule = require('@teamplay/schema/json-schema-keywords')
 const pluralize = require('pluralize')
 const {
   JS_EXT_REGEX,
@@ -13,6 +13,7 @@ const {
   toImportPath
 } = require('./modelPatternRules')
 
+const JSON_SCHEMA_KEYWORDS = jsonSchemaKeywordsModule.default || jsonSchemaKeywordsModule
 const MODEL_MAGIC_IMPORT_REGEX = /['"](?:teamplay|startupjs)['"]/
 const MODEL_ELIMINATION_FUNCTION_REGEX = /\b(?:aggregation|serverOnly|accessControl)\b/
 const warnedFallbackFolders = new Set()

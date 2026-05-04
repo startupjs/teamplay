@@ -3,14 +3,14 @@
 ## Current State
 
 - The default Signal implementation has been moved to TypeScript source and is distributed as `.ts` directly. Converted runtime imports use explicit `.ts` extensions so Node and Metro can load the source without a build step.
-- `packages/teamplay/orm/SignalBase.ts` contains the runtime class implementation and its directly maintained method typings. We removed the duplicate ambient `interface Signal` shape so method signatures are no longer maintained in two places.
-- `packages/teamplay/orm/Signal.ts` is now a small runtime facade that selects `Signal` or `SignalCompat` and re-exports the public type surface.
+- `packages/teamplay/src/orm/SignalBase.ts` contains the runtime class implementation and its directly maintained method typings. We removed the duplicate ambient `interface Signal` shape so method signatures are no longer maintained in two places.
+- `packages/teamplay/src/orm/Signal.ts` is now a small runtime facade that selects `Signal` or `SignalCompat` and re-exports the public type surface.
 - Compatibility mode remains JS-backed and intentionally unchanged except for import paths needed to coexist with the converted TS files.
 - Type-only logic has been split out of implementation files:
-  - `packages/teamplay/orm/types/signal.ts` defines the high-level signal graph: `TypedSignal`, `DocumentSignal`, `CollectionSignal`, `QuerySignal`, `AggregationSignal`, model binding, and collection specs.
-  - `packages/teamplay/orm/types/jsonSchema.ts` maps the supported JSON Schema subset into TypeScript values.
-  - `packages/teamplay/orm/types/query.ts` maps document schemas into typed Mongo-style query params.
-  - `packages/teamplay/orm/types/path.ts` contains reusable path tuple/string helpers.
+  - `packages/teamplay/src/orm/types/signal.ts` defines the high-level signal graph: `TypedSignal`, `DocumentSignal`, `CollectionSignal`, `QuerySignal`, `AggregationSignal`, model binding, and collection specs.
+  - `packages/teamplay/src/orm/types/jsonSchema.ts` maps the supported JSON Schema subset into TypeScript values.
+  - `packages/teamplay/src/orm/types/query.ts` maps document schemas into typed Mongo-style query params.
+  - `packages/teamplay/src/orm/types/path.ts` contains reusable path tuple/string helpers.
 - Public root typing is registry-based. End projects augment `TeamplayCollections` and `TeamplayModels`, and `$`, `sub()`, `useSub()`, query signals, aggregation signals, local signals, and computed local signals derive from those registries.
 - Runtime model binding still uses `addModel(pattern, Model)`. Type binding is separate because TypeScript cannot infer global root signal types from runtime calls in unrelated modules.
 - Runtime collection schema validation still comes from backend `models[collection].schema`. `createBackend({ models, validateSchema: true })` wires this into ShareDB schema validation outside production.

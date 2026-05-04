@@ -5,7 +5,7 @@ import {
   normalizeSignalPropertyKey,
   pathSegmentsToPattern,
   transformRootDollarAlias
-} from '../orm/signalPathRules.ts'
+} from '../src/orm/signalPathRules.ts'
 
 describe('signal path rules', () => {
   it('maps root dollar aliases to private collection names', () => {

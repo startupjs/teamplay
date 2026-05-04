@@ -1,8 +1,8 @@
 import { it, describe, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { runGc } from './_helpers.js'
-import { $, signal, __DEBUG_SIGNALS_CACHE__ as signalsCache, GLOBAL_ROOT_ID } from '../index.ts'
-import connect from '../connect/test.js'
+import { $, signal, __DEBUG_SIGNALS_CACHE__ as signalsCache, GLOBAL_ROOT_ID } from '../src/index.ts'
+import connect from '../src/connect/test.js'
 
 before(connect)
 

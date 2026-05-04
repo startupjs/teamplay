@@ -6,6 +6,9 @@
     "allowImportingTsExtensions": true,
     "allowJs": true,
     "checkJs": false,
+    "customConditions": [
+      "teamplay-ts"
+    ],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -15,12 +18,12 @@
     ]
   },
   "include": [
-    "index.ts",
-    "orm/**/*.ts",
-    "react/**/*.ts",
-    "../schema/index.ts",
-    "../utils/aggregation.ts",
-    "../utils/accessControl.ts",
+    "src/index.ts",
+    "src/orm/**/*.ts",
+    "src/react/**/*.ts",
+    "../schema/src/index.ts",
+    "../utils/src/aggregation.ts",
+    "../utils/src/accessControl.ts",
     "test_types/**/*.ts"
   ]
 }

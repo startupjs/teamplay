@@ -15,3 +15,4 @@ Basic working rules:
 - Keep runtime behavior and TypeScript behavior aligned; update the architecture docs when the direction changes.
 - Do not invest in broad Compat rewrites. Compat is temporary; touch it only when needed to preserve behavior.
 - Work only in this project. Neighboring folders mentioned in old notes are not available in this environment.
+- The TS-authored packages (`teamplay`, `@teamplay/schema`, and `@teamplay/utils`) publish compiled `dist/` files but use the `teamplay-ts` export condition for source during development. When running hand-written Node checks against workspace packages, pass `-C teamplay-ts` (or `--conditions=teamplay-ts`) so Node resolves the current `src/` files instead of the generated `dist/` files.

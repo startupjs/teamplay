@@ -2,12 +2,12 @@ import React from 'react'
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.ts'
-import { GLOBAL_ROOT_ID } from '../orm/Root.ts'
-import { LOCAL } from '../orm/$.js'
-import { delPrivateData, getPrivateData } from '../orm/privateData.js'
-import { del as _del, set as _set } from '../orm/dataTree.js'
-import connect from '../connect/test.js'
+import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../src/index.ts'
+import { GLOBAL_ROOT_ID } from '../src/orm/Root.ts'
+import { LOCAL } from '../src/orm/$.js'
+import { delPrivateData, getPrivateData } from '../src/orm/privateData.js'
+import { del as _del, set as _set } from '../src/orm/dataTree.js'
+import connect from '../src/connect/test.js'
 
 before(connect)
 

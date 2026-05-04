@@ -1,9 +1,9 @@
 import { before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.ts'
-import { docSubscriptions } from '../orm/Doc.js'
-import { querySubscriptions } from '../orm/Query.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import { __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../src/index.ts'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { querySubscriptions } from '../src/orm/Query.js'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 
 // the cache is not getting cleared if we just call global.gc()
 // so we need to wait for the next tick before and after calling it.

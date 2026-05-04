@@ -1,11 +1,11 @@
 import { describe, it, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal } from '../index.ts'
-import { del as _del, set as _set } from '../orm/dataTree.js'
-import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
-import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
-import { __resetSilentContextForTests } from '../orm/Compat/silentContext.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.ts'
+import { getRootSignal } from '../src/index.ts'
+import { del as _del, set as _set } from '../src/orm/dataTree.js'
+import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
+import { __resetRefLinksForTests } from '../src/orm/Compat/refRegistry.js'
+import { __resetSilentContextForTests } from '../src/orm/Compat/silentContext.js'
+import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
 
 const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 

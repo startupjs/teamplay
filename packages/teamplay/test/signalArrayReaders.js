@@ -1,14 +1,14 @@
 import { strict as assert } from 'node:assert'
 import { afterEach, describe, it } from 'mocha'
-import { getRootSignal } from '../index.ts'
-import { HASH, IS_QUERY, QUERIES, getQuerySignal } from '../orm/Query.js'
-import { delPrivateData, setPrivateData } from '../orm/privateData.js'
-import { SEGMENTS } from '../orm/Signal.ts'
+import { getRootSignal } from '../src/index.ts'
+import { HASH, IS_QUERY, QUERIES, getQuerySignal } from '../src/orm/Query.js'
+import { delPrivateData, setPrivateData } from '../src/orm/privateData.js'
+import { SEGMENTS } from '../src/orm/Signal.ts'
 import {
   getSignalArrayChildren,
   iterateSignalArrayChildren,
   runSignalArrayMethod
-} from '../orm/signalArrayReaders.ts'
+} from '../src/orm/signalArrayReaders.ts'
 
 describe('signal array reader helpers', () => {
   const cleanupRootIds = []

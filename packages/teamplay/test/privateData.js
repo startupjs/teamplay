@@ -4,7 +4,7 @@ import {
   deleteRootContext,
   getRootContext,
   __resetRootContextsForTests
-} from '../orm/rootContext.ts'
+} from '../src/orm/rootContext.ts'
 import {
   arrayPushPrivateData,
   getPrivateData,
@@ -13,7 +13,7 @@ import {
   getPrivateDataSnapshot,
   setPrivateData,
   setReplacePrivateData
-} from '../orm/privateData.js'
+} from '../src/orm/privateData.js'
 
 afterEach(() => {
   __resetRootContextsForTests()

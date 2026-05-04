@@ -1,9 +1,9 @@
 import { describe, it, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal } from '../index.ts'
-import { del as _del, set as _set } from '../orm/dataTree.js'
-import { getPrivateData, getPrivateDataRawRoot } from '../orm/privateData.js'
-import { __resetRootContextsForTests } from '../orm/rootContext.ts'
+import { getRootSignal } from '../src/index.ts'
+import { del as _del, set as _set } from '../src/orm/dataTree.js'
+import { getPrivateData, getPrivateDataRawRoot } from '../src/orm/privateData.js'
+import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
 
 describe('root-scoped private storage', () => {
   afterEach(() => {

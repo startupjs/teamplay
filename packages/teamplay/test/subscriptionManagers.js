@@ -14,9 +14,9 @@ import { it, describe, before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
-import { $, sub } from '../index.ts'
-import { docSubscriptions, DocSubscriptions } from '../orm/Doc.js'
-import { isMissingShareDoc } from '../orm/missingDoc.js'
+import { $, sub } from '../src/index.ts'
+import { docSubscriptions, DocSubscriptions } from '../src/orm/Doc.js'
+import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 import {
   querySubscriptions,
   QuerySubscriptions,
@@ -27,20 +27,20 @@ import {
   QUERIES,
   getQuerySignal,
   hashQuery
-} from '../orm/Query.js'
-import { getAggregationSignal, AGGREGATIONS, aggregationSubscriptions } from '../orm/Aggregation.js'
-import { SEGMENTS } from '../orm/Signal.ts'
-import { getConnection } from '../orm/connection.ts'
-import { get as _get } from '../orm/dataTree.js'
-import { getRootSignal, ROOT_ID } from '../orm/Root.ts'
-import { getPrivateData } from '../orm/privateData.js'
-import { getScopedSignalHash } from '../orm/rootScope.ts'
-import connect from '../connect/test.js'
+} from '../src/orm/Query.js'
+import { getAggregationSignal, AGGREGATIONS, aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { SEGMENTS } from '../src/orm/Signal.ts'
+import { getConnection } from '../src/orm/connection.ts'
+import { get as _get } from '../src/orm/dataTree.js'
+import { getRootSignal, ROOT_ID } from '../src/orm/Root.ts'
+import { getPrivateData } from '../src/orm/privateData.js'
+import { getScopedSignalHash } from '../src/orm/rootScope.ts'
+import connect from '../src/connect/test.js'
 import {
   getSubscriptionGcDelay,
   setSubscriptionGcDelay,
   __resetSubscriptionGcDelayForTests
-} from '../orm/subscriptionGcDelay.ts'
+} from '../src/orm/subscriptionGcDelay.ts'
 
 before(connect)
 

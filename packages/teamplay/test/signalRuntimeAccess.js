@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'mocha'
-import { getRootSignal, ROOT_ID } from '../orm/Root.ts'
-import { IS_QUERY } from '../orm/Query.js'
-import { SEGMENTS } from '../orm/Signal.ts'
+import { getRootSignal, ROOT_ID } from '../src/orm/Root.ts'
+import { IS_QUERY } from '../src/orm/Query.js'
+import { SEGMENTS } from '../src/orm/Signal.ts'
 import {
   ensureArraySignalTarget,
   ensureValueSignalTarget,
@@ -10,7 +10,7 @@ import {
   getSignalSegments,
   getSignalStorageSegments,
   isPrivateSignalSegments
-} from '../orm/signalRuntimeAccess.ts'
+} from '../src/orm/signalRuntimeAccess.ts'
 
 describe('signal runtime access helpers', () => {
   it('reads signal segments and storage overrides through the shared symbol', () => {

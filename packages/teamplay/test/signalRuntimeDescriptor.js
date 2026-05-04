@@ -1,14 +1,14 @@
 import { it, describe } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { $, Signal, addModel } from '../index.ts'
-import { getQuerySignal, HASH, QUERIES } from '../orm/Query.js'
-import { SEGMENTS } from '../orm/Signal.ts'
-import { getAggregationSignal } from '../orm/Aggregation.js'
+import { $, Signal, addModel } from '../src/index.ts'
+import { getQuerySignal, HASH, QUERIES } from '../src/orm/Query.js'
+import { SEGMENTS } from '../src/orm/Signal.ts'
+import { getAggregationSignal } from '../src/orm/Aggregation.js'
 import {
   SIGNAL_RUNTIME_DESCRIPTOR,
   describeSignalRuntime,
   getSignalRuntimeDescriptor
-} from '../orm/signalRuntimeDescriptor.ts'
+} from '../src/orm/signalRuntimeDescriptor.ts'
 
 describe('signal runtime descriptors', () => {
   it('describes root, collection, document, and nested value signals', async () => {

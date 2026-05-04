@@ -1,10 +1,10 @@
 import { it, describe, before, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { $, sub, aggregation } from '../index.ts'
-import { getConnection } from '../orm/connection.ts'
+import { $, sub, aggregation } from '../src/index.ts'
+import { getConnection } from '../src/orm/connection.ts'
 import { afterEachTestGc } from './_helpers.js'
-import connect from '../connect/test.js'
-import { isMissingShareDoc } from '../orm/missingDoc.js'
+import connect from '../src/connect/test.js'
+import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 
 before(connect)
 

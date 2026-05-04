@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'mocha'
-import { SEGMENTS } from '../orm/Signal.ts'
-import { runSignalStorageMutation } from '../orm/signalStorageMutations.ts'
+import { SEGMENTS } from '../src/orm/Signal.ts'
+import { runSignalStorageMutation } from '../src/orm/signalStorageMutations.ts'
 
 describe('signal storage mutation helpers', () => {
   it('skips protected public id-field paths before running handlers', async () => {

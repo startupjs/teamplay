@@ -1,16 +1,16 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'mocha'
-import { addModel, getRootSignal, Signal } from '../index.ts'
-import { getAggregationSignal } from '../orm/Aggregation.js'
-import { setPrivateData } from '../orm/privateData.js'
-import { SEGMENTS } from '../orm/Signal.ts'
+import { addModel, getRootSignal, Signal } from '../src/index.ts'
+import { getAggregationSignal } from '../src/orm/Aggregation.js'
+import { setPrivateData } from '../src/orm/privateData.js'
+import { SEGMENTS } from '../src/orm/Signal.ts'
 import {
   getSignalCollection,
   getSignalId,
   getSignalLeaf,
   getSignalParentSegments,
   getSignalPath
-} from '../orm/signalMetadata.ts'
+} from '../src/orm/signalMetadata.ts'
 
 describe('signal metadata helpers', () => {
   it('reads path and leaf metadata from signal segments', () => {
