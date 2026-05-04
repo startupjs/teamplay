@@ -1,8 +1,12 @@
-import { Ajv } from 'ajv/dist/ajv.js'
-import type { Plugin } from 'ajv/dist/core.js'
-import * as ajvErrorsModule from 'ajv-errors/dist/index.js'
+import AjvModule from 'ajv'
+import type { Ajv as AjvInstance, Options } from 'ajv'
+import ajvErrorsModule from 'ajv-errors'
 
-const ajvErrors = (ajvErrorsModule.default || ajvErrorsModule) as unknown as Plugin<any>
+type AjvConstructor = new (opts?: Options) => AjvInstance
+type AjvErrorsPlugin = (ajv: AjvInstance) => AjvInstance
+
+const Ajv = AjvModule as unknown as AjvConstructor
+const ajvErrors = ajvErrorsModule as unknown as AjvErrorsPlugin
 
 const ajv = new Ajv({
   allErrors: true,
