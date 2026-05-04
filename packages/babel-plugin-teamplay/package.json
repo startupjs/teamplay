@@ -1,6 +1,6 @@
 {
   "name": "babel-plugin-teamplay",
-  "version": "0.4.0",
+  "version": "0.5.0-alpha.0",
   "description": "Babel plugin for TeamPlay file-based models",
   "main": "index.js",
   "exports": {
@@ -19,7 +19,7 @@
     "@babel/parser": "^7.0.0",
     "@babel/traverse": "^7.0.0",
     "@startupjs/babel-plugin-eliminator": "^0.62.0-alpha.0",
-    "@teamplay/schema": "^0.4.0",
+    "@teamplay/schema": "^0.5.0-alpha.0",
     "pluralize": "^8.0.0"
   },
   "devDependencies": {
