@@ -56,6 +56,13 @@ describe('signal metadata helpers', () => {
 
     assert.equal($field.path(), '_metadataVirtual.field1.title')
     assert.equal($field.leaf(), 'title')
+    assert.equal(String($field), '_metadataVirtual.field1.title')
+    assert.equal(`${$field}`, '_metadataVirtual.field1.title')
+    assert.equal($field.name + '() {}', '_metadataVirtual.field1.title.name() {}')
+    assert.equal($field[Symbol.toPrimitive], $field[Symbol.toPrimitive])
+    assert.equal($field.toString(), '[Signal _metadataVirtual.field1.title]')
+    assert.equal(Object.prototype.toString.call($field), '[object Signal]')
+    assert.equal($root.toString(), '[Signal <root>]')
     assert.equal($field.parent().path(), '_metadataVirtual.field1')
     assert.equal($field.parent(2).path(), '_metadataVirtual')
     assert.equal($field.parent(10), $root)

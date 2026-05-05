@@ -452,6 +452,9 @@ const nestedReducedTag = $game.info.tags.reduce(($firstTag, $secondTag) => $firs
 const batchTitle = $game.batch(() => $game.info.title.get())
 const signalPath = $game.info.title.path()
 const signalLeaf = $game.info.title.leaf()
+const signalPrimitivePath = $game.info.title[Symbol.toPrimitive]('string')
+const signalToStringValue = $game.info.title.toString()
+const signalToStringTag = $game.info.title[Symbol.toStringTag]
 const signalId = $game.getId()
 const signalCollection = $game.getCollection()
 const signalAssociations = $game.getAssociations()
@@ -501,11 +504,17 @@ type SignalMetadataMethods = Expect<Equal<
 [
   typeof signalPath,
   typeof signalLeaf,
+  typeof signalPrimitivePath,
+  typeof signalToStringValue,
+  typeof signalToStringTag,
   typeof signalId,
   typeof signalCollection,
   typeof signalAssociations
 ],
 [
+  string,
+  string,
+  string,
   string,
   string,
   string | number,

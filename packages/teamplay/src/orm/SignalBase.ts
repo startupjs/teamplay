@@ -205,6 +205,22 @@ export class Signal<TValue = unknown> extends Function {
     return getSignalLeaf(this)
   }
 
+  /** Return the signal path when JavaScript coerces this signal to a primitive value. */
+  [Symbol.toPrimitive] (_hint?: string): string {
+    return getSignalPath(this)
+  }
+
+  /** Return a debug label for this signal. Primitive coercion returns only the path. */
+  toString (): string {
+    const path = getSignalPath(this)
+    return `[Signal ${path || '<root>'}]`
+  }
+
+  /** Customize Object.prototype.toString.call($signal) for debugging. */
+  get [Symbol.toStringTag] (): string {
+    return 'Signal'
+  }
+
   /**
    * Return the parent signal `levels` above this signal.
    * @param levels Number of parent levels to walk upward. Defaults to `1`.

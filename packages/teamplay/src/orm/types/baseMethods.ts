@@ -1,6 +1,9 @@
 export interface SignalMetadataMethods {
   path: () => string
   leaf: () => string
+  [Symbol.toPrimitive]: (hint?: string) => string
+  toString: () => string
+  readonly [Symbol.toStringTag]: string
   parent: (levels?: number) => unknown
   id: () => string
   getId: () => string | number

@@ -13,6 +13,7 @@ describe('signal path rules', () => {
     assert.equal(transformRootDollarAlias([], '$page'), '_page')
     assert.equal(transformRootDollarAlias([], '$render'), '$render')
     assert.equal(transformRootDollarAlias([], '$system'), '$system')
+    assert.equal(transformRootDollarAlias([], 'toString'), 'toString')
   })
 
   it('only applies dollar aliases at the root', () => {

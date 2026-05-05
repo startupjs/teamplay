@@ -16,7 +16,7 @@ export function transformRootDollarAlias (
   aliases: Readonly<Record<string, string>> = ROOT_DOLLAR_ALIASES
 ): string {
   if (REGEX_LEADING_DOLLAR.test(key)) key = key.slice(1)
-  if (segments.length === 0) return aliases[key] || key
+  if (segments.length === 0) return Object.prototype.hasOwnProperty.call(aliases, key) ? aliases[key] : key
   return key
 }
 
