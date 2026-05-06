@@ -233,6 +233,8 @@ function UserCard ({ $user }: { $user: Signal<UserDoc> }) {
 
 `CollectionQuerySignal` adds query metadata and preserves collection model methods. It matches runtime query construction at `[collectionName]`.
 
+Query params are typed through a strict `QueryParams<TDocument>` overload for literal keys, including nested paths such as `'profile.name'` and pattern-property paths. A lower-priority computed-key overload accepts object literals with widened string indexes, preserving Mongo-style calls such as `{ [`likes.${id}`]: true }` without weakening typo checks for ordinary literal query objects. When callers need full checking for a dynamic path, they can annotate a query object as `QueryParams<TDocument>` and assign through a template-literal path variable.
+
 `AggregationSignal` is array-like. Registered collection aggregations default to document-row-like output; arbitrary output should use explicit output generics.
 
 ### Schema Types

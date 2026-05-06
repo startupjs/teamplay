@@ -8,6 +8,7 @@ import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
 import { markCompatComponent } from './compatComponentRegistry.ts'
 import type {
   CollectionSignal,
+  ComputedQueryParamsInput,
   DocumentSignal,
   QueryParams,
   RegisteredAggregationInput,
@@ -68,6 +69,26 @@ export function useAsyncSub<
   params: QueryParams<TDocument>,
   options?: UseSubOptions
 ): SubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
+
+/**
+ * Subscribe to a collection query with computed string keys in React async mode.
+ * This fallback preserves Mongo-style computed paths such as `{ [`likes.${id}`]: true }`.
+ * Literal query objects should use the stricter overload above.
+ * @param signal Collection signal to query.
+ * @param params Mongo-style query params with a widened computed key.
+ * @param options Subscription behavior options.
+ */
+export function useAsyncSub<
+  TDocument,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
+  TCollectionPath extends WildcardSignalPath,
+  TParams extends object
+> (
+  signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
+  params: TParams & ComputedQueryParamsInput<TParams>,
+  options?: UseSubOptions
+): SubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, TParams>
 
 /**
  * Subscribe to a registered collection aggregation in React async mode.
@@ -152,6 +173,26 @@ export default function useSub<
   params: QueryParams<TDocument>,
   options?: UseSubOptions
 ): SubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
+
+/**
+ * Subscribe to a collection query with computed string keys in React.
+ * This fallback preserves Mongo-style computed paths such as `{ [`likes.${id}`]: true }`.
+ * Literal query objects should use the stricter overload above.
+ * @param signal Collection signal to query.
+ * @param params Mongo-style query params with a widened computed key.
+ * @param options Subscription behavior options.
+ */
+export default function useSub<
+  TDocument,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
+  TCollectionPath extends WildcardSignalPath,
+  TParams extends object
+> (
+  signal: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
+  params: TParams & ComputedQueryParamsInput<TParams>,
+  options?: UseSubOptions
+): SubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, TParams>
 
 /**
  * Subscribe to a registered collection aggregation in React.

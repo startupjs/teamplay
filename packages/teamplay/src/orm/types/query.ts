@@ -42,13 +42,27 @@ type QueryValue<TValue> =
     $regex?: TValue extends string ? string | RegExp : never
   }
 
+type QuerySortDirection = 1 | -1 | 'asc' | 'desc' | 'ascending' | 'descending'
+
+type QuerySort<TDocument> = {
+  [K in QueryPath<TDocument> | '_id' | 'id']?: QuerySortDirection
+}
+
 export type QueryParams<TDocument> = {
   [K in QueryPath<TDocument>]?: QueryValue<QueryPathValue<TDocument, K>>
 } & {
   _id?: QueryValue<string | number>
   id?: QueryValue<string | number>
 } & {
-  [K in `${string}.${string}`]?: unknown
+  $sort?: QuerySort<TDocument>
 } & {
   [K in `$${string}`]?: unknown
 }
+
+export type ComputedQueryParamsInput<TParams extends object> =
+  string extends keyof TParams ? TParams : never
+
+export type QueryParamsInput<TDocument, TParams extends object> =
+  TParams extends QueryParams<TDocument>
+    ? TParams
+    : ComputedQueryParamsInput<TParams>

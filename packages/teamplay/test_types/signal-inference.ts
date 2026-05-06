@@ -17,6 +17,7 @@ import {
   type DefaultAggregationSession,
   type JoinPath,
   type PathModelsFromManifest,
+  type QueryParams,
   type QuerySignal,
   type TypedAggregationInput,
   type TypedSignal,
@@ -146,6 +147,7 @@ type TypeAssertions = [
   ComputedDollarDestructure,
   BatchKeepsCallbackReturn,
   SignalMetadataMethods,
+  PatternPropertySignalValue,
   ComputedNumber,
   ComputedString,
   NullableSchemaInference,
@@ -185,6 +187,13 @@ const gameSchema = {
   status: {
     type: 'string',
     enum: ['draft', 'started'] as const
+  },
+  flags: {
+    type: 'object',
+    additionalProperties: false,
+    patternProperties: {
+      '^flag-[a-z]+$': { type: 'boolean' }
+    }
   }
 } as const
 
@@ -234,6 +243,14 @@ const definedSchema = defineSchema({
   score: { type: 'integer', required: true }
 })
 
+const patternPropertiesBooleanSchema = {
+  type: 'object',
+  additionalProperties: false,
+  patternProperties: {
+    '^flag-[a-z]+$': { type: 'boolean' }
+  }
+} as const
+
 interface Game {
   info: {
     title: string
@@ -241,6 +258,7 @@ interface Game {
     tags?: string[]
   }
   status?: 'draft' | 'started'
+  flags?: Record<string, boolean>
 }
 
 class GamesModel extends Signal<Game[]> {
@@ -458,6 +476,11 @@ const signalToStringTag = $game.info.title[Symbol.toStringTag]
 const signalId = $game.getId()
 const signalCollection = $game.getCollection()
 const signalAssociations = $game.getAssociations()
+declare const $patternFlags: Signal<FromJsonSchema<typeof patternPropertiesBooleanSchema>>
+const patternFlagValue = $patternFlags['flag-active'].get()
+$patternFlags['flag-active'].set(true)
+// @ts-expect-error pattern property values should follow the pattern schema
+$patternFlags['flag-active'].set('yes')
 // @ts-expect-error unknown schema fields should not be suggested or accepted
 void $game.info.typo
 // @ts-expect-error setter values should follow schema inference
@@ -522,6 +545,7 @@ type SignalMetadataMethods = Expect<Equal<
   readonly unknown[]
 ]
 >>
+type PatternPropertySignalValue = Expect<Equal<typeof patternFlagValue, boolean>>
 type NullableSchemaInference = Expect<Equal<FromJsonSchema<typeof nullableSchema>, string | null>>
 type NullableObjectSchemaInference = Expect<Equal<FromJsonSchema<typeof nullableObjectSchema>, { name: string, score?: number | null } | null>>
 type SimplifiedKeywordFieldSchemaInference = Expect<Equal<FromJsonSchema<typeof simplifiedKeywordFieldSchema>, {
@@ -544,12 +568,29 @@ type DefinedSchemaInference = Expect<Equal<FromJsonSchema<typeof definedSchema>,
 
 const $queryGames = sub($.games, { status: 'draft' })
 sub($.games, { 'info.maxPlayers': { $gte: 2 }, 'info.title': { $regex: /chess/i } })
+sub($.games, { 'flags.flag-active': true })
+sub($.games, { 'flags.flag-active': { $eq: true } })
+const dynamicFlagPath: `flags.${string}` = 'flags.flag-active'
+declare const dynamicFlagName: string
+const typedDynamicFlagQuery: QueryParams<Game> = { status: 'draft' }
+typedDynamicFlagQuery[dynamicFlagPath] = true
+// @ts-expect-error explicitly typed dynamic paths should still follow the pattern schema
+typedDynamicFlagQuery[dynamicFlagPath] = 'yes'
+sub($.games, { [dynamicFlagPath]: true })
+sub($.games, { [dynamicFlagPath]: true, status: 'draft', $sort: { 'info.maxPlayers': -1 } })
+sub($.games, { [`flags.${dynamicFlagName}`]: true, status: 'draft', $sort: { 'info.maxPlayers': -1 } })
 sub($.games, { $sort: { 'info.maxPlayers': -1 } })
 function useHookQueryGames () {
   return useSub($.games, { status: 'draft' })
 }
 function useHookQueryByTitle () {
   return useSub($.games, { 'info.title': 'Chess' })
+}
+function useHookQueryByDynamicFlag () {
+  return useSub($.games, { [dynamicFlagPath]: true, status: 'draft', $sort: { 'info.maxPlayers': -1 } })
+}
+function useHookQueryByInlineDynamicFlag () {
+  return useSub($.games, { [`flags.${dynamicFlagName}`]: true, status: 'draft', $sort: { 'info.maxPlayers': -1 } })
 }
 // @ts-expect-error collection query params must be an object
 sub($.games, 'draft')
@@ -559,6 +600,10 @@ sub($.games, { stauts: 'draft' })
 sub($.games, { 'info.maxPlayers': 'two' })
 // @ts-expect-error query operators should follow the field value type
 sub($.games, { status: { $in: ['draft', 'archived'] } })
+// @ts-expect-error pattern property query values should follow the pattern schema
+sub($.games, { 'flags.flag-active': 'yes' })
+// @ts-expect-error query sort paths should reject misspelled nested schema fields
+sub($.games, { $sort: { 'info.typo': 1 } })
 const _activeGames = aggregation('games', ({ active }: { active: boolean }) => [{ $match: { active } }])
 const $aggregationGames = sub(_activeGames, { active: true })
 const _typedActiveGames = aggregation<Game[]>(({ active }: { active: boolean }) => [{ $match: { active } }])

@@ -74,10 +74,12 @@ type SchemaProperties<TSchema> =
       ? Properties
       : HasSimplifiedProperties<TSchema> extends true
         ? SimplifiedProperties<TSchema>
-        : Record<string, never>
-    : HasSimplifiedProperties<TSchema> extends true
-      ? SimplifiedProperties<TSchema>
-      : Record<string, never>
+        : Record<never, never>
+    : IsFullObjectSchema<TSchema> extends true
+      ? Record<never, never>
+      : HasSimplifiedProperties<TSchema> extends true
+        ? SimplifiedProperties<TSchema>
+        : Record<never, never>
 
 type ExplicitRequiredKeys<TSchema, TProperties> =
   TSchema extends { readonly required?: infer Required }
@@ -95,16 +97,20 @@ type RequiredKeys<TSchema, TProperties> =
 
 type PatternPropertiesFromJsonSchema<TSchema> =
   TSchema extends { readonly patternProperties?: infer PatternProperties }
-    ? PatternProperties extends Record<string, infer PatternSchema>
-      ? Record<string, FromJsonSchema<PatternSchema>>
+    ? PatternProperties extends object
+      ? keyof PatternProperties extends never
+        ? {}
+        : Record<string, FromJsonSchema<PatternProperties[keyof PatternProperties]>>
       : {}
     : {}
 
 type AdditionalPropertiesFromJsonSchema<TSchema> =
   TSchema extends { readonly additionalProperties?: infer AdditionalProperties }
-    ? AdditionalProperties extends JsonSchema
-      ? Record<string, FromJsonSchema<AdditionalProperties>>
-      : {}
+    ? AdditionalProperties extends false
+      ? {}
+      : AdditionalProperties extends JsonSchema
+        ? Record<string, FromJsonSchema<AdditionalProperties>>
+        : {}
     : {}
 
 type ObjectFromJsonSchema<TSchema> =

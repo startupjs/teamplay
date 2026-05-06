@@ -10,7 +10,7 @@ export type {
   JsonSchemaObject,
   ZodLikeSchema
 } from './types/jsonSchema.ts'
-export type { QueryParams } from './types/query.ts'
+export type { ComputedQueryParamsInput, QueryParams, QueryParamsInput } from './types/query.ts'
 export type {
   SignalArrayMutatorMethods,
   SignalArrayReaderMethods,

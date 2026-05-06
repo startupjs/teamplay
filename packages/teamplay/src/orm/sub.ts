@@ -9,6 +9,7 @@ import { getRoot } from './Root.ts'
 import isServer from '../utils/isServer.ts'
 import type {
   CollectionSignal,
+  ComputedQueryParamsInput,
   DocumentSignal,
   MaybePromise,
   MaybePromiseSubResult,
@@ -87,6 +88,24 @@ export default function sub<
   $collection: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
   params: QueryParams<TDocument>
 ): MaybePromiseSubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
+
+/**
+ * Subscribe to a collection query with computed string keys outside React.
+ * This fallback preserves Mongo-style computed paths such as `{ [`likes.${id}`]: true }`.
+ * Literal query objects should use the stricter overload above.
+ * @param $collection Collection signal to query.
+ * @param params Mongo-style query params with a widened computed key.
+ */
+export default function sub<
+  TDocument,
+  TCollectionModel extends SignalModelConstructor<TDocument[]>,
+  TDocumentModel extends SignalModelConstructor<TDocument>,
+  TCollectionPath extends WildcardSignalPath,
+  TParams extends object
+> (
+  $collection: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
+  params: TParams & ComputedQueryParamsInput<TParams>
+): MaybePromiseSubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, TParams>
 
 export default function sub ($signal: unknown, params?: unknown): unknown {
   // TODO: temporarily disable support for multiple subscriptions

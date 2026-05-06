@@ -19,6 +19,24 @@ type Equal<A, B> =
 
 type Expect<T extends true> = T
 
+const patternPropertiesBooleanSchema = {
+  type: 'object',
+  additionalProperties: false,
+  patternProperties: {
+    '^flag-[a-z]+$': { type: 'boolean' }
+  }
+} as const
+
+const additionalPropertiesFalseSchema = {
+  type: 'object',
+  required: ['title'],
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    score: { type: 'integer' }
+  }
+} as const
+
 type SchemaFixtureAssertions = [
   Expect<Equal<FromJsonSchema<typeof fullObjectSchema>, {
     title: string
@@ -57,6 +75,11 @@ type SchemaFixtureAssertions = [
   } | null>>,
   Expect<Equal<FromJsonSchema<typeof enumSchema>, 'draft' | 'published'>>,
   Expect<Equal<FromJsonSchema<typeof constSchema>, 'system'>>,
+  Expect<Equal<FromJsonSchema<typeof patternPropertiesBooleanSchema>, Record<string, boolean>>>,
+  Expect<Equal<FromJsonSchema<typeof additionalPropertiesFalseSchema>, {
+    title: string
+    score?: number
+  }>>,
   Expect<Equal<FromJsonSchema<typeof unsupportedDynamicSchema>, unknown>>
 ]
 
