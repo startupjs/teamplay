@@ -100,14 +100,20 @@ describe('signal read helpers', () => {
 
     const $query = getQuerySignal('signalReadGames', { active: true }, { root: $root })
     setPrivateData(rootId, [QUERIES, $query[HASH], 'docs'], [{ _id: 'game-1', title: 'One' }])
-    setPrivateData(rootId, [QUERIES, $query[HASH], 'ids'], ['game-1'])
+    setPrivateData(rootId, [QUERIES, $query[HASH], 'ids'], ['game-1', 2])
     assert.deepEqual($query.get(), [{ _id: 'game-1', title: 'One' }])
     assert.deepEqual($query.getIds(), ['game-1'])
     assert.deepEqual($query.ids.get(), ['game-1'])
 
     const $aggregation = getAggregationSignal('signalReadGames', { $aggregate: [] }, { root: $root })
-    setPrivateData(rootId, $aggregation[SEGMENTS], [{ _id: 'game-1' }, { id: 'game-2' }])
-    assert.deepEqual($aggregation.getIds(), ['game-1', 'game-2'])
+    setPrivateData(rootId, $aggregation[SEGMENTS], [
+      { _id: 'game-1' },
+      { id: 'game-2' },
+      { _id: 3 },
+      { id: 4 },
+      { _id: 5, id: 'game-5' }
+    ])
+    assert.deepEqual($aggregation.getIds(), ['game-1', 'game-2', 'game-5'])
 
     const errors = captureConsoleErrors(() => {
       assert.deepEqual($root.signalReadGames.getIds(), [])
@@ -128,9 +134,9 @@ function structuralReadContext ({
 } = {}) {
   const values = new Map([
     [pathKey([QUERIES, 'query-hash', 'docs'], true), [{ id: 'raw-doc' }]],
-    [pathKey([QUERIES, 'query-hash', 'ids'], false), ['game-1']],
+    [pathKey([QUERIES, 'query-hash', 'ids'], false), ['game-1', 2]],
     [pathKey(['_session', 'flag'], false), true],
-    [pathKey([AGGREGATIONS, 'agg-hash'], false), [{ _id: 'game-1' }, { id: 'game-2' }]]
+    [pathKey([AGGREGATIONS, 'agg-hash'], false), [{ _id: 'game-1' }, { id: 'game-2' }, { _id: 3 }]]
   ])
 
   const observedRead = segments => {

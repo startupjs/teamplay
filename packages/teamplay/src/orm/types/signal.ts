@@ -82,6 +82,10 @@ type SignalFieldsForPath<TPath extends WildcardSignalPath> =
     ? TeamplaySignalFields[JoinPath<TPath>]
     : {}
 
+type DocumentSignalIdMethod = {
+  getId: () => string
+}
+
 export type AnySignal = Signal<any>
 
 type IsAny<TValue> = 0 extends (1 & TValue) ? true : false
@@ -127,7 +131,8 @@ type DocumentSignalForKind<
   TModel extends SignalClass<any>,
   TPath extends WildcardSignalPath
 > =
-  Omit<SignalModelInstance<TValue, PathModel<TValue, TModel, TPath>>, SignalArrayReaderMethodKeys> &
+  Omit<SignalModelInstance<TValue, PathModel<TValue, TModel, TPath>>, SignalArrayReaderMethodKeys | 'getId'> &
+  DocumentSignalIdMethod &
   SignalArrayMethods<TValue, TPath> &
   SignalChildren<TValue, TPath> &
   SignalFieldsForPath<TPath>
@@ -162,7 +167,7 @@ SignalArrayLike<DocumentSignal<TDocument, TDocumentModel, TDocumentPath>> & {
 BlockedArrayMutators
 
 type QueryMetadataSignals = {
-  readonly ids: Signal<Array<string | number>>
+  readonly ids: Signal<string[]>
   readonly extra: Signal<unknown>
 }
 

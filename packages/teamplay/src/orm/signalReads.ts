@@ -64,7 +64,7 @@ export function getSignalValue<TSignal extends SignalReadOwner, TValue> (
       context.warn('Signal.get() on Query didn\'t find ids', $signal[SEGMENTS])
       return [] as TValue
     }
-    return ids
+    return ids.filter(isString) as TValue
   }
   return readSignalValue($signal, context, method, rawMethod)
 }
@@ -72,7 +72,7 @@ export function getSignalValue<TSignal extends SignalReadOwner, TValue> (
 export function getSignalIds<TSignal extends SignalReadOwner> (
   $signal: TSignal,
   context: SignalReadContext<TSignal>
-): Array<string | number> {
+): string[] {
   const rootId = context.getOwningRootId($signal)
   if ($signal[IS_QUERY]) {
     const ids = context.readPrivateData(rootId, [QUERIES, getQueryHashSegment($signal), 'ids'], false)
@@ -80,12 +80,12 @@ export function getSignalIds<TSignal extends SignalReadOwner> (
       context.warn('Signal.getIds() on Query didn\'t find ids', [QUERIES, getQueryHashSegment($signal), 'ids'])
       return []
     }
-    return ids as Array<string | number>
+    return ids.filter(isString)
   }
   if ($signal[IS_AGGREGATION]) {
     const docs = context.readPrivateData(rootId, $signal[SEGMENTS], false)
     if (!Array.isArray(docs)) return []
-    return docs.map(getAggregationRowId) as Array<string | number>
+    return docs.map(getAggregationRowId).filter(isString)
   }
 
   context.error(
@@ -109,9 +109,14 @@ export function isAggregationValueSignal<TSignal extends SignalReadOwner> (
   return segments.length >= 2 && segments[0] === AGGREGATIONS
 }
 
-function getAggregationRowId (doc: unknown): string | number | undefined {
-  const row = doc as { _id?: string | number, id?: string | number }
-  return row._id || row.id
+function getAggregationRowId (doc: unknown): string | undefined {
+  const row = doc as { _id?: unknown, id?: unknown }
+  if (typeof row?._id === 'string') return row._id
+  if (typeof row?.id === 'string') return row.id
+}
+
+function isString (value: unknown): value is string {
+  return typeof value === 'string'
 }
 
 function getQueryHashSegment<TSignal extends SignalReadOwner> ($signal: TSignal): PathSegment {

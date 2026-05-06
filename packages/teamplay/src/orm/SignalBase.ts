@@ -271,7 +271,7 @@ export class Signal<TValue = unknown> extends Function {
   }
 
   /** Return document ids for a query or aggregation signal. */
-  getIds (): Array<string | number> {
+  getIds (): string[] {
     if (arguments.length > 0) throw Error('Signal.getIds() does not accept any arguments')
     return getSignalIds(this, SIGNAL_READ_CONTEXT)
   }
@@ -283,9 +283,14 @@ export class Signal<TValue = unknown> extends Function {
   }
 
   /** Return the document id represented by this document signal. */
-  getId (): string | number {
+  getId (): string | undefined {
     const $root = getRoot(this) || this
-    return getSignalId(this, $root?.[ROOT_ID])
+    const rootId = $root?.[ROOT_ID]
+    return getSignalId(this, rootId, segments => (
+      isPrivateSignalSegments(segments)
+        ? getPrivateData(rootId, segments)
+        : _get(getSignalStorageSegments({ [SEGMENTS]: segments }))
+    ))
   }
 
   /** Return the public collection name this signal belongs to. */

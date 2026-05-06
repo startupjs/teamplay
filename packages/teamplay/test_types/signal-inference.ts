@@ -540,7 +540,7 @@ type SignalMetadataMethods = Expect<Equal<
   string,
   string,
   string,
-  string | number,
+  string,
   string,
   readonly unknown[]
 ]
@@ -762,9 +762,9 @@ const hookOpenQueryAddId = $hookOpenQueryGames.add({
 type QueryArrayReduceNoInitial = Expect<Equal<ReturnType<typeof $firstQueryGame.info.title.get>, string>>
 type QueryCollectionModelMethod = Expect<Equal<HasFindOpenGames<QueryGames>, true>>
 type QueryCollectionAdd = Expect<Equal<typeof resolvedOpenQueryAddId, Promise<string>>>
-type QueryIdsSignal = Expect<Equal<ReturnType<typeof $plainQueryIds.get>, Array<string | number>>>
+type QueryIdsSignal = Expect<Equal<ReturnType<typeof $plainQueryIds.get>, string[]>>
 type QueryExtraSignal = Expect<Equal<ReturnType<typeof $plainQueryExtra.get>, unknown>>
-type CollectionQueryIdsSignal = Expect<Equal<ReturnType<typeof $resolvedQueryIds.get>, Array<string | number>>>
+type CollectionQueryIdsSignal = Expect<Equal<ReturnType<typeof $resolvedQueryIds.get>, string[]>>
 type CollectionQueryExtraSignal = Expect<Extends<typeof $resolvedQueryExtra, { get: () => unknown }>>
 type QueryArrayMutatorBlocked = Expect<Equal<NonNullable<QueryGames['push']>, never>>
 type AggregationArrayMutatorBlocked = Expect<Equal<NonNullable<AggregationGames['push']>, never>>

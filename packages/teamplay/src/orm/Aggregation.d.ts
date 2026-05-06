@@ -13,5 +13,5 @@ export function getAggregationDocId (
   segments: readonly unknown[],
   rootId?: string,
   method?: (path: unknown[]) => unknown
-): string | number | undefined
+): string | undefined
 export function getAggregationCollectionName (segments: readonly unknown[]): string | undefined

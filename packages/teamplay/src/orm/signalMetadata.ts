@@ -1,4 +1,5 @@
 import { AGGREGATIONS, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
+import { isPrivateCollectionSegments } from './rootScope.ts'
 import { SEGMENTS } from './signalSymbols.ts'
 import type { PathSegment } from './types/path.ts'
 
@@ -45,15 +46,21 @@ export function normalizeParentLevels (levels: unknown, argumentCount: number): 
 
 export function getSignalId (
   $signal: Pick<SignalMetadataOwner, typeof SEGMENTS>,
-  rootId?: string
-): string | number | undefined {
+  rootId?: string,
+  readPath?: (segments: PathSegment[]) => unknown
+): string | undefined {
   const segments = $signal[SEGMENTS]
   if (segments.length === 0) throw Error('Can\'t get the id of the root signal')
   if (segments.length === 1) throw Error('Can\'t get the id of a collection')
+  if (isDirectPublicDocumentSegments(segments)) return getLeafId(segments)
+  if (readPath) {
+    const valueId = getValueIdFromPaths(segments, readPath)
+    if (valueId.found) return valueId.id
+  }
   if (segments[0] === AGGREGATIONS && segments.length === 3) {
     return getAggregationDocId(segments, rootId)
   }
-  return segments[segments.length - 1]
+  return getLeafId(segments)
 }
 
 export function getSignalCollection ($signal: SignalMetadataOwner): PathSegment | undefined {
@@ -71,4 +78,27 @@ export function getSignalCollection ($signal: SignalMetadataOwner): PathSegment 
 
 export function getSignalAssociations ($rawSignal: Pick<SignalMetadataOwner, 'constructor'>): readonly unknown[] {
   return $rawSignal.constructor.associations || []
+}
+
+function getValueIdFromPaths (
+  segments: PathSegment[],
+  readPath: (segments: PathSegment[]) => unknown
+): { found: false } | { found: true, id?: string } {
+  const underscoreId = readPath([...segments, '_id'])
+  if (typeof underscoreId === 'string') return { found: true, id: underscoreId }
+
+  const id = readPath([...segments, 'id'])
+  if (typeof id === 'string') return { found: true, id }
+
+  if (underscoreId !== undefined || id !== undefined) return { found: true }
+  return { found: false }
+}
+
+function isDirectPublicDocumentSegments (segments: PathSegment[]): boolean {
+  return segments.length === 2 && !isPrivateCollectionSegments(segments)
+}
+
+function getLeafId (segments: PathSegment[]): string | undefined {
+  const leaf = segments[segments.length - 1]
+  return typeof leaf === 'string' ? leaf : undefined
 }

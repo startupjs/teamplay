@@ -235,6 +235,8 @@ function UserCard ({ $user }: { $user: Signal<UserDoc> }) {
 
 Query params are typed through a strict `QueryParams<TDocument>` overload for literal keys, including nested paths such as `'profile.name'` and pattern-property paths. A lower-priority computed-key overload accepts object literals with widened string indexes, preserving Mongo-style calls such as `{ [`likes.${id}`]: true }` without weakening typo checks for ordinary literal query objects. When callers need full checking for a dynamic path, they can annotate a query object as `QueryParams<TDocument>` and assign through a template-literal path variable.
 
+Signal ids are string-only at the public API level. `getId()` follows a known-id-first rule: direct public document signals return the path leaf because that leaf is the canonical document id, and query item signals map back to those same public document paths. When TeamPlay does not structurally know the id, `getId()` infers one from the target by reading `_id`/`id` fields first, then falling back to a string path leaf when no explicit identity field exists. These inferred `_id`/`id` checks use normal field reads so duplicated private data, nested documents, and aggregation output update when identity fields change, while unrelated fields are not observed. Explicit non-string `_id`/`id` values are treated as invalid ids and return `undefined`. Aggregation rows return a string `_id`/`id` only; numeric aggregation group keys are not treated as document ids. Query and aggregation `getIds()`/`ids` expose usable string ids and omit rows without one.
+
 `AggregationSignal` is array-like. Registered collection aggregations default to document-row-like output; arbitrary output should use explicit output generics.
 
 ### Schema Types

@@ -6,7 +6,7 @@ export interface SignalMetadataMethods {
   readonly [Symbol.toStringTag]: string
   parent: (levels?: number) => unknown
   id: () => string
-  getId: () => string | number
+  getId: () => string | undefined
   getCollection: () => string
   getAssociations: () => readonly unknown[]
 }

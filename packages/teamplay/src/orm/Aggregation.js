@@ -99,8 +99,10 @@ export function getAggregationDocId (segments, rootId, method) {
   if (typeof method !== 'function') {
     method = path => rootId == null ? getRaw(path) : getPrivateData(rootId, path)
   }
-  const docId = method([...segments.slice(0, 3), '_id']) || method([...segments.slice(0, 3), 'id'])
-  return docId
+  const underscoreId = method([...segments.slice(0, 3), '_id'])
+  if (typeof underscoreId === 'string') return underscoreId
+  const id = method([...segments.slice(0, 3), 'id'])
+  if (typeof id === 'string') return id
 }
 
 export function getAggregationCollectionName (segments) {

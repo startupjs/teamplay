@@ -91,8 +91,7 @@ describe('Id fields in docs, queries, aggregations', () => {
     assert.ok(noId.length >= 2)
     assert.ok(noId.every(doc => !('_id' in doc) && !('id' in doc)))
 
-    const ids = $noId.getIds()
-    assert.ok(ids.every(id => id === undefined))
+    assert.deepEqual($noId.getIds(), [])
   })
 
   it('aggregation results do not include id in base mode', async () => {

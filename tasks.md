@@ -92,6 +92,7 @@ The object-tree API stays as `$.collection[id]`.
 Prefer conversion for non-Compat modules when it removes useful declaration shims or tightens a shared rule.
 
 - [ ] Review remaining non-Compat `.d.ts` shims for broad `any`.
+- [ ] Type the small storage-read boundary (`dataTree.get`, `dataTree.getRaw`, `dataTree.getLogicalRootSnapshot`, `privateData.getPrivateData`) so checked metadata helpers can read current values directly without injected reader callbacks.
 - [ ] Convert small non-Compat `.js` modules to `.ts` only when the boundary is stable and tests are nearby.
 - [ ] Keep `Doc.d.ts`, `Query.d.ts`, and `Aggregation.d.ts` aligned with actual JS exports while those modules remain JavaScript.
 - [ ] Avoid Compat implementation conversion.
