@@ -413,22 +413,29 @@ If you do not use file-based models, or if a framework/plugin provides models th
 
 ```ts
 // types/teamplay.ts
-import type { CollectionSpec, SignalClass } from 'teamplay'
+import { Signal, type CollectionSpec } from 'teamplay'
 
 interface FileDoc {
   url: string
   mimeType?: string
 }
 
-type FilesModel = SignalClass<FileDoc[]>
-type FileModel = SignalClass<FileDoc>
+export declare class FilesModel extends Signal<FileDoc[]> {
+  getUploadUrl (): string
+}
+
+export declare class FileModel extends Signal<FileDoc> {
+  getUrl (): string
+}
 
 declare module 'teamplay' {
   interface TeamplayCollections {
-    files: CollectionSpec<FileDoc, FilesModel, FileModel>
+    files: CollectionSpec<FileDoc, typeof FilesModel, typeof FileModel>
   }
 }
 ```
+
+Use actual model class constructors when they are importable. Use `export declare class` in `.d.ts` files when the runtime model class is registered somewhere else, such as package or framework sidecars.
 
 For schemas, prefer `JsonSchemaSpec`:
 
@@ -452,11 +459,19 @@ Manual augmentation should match the runtime registration. If the runtime and ty
 Frameworks and plugin systems can contribute types through declaration files instead of asking each app to edit `types/teamplay.ts` manually. These interfaces are intentionally advanced integration points:
 
 ```ts
-import type { CollectionSpec } from 'teamplay'
+import { Signal, type CollectionSpec } from 'teamplay'
 
 interface FileDoc {
   url: string
   mimeType?: string
+}
+
+export declare class FilesModel extends Signal<FileDoc[]> {
+  getUploadUrl (): string
+}
+
+export declare class FileModel extends Signal<FileDoc> {
+  getUrl (): string
 }
 
 interface SessionFields {
@@ -466,7 +481,7 @@ interface SessionFields {
 declare module 'teamplay' {
   interface TeamplayPluginCollections {
     filesPlugin: {
-      files: CollectionSpec<FileDoc>
+      files: CollectionSpec<FileDoc, typeof FilesModel, typeof FileModel>
     }
   }
 

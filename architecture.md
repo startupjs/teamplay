@@ -118,6 +118,8 @@ export const Signal = RuntimeSignal
 
 That separation is covered in [typing-architecture.md](./typing-architecture.md). Runtime readers should still know it exists because changing runtime exports can affect public type UX.
 
+Plugin declaration sidecars use the same separation: they may declare public `Signal<T>`-based model classes for typing while runtime model registration still goes through real constructors and `addModel()`.
+
 ## Application Startup
 
 ### Server Startup

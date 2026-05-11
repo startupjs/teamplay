@@ -251,6 +251,8 @@ function UserCard ({ $user }: { $user: Signal<UserDoc> }) {
 
 `PathModel<TValue, TDefaultModel, TPath>` joins runtime-like path tuples with `JoinPath<TPath>` and looks up `TeamplayModels`.
 
+Plugin `.d.ts` sidecars for plugin-owned collections should use declaration classes for model constructors, for example `export declare class FileModel extends Signal<FileDoc> { getUrl(): string }`. Declaration classes do not emit runtime code, but they give TypeScript a constructor type through `typeof FileModel` and an instance type that satisfies TeamPlay's signal model contract.
+
 Private root collections are value signals rather than collection signals. A schema at `models/_session/schema.ts` describes `$._session` as a whole, so `$._session.userId`, `$.session.userId`, `$.$session.userId`, and `const { $userId } = $.session` all share the same typed path. Private schemas are generated into `TeamplayPrivateCollections` and are skipped by backend collection schema validation.
 
 Root private aliases are currently modeled in `RootDollarAliases`:

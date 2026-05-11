@@ -53,6 +53,8 @@ type TypeAssertions = [
   RootDollarCollectionAlias,
   PluginCollectionMethod,
   PluginDocumentMethod,
+  PluginDeclaredCollectionMethod,
+  PluginDeclaredDocumentMethod,
   PluginSignalFieldMethod,
   DocDollarDestructureTitle,
   DocDollarDestructureStatus,
@@ -393,6 +395,14 @@ class FileModel extends Signal<FileDoc> {
   }
 }
 
+declare class DeclaredFilesModel extends Signal<FileDoc[]> {
+  getUploadUrl (): string
+}
+
+declare class DeclaredFileModel extends Signal<FileDoc> {
+  getUrl (): string
+}
+
 type PermissionRole =
   TeamplayPluginOption<'permissions'> extends { roles: readonly (infer Role extends string)[] }
     ? Role
@@ -458,6 +468,9 @@ declare module 'teamplay' {
   interface TeamplayPluginCollections {
     filePlugin: {
       files: CollectionSpec<FileDoc, typeof FilesModel, typeof FileModel>
+    }
+    declaredFilePlugin: {
+      declaredFiles: CollectionSpec<FileDoc, typeof DeclaredFilesModel, typeof DeclaredFileModel>
     }
   }
 
@@ -580,6 +593,8 @@ const signalCollection = $game.getCollection()
 const signalAssociations = $game.getAssociations()
 const pluginUploadUrl = $.files.getUploadUrl()
 const pluginFileUrl = $.files.file1.getUrl()
+const declaredPluginUploadUrl = $.declaredFiles.getUploadUrl()
+const declaredPluginFileUrl = $.declaredFiles.file1.getUrl()
 $game.addRole('admin')
 // @ts-expect-error plugin options should narrow generated plugin method arguments.
 $game.addRole('owner')
@@ -608,6 +623,8 @@ type StatusValue = Expect<Equal<ReturnType<typeof $game.status.get>, 'draft' | '
 type RootDollarCollectionAlias = Expect<Equal<typeof rootAliasAddId, Promise<string>>>
 type PluginCollectionMethod = Expect<Equal<typeof pluginUploadUrl, string>>
 type PluginDocumentMethod = Expect<Equal<typeof pluginFileUrl, string>>
+type PluginDeclaredCollectionMethod = Expect<Equal<typeof declaredPluginUploadUrl, string>>
+type PluginDeclaredDocumentMethod = Expect<Equal<typeof declaredPluginFileUrl, string>>
 type PluginSignalFieldMethod = Expect<Equal<Parameters<typeof $game.addRole>[0], 'admin' | 'user'>>
 type DocDollarDestructureTitle = Expect<Equal<ReturnType<typeof $destructuredTitle.get>, string>>
 type DocDollarDestructureStatus = Expect<Equal<ReturnType<typeof $destructuredStatus.get>, 'draft' | 'started' | undefined>>
