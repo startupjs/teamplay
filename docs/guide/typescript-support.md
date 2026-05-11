@@ -153,6 +153,24 @@ await sub($.users, {
 })
 ```
 
+Literal dotted paths are checked too:
+
+```ts
+await sub($.users, {
+  'profile.city': 'London'
+})
+```
+
+Computed Mongo-style paths are allowed, but TypeScript cannot validate the specific field behind a runtime string:
+
+```ts
+const likesPath = `likes.${userId}`
+await sub($.users, {
+  [likesPath]: true,
+  $sort: { createdAt: -1 }
+})
+```
+
 Aggregation output types are output-first:
 
 ```ts
@@ -249,6 +267,37 @@ const $showModal = $<boolean>()
 
 This gives TypeScript the signal shape, but the runtime value is still uninitialized until you set or assign it.
 
+## Private Root Types
+
+Schemas under private root collections describe the private value itself, not documents inside a database collection:
+
+```ts
+// models/_session/schema.ts
+import { defineSchema } from 'teamplay'
+
+export default defineSchema({
+  userId: { type: 'string' },
+  banner: {
+    type: 'object',
+    properties: {
+      visible: { type: 'boolean' }
+    }
+  }
+})
+```
+
+The generated file registers that schema in `TeamplayPrivateCollections`, so the root signal aliases are typed:
+
+```ts
+$._session.userId.get()
+$.session.userId.get()
+$.$session.userId.get()
+
+const { $userId } = $.session
+```
+
+Private root signals are value signals. They are not collection signals and do not expose `.add()`.
+
 ## Nested Models
 
 Nested files are generated into `TeamplayModels`:
@@ -323,6 +372,10 @@ If the schema is dynamic or cannot be parsed safely, field JSDoc is skipped but 
 ```ts
 type UserSchema = typeof import('./models/users/schema').default
 
+interface SessionState {
+  userId?: string
+}
+
 declare module './models/users/schema' {
   export default interface User extends FromJsonSchema<UserSchema> {}
 }
@@ -330,6 +383,10 @@ declare module './models/users/schema' {
 declare module 'teamplay' {
   interface TeamplayCollections {
     users: JsonSchemaSpec<typeof schema, typeof UsersModel, typeof UserModel>
+  }
+
+  interface TeamplayPrivateCollections {
+    _session: SessionState
   }
 
   interface TeamplayModels {
@@ -344,6 +401,7 @@ declare module 'teamplay' {
 
 - Schema module augmentation makes `import type User from './models/users/schema.ts'` work.
 - `TeamplayCollections` registers collection schemas, collection model classes, and document model classes.
+- `TeamplayPrivateCollections` registers private root value schemas such as `_session`.
 - `TeamplayModels` registers extra model classes below documents.
 - `TeamplaySignalFields` preserves schema field JSDoc in signal completions.
 
@@ -388,6 +446,48 @@ declare module 'teamplay' {
 ```
 
 Manual augmentation should match the runtime registration. If the runtime and type registry disagree, TypeScript may suggest methods that are not present at runtime.
+
+## Plugin And Framework Augmentation
+
+Frameworks and plugin systems can contribute types through declaration files instead of asking each app to edit `types/teamplay.ts` manually. These interfaces are intentionally advanced integration points:
+
+```ts
+import type { CollectionSpec } from 'teamplay'
+
+interface FileDoc {
+  url: string
+  mimeType?: string
+}
+
+interface SessionFields {
+  userId?: string
+}
+
+declare module 'teamplay' {
+  interface TeamplayPluginCollections {
+    filesPlugin: {
+      files: CollectionSpec<FileDoc>
+    }
+  }
+
+  interface TeamplayPluginPrivateCollections {
+    authPlugin: {
+      _session: SessionFields
+    }
+  }
+}
+```
+
+The root signal merges app collections with all registered plugin collections. Plugin declaration files can also expose static options and feature flags:
+
+```ts
+import type { TeamplayFeature, TeamplayPluginOption } from 'teamplay'
+
+type OAuth2Options = TeamplayPluginOption<'oauth2'>
+type OAuth2Enabled = TeamplayFeature<'enableOAuth2'>
+```
+
+End applications usually receive these imports from their framework-generated `teamplay-env.d.ts`; normal app code should not need to wire them by hand.
 
 ## Known Limits
 

@@ -34,6 +34,7 @@ models/users/schema.ts      -> schema for users
 models/users/access.ts      -> access rules for users
 models/users/_active.ts     -> aggregation for users
 models/users/-helpers.ts    -> ignored
+models/_session/schema.ts   -> schema for the _session private value
 ```
 
 Rules:
@@ -42,6 +43,7 @@ Rules:
 - `[id]` maps to `*`.
 - `schema.ts`, `access.ts`, and `_name.ts` merge into the collection model object.
 - `_name.ts` is treated as an aggregation only directly inside a public top-level collection. Private collections such as `_session/` are regular model paths.
+- A schema directly under a private collection, such as `models/_session/schema.ts`, describes the whole private value. It is used for types, not backend collection validation.
 - Files or folders starting with `-` are ignored.
 - `*` is not allowed in filenames. Use `[id]` instead.
 
@@ -70,6 +72,29 @@ Include it in `tsconfig.json` if your project does not already include root-leve
 ```
 
 See [TypeScript Support](/guide/typescript-support) for the generated type system.
+
+## Advanced Type Inputs
+
+Framework integrations can ask the generator to import plugin declaration files and expose static feature or plugin-option types:
+
+```js
+plugins: [[
+  'teamplay/babel',
+  {
+    featuresType: '{ enableUploads: true }',
+    pluginTypes: [{
+      name: 'permissions',
+      importPath: '@acme/permissions/plugin',
+      optionsType: '{ isomorphic: { entities: readonly ["teams"] } }'
+    }, {
+      name: 'files',
+      importPath: '@acme/files/plugin'
+    }]
+  }
+]]
+```
+
+This is primarily for frameworks that already have a plugin registry. App authors usually should not configure these options directly; the framework should generate the plugin imports and option types.
 
 ## Custom Loading Pipelines
 

@@ -1,4 +1,13 @@
-import type { TeamplayCollections, TeamplayModels, TeamplaySignalFields } from '../../index.ts'
+import type {
+  TeamplayCollections,
+  TeamplayPrivateCollections,
+  TeamplayPluginPrivateCollections,
+  TeamplayModels,
+  TeamplayPluginCollections,
+  TeamplayPluginModels,
+  TeamplayPluginSignalFields,
+  TeamplaySignalFields
+} from '../../index.ts'
 import type { Signal, GETTERS } from '../SignalBase.ts'
 import type {
   FromJsonSchema,
@@ -54,6 +63,28 @@ type BlockedArrayMutators = {
   readonly [K in SignalArrayMutatorMethodKeys]?: never
 }
 
+type UnionToIntersection<TValue> =
+  (TValue extends unknown ? (value: TValue) => void : never) extends (value: infer Intersection) => void
+    ? Intersection
+    : never
+
+type RegistryValues<TRegistry> = TRegistry[keyof TRegistry & string]
+
+type MergeRegistry<TRegistry> =
+  [RegistryValues<TRegistry>] extends [never] ? {} : UnionToIntersection<RegistryValues<TRegistry>>
+
+type EffectiveTeamplayCollections = TeamplayCollections & MergeRegistry<TeamplayPluginCollections>
+type EffectiveTeamplayPrivateCollections = TeamplayPrivateCollections & MergeRegistry<TeamplayPluginPrivateCollections>
+type EffectiveTeamplayModels = TeamplayModels & MergeRegistry<TeamplayPluginModels>
+type EffectiveTeamplaySignalFields = TeamplaySignalFields & MergeRegistry<TeamplayPluginSignalFields>
+
+type RootDollarAliases = {
+  readonly session: '_session'
+  readonly page: '_page'
+  readonly render: '$render'
+  readonly system: '$system'
+}
+
 type SignalArrayLike<TItem> = SignalArrayReaderMethods<TItem>
 
 type PathModel<
@@ -61,11 +92,11 @@ type PathModel<
   TDefaultModel extends SignalClass<any>,
   TPath extends WildcardSignalPath
 > =
-  JoinPath<TPath> extends keyof TeamplayModels
-    ? TeamplayModels[JoinPath<TPath>] extends SignalClass<TValue>
-      ? TeamplayModels[JoinPath<TPath>]
-      : TeamplayModels[JoinPath<TPath>] extends SignalClass<any>
-        ? TeamplayModels[JoinPath<TPath>]
+  JoinPath<TPath> extends keyof EffectiveTeamplayModels
+    ? EffectiveTeamplayModels[JoinPath<TPath>] extends SignalClass<TValue>
+      ? EffectiveTeamplayModels[JoinPath<TPath>]
+      : EffectiveTeamplayModels[JoinPath<TPath>] extends SignalClass<any>
+        ? EffectiveTeamplayModels[JoinPath<TPath>]
         : TDefaultModel
     : TDefaultModel
 
@@ -78,8 +109,8 @@ type SignalArrayMethods<TValue, TPath extends WildcardSignalPath> =
     : Pick<Signal<TValue>, SignalArrayReaderMethodKeys>
 
 type SignalFieldsForPath<TPath extends WildcardSignalPath> =
-  JoinPath<TPath> extends keyof TeamplaySignalFields
-    ? TeamplaySignalFields[JoinPath<TPath>]
+  JoinPath<TPath> extends keyof EffectiveTeamplaySignalFields
+    ? EffectiveTeamplaySignalFields[JoinPath<TPath>]
     : {}
 
 type DocumentSignalIdMethod = {
@@ -262,12 +293,12 @@ type MatchingDocumentCollectionKeys<TValue> =
   IsAny<TValue> extends true
     ? never
     : {
-        [K in keyof TeamplayCollections & string]:
+        [K in keyof EffectiveTeamplayCollections & string]:
         IsEqual<
           NonNullable<TValue>,
-          NonNullable<CollectionDocument<TeamplayCollections[K]>>
+          NonNullable<CollectionDocument<EffectiveTeamplayCollections[K]>>
         > extends true ? K : never
-      }[keyof TeamplayCollections & string]
+      }[keyof EffectiveTeamplayCollections & string]
 
 type MatchingCollectionKeys<TValue> =
   IsAny<TValue> extends true
@@ -282,34 +313,34 @@ type SingleCollectionKey<TValue> = SingleKey<MatchingCollectionKeys<TValue>>
 type DocumentSignalModelForValue<TValue> =
   [SingleDocumentCollectionKey<TValue>] extends [never]
     ? typeof Signal
-    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
-      ? CollectionDocumentModel<TeamplayCollections[SingleDocumentCollectionKey<TValue>]>
+    : SingleDocumentCollectionKey<TValue> extends keyof EffectiveTeamplayCollections & string
+      ? CollectionDocumentModel<EffectiveTeamplayCollections[SingleDocumentCollectionKey<TValue>]>
       : typeof Signal
 
 type DocumentSignalPathForValue<TValue> =
   [SingleDocumentCollectionKey<TValue>] extends [never]
     ? readonly []
-    : SingleDocumentCollectionKey<TValue> extends keyof TeamplayCollections & string
+    : SingleDocumentCollectionKey<TValue> extends keyof EffectiveTeamplayCollections & string
       ? readonly [SingleDocumentCollectionKey<TValue>, '*']
       : readonly []
 
 type SignalForDocumentValue<TValue> =
   TypedSignal<TValue, DocumentSignalModelForValue<TValue>, DocumentSignalPathForValue<TValue>>
 
-type SignalForCollectionArrayValue<TCollection extends keyof TeamplayCollections & string> =
+type SignalForCollectionArrayValue<TCollection extends keyof EffectiveTeamplayCollections & string> =
   CollectionSignal<
-    CollectionDocument<TeamplayCollections[TCollection]>,
-    TeamplayCollections[TCollection] extends CollectionSpec<any, infer CollectionModel, any>
+    CollectionDocument<EffectiveTeamplayCollections[TCollection]>,
+    EffectiveTeamplayCollections[TCollection] extends CollectionSpec<any, infer CollectionModel, any>
       ? CollectionModel
       : typeof Signal,
-    CollectionDocumentModel<TeamplayCollections[TCollection]>,
+    CollectionDocumentModel<EffectiveTeamplayCollections[TCollection]>,
     readonly [TCollection]
   >
 
 type SignalForArrayValue<TValue> =
   [SingleCollectionKey<TValue>] extends [never]
     ? SignalForDocumentValue<TValue>
-    : SingleCollectionKey<TValue> extends keyof TeamplayCollections & string
+    : SingleCollectionKey<TValue> extends keyof EffectiveTeamplayCollections & string
       ? SignalForCollectionArrayValue<SingleCollectionKey<TValue>>
       : SignalForDocumentValue<TValue>
 
@@ -327,14 +358,14 @@ export interface LocalSignalFactory {
   <TValue>(value: TValue): TypedSignal<TValue>
 }
 
-export type RootCollections<TCollections extends Record<string, any> = TeamplayCollections> = {
+export type RootCollections<TCollections = EffectiveTeamplayCollections> = {
   readonly [K in keyof TCollections & string]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
 } & {
   readonly [K in keyof TCollections & string as `$${K}`]: CollectionSignalFromSpec<TCollections[K], readonly [K]>
 }
 
-export type RootSignal<TCollections extends Record<string, any> = TeamplayCollections> =
-  Signal<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections>
+export type RootSignal<TCollections = EffectiveTeamplayCollections> =
+  Signal<Record<string, unknown>> & LocalSignalFactory & RootCollections<TCollections> & RootPrivateCollections
 
 export interface RegisteredAggregationInput<
   TCollection extends string = string,
@@ -354,10 +385,10 @@ export interface TypedAggregationInput<
   readonly __teamplayDocumentModel?: TDocumentModel
 }
 
-export type CollectionAggregationSignal<TCollection extends keyof TeamplayCollections & string> =
+export type CollectionAggregationSignal<TCollection extends keyof EffectiveTeamplayCollections & string> =
   AggregationSignal<
-  CollectionDocument<TeamplayCollections[TCollection]>,
-  CollectionDocumentModel<TeamplayCollections[TCollection]>,
+  CollectionDocument<EffectiveTeamplayCollections[TCollection]>,
+  CollectionDocumentModel<EffectiveTeamplayCollections[TCollection]>,
   readonly [TCollection, '*']
   >
 
@@ -373,7 +404,7 @@ export type AggregationOutputSignal<TOutput> =
 
 type RegisteredAggregationSignal<TCollection extends string, TOutput> =
   IsUnknown<TOutput> extends true
-    ? TCollection extends keyof TeamplayCollections & string
+    ? TCollection extends keyof EffectiveTeamplayCollections & string
       ? CollectionAggregationSignal<TCollection>
       : QuerySignal
     : AggregationOutputSignal<TOutput>
@@ -449,6 +480,36 @@ export type CollectionSignalFromSpec<
     : TSpec extends JsonSchema
       ? CollectionSignal<FromJsonSchema<TSpec>, typeof Signal, typeof Signal, TPath>
       : CollectionSignal
+
+export type PrivateSignalFromSpec<
+  TSpec,
+  TPath extends WildcardSignalPath = readonly []
+> = Omit<DocumentSignal<TSpec, typeof Signal, TPath>, 'add'>
+
+type PrivateSignalForAlias<
+  TPrivateCollections,
+  TAlias extends keyof RootDollarAliases & string
+> =
+  RootDollarAliases[TAlias] extends keyof TPrivateCollections & string
+    ? PrivateSignalFromSpec<
+        TPrivateCollections[RootDollarAliases[TAlias]],
+        readonly [RootDollarAliases[TAlias]]
+      >
+    : never
+
+export type RootPrivateCollections<TPrivateCollections = EffectiveTeamplayPrivateCollections> = {
+  readonly [K in keyof TPrivateCollections & string]: PrivateSignalFromSpec<TPrivateCollections[K], readonly [K]>
+} & {
+  readonly [K in keyof TPrivateCollections & string as `$${K}`]: PrivateSignalFromSpec<TPrivateCollections[K], readonly [K]>
+} & {
+  readonly [K in keyof RootDollarAliases & string as RootDollarAliases[K] extends keyof TPrivateCollections & string
+    ? K
+    : never]: PrivateSignalForAlias<TPrivateCollections, K>
+} & {
+  readonly [K in keyof RootDollarAliases & string as RootDollarAliases[K] extends keyof TPrivateCollections & string
+    ? `$${K}`
+    : never]: PrivateSignalForAlias<TPrivateCollections, K>
+}
 
 export interface SignalConstructor {
   new <TValue = unknown>(segments: PathSegment[]): TypedSignal<TValue>

@@ -29,11 +29,14 @@ import type {
   ModelEntry,
   ModelManifest,
   PathModelsFromManifest,
+  PrivateCollectionsFromManifest,
+  PrivateSignalFromSpec,
   PublicSignal,
   LocalSignalFactory,
   RuntimeSignalConstructor,
   RuntimeSignalInstance,
   RootCollections,
+  RootPrivateCollections,
   RootSignal,
   WildcardPathSegment,
   WildcardSignalPath,
@@ -66,8 +69,21 @@ import type {
 } from './orm/Signal.ts'
 
 export interface TeamplayCollections {}
+export interface TeamplayPrivateCollections {}
 export interface TeamplayModels {}
 export interface TeamplaySignalFields {}
+export interface TeamplayPluginCollections {}
+export interface TeamplayPluginPrivateCollections {}
+export interface TeamplayPluginModels {}
+export interface TeamplayPluginSignalFields {}
+export interface TeamplayPluginOptions {}
+export interface TeamplayFeatures {}
+
+export type TeamplayPluginOption<TName extends string> =
+  TName extends keyof TeamplayPluginOptions ? TeamplayPluginOptions[TName] : {}
+
+export type TeamplayFeature<TName extends string> =
+  TName extends keyof TeamplayFeatures ? TeamplayFeatures[TName] : unknown
 
 export type Signal<TValue = unknown> = PublicSignal<TValue>
 
@@ -90,8 +106,10 @@ export type {
   ModelEntry,
   ModelManifest,
   CollectionsFromManifest,
+  PrivateCollectionsFromManifest,
   LocalSignalFactory,
   PathModelsFromManifest,
+  PrivateSignalFromSpec,
   PublicSignal,
   RuntimeSignalConstructor,
   RuntimeSignalInstance,
@@ -106,6 +124,7 @@ export type {
   QueryParamsInput,
   QuerySignal,
   RegisteredAggregationInput,
+  RootPrivateCollections,
   SignalArrayMutatorMethods,
   SignalArrayReaderMethods,
   SignalBaseInstance,
@@ -257,6 +276,7 @@ export type {
 } from '@teamplay/utils/aggregation'
 export type {
   AccessControl,
+  AccessControlOptions,
   AccessControlRules,
   AccessCreateContext,
   AccessDecision,
@@ -311,9 +331,11 @@ export function initLocalCollection (name: string): any {
 
 export { useApi }
 
-export function getRootSignal<TCollections extends Record<string, any> = TeamplayCollections> (options?: Record<string, any>): RootSignal<TCollections> {
+export function getRootSignal (options?: Record<string, any>): RootSignal
+export function getRootSignal<TCollections extends Record<string, any>> (options?: Record<string, any>): RootSignal<TCollections>
+export function getRootSignal (options?: Record<string, any>): any {
   return getRuntimeRootSignal({
     rootFunction: universal$,
     ...options
-  }) as RootSignal<TCollections>
+  })
 }

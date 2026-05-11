@@ -1,12 +1,23 @@
 import type { SignalClass } from './Signal.ts'
-import type { TeamplayModels } from '../index.ts'
+import type { TeamplayModels, TeamplayPluginModels } from '../index.ts'
 import type { PathSegment } from './types/path.ts'
 
 export const MODELS: Record<string, SignalClass<any>> = {}
 
+type UnionToIntersection<TValue> =
+  (TValue extends unknown ? (value: TValue) => void : never) extends (value: infer Intersection) => void
+    ? Intersection
+    : never
+
+type RegistryValues<TRegistry> = TRegistry[keyof TRegistry & string]
+type MergeRegistry<TRegistry> =
+  [RegistryValues<TRegistry>] extends [never] ? {} : UnionToIntersection<RegistryValues<TRegistry>>
+
+type EffectiveTeamplayModels = TeamplayModels & MergeRegistry<TeamplayPluginModels>
+
 export default function addModel<TPattern extends string> (
   pattern: TPattern,
-  Model: TPattern extends keyof TeamplayModels ? TeamplayModels[TPattern] : SignalClass<any>
+  Model: TPattern extends keyof EffectiveTeamplayModels ? EffectiveTeamplayModels[TPattern] : SignalClass<any>
 ): void {
   if (typeof pattern !== 'string') throw Error('Model pattern must be a string, e.g. "users.*"')
   if (/\s/.test(pattern)) throw Error('Model pattern can not have spaces')

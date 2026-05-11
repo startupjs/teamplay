@@ -50,7 +50,11 @@ function sanitizeAndMergeModelPatterns (modelPatterns) {
 }
 
 function isCollectionPattern (pattern) {
-  return pattern && !pattern.includes('*') && !pattern.includes('.')
+  return pattern && !isPrivateCollectionPattern(pattern) && !pattern.includes('*') && !pattern.includes('.')
+}
+
+function isPrivateCollectionPattern (pattern) {
+  return pattern && /^[_$]/.test(pattern) && !pattern.includes('*') && !pattern.includes('.')
 }
 
 function isAggregationName (name) {
@@ -134,6 +138,7 @@ module.exports = {
   isAggregationName,
   isAggregationPattern,
   isCollectionPattern,
+  isPrivateCollectionPattern,
   isLegacyAggregationName,
   sanitizeAndMergeModelPatterns,
   toImportPath

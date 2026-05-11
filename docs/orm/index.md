@@ -78,6 +78,7 @@ models/users/access.ts      -> access rules for users
 models/users/_active.ts     -> aggregation for users
 models/users/-helpers.ts    -> ignored
 models/_session/index.ts    -> _session
+models/_session/schema.ts   -> schema for the _session private value
 ```
 
 Use `[id]` for wildcard path segments. Do not use `*` in filenames.
@@ -105,6 +106,8 @@ export default defineSchema({
 ```
 
 When `validateSchema: true` is enabled on the backend, writes are validated with this schema. The generated `teamplay-env.d.ts` also makes the schema module's default export usable as the document type.
+
+Schemas for private roots such as `models/_session/schema.ts` describe the private value itself. They are used for TypeScript and are skipped by backend collection validation.
 
 Read more in [Schemas](/orm/schemas).
 

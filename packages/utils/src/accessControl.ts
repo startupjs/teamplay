@@ -1,4 +1,5 @@
 export const isAccessControlSymbol: unique symbol = Symbol('is access control object')
+export const accessControlOptionsSymbol: unique symbol = Symbol('access control options')
 
 export const OPERATIONS = [
   'create',
@@ -146,6 +147,7 @@ export type AccessControl<
   TCustomRule = never
 > = AccessControlRules<TDoc, TSession, TCustomRule> & {
   readonly [isAccessControlSymbol]: true
+  readonly [accessControlOptionsSymbol]?: AccessControlOptions
 }
 
 type MutableAccessControl<
@@ -154,11 +156,25 @@ type MutableAccessControl<
   TCustomRule = never
 > = AccessControlRules<TDoc, TSession, TCustomRule> & {
   [isAccessControlSymbol]?: true
+  [accessControlOptionsSymbol]?: AccessControlOptions
+}
+
+export interface AccessControlOptions {
+  /**
+   * Register these rules even when the backend is not configured with global
+   * access control. Useful for framework-owned sensitive collections.
+   */
+  force?: boolean
 }
 
 /** Check whether a value was created with `accessControl()`. */
 export function isAccessControl (something: unknown): something is AccessControl {
   return Boolean((something as Partial<AccessControl> | undefined)?.[isAccessControlSymbol])
+}
+
+/** Return options attached by `accessControl(rules, options)`. */
+export function getAccessControlOptions (something: unknown): AccessControlOptions {
+  return (something as Partial<AccessControl> | undefined)?.[accessControlOptionsSymbol] || {}
 }
 
 /**
@@ -189,7 +205,8 @@ export function accessControl<
   TSession = DefaultAccessSession,
   TCustomRule = never
 > (
-  props: AccessControlRules<TDoc, TSession, TCustomRule>
+  props: AccessControlRules<TDoc, TSession, TCustomRule>,
+  options: AccessControlOptions = {}
 ): AccessControl<TDoc, TSession, TCustomRule> {
   if (!props || typeof props !== 'object') throw Error(ERRORS.mustBeObject(props))
   for (const key in props) {
@@ -197,6 +214,10 @@ export function accessControl<
   }
   const access = props as MutableAccessControl<TDoc, TSession, TCustomRule>
   access[isAccessControlSymbol] ??= true
+  access[accessControlOptionsSymbol] = {
+    ...access[accessControlOptionsSymbol],
+    ...options
+  }
   return access as AccessControl<TDoc, TSession, TCustomRule>
 }
 

@@ -11,6 +11,7 @@ The desired end-user experience is:
 - `Signal<UserDoc>` exposes schema fields and document model methods.
 - `Signal<UserDoc[]>` exposes collection model methods and item document methods when `UserDoc` maps to one known collection.
 - `$` exposes generated collection paths from `TeamplayCollections`.
+- `$` exposes private root value paths from `TeamplayPrivateCollections` and plugin private collection augmentations, including aliases like `$.session`.
 - `$.collection[id]` remains the conventional document access API.
 - `sub()` and `useSub()` preserve document, collection, query, and aggregation signal shapes.
 - `teamplay-env.d.ts` can be generated from file-based models, schemas, access rules, and aggregations.
@@ -23,6 +24,7 @@ The public typing surface is now mostly in the desired shape:
 
 - `packages/teamplay/src/index.ts`, `packages/teamplay/src/orm/sub.ts`, and `packages/teamplay/src/react/useSub.ts` are checked.
 - Public `Signal<T>` is a registry-based facade over runtime signals, model methods, schema fields, and generated path facts.
+- App and plugin registries are merged before the root signal, model lookup, and generated field helpers are exposed to users.
 - Runtime/public contracts are separated through names such as `RuntimeSignalInstance`, `SignalBaseInstance`, and `SignalModelConstructor`.
 - Collection, query, and aggregation signal types share central `SignalKind` / `SignalForKind` helpers.
 - Query `ids` and `extra` are explicit metadata signals while query results remain assignable to `Signal<T[]>`.
@@ -146,26 +148,46 @@ Shared model-pattern utilities now cover:
 - invalid wildcard filenames
 - schema/access/aggregation grouping
 - collection-pattern checks
+- private-collection-pattern checks
 - generated `require.context` helper parity
 
 ## Type Architecture
 
 ### Module Augmentation
 
-`packages/teamplay/src/index.ts` exposes three augmentation interfaces:
+`packages/teamplay/src/index.ts` exposes augmentation interfaces for public collections, private root collections, path models, generated fields, plugin options, and static feature flags:
 
 ```ts
 export interface TeamplayCollections {}
+export interface TeamplayPrivateCollections {}
 export interface TeamplayModels {}
 export interface TeamplaySignalFields {}
+export interface TeamplayPluginCollections {}
+export interface TeamplayPluginPrivateCollections {}
+export interface TeamplayPluginModels {}
+export interface TeamplayPluginSignalFields {}
+export interface TeamplayPluginOptions {}
+export interface TeamplayFeatures {}
 ```
 
 Generated or manual augmentation fills these interfaces:
 
 ```ts
+interface SessionState {
+  banner?: { visible?: boolean }
+}
+
+interface AuthSessionFields {
+  userId?: string
+}
+
 declare module 'teamplay' {
   interface TeamplayCollections {
     users: JsonSchemaSpec<typeof schema, typeof Users, typeof User>
+  }
+
+  interface TeamplayPrivateCollections {
+    _session: SessionState
   }
 
   interface TeamplayModels {
@@ -175,10 +197,18 @@ declare module 'teamplay' {
   interface TeamplaySignalFields {
     'users.*': UsersFields
   }
+
+  interface TeamplayPluginPrivateCollections {
+    authPlugin: {
+      _session: AuthSessionFields
+    }
+  }
 }
 ```
 
 This static bridge is necessary because TypeScript cannot infer global root paths from runtime calls like `addModel('users.*', User)`.
+
+Plugin registries are nested by plugin key, then merged with `UnionToIntersection` in `types/signal.ts`. That shape keeps plugin declarations from overwriting each other while letting the effective root signal behave as one combined schema. `TeamplayPluginOption<'name'>` and `TeamplayFeature<'name'>` are read-only type channels for framework-generated static configuration.
 
 ### Public `Signal<T>`
 
@@ -221,6 +251,17 @@ function UserCard ({ $user }: { $user: Signal<UserDoc> }) {
 
 `PathModel<TValue, TDefaultModel, TPath>` joins runtime-like path tuples with `JoinPath<TPath>` and looks up `TeamplayModels`.
 
+Private root collections are value signals rather than collection signals. A schema at `models/_session/schema.ts` describes `$._session` as a whole, so `$._session.userId`, `$.session.userId`, `$.$session.userId`, and `const { $userId } = $.session` all share the same typed path. Private schemas are generated into `TeamplayPrivateCollections` and are skipped by backend collection schema validation.
+
+Root private aliases are currently modeled in `RootDollarAliases`:
+
+- `session -> _session`
+- `page -> _page`
+- `render -> $render`
+- `system -> $system`
+
+Each alias is exposed in both plain and dollar-prefixed forms when the target private collection exists in the effective private registry.
+
 ### Collections, Queries, And Aggregations
 
 `CollectionSignal` models:
@@ -260,8 +301,12 @@ Unsupported dynamic schema expressions intentionally degrade to safer fallback s
 The Babel plugin generates:
 
 - `TeamplayCollections`
+- `TeamplayPrivateCollections`
 - `TeamplayModels`
 - `TeamplaySignalFields`
+- `TeamplayFeatures`
+- `TeamplayPluginOptions`
+- plugin declaration imports from `pluginTypes`
 - schema-module default-interface augmentation for the `Signal<Game>` UX
 
 The generated file still contains more concrete policy than ideal. Future work should continue moving interpretation into helper types as long as hover readability and field JSDoc quality do not regress.

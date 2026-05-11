@@ -159,7 +159,7 @@ describe('babel-plugin-teamplay', () => {
 
     const models = discoverModels({ root })
 
-    expect(models._session.map(part => `${part.type}:${part.name}`)).toEqual(['model:_session'])
+    expect(models._session.map(part => `${part.type}:${part.name}`)).toEqual(['model:_session', 'schema:schema'])
     expect(models['_session.connection'].map(part => `${part.type}:${part.name}`)).toEqual(['model:connection'])
     expect(models.events.map(part => `${part.type}:${part.name}`)).toContain('aggregation:_active')
   })
@@ -178,6 +178,39 @@ describe('babel-plugin-teamplay', () => {
     const filePath = generateTeamplayEnv({ root })
 
     expect(readFileSync(filePath, 'utf8')).toMatchSnapshot()
+  })
+
+  it('generates private collection schemas as root value signals', () => {
+    useFixture(root, 'complex-ts')
+    const filePath = generateTeamplayEnv({ root })
+    const content = readFileSync(filePath, 'utf8')
+
+    expect(content).toContain('interface TeamplayPrivateCollections extends PrivateCollectionsFromManifest<__TeamplayModelManifest> {}')
+    expect(content).toContain('"_session": __SessionFields')
+    expect(content).not.toContain('"_session.*"')
+  })
+
+  it('generates plugin type imports and plugin options', () => {
+    const filePath = generateTeamplayEnv({
+      root,
+      featuresType: '{ enableOAuth2: true }',
+      pluginTypes: [{
+        name: 'permissions',
+        importPath: '@startupjs/permissions/plugin',
+        optionsType: '{ isomorphic: { entities: readonly ["teams"] } }'
+      }, {
+        name: 'files',
+        importPath: '@startupjs-ui/file-input/files.plugin'
+      }]
+    })
+    const content = readFileSync(filePath, 'utf8')
+
+    expect(content).toContain('import "@startupjs/permissions/plugin"')
+    expect(content).toContain('import "@startupjs-ui/file-input/files.plugin"')
+    expect(content).toContain('interface TeamplayPluginOptions')
+    expect(content).toContain('interface TeamplayFeatures extends __TeamplayFeatures')
+    expect(content).toContain('type __TeamplayFeatures = { enableOAuth2: true }')
+    expect(content).toContain('"permissions": { isomorphic: { entities: readonly ["teams"] } }')
   })
 
   it('generates env field metadata from the shared schema fixture matrix', () => {

@@ -74,6 +74,7 @@ export class ShareDBAccess {
     this.options = options
     this.allow = {}
     this.deny = {}
+    this.protectedCollections = new Set(options.protectedCollections || [])
 
     backend.use('readSnapshots', this.readSnapshotsHandler.bind(this))
     backend.use('apply', this.applyHandler.bind(this))
@@ -121,6 +122,12 @@ export class ShareDBAccess {
       registerAllowHandler(op)
       registerDenyHandler(op)
     })
+
+    if (!backend.protectAccessCollection) {
+      backend.protectAccessCollection = collection => {
+        this.protectedCollections.add(collection)
+      }
+    }
   }
 
   // ++++++++++++++++++++++++++++++++ UPDATE ++++++++++++++++++++++++++++++++++
@@ -253,6 +260,8 @@ export class ShareDBAccess {
   async check (operation, collection, props) {
     const allow = this.allow
     const deny = this.deny
+
+    if (this.options.openByDefault && !this.protectedCollections.has(collection)) return true
 
     // First, check pattern matching collections
     allow[operation]['**'] = allow[operation]['**'] || []

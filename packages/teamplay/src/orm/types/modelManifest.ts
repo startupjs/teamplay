@@ -4,6 +4,7 @@ import type {
   JsonSchemaSpec,
   SignalClass
 } from './signal.ts'
+import type { FromJsonSchema } from './jsonSchema.ts'
 
 export interface ModelEntry<
   TModel extends SignalClass<any> = SignalClass<any>,
@@ -22,14 +23,31 @@ type StringKey<TValue> = Extract<keyof TValue, string>
 type CollectionManifestKey<TKey extends string> =
   TKey extends ''
     ? never
+    : TKey extends `_${string}` | `$${string}`
+      ? never
+      : TKey extends `${string}.${string}`
+        ? never
+        : TKey extends `${string}*${string}`
+          ? never
+          : TKey
+
+type PrivateCollectionManifestKey<TKey extends string> =
+  TKey extends ''
+    ? never
     : TKey extends `${string}.${string}`
       ? never
       : TKey extends `${string}*${string}`
         ? never
-        : TKey
+        : TKey extends `_${string}` | `$${string}`
+          ? TKey
+          : never
 
 type CollectionManifestKeys<TModels> = {
   [K in StringKey<TModels>]: CollectionManifestKey<K>
+}[StringKey<TModels>]
+
+type PrivateCollectionManifestKeys<TModels> = {
+  [K in StringKey<TModels>]: PrivateCollectionManifestKey<K>
 }[StringKey<TModels>]
 
 type ModelPathManifestKey<TKey extends string> =
@@ -72,8 +90,17 @@ type CollectionSpecFromManifestEntry<TModels, TCollection extends string> =
         ModelFromEntry<ManifestEntry<TModels, `${TCollection}.*`>>
       >
 
+type PrivateCollectionValueFromManifestEntry<TModels, TCollection extends string> =
+  [SchemaFromEntry<ManifestEntry<TModels, TCollection>>] extends [never]
+    ? unknown
+    : FromJsonSchema<SchemaFromEntry<ManifestEntry<TModels, TCollection>>>
+
 export type CollectionsFromManifest<TModels extends Record<string, any>> = {
   [K in CollectionManifestKeys<TModels>]: CollectionSpecFromManifestEntry<TModels, K>
+}
+
+export type PrivateCollectionsFromManifest<TModels extends Record<string, any>> = {
+  [K in PrivateCollectionManifestKeys<TModels>]: PrivateCollectionValueFromManifestEntry<TModels, K>
 }
 
 export type PathModelsFromManifest<TModels extends Record<string, any>> = {

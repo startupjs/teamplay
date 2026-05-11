@@ -125,8 +125,8 @@ That separation is covered in [typing-architecture.md](./typing-architecture.md)
 Typical server setup flows through `teamplay/server`:
 
 ```ts
+import models from 'teamplay/file-based-models'
 import { createBackend, initConnection } from 'teamplay/server'
-import models from './model'
 import { initModels } from 'teamplay'
 
 initModels(models)
@@ -215,6 +215,8 @@ The model manifest is also important for backend features:
 - aggregation definitions feed server aggregation middleware,
 - generated declarations feed editor and TypeScript UX.
 
+Private root collections such as `_session` are a special manifest case. A schema at `models/_session/schema.ts` describes the whole private value, not documents inside a public collection. The generator uses that schema for `TeamplayPrivateCollections` and field metadata, while backend schema validation skips it because private roots are client-local and do not flow through ShareDB as shared collections.
+
 ## Signal Runtime
 
 Signals are proxy-wrapped instances. Most user code never sees raw signal instances.
@@ -290,6 +292,7 @@ Private/local data is root-owned and lives in [packages/teamplay/src/orm/rootCon
 Private storage is used for:
 
 - local/session/page state,
+- root aliases such as `$.session` for `$._session`,
 - query materialization under `$queries`,
 - aggregation materialization under `$aggregations`,
 - root-owned runtime bookkeeping.
@@ -435,11 +438,20 @@ Access control is initialized by `@teamplay/backend` through `features/accessCon
 
 Access rules should be treated as server authority. Client typing and generated declarations can make access functions pleasant to write, but runtime security must live on the backend.
 
+There are two backend modes:
+
+- Global access control (`createBackend({ accessControl: true })`) checks every collection and denies collections without rules by default.
+- Selective access control initializes the same middleware with `openByDefault` when global access control is off but at least one collection is explicitly protected. This is used for `serverOnlyCollections` and access rules declared with `accessControl(rules, { force: true })`.
+
+`serverOnlyCollections` are protected by calling `backend.protectAccessCollection(collectionName)`. They deny client read/create/update/delete even when the rest of the app is open. Forced access rules are registered in the same selective mode so framework/plugin-owned sensitive collections can be protected without requiring app-wide access control.
+
 ### Schema Validation
 
 Schema validation is initialized by `@teamplay/backend` through `features/validateSchema` when enabled and outside production. It uses model schemas plus the `@teamplay/sharedb-schema` package.
 
 Schema definitions also feed type generation. Keep runtime schema behavior and generated type behavior aligned when changing schema helpers.
+
+Schema validation only applies to public top-level collections. Private root schemas are intentionally skipped at the backend validation layer because they describe client-local root state for typing/editor UX, not ShareDB documents.
 
 ### Server Aggregations
 
@@ -455,14 +467,17 @@ The model tooling package is [packages/babel-plugin-teamplay](./packages/babel-p
 - converting file paths into model patterns,
 - ignoring private `-` files,
 - grouping schema/access/aggregation files,
+- recognizing private root schemas separately from public collection schemas,
 - generating model manifests,
 - generating `teamplay-env.d.ts`,
+- importing plugin declaration sidecars,
+- emitting static framework feature and plugin-option types,
 - supporting loader/plugin variants.
 
 Changes here often affect both runtime and typing:
 
 - Runtime: model manifests passed to `initModels()` and `createBackend()`.
-- Typing: generated module augmentation for collections, models, fields, schemas, access rules, and aggregations.
+- Typing: generated module augmentation for public collections, private root collections, models, fields, schemas, plugin declaration imports, static feature flags, plugin options, access rules, and aggregations.
 
 Run Babel plugin tests and TeamPlay type tests for changes in this area.
 

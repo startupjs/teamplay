@@ -17,6 +17,8 @@ export type {
   ModelEntry,
   ModelManifest,
   PathModelsFromManifest,
+  PrivateCollectionsFromManifest,
+  PrivateSignalFromSpec,
   PublicSignal,
   RuntimeSignalConstructor,
   RuntimeSignalInstance,
@@ -28,6 +30,7 @@ export type {
   QueryParamsInput,
   QuerySignal,
   RegisteredAggregationInput,
+  RootPrivateCollections,
   SignalBaseInstance,
   SignalClass,
   SignalChild,
@@ -41,7 +44,21 @@ export type {
   ZodLikeSchema,
   ZodSchemaSpec
 } from './Signal.ts'
-export type { RootSignal, TeamplayCollections, TeamplayModels, TeamplaySignalFields } from '../index.ts'
+export type {
+  RootSignal,
+  TeamplayCollections,
+  TeamplayFeature,
+  TeamplayFeatures,
+  TeamplayModels,
+  TeamplayPluginCollections,
+  TeamplayPluginPrivateCollections,
+  TeamplayPluginModels,
+  TeamplayPluginOption,
+  TeamplayPluginOptions,
+  TeamplayPluginSignalFields,
+  TeamplayPrivateCollections,
+  TeamplaySignalFields
+} from '../index.ts'
 
 export const BaseModel = Signal
 export default BaseModel

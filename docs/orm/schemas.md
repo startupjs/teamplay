@@ -65,6 +65,34 @@ const backend = createBackend({
 
 Stored documents should be JSON-compatible: strings, numbers, booleans, nulls, arrays, and plain objects. Prefer `Date.now()` numbers over `Date` instances.
 
+## Private Root Schemas
+
+Public collection schemas describe one document in a database collection. Private root schemas are different: they describe the whole private value.
+
+```ts
+// models/_session/schema.ts
+import { defineSchema } from 'teamplay'
+
+export default defineSchema({
+  userId: { type: 'string' },
+  banner: {
+    type: 'object',
+    properties: {
+      visible: { type: 'boolean' }
+    }
+  }
+})
+```
+
+This makes `$._session`, `$.session`, and `$.$session` typed:
+
+```ts
+$._session.userId.get()       // string | undefined
+$.session.banner.visible.get() // boolean | undefined
+```
+
+Private schemas are used for TypeScript and editor field metadata only. They are skipped by backend JSON-schema validation because private collections live on the client and are not stored as shared database collections.
+
 ## Simplified Schema
 
 Most TeamPlay apps use simplified schemas. If the root schema does not have `type: 'object'`, TeamPlay treats the top-level object as the collection document's properties:

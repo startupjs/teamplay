@@ -59,6 +59,8 @@ export type {
   SignalKind,
   SignalInstance,
   SignalModelConstructor,
+  PrivateSignalFromSpec,
+  RootPrivateCollections,
   SubResult,
   TypedAggregationInput,
   TypedAggregationSignal,
@@ -69,7 +71,8 @@ export type {
   CollectionsFromManifest,
   ModelEntry,
   ModelManifest,
-  PathModelsFromManifest
+  PathModelsFromManifest,
+  PrivateCollectionsFromManifest
 } from './types/modelManifest.ts'
 
 export {

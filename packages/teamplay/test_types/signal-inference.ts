@@ -10,6 +10,7 @@ import {
   sub,
   useSub,
   type AccessCreateContext as ExportedAccessCreateContext,
+  type CollectionSpec,
   type CollectionsFromManifest,
   type FromJsonSchema,
   type JsonSchemaSpec,
@@ -17,8 +18,10 @@ import {
   type DefaultAggregationSession,
   type JoinPath,
   type PathModelsFromManifest,
+  type PrivateCollectionsFromManifest,
   type QueryParams,
   type QuerySignal,
+  type TeamplayPluginOption,
   type TypedAggregationInput,
   type TypedSignal,
   type ZodSchemaSpec
@@ -48,6 +51,9 @@ type TypeAssertions = [
   MaxPlayersValue,
   StatusValue,
   RootDollarCollectionAlias,
+  PluginCollectionMethod,
+  PluginDocumentMethod,
+  PluginSignalFieldMethod,
   DocDollarDestructureTitle,
   DocDollarDestructureStatus,
   DocDollarDestructureNestedModel,
@@ -167,8 +173,15 @@ type TypeAssertions = [
   ExportedAccessContextDoc,
   AccessDefaultSessionUserId,
   DefinedManifestCollection,
+  DefinedManifestPrivateCollection,
   DefinedManifestDocPathModel,
-  DefinedManifestNestedPathModel
+  DefinedManifestNestedPathModel,
+  PrivateSessionUserId,
+  PrivateSessionAliasUserId,
+  PrivateSessionDollarAliasUserId,
+  PrivateSessionDestructureUserId,
+  PrivateSessionPluginToken,
+  PrivateSessionNoCollectionAdd
 ]
 
 const gameSchema = {
@@ -224,6 +237,16 @@ const simplifiedKeywordFieldSchema = {
     }
   },
   name: { type: 'string' }
+} as const
+
+const sessionSchema = {
+  userId: { type: 'string', required: true },
+  banner: {
+    type: 'object',
+    properties: {
+      visible: { type: 'boolean' }
+    }
+  }
 } as const
 
 const tupleSchema = {
@@ -354,10 +377,38 @@ class RoleCountModel extends Signal<RoleCount> {
   }
 }
 
+interface FileDoc {
+  filename: string
+}
+
+class FilesModel extends Signal<FileDoc[]> {
+  getUploadUrl () {
+    return '/upload'
+  }
+}
+
+class FileModel extends Signal<FileDoc> {
+  getUrl () {
+    return `/files/${this.getId()}`
+  }
+}
+
+type PermissionRole =
+  TeamplayPluginOption<'permissions'> extends { roles: readonly (infer Role extends string)[] }
+    ? Role
+    : string
+
+interface PermissionMethods {
+  addRole (role: PermissionRole): void
+}
+
 const definedModels = defineModels({
   games: {
     default: GamesModel,
     schema: gameSchema
+  },
+  _session: {
+    schema: sessionSchema
   },
   'games.*': {
     default: GameModel
@@ -368,10 +419,15 @@ const definedModels = defineModels({
 })
 
 type DefinedManifestCollections = CollectionsFromManifest<typeof definedModels>
+type DefinedManifestPrivateCollections = PrivateCollectionsFromManifest<typeof definedModels>
 type DefinedManifestPathModels = PathModelsFromManifest<typeof definedModels>
 type DefinedManifestCollection = Expect<Equal<
   DefinedManifestCollections['games'],
   JsonSchemaSpec<typeof gameSchema, typeof GamesModel, typeof GameModel>
+>>
+type DefinedManifestPrivateCollection = Expect<Equal<
+  DefinedManifestPrivateCollections['_session'],
+  FromJsonSchema<typeof sessionSchema>
 >>
 type DefinedManifestDocPathModel = Expect<Equal<DefinedManifestPathModels['games.*'], typeof GameModel>>
 type DefinedManifestNestedPathModel = Expect<Equal<DefinedManifestPathModels['games.*.info'], typeof GameInfoModel>>
@@ -384,9 +440,39 @@ declare module 'teamplay' {
     sharedBs: JsonSchemaSpec<typeof ambiguousSharedSchema, typeof SharedDocsBModel, typeof SharedDocBModel>
   }
 
+  interface TeamplayPrivateCollections {
+    _session: FromJsonSchema<typeof sessionSchema>
+  }
+
   interface TeamplayModels {
     'games.*.info': typeof GameInfoModel
     'games.*.info.tags.*': typeof GameTagModel
+  }
+
+  interface TeamplayPluginOptions {
+    permissions: {
+      roles: readonly ['admin', 'user']
+    }
+  }
+
+  interface TeamplayPluginCollections {
+    filePlugin: {
+      files: CollectionSpec<FileDoc, typeof FilesModel, typeof FileModel>
+    }
+  }
+
+  interface TeamplayPluginPrivateCollections {
+    authPlugin: {
+      _session: {
+        token?: string
+      }
+    }
+  }
+
+  interface TeamplayPluginSignalFields {
+    permissionsPlugin: {
+      'games.*': PermissionMethods
+    }
   }
 }
 
@@ -394,8 +480,24 @@ declare const gameId: string
 
 const $games = $.games
 const { $games: $gamesFromRootDestructure } = $
+const { $userId: $sessionUserId } = $.session
 $games.findOpenGames()
 $gamesFromRootDestructure.findOpenGames()
+const privateSessionUserId: string = $._session.userId.get()
+const privateSessionAliasUserId: string = $.session.userId.get()
+const privateSessionDollarAliasUserId: string = $.$session.userId.get()
+const privateSessionDestructureUserId: string = $sessionUserId.get()
+const privateSessionPluginToken: string | undefined = $.session.token.get()
+// @ts-expect-error private collection root is not collection-like.
+$.session.add({ userId: 'user-1' })
+// @ts-expect-error unknown private fields are rejected when _session is typed.
+$.session.unknownField.get()
+type PrivateSessionUserId = Expect<Equal<typeof privateSessionUserId, string>>
+type PrivateSessionAliasUserId = Expect<Equal<typeof privateSessionAliasUserId, string>>
+type PrivateSessionDollarAliasUserId = Expect<Equal<typeof privateSessionDollarAliasUserId, string>>
+type PrivateSessionDestructureUserId = Expect<Equal<typeof privateSessionDestructureUserId, string>>
+type PrivateSessionPluginToken = Expect<Equal<typeof privateSessionPluginToken, string | undefined>>
+type PrivateSessionNoCollectionAdd = Expect<Equal<'add' extends keyof typeof $.session ? true : false, false>>
 const rootAliasAddId = $gamesFromRootDestructure.add({
   info: {
     title: 'Root Alias Game',
@@ -476,6 +578,11 @@ const signalToStringTag = $game.info.title[Symbol.toStringTag]
 const signalId = $game.getId()
 const signalCollection = $game.getCollection()
 const signalAssociations = $game.getAssociations()
+const pluginUploadUrl = $.files.getUploadUrl()
+const pluginFileUrl = $.files.file1.getUrl()
+$game.addRole('admin')
+// @ts-expect-error plugin options should narrow generated plugin method arguments.
+$game.addRole('owner')
 declare const $patternFlags: Signal<FromJsonSchema<typeof patternPropertiesBooleanSchema>>
 const patternFlagValue = $patternFlags['flag-active'].get()
 $patternFlags['flag-active'].set(true)
@@ -499,6 +606,9 @@ type TitleValue = Expect<Equal<ReturnType<typeof $game.info.title.get>, string>>
 type MaxPlayersValue = Expect<Equal<ReturnType<typeof $game.info.maxPlayers.get>, number>>
 type StatusValue = Expect<Equal<ReturnType<typeof $game.status.get>, 'draft' | 'started' | undefined>>
 type RootDollarCollectionAlias = Expect<Equal<typeof rootAliasAddId, Promise<string>>>
+type PluginCollectionMethod = Expect<Equal<typeof pluginUploadUrl, string>>
+type PluginDocumentMethod = Expect<Equal<typeof pluginFileUrl, string>>
+type PluginSignalFieldMethod = Expect<Equal<Parameters<typeof $game.addRole>[0], 'admin' | 'user'>>
 type DocDollarDestructureTitle = Expect<Equal<ReturnType<typeof $destructuredTitle.get>, string>>
 type DocDollarDestructureStatus = Expect<Equal<ReturnType<typeof $destructuredStatus.get>, 'draft' | 'started' | undefined>>
 type DocDollarDestructureNestedModel = Expect<Equal<ReturnType<typeof $destructuredInfo.titleCase>, string>>
@@ -724,6 +834,8 @@ type AccessUpdateOps = Expect<Equal<AccessUpdateContext['ops'], unknown[]>>
 type AccessDeleteDoc = Expect<Equal<AccessDeleteContext['doc'], Game>>
 type ExportedAccessContextDoc = Expect<Equal<ExportedAccessCreateContext<Game>['newDoc'], Game>>
 type AccessDefaultSessionUserId = Expect<Equal<ExportedAccessCreateContext<Game>['session']['userId'], string | undefined>>
+const forcedAccess = accessControl<Game>({ read: true }, { force: true })
+void forcedAccess
 declare const $resolvedQueryGames: QueryGames
 declare const $plainQuerySignal: QuerySignal
 const $firstQueryGame = $resolvedQueryGames.reduce(($firstGame, $secondGame) => $firstGame)

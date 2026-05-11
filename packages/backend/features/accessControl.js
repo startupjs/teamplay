@@ -1,11 +1,15 @@
 import sharedbAccess, { registerOrmRules } from '@teamplay/sharedb-access'
-import { isAccessControl } from '@teamplay/utils/accessControl'
+import { getAccessControlOptions, isAccessControl } from '@teamplay/utils/accessControl'
 
 export default function accessControl (
   backend,
-  { models = {}, dontUseOldDocs = true, ...options } = {}
+  { models = {}, dontUseOldDocs = true, forceOnly = false, serverOnlyCollections = [], ...options } = {}
 ) {
-  sharedbAccess(backend, { dontUseOldDocs, ...options })
+  const shareDbAccess = sharedbAccess(backend, { dontUseOldDocs, ...options })
+
+  for (const collectionName of serverOnlyCollections) {
+    backend.protectAccessCollection(collectionName)
+  }
 
   for (const modelPattern in models) {
     const { access, factory } = models[modelPattern]
@@ -16,12 +20,27 @@ export default function accessControl (
     } else if (access) {
       const collectionName = modelPattern
       if (/\./.test(collectionName)) throw Error(ERRORS.onlyTopLevelCollections(modelPattern))
-      if (!isAccessControl(access)) throw Error(ERRORS.improperAccessControlProps(collectionName, access))
+      if (!isAccessControl(access)) {
+        if (forceOnly) continue
+        throw Error(ERRORS.improperAccessControlProps(collectionName, access))
+      }
+      const { force } = getAccessControlOptions(access)
+      if (forceOnly && !force) continue
+      if (force) backend.protectAccessCollection(collectionName)
       registerOrmRules(backend, collectionName, access)
     }
   }
 
   console.log('✓ Security: Access Control for DB collections on backend is enabled')
+  return shareDbAccess
+}
+
+export function hasForcedAccessControls (models = {}) {
+  for (const modelPattern in models) {
+    const { access } = models[modelPattern]
+    if (isAccessControl(access) && getAccessControlOptions(access).force) return true
+  }
+  return false
 }
 
 const ERRORS = {

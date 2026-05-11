@@ -47,6 +47,25 @@ await sub($.users, {
 
 When schemas are generated, TypeScript checks query fields and values against the collection schema.
 
+Nested dotted fields are checked when the path is a literal:
+
+```ts
+await sub($.users, {
+  'profile.city': 'London'
+})
+```
+
+Computed keys are allowed for Mongo patterns that are only known at runtime. In that case TypeScript can preserve the query object shape, but it cannot validate the computed field's value against a specific schema field:
+
+```ts
+const likedByPath = `likes.${viewerId}`
+
+await sub($.users, {
+  [likedByPath]: true,
+  active: true
+})
+```
+
 ## Result Signals
 
 Query results behave like collection arrays for reading:

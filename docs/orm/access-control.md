@@ -35,6 +35,51 @@ Each rule can be:
 
 Validator functions can return a boolean or a promise resolving to a boolean.
 
+## Backend Enablement
+
+Enable access control on the backend:
+
+```ts
+import { createBackend } from 'teamplay/server'
+
+const backend = createBackend({
+  accessControl: true
+})
+```
+
+When global access control is enabled, collections without registered rules are denied by default. This is the safe production behavior: forgetting an `access.ts` file does not accidentally open a collection.
+
+When global access control is disabled, collections remain open unless they are explicitly protected by forced rules or `serverOnlyCollections`.
+
+## Forced Rules
+
+Some framework-owned collections need protection even when an app has not enabled global access control yet. Mark those rules as forced:
+
+```ts
+export default accessControl({
+  read: ({ session, docId }) => session.userId === docId,
+  create: false,
+  update: false,
+  delete: false
+}, { force: true })
+```
+
+Forced rules are registered even when `createBackend({ accessControl: false })` is used. In that mode, only forced collections and server-only collections are checked; other collections keep the normal open behavior.
+
+If global access control is enabled, forced rules behave like normal rules. The `force` option only controls whether the collection is protected when global access control is off.
+
+## Server-Only Collections
+
+Use `serverOnlyCollections` for collections that should never be accessed by clients through ShareDB:
+
+```ts
+const backend = createBackend({
+  serverOnlyCollections: ['service']
+})
+```
+
+Server-only collections deny client `read`, `create`, `update`, and `delete` operations. Server code can still use them through server-side database access.
+
 ## Rule Contexts
 
 `create` receives the new document:

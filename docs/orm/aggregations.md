@@ -134,6 +134,17 @@ $stats.total.get()
 $stats.unread.get()
 ```
 
+## Row Ids
+
+Aggregation result rows are not always real documents. `getId()` and `getIds()` only expose usable string ids:
+
+```ts
+const ids = $roles.getIds()
+const firstId = $roles[0].getId()
+```
+
+Rows with a string `_id` or `id` return that value. Rows without one, or with a non-string id such as a numeric `$group` key, return `undefined` from `getId()` and are omitted from `getIds()`.
+
 ## Session Types
 
 By default, `context.session` is typed as:

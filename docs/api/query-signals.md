@@ -34,6 +34,8 @@ Returns an array of ids for the query results.
 const ids = $activeUsers.getIds()
 ```
 
+The result is always a `string[]`. Non-string ids are filtered out.
+
 ### map(callback)
 
 Maps over the documents in the query result.

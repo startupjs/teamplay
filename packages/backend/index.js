@@ -5,7 +5,7 @@ import { db } from './db/index.js'
 import maybeFlushRedis from './redis/maybeFlushRedis.js'
 import initValidateSchema from './features/validateSchema.js'
 import initServerAggregate from './features/serverAggregate.js'
-import initAccessControl from './features/accessControl.js'
+import initAccessControl, { hasForcedAccessControls } from './features/accessControl.js'
 
 export {
   prefix as redisPrefix,
@@ -30,6 +30,7 @@ export default function createBackend ({
   accessControl = secure,
   serverAggregate = secure,
   validateSchema = secure,
+  serverOnlyCollections = [],
   models,
   verbose = true
 } = {}) {
@@ -52,8 +53,19 @@ export default function createBackend ({
 
   if (hooks) hooks(backend)
 
-  if (accessControl) {
-    initAccessControl(backend, { models, ...(typeof accessControl === 'object' ? accessControl : {}) })
+  const accessControlOptions = typeof accessControl === 'object' ? accessControl : {}
+  const shouldInitAccessControl = Boolean(accessControl) ||
+    serverOnlyCollections.length > 0 ||
+    hasForcedAccessControls(models)
+
+  if (shouldInitAccessControl) {
+    initAccessControl(backend, {
+      models,
+      serverOnlyCollections,
+      forceOnly: !accessControl,
+      openByDefault: !accessControl,
+      ...accessControlOptions
+    })
   }
 
   if (serverAggregate) {

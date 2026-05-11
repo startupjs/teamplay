@@ -9,7 +9,8 @@ export interface BackendOptions {
   flushRedis?: boolean
   extraDbs?: any // Replace 'any' with actual type
   hooks?: (backend: any) => void // Replace 'any' with Backend class type
-  accessControl?: boolean
+  accessControl?: boolean | Record<string, any>
+  serverOnlyCollections?: string[]
   serverAggregate?: boolean | { customCheck: () => any } // TODO: remove customCheck support
   validateSchema?: boolean
   silentLogs?: boolean
