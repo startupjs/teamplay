@@ -986,8 +986,8 @@ describe('useValue / useValue$', () => {
       const [, $visibleMap] = useValue(false)
       return fr(
         el('span', { id: 'state' }, JSON.stringify($visibleMap.get())),
-        el('span', { id: 'child' }, String($visibleMap.at(chatId).get())),
-        el('button', { id: 'btn3', onClick: () => $visibleMap.at(chatId).set(true) })
+        el('span', { id: 'child' }, String($visibleMap[chatId].get())),
+        el('button', { id: 'btn3', onClick: () => $visibleMap[chatId].set(true) })
       )
     })
 
@@ -1328,7 +1328,7 @@ describe('usePage / usePage$', () => {
     expect(container.querySelector('#plangExternalCompat').textContent).toBe('en')
     expect(renders).toBe(1)
 
-    act(() => { $.page.set('langExternalCompat', 'it') })
+    act(() => { $.page.langExternalCompat.set('it') })
     expect(container.querySelector('#plangExternalCompat').textContent).toBe('it')
     expect(renders).toBe(2)
   })
@@ -1394,12 +1394,12 @@ describe('usePage / usePage$', () => {
     expect(container.querySelector('#pageNestedCompat').textContent).toBe('alpha')
     expect(renders).toBe(1)
 
-    act(() => { $.page.set('simpleCompat', 'two') })
+    act(() => { $.page.simpleCompat.set('two') })
     expect(container.querySelector('#pageSimpleCompat').textContent).toBe('two')
     expect(container.querySelector('#pageNestedCompat').textContent).toBe('alpha')
     expect(renders).toBe(2)
 
-    act(() => { $._page.set('nestedCompat.value', 'gamma') })
+    act(() => { $._page.nestedCompat.value.set('gamma') })
     expect(container.querySelector('#pageNestedCompat').textContent).toBe('gamma')
     expect(renders).toBe(3)
   })
@@ -1457,7 +1457,7 @@ describe('usePage / usePage$', () => {
     expect(container.querySelector('#pageDeepObjCompat').textContent).toBe('one')
     expect(renders).toBe(1)
 
-    act(() => { $.page.set('deepObjCompat.child.title', 'three') })
+    act(() => { $.page.deepObjCompat.child.title.set('three') })
     expect(container.querySelector('#pageDeepObjCompat').textContent).toBe('three')
     expect(renders).toBe(2)
   })

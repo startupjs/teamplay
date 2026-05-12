@@ -36,6 +36,7 @@ function deepCopyCompat (value) {
 }
 
 let compatRootCounter = 0
+const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 
 function createCompatSignal (segments = [], rootProxy, cache) {
   const cacheKey = segments.join('.')
@@ -92,14 +93,14 @@ function setAggregationRuntime ($aggregation, value) {
   return setPrivateData(getRootIdForRuntime($aggregation), [AGGREGATIONS, getAggregationRuntimeHash($aggregation)], value)
 }
 
-describe('SignalCompat.at()', () => {
+describe('SignalCompat removed path helpers', () => {
   let basePath
   let cleanupSegments
   let $root
   let $base
 
   function setup (suffix) {
-    basePath = `_compatAt_${suffix}`
+    basePath = `_compatNoPathHelpers_${suffix}`
     cleanupSegments = [[basePath]]
     $root = createCompatRoot()
     $base = $root[basePath]
@@ -110,132 +111,39 @@ describe('SignalCompat.at()', () => {
     for (const segments of cleanupSegments) _del(segments)
   })
 
-  it('matches dot syntax for nested paths', async () => {
-    setup('nested')
-    await $base.a.b.set(123)
-    assert.equal($base.a.b.get(), 123)
-    assert.equal($base.at('a.b').get(), 123)
+  it('does not reserve at/scope as compat methods anymore', async () => {
+    setup('fields')
+
+    await $base.at.set('at field')
+    await $base.scope.set('scope field')
+
+    assert.equal($base.at.get(), 'at field')
+    assert.equal($base.scope.get(), 'scope field')
   })
 
-  it('supports numeric segments via "c.0"', async () => {
-    setup('array')
-    await $base.c[0].set('x')
-    assert.equal($base.c[0].get(), 'x')
-    assert.equal($base.at('c.0').get(), 'x')
+  it('root getter returns the owning root', () => {
+    setup('root')
+
+    assert.equal($base.root, $root)
+    assert.equal($root.root, $root)
   })
 
-  it('supports multiple path segments', async () => {
-    setup('multi')
-    await $base.a.b.set(11)
-    assert.equal($base.at('a', 'b').get(), 11)
+  it('path only returns the current signal path', () => {
+    setup('path')
+
+    assert.equal($base.path(), basePath)
+    assert.equal($base.a.b.path(), `${basePath}.a.b`)
   })
 
-  it('supports numeric subpath for array index', async () => {
-    setup('num')
-    await $base[3].set('v')
-    assert.equal($base.at(3).get(), 'v')
-  })
-
-  it('removes empty segments and returns this for empty path', () => {
-    setup('empty')
-    assert.equal($base.at(''), $base)
-    assert.equal($base.at('.'), $base)
-    assert.equal($base.at('...'), $base)
-    assert.equal($base.at('a..b').path(), $base.a.b.path())
-    assert.equal($base.at('.a.b.').path(), $base.a.b.path())
-  })
-
-  it('works from child signals', async () => {
-    setup('child')
-    const $child = $base.a
-    await $child.b.set(7)
-    assert.equal($child.at('b').get(), 7)
-  })
-
-  it('keeps dot/at equivalence for chained read-write access', async () => {
-    setup('chain')
-    await $base.a.b.c.d.set(1)
-    assert.equal($base.a.b.at('c.d').get(), 1)
-
-    await $base.a.b.at('c.d').set(2)
-    assert.equal($base.a.b.c.d.get(), 2)
-    assert.equal($base.at('a.b.c.d').get(), 2)
-  })
-
-  it('resolves refs in relative path segments', async () => {
-    setup('refs')
-    cleanupSegments.push(['_users'])
-    await $root._users.u1.set({ profile: { title: 'Alice' } })
-    $base.ref('user', '_users.u1')
-
-    assert.equal($base.get('user.profile.title'), 'Alice')
-    assert.equal($base.at('user.profile').get('title'), 'Alice')
-    assert.equal($base.user.profile.title.get(), 'Alice')
-
-    await $base.at('user.profile').set('title', 'Bob')
-    assert.equal($root._users.u1.get('profile.title'), 'Bob')
-    assert.equal($base.user.profile.title.get(), 'Bob')
-  })
-
-  it('throws on invalid arguments', () => {
+  it('path rejects subpath arguments', () => {
     setup('args')
-    assert.throws(() => $base.at({}, 'b'), /expects string or integer path segments/)
-    assert.throws(() => $base.at(1.5), /expects a string or integer argument/)
-    assert.throws(() => $base.at(null), /expects a string or integer argument/)
-  })
 
-  it('returns current signal when called without arguments', () => {
-    setup('optional')
-    assert.equal($base.at(), $base)
+    assert.throws(() => $base.path('a'), /does not accept any arguments/)
+    assert.throws(() => $base.path(1), /does not accept any arguments/)
   })
 })
 
-describe('SignalCompat.path(subpath)', () => {
-  let basePath
-  let cleanupSegments
-  let $root
-  let $base
-
-  function setup (suffix) {
-    basePath = `_compatPath_${suffix}`
-    cleanupSegments = [[basePath]]
-    $root = createCompatRoot()
-    $base = $root[basePath]
-  }
-
-  afterEach(() => {
-    if (!cleanupSegments) return
-    for (const segments of cleanupSegments) _del(segments)
-  })
-
-  it('returns nested path string without creating a signal', () => {
-    setup('nested')
-    assert.equal($base.path('a.b'), `${basePath}.a.b`)
-    assert.equal($base.a.path('b'), `${basePath}.a.b`)
-  })
-
-  it('supports numeric subpath segment', () => {
-    setup('array')
-    assert.equal($base.path(0), `${basePath}.0`)
-    assert.equal($base.items.path(3), `${basePath}.items.3`)
-  })
-
-  it('returns base path for empty subpath', () => {
-    setup('empty')
-    assert.equal($base.path(''), basePath)
-    assert.equal($base.path('.'), basePath)
-    assert.equal($base.path('...'), basePath)
-  })
-
-  it('throws on invalid arguments', () => {
-    setup('args')
-    assert.throws(() => $base.path('a', 'b'), /expects a single argument/)
-    assert.throws(() => $base.path(1.5), /expects a string or integer argument/)
-    assert.throws(() => $base.path(null), /expects a string or integer argument/)
-  })
-})
-
-describe('SignalCompat.get(subpath)', () => {
+describe('SignalCompat get/peek without subpath', () => {
   let cleanupSegments
   let $root
   let $base
@@ -252,79 +160,19 @@ describe('SignalCompat.get(subpath)', () => {
     for (const segments of cleanupSegments) _del(segments)
   })
 
-  it('supports string subpath on root', async () => {
-    setup('root')
-    await $root.$render.url.set('/test')
-    cleanupSegments.push(['$render'])
-    assert.equal($root.get('$render.url'), '/test')
-  })
-
-  it('supports multiple path segments', async () => {
-    setup('multi')
-    await $base.a.b.set(5)
-    assert.equal($base.get('a', 'b'), 5)
-  })
-
-  it('supports numeric segments in string subpath', async () => {
-    setup('array')
-    await $base.items[0].set('x')
-    assert.equal($base.get('items.0'), 'x')
-  })
-
-  it('treats nullish path as current signal', async () => {
-    setup('nullish')
+  it('reads only the current signal', async () => {
+    setup('current')
     await $base.set(5)
-    assert.equal($base.get(undefined), 5)
-    assert.equal($base.get(null), 5)
+
+    assert.equal($base.get(), 5)
+    assert.equal($base.peek(), 5)
   })
 
-  it('throws on invalid arguments', () => {
+  it('rejects subpath arguments', () => {
     setup('args')
-    assert.throws(() => $base.get({}, 'b'), /expects string or integer path segments/)
-    assert.throws(() => $base.get(1.5), /expects a string or integer argument/)
-  })
-})
 
-describe('SignalCompat.peek(subpath)', () => {
-  let cleanupSegments
-  let $root
-  let $base
-
-  function setup (suffix) {
-    const basePath = `_compatPeek_${suffix}`
-    cleanupSegments = [[basePath]]
-    $root = createCompatRoot()
-    $base = $root[basePath]
-  }
-
-  afterEach(() => {
-    if (!cleanupSegments) return
-    for (const segments of cleanupSegments) _del(segments)
-  })
-
-  it('supports string subpath', async () => {
-    setup('nested')
-    await $base.a.b.set(10)
-    assert.equal($base.peek('a.b'), 10)
-  })
-
-  it('supports multiple path segments', async () => {
-    setup('multi')
-    await $base.a.b.set(12)
-    assert.equal($base.peek('a', 'b'), 12)
-  })
-
-  it('treats nullish path as current signal', async () => {
-    setup('nullish')
-    await $base.set(7)
-    assert.equal($base.peek(undefined), 7)
-    assert.equal($base.peek(null), 7)
-  })
-
-  it('throws on invalid arguments', () => {
-    setup('args')
-    assert.throws(() => $base.peek({}, 'b'), /expects string or integer path segments/)
-    assert.throws(() => $base.peek(1.5), /expects a string or integer argument/)
+    assert.throws(() => $base.get('a'), /does not accept any arguments/)
+    assert.throws(() => $base.peek('a'), /does not accept any arguments/)
   })
 })
 
@@ -349,14 +197,14 @@ describe('SignalCompat.add()', () => {
     setup('root')
     cleanupSegments.push(['_users'])
     const id = await $root.add('_users', { title: 'Ann' })
-    assert.equal($root._users[id].get('title'), 'Ann')
+    assert.equal($root._users[id].title.get(), 'Ann')
   })
 
   it('supports root property with add(collection, value)', async () => {
     setup('rootProp')
     cleanupSegments.push(['_users'])
     const id = await $root._users.root.add('_users', { title: 'Zoe' })
-    assert.equal($root._users[id].get('title'), 'Zoe')
+    assert.equal($root._users[id].title.get(), 'Zoe')
   })
 
   it('uses root getter instead of path when in compat mode', async () => {
@@ -366,7 +214,7 @@ describe('SignalCompat.add()', () => {
     globalThis.teamplayCompatibilityMode = true
     try {
       const id = await $root._tenants.root.add('_tenants', { title: 'Acme' })
-      assert.equal($root._tenants[id].get('title'), 'Acme')
+      assert.equal($root._tenants[id].title.get(), 'Acme')
     } finally {
       globalThis.teamplayCompatibilityMode = prevCompat
     }
@@ -381,7 +229,7 @@ describe('SignalCompat.add()', () => {
     try {
       const $root = getRootSignal({ rootId: 'compat_root_add' })
       const id = await $root._tenants.root.add('_tenants', { title: 'Tenant 1' })
-      assert.equal($root._tenants[id].get('title'), 'Tenant 1')
+      assert.equal($root._tenants[id].title.get(), 'Tenant 1')
     } finally {
       globalThis.teamplayCompatibilityMode = prevCompat
     }
@@ -390,7 +238,7 @@ describe('SignalCompat.add()', () => {
   it('supports collection add(value)', async () => {
     setup('collection')
     const id = await $base.add({ title: 'Kate' })
-    assert.equal($base[id].get('title'), 'Kate')
+    assert.equal($base[id].title.get(), 'Kate')
   })
 })
 
@@ -438,73 +286,6 @@ describe('SignalCompat.close()', () => {
     const $root = createCompatRoot()
     assert.throws(() => $root.close(123), /expects callback to be a function/)
     assert.throws(() => $root.close(() => {}, () => {}), /expects zero or one argument/)
-  })
-})
-
-describe('SignalCompat.scope()', () => {
-  let basePath
-  let cleanupSegments
-  let $root
-  let $base
-
-  function setup (suffix) {
-    basePath = `_compatScope_${suffix}`
-    cleanupSegments = [[basePath]]
-    $root = createCompatRoot()
-    $base = $root[basePath]
-  }
-
-  afterEach(() => {
-    if (!cleanupSegments) return
-    for (const segments of cleanupSegments) _del(segments)
-  })
-
-  it('starts from root regardless of current signal', async () => {
-    setup('root')
-    await $root._a.set('root')
-    await $base._a.b.set('child')
-    cleanupSegments.push(['_a'])
-    assert.equal($base._a.b.scope('_a').get(), 'root')
-  })
-
-  it('returns root for empty subpath', () => {
-    setup('empty')
-    assert.equal($base.scope(''), $root)
-    assert.equal($base.scope('.'), $root)
-    assert.equal($base.scope('...'), $root)
-  })
-
-  it('removes empty segments in subpath', async () => {
-    setup('segments')
-    await $root._a.b.set(5)
-    cleanupSegments.push(['_a'])
-    assert.equal($base.scope('_a..b').get(), 5)
-  })
-
-  it('supports multiple path segments', async () => {
-    setup('multi')
-    await $root._a.b.set(7)
-    cleanupSegments.push(['_a'])
-    assert.equal($base.scope('_a', 'b').get(), 7)
-  })
-
-  it('resolves refs in scoped path', async () => {
-    setup('refs')
-    cleanupSegments.push(['_users'], ['_session'])
-    await $root._users.u1.set({ title: 'admin' })
-    $root._session.ref('user', '_users.u1')
-
-    assert.equal($base.scope('_session.user.title').get(), 'admin')
-  })
-
-  it('throws on invalid arguments', () => {
-    setup('args')
-    assert.throws(() => $base.scope({}, 'b'), /expects string or integer path segments/)
-  })
-
-  it('returns root when subpath is omitted', () => {
-    setup('optional')
-    assert.equal($base.scope(), $root)
   })
 })
 
@@ -568,9 +349,9 @@ describe('SignalCompat.getCopy()/getDeepCopy()', () => {
   it('getCopy returns a shallow copy for objects', async () => {
     setup('shallow')
     const nested = { b: 1 }
-    await $base.obj.set({ a: nested })
-    const original = raw($base.obj.get())
-    const copy = $base.getCopy('obj')
+    await $base.set({ a: nested })
+    const original = raw($base.get())
+    const copy = $base.getCopy()
     assert.deepEqual(copy, original)
     assert.notEqual(copy, original)
     assert.equal(copy.a, original.a)
@@ -579,45 +360,18 @@ describe('SignalCompat.getCopy()/getDeepCopy()', () => {
   it('getDeepCopy returns a deep copy for objects', async () => {
     setup('deep')
     const nested = { b: 1 }
-    await $base.obj.set({ a: nested })
-    const original = raw($base.obj.get())
-    const copy = $base.getDeepCopy('obj')
+    await $base.set({ a: nested })
+    const original = raw($base.get())
+    const copy = $base.getDeepCopy()
     assert.deepEqual(copy, original)
     assert.notEqual(copy, original)
     assert.notEqual(copy.a, original.a)
   })
 
-  it('supports numeric subpath for array index', async () => {
-    setup('num')
-    await $base.arr.set([1, 2, 3, 4])
-    assert.equal($base.arr.getDeepCopy(2), 3)
-    assert.equal($base.arr.getCopy(3), 4)
-  })
-
-  it('resolves refs in subpath for copy helpers', async () => {
-    setup('refs')
-    cleanupSegments.push(['_users'])
-    await $root._users.u1.set({
-      profile: {
-        flags: { active: true }
-      }
-    })
-    $base.ref('user', '_users.u1')
-
-    const deepCopy = $base.getDeepCopy('user.profile')
-    const shallowCopy = $base.getCopy('user.profile')
-
-    assert.deepEqual(deepCopy, { flags: { active: true } })
-    assert.deepEqual(shallowCopy, { flags: { active: true } })
-    assert.notEqual(deepCopy, $root._users.u1.get('profile'))
-    assert.notEqual(shallowCopy, $root._users.u1.get('profile'))
-  })
-
   it('throws on invalid arguments', () => {
     setup('args')
-    assert.throws(() => $base.getCopy(1, 2), /expects a single argument/)
-    assert.throws(() => $base.getCopy(1.5), /expects a string or integer argument/)
-    assert.throws(() => $base.getDeepCopy(null), /expects a string or integer argument/)
+    assert.throws(() => $base.getCopy(1), /does not accept any arguments/)
+    assert.throws(() => $base.getDeepCopy(null), /does not accept any arguments/)
   })
 })
 
@@ -630,38 +384,38 @@ describe('SignalCompat root-scoped private storage', () => {
     const $rootA = createCompatRoot('_compat_private_A')
     const $rootB = createCompatRoot('_compat_private_B')
 
-    await $rootA.set('_session.userId', 'a')
-    await $rootB.set('_session.userId', 'b')
+    await $rootA._session.userId.set('a')
+    await $rootB._session.userId.set('b')
 
-    assert.equal($rootA.get('_session.userId'), 'a')
-    assert.equal($rootB.get('_session.userId'), 'b')
+    assert.equal($rootA._session.userId.get(), 'a')
+    assert.equal($rootB._session.userId.get(), 'b')
   })
 
   it('isolates compat mutators on private paths between roots', async () => {
     const $rootA = createCompatRoot('_compat_private_mut_A')
     const $rootB = createCompatRoot('_compat_private_mut_B')
 
-    await $rootA.set('_session.items', [])
-    await $rootB.set('_session.items', [])
-    await $rootA.scope('_session.items').push('a1')
-    await $rootB.scope('_session.items').push('b1')
-    await $rootA.set('_session.count', 0)
-    await $rootB.set('_session.count', 0)
-    await $rootA.scope('_session.count').increment()
-    await $rootB.scope('_session.count').increment(2)
+    await $rootA._session.items.set([])
+    await $rootB._session.items.set([])
+    await $rootA._session.items.push('a1')
+    await $rootB._session.items.push('b1')
+    await $rootA._session.count.set(0)
+    await $rootB._session.count.set(0)
+    await $rootA._session.count.increment()
+    await $rootB._session.count.increment(2)
 
-    assert.deepEqual($rootA.get('_session.items'), ['a1'])
-    assert.deepEqual($rootB.get('_session.items'), ['b1'])
-    assert.equal($rootA.get('_session.count'), 1)
-    assert.equal($rootB.get('_session.count'), 2)
+    assert.deepEqual($rootA._session.items.get(), ['a1'])
+    assert.deepEqual($rootB._session.items.get(), ['b1'])
+    assert.equal($rootA._session.count.get(), 1)
+    assert.equal($rootB._session.count.get(), 2)
   })
 
   it('root get/peek expose only owning private data', async () => {
     const $rootA = createCompatRoot('_compat_private_snapshot_A')
     const $rootB = createCompatRoot('_compat_private_snapshot_B')
 
-    await $rootA.set('_session.userId', 'a')
-    await $rootB.set('_session.userId', 'b')
+    await $rootA._session.userId.set('a')
+    await $rootB._session.userId.set('b')
     const snapshot = $rootA.get()
     const rawSnapshot = $rootA.peek()
 
@@ -672,7 +426,7 @@ describe('SignalCompat root-scoped private storage', () => {
   })
 })
 
-describe('SignalCompat mutators with path', () => {
+describe('SignalCompat mutators without subpath overloads', () => {
   let basePath
   let cleanupSegments
   let $root
@@ -690,17 +444,17 @@ describe('SignalCompat mutators with path', () => {
     for (const segments of cleanupSegments) _del(segments)
   })
 
-  it('set supports subpath', async () => {
+  it('set uses child signals instead of subpath arguments', async () => {
     setup('set')
-    await $base.set('a.b', 1)
+    await $base.a.b.set(1)
     assert.equal($base.a.b.get(), 1)
   })
 
-  it('regression: root set(path, value) materializes missing nested object parents on local paths', async () => {
+  it('materializes missing nested object parents on local child paths', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
     setup('root-set-missing-local-object')
 
-    await $root.set(`${basePath}.doc.__dummyField.test`, '123')
+    await $base.doc.__dummyField.test.set('123')
 
     assert.equal($base.doc.__dummyField.test.get(), '123')
     assert.deepEqual($base.doc.get(), {
@@ -710,17 +464,17 @@ describe('SignalCompat mutators with path', () => {
     })
   })
 
-  it('set supports numeric subpath', async () => {
+  it('set supports numeric child paths', async () => {
     setup('setnum')
     await $base.arr.set([0, 1, 2])
-    await $base.arr.set(1, 9)
+    await $base.arr[1].set(9)
     assert.equal($base.arr[1].get(), 9)
   })
 
   it('set replaces value with null (no deep merge/delete semantics)', async () => {
     setup('setnull-delete')
-    await $base.set('obj', { a: 1, b: 2 })
-    await $base.set('obj.a', null)
+    await $base.obj.set({ a: 1, b: 2 })
+    await $base.obj.a.set(null)
     assert.equal($base.obj.a.get(), null)
     assert.deepEqual($base.obj.get(), { a: null, b: 2 })
   })
@@ -728,7 +482,7 @@ describe('SignalCompat mutators with path', () => {
   it('set with undefined matches racer local semantics on object keys', async () => {
     setup('set-undefined')
     await $base.set({ a: 1, b: 2 })
-    await $base.set('a', undefined)
+    await $base.a.set(undefined)
     assert.equal($base.a.get(), undefined)
     assert.ok(Object.prototype.hasOwnProperty.call(raw($base.get()), 'a'))
     assert.deepEqual($base.get(), { a: undefined, b: 2 })
@@ -736,7 +490,7 @@ describe('SignalCompat mutators with path', () => {
 
   it('set with undefined matches racer local sparse-array semantics', async () => {
     setup('set-undefined-array')
-    await $base.arr.set(2, undefined)
+    await $base.arr[2].set(undefined)
     const items = raw($base.arr.get())
     assert.equal(items.length, 3)
     assert.equal(0 in items, false)
@@ -768,22 +522,42 @@ describe('SignalCompat mutators with path', () => {
   it('set uses replace semantics for nested objects', async () => {
     setup('set-replace')
     await $base.set({ a: { x: 1, y: 2 } })
-    await $base.set('a', { x: 9 })
+    await $base.a.set({ x: 9 })
     assert.deepEqual($base.get(), { a: { x: 9 } })
   })
 
-  it('del supports subpath', async () => {
+  it('setReplace on child signal matches compat set replace semantics', async () => {
+    setup('setreplace-subpath')
+    await $base.set({ a: { x: 1, y: 2 } })
+
+    await $base.a.setReplace({ x: 9 })
+
+    assert.deepEqual($base.get(), { a: { x: 9 } })
+  })
+
+  it('setReplace with undefined matches compat set local semantics', async () => {
+    setup('setreplace-undefined')
+    await $base.set({ a: 1, b: 2 })
+
+    await $base.a.setReplace(undefined)
+
+    assert.equal($base.a.get(), undefined)
+    assert.ok(Object.prototype.hasOwnProperty.call(raw($base.get()), 'a'))
+    assert.deepEqual($base.get(), { a: undefined, b: 2 })
+  })
+
+  it('del uses child signals instead of subpath arguments', async () => {
     setup('del')
     await $base.a.b.set(1)
-    await $base.del('a.b')
+    await $base.a.b.del()
     assert.equal($base.a.b.get(), undefined)
   })
 
   it('setNull only sets when value is nullish', async () => {
     setup('setnull')
     await $base.a.set(1)
-    await $base.setNull('a', 2)
-    await $base.setNull('b', 3)
+    await $base.a.setNull(2)
+    await $base.b.setNull(3)
     assert.equal($base.a.get(), 1)
     assert.equal($base.b.get(), 3)
   })
@@ -800,10 +574,10 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual($doc.get(), { title: 'first' })
   })
 
-  it('create(path, value) resolves path relative to current signal', async () => {
-    setup('create-path')
-    await $base.create('doc2', { title: 'path create' })
-    assert.deepEqual($base.doc2.get(), { title: 'path create' })
+  it('create uses child signals instead of subpath arguments', async () => {
+    setup('create-child')
+    await $base.doc2.create({ title: 'child create' })
+    assert.deepEqual($base.doc2.get(), { title: 'child create' })
   })
 
   it('create throws on non-document paths', async () => {
@@ -814,9 +588,9 @@ describe('SignalCompat mutators with path', () => {
     )
   })
 
-  it('setDiffDeep supports subpath', async () => {
+  it('setDiffDeep uses child signals instead of subpath arguments', async () => {
     setup('setdiffdeep')
-    await $base.setDiffDeep('obj', { a: 1 })
+    await $base.obj.setDiffDeep({ a: 1 })
     assert.equal($base.obj.a.get(), 1)
   })
 
@@ -869,7 +643,7 @@ describe('SignalCompat mutators with path', () => {
     })
   })
 
-  it('setDiffDeep(path, value) applies recursive compat diff on the target path', async () => {
+  it('setDiffDeep on child signal applies recursive compat diff on the target path', async () => {
     setup('setdiffdeep-path')
     await $base.set({
       profile: {
@@ -877,19 +651,19 @@ describe('SignalCompat mutators with path', () => {
         role: 'student'
       }
     })
-    await $base.setDiffDeep('profile', { name: 'Bob' })
+    await $base.profile.setDiffDeep({ name: 'Bob' })
     assert.deepEqual($base.profile.get(), { name: 'Bob' })
     assert.deepEqual($base.get(), { profile: { name: 'Bob' } })
   })
 
-  it('setDiffDeep(path, value) keeps empty target objects materialized', async () => {
+  it('setDiffDeep on child signal keeps empty target objects materialized', async () => {
     setup('setdiffdeep-empty-path')
     await $base.set({
       filters: { tab: 'home' },
       other: 1
     })
-    await $base.setDiffDeep('filters', {})
-    assert.deepEqual($base.at('filters').get(), {})
+    await $base.filters.setDiffDeep({})
+    assert.deepEqual($base.filters.get(), {})
     assert.deepEqual($base.get(), {
       filters: {},
       other: 1
@@ -913,14 +687,14 @@ describe('SignalCompat mutators with path', () => {
     }
   })
 
-  it('setDiff(path, value) emits change for equivalent objects', async () => {
+  it('setDiff on child signal emits change for equivalent objects', async () => {
     setup('setdiff-object-change')
     await $base.set({ profile: { name: 'Ann' } })
     const events = []
     const handler = (value, prevValue) => events.push([value, prevValue])
     $root.on('change', `${$base.path()}.profile`, handler)
 
-    await $base.setDiff('profile', { name: 'Ann' })
+    await $base.profile.setDiff({ name: 'Ann' })
 
     assert.deepEqual($base.profile.get(), { name: 'Ann' })
     if (process?.env?.TEAMPLAY_COMPAT === '1') {
@@ -928,14 +702,14 @@ describe('SignalCompat mutators with path', () => {
     }
   })
 
-  it('setDiff(path, value) emits change for equivalent arrays', async () => {
+  it('setDiff on child signal emits change for equivalent arrays', async () => {
     setup('setdiff-array-change')
     await $base.set({ list: [2, 3, 4] })
     const events = []
     const handler = (value, prevValue) => events.push([value, prevValue])
     $root.on('change', `${$base.path()}.list`, handler)
 
-    await $base.setDiff('list', [2, 3, 4])
+    await $base.list.setDiff([2, 3, 4])
 
     assert.deepEqual($base.list.get(), [2, 3, 4])
     if (process?.env?.TEAMPLAY_COMPAT === '1') {
@@ -950,9 +724,9 @@ describe('SignalCompat mutators with path', () => {
     assert.equal($base.a.get(), null)
   })
 
-  it('setEach supports subpath', async () => {
+  it('setEach uses child signals instead of subpath arguments', async () => {
     setup('seteach')
-    await $base.setEach('obj', { a: 1, b: 2 })
+    await $base.obj.setEach({ a: 1, b: 2 })
     assert.equal($base.obj.a.get(), 1)
     assert.equal($base.obj.b.get(), 2)
   })
@@ -992,15 +766,15 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual($base.get(), { a: undefined, b: 2 })
   })
 
-  it('setEach(path, object) with undefined matches racer local semantics (keeps key)', async () => {
-    setup('seteach-path-undefined')
+  it('setEach on child signal with undefined matches racer local semantics (keeps key)', async () => {
+    setup('seteach-child-undefined')
     await $base.set({
       obj: {
         a: 1,
         b: 2
       }
     })
-    await $base.setEach('obj', { a: undefined })
+    await $base.obj.setEach({ a: undefined })
     assert.equal($base.obj.a.get(), undefined)
     assert.ok(Object.prototype.hasOwnProperty.call(raw($base.obj.get()), 'a'))
     assert.deepEqual($base.obj.get(), { a: undefined, b: 2 })
@@ -1056,14 +830,14 @@ describe('SignalCompat mutators with path', () => {
     const snapshots = []
     const reaction = observe(
       () => {
-        const value = $base.at('filters').get()
+        const value = $base.filters.get()
         return value == null ? value : deepCopyCompat(value)
       },
       { lazy: true, scheduler: reaction => scheduleReaction(() => snapshots.push(reaction())) }
     )
     snapshots.push(reaction())
 
-    await $base.setDiffDeep('filters', {})
+    await $base.filters.setDiffDeep({})
     unobserve(reaction)
 
     assert.deepEqual(snapshots[snapshots.length - 1], {})
@@ -1083,8 +857,8 @@ describe('SignalCompat mutators with path', () => {
       props: { a: 9 }
     }
 
-    await $base.set('node', reactLikeA)
-    await $base.set('node', reactLikeB)
+    await $base.node.set(reactLikeA)
+    await $base.node.set(reactLikeB)
     assert.equal($base.node.get().type, 'span')
     assert.deepEqual($base.node.get().props, { a: 9 })
   })
@@ -1097,15 +871,15 @@ describe('SignalCompat mutators with path', () => {
       }
     })
 
-    await $base.set('node', guarded)
-    await $base.set('node', { storeId: 'new' })
+    await $base.node.set(guarded)
+    await $base.node.set({ storeId: 'new' })
     assert.deepEqual($base.node.get(), { storeId: 'new' })
   })
 
-  it('increment supports subpath and default value', async () => {
+  it('increment supports child signals and default value', async () => {
     setup('increment')
-    await $base.increment('count')
-    await $base.increment('count', 2)
+    await $base.count.increment()
+    await $base.count.increment(2)
     assert.equal($base.count.get(), 3)
   })
 
@@ -1174,9 +948,9 @@ describe('SignalCompat mutators with path', () => {
   it('materializes nested objects when setting a child under a primitive value', async () => {
     setup('primitive-child-set')
     await $base.set(false)
-    await $base.at('menu.open').set(true)
+    await $base.menu.open.set(true)
     assert.deepEqual($base.get(), { menu: { open: true } })
-    assert.equal($base.at('menu.open').get(), true)
+    assert.equal($base.menu.open.get(), true)
   })
 
   it('initializes missing nested array paths for all array mutators', async () => {
@@ -1227,150 +1001,17 @@ describe('SignalCompat mutators with path', () => {
     assert.deepEqual($base.ui.missing.get(), [])
   })
 
-  it('regression: root push(path, value) materializes missing nested arrays on local paths', async () => {
+  it('materializes missing nested arrays on local child paths', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
     setup('root-push-missing-local-array')
 
-    const len = await $root.push(`${basePath}.doc.tags`, 'tag-1')
+    const len = await $base.doc.tags.push('tag-1')
 
     assert.equal(len, 1)
     assert.deepEqual($base.doc.tags.get(), ['tag-1'])
     assert.deepEqual($base.doc.get(), {
       tags: ['tag-1']
     })
-  })
-})
-
-describe('SignalCompat relative path split equivalence', () => {
-  let cleanupSegments
-  let $root
-
-  function setupPair (suffix) {
-    const leftPath = `_compatSplit_${suffix}_left`
-    const rightPath = `_compatSplit_${suffix}_right`
-    cleanupSegments = [[leftPath], [rightPath]]
-    $root = createCompatRoot()
-    return {
-      $left: $root[leftPath],
-      $right: $root[rightPath]
-    }
-  }
-
-  afterEach(() => {
-    if (!cleanupSegments) return
-    for (const segments of cleanupSegments) _del(segments)
-  })
-
-  it('get/peek return the same value regardless of path split', async () => {
-    const { $left, $right } = setupPair('getpeek')
-    await $left.a.b.c.d.e.f.set(17)
-    await $right.a.b.c.d.e.f.set(17)
-
-    assert.equal($left.a.b.c.get('d.e.f'), $right.a.b.get('c.d.e.f'))
-    assert.equal($left.a.b.c.peek('d.e.f'), $right.a.b.peek('c.d.e.f'))
-  })
-
-  it('set-like path methods resolve to the same absolute target', async () => {
-    const { $left, $right } = setupPair('setlike')
-
-    await $left.a.b.c.set('d.e.f', 1)
-    await $right.a.b.set('c.d.e.f', 1)
-    assert.deepEqual($left.get(), $right.get())
-
-    await $left.a.b.c.setNull('d.e.f', 2)
-    await $right.a.b.setNull('c.d.e.f', 2)
-    assert.deepEqual($left.get(), $right.get())
-
-    await $left.create('docs_left', { title: 'x' })
-    await $right.set('docs_left', { title: 'x' })
-    await $right.create('docs_right', { title: 'x' })
-    await $left.set('docs_right', { title: 'x' })
-    assert.deepEqual($left.get(), $right.get())
-
-    await $left.a.b.c.setDiffDeep('d', { only: 'new' })
-    await $right.a.b.setDiffDeep('c.d', { only: 'new' })
-    assert.deepEqual($left.get(), $right.get())
-
-    await $left.a.b.c.setEach('d', { x: 1, y: 2 })
-    await $right.a.b.setEach('c.d', { x: 1, y: 2 })
-    assert.deepEqual($left.get(), $right.get())
-
-    await $left.a.b.c.del('d.y')
-    await $right.a.b.del('c.d.y')
-    assert.deepEqual($left.get(), $right.get())
-
-    await $left.a.b.c.increment('counter', 3)
-    await $right.a.b.increment('c.counter', 3)
-    assert.deepEqual($left.get(), $right.get())
-  })
-
-  it('array path methods resolve to the same absolute target', async () => {
-    const { $left, $right } = setupPair('arrays')
-
-    const pushLeft = await $left.a.b.c.push('list', 1)
-    const pushRight = await $right.a.b.push('c.list', 1)
-    assert.equal(pushLeft, pushRight)
-
-    const unshiftLeft = await $left.a.b.c.unshift('list', 0)
-    const unshiftRight = await $right.a.b.unshift('c.list', 0)
-    assert.equal(unshiftLeft, unshiftRight)
-
-    const insertLeft = await $left.a.b.c.insert('list', 1, ['x', 'y'])
-    const insertRight = await $right.a.b.insert('c.list', 1, ['x', 'y'])
-    assert.equal(insertLeft, insertRight)
-
-    const moveLeft = await $left.a.b.c.move('list', 0, 2)
-    const moveRight = await $right.a.b.move('c.list', 0, 2)
-    assert.deepEqual(moveLeft, moveRight)
-
-    const removeLeft = await $left.a.b.c.remove('list', 1, 2)
-    const removeRight = await $right.a.b.remove('c.list', 1, 2)
-    assert.deepEqual(removeLeft, removeRight)
-
-    const popLeft = await $left.a.b.c.pop('list')
-    const popRight = await $right.a.b.pop('c.list')
-    assert.equal(popLeft, popRight)
-
-    const shiftLeft = await $left.a.b.c.shift('list')
-    const shiftRight = await $right.a.b.shift('c.list')
-    assert.equal(shiftLeft, shiftRight)
-
-    assert.deepEqual($left.get(), $right.get())
-  })
-
-  it('string path methods resolve to the same absolute target', async () => {
-    const { $left, $right } = setupPair('strings')
-    await $left.a.b.c.set('text', 'helo')
-    await $right.a.b.set('c.text', 'helo')
-
-    const prevInsertLeft = await $left.a.b.c.stringInsert('text', 3, 'l')
-    const prevInsertRight = await $right.a.b.stringInsert('c.text', 3, 'l')
-    assert.equal(prevInsertLeft, prevInsertRight)
-
-    const prevRemoveLeft = await $left.a.b.c.stringRemove('text', 1, 2)
-    const prevRemoveRight = await $right.a.b.stringRemove('c.text', 1, 2)
-    assert.equal(prevRemoveLeft, prevRemoveRight)
-
-    assert.deepEqual($left.get(), $right.get())
-  })
-
-  it('path split equivalence is preserved when refs are inside the path', async () => {
-    if (process.env.TEAMPLAY_COMPAT !== '1') return
-    const leftPath = '_compatSplit_refs_left'
-    const rightPath = '_compatSplit_refs_right'
-    cleanupSegments = [[leftPath], [rightPath]]
-    const $realRoot = getRootSignal({ rootId: '_compat_split_refs_root' })
-    const $left = $realRoot[leftPath]
-    const $right = $realRoot[rightPath]
-    $left.a.b.ref('c', $left.target)
-    $right.a.b.ref('c', $right.target)
-
-    await $left.a.b.set('c.profile.name', 'Alice')
-    await $right.a.set('b.c.profile.name', 'Alice')
-
-    assert.equal($left.a.b.get('c.profile.name'), $right.a.get('b.c.profile.name'))
-    assert.equal($left.target.profile.name.get(), $right.target.profile.name.get())
-    assert.deepEqual($left.get(), $right.get())
   })
 })
 
@@ -1422,7 +1063,7 @@ describe('SignalCompat.parent()', () => {
   })
 })
 
-describe('SignalCompat public mutators', () => {
+describeCompat('SignalCompat public mutators', () => {
   before(() => {
     connect()
     addModel('compatGames.*', SignalCompat)
@@ -1453,30 +1094,30 @@ describe('SignalCompat public mutators', () => {
     const $game = await sub($.compatGames[gameId])
     await $game.set({ count: 0, list: [1, 2, 3], text: 'helo' })
 
-    const inc = await $game.increment('count', 2)
+    const inc = await $game.count.increment(2)
     assert.equal(inc, 2)
     assert.equal($game.count.get(), 2)
 
-    const len1 = await $game.push('list', 4)
+    const len1 = await $game.list.push(4)
     assert.equal(len1, 4)
-    const len2 = await $game.unshift('list', 0)
+    const len2 = await $game.list.unshift(0)
     assert.equal(len2, 5)
-    const len3 = await $game.insert('list', 2, ['a', 'b'])
+    const len3 = await $game.list.insert(2, ['a', 'b'])
     assert.equal(len3, 7)
-    const popped = await $game.pop('list')
+    const popped = await $game.list.pop()
     assert.equal(popped, 4)
-    const shifted = await $game.shift('list')
+    const shifted = await $game.list.shift()
     assert.equal(shifted, 0)
-    const removed = await $game.remove('list', 1, 2)
+    const removed = await $game.list.remove(1, 2)
     assert.deepEqual(removed, ['a', 'b'])
-    const moved = await $game.move('list', 1, 0)
+    const moved = await $game.list.move(1, 0)
     assert.deepEqual(moved, [2])
     assert.deepEqual($game.list.get(), [2, 1, 3])
 
-    const prev1 = await $game.stringInsert('text', 3, 'l')
+    const prev1 = await $game.text.stringInsert(3, 'l')
     assert.equal(prev1, 'helo')
     assert.equal($game.text.get(), 'hello')
-    const prev2 = await $game.stringRemove('text', 1, 2)
+    const prev2 = await $game.text.stringRemove(1, 2)
     assert.equal(prev2, 'hello')
     assert.equal($game.text.get(), 'hlo')
   })
@@ -1501,13 +1142,13 @@ describe('SignalCompat public mutators', () => {
     }
 
     try {
-      await $game.set('list.1', 'TWO')
+      await $game.list[1].set('TWO')
       assert.deepEqual(submittedOps.at(-1), [
         { p: ['list', 1], ld: 'two', li: 'TWO' }
       ])
       assert.deepEqual($game.list.get(), ['one', 'TWO', 'three'])
 
-      await $game.set('profile', { name: 'Kate' })
+      await $game.profile.set({ name: 'Kate' })
       assert.deepEqual(submittedOps.at(-1), [
         {
           p: ['profile'],
@@ -1521,14 +1162,87 @@ describe('SignalCompat public mutators', () => {
     }
   })
 
-  it('regression: public set(path, value) materializes missing nested object parents', async () => {
+  it('uses direct replace ops for compat setReplace on public paths', async () => {
+    const gameId = '_compat_public_setreplace_ops'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({
+      list: ['one', 'two', 'three'],
+      profile: {
+        name: 'Ann',
+        role: 'student'
+      }
+    })
+
+    const doc = getConnection().get('compatGames', gameId)
+    const originalSubmitOp = doc.submitOp.bind(doc)
+    const submittedOps = []
+    doc.submitOp = (op, cb) => {
+      submittedOps.push(JSON.parse(JSON.stringify(op)))
+      return originalSubmitOp(op, cb)
+    }
+
+    try {
+      await $game.list[1].setReplace('TWO')
+      assert.deepEqual(submittedOps.at(-1), [
+        { p: ['list', 1], ld: 'two', li: 'TWO' }
+      ])
+      assert.deepEqual($game.list.get(), ['one', 'TWO', 'three'])
+
+      await $game.profile.setReplace({ name: 'Kate' })
+      assert.deepEqual(submittedOps.at(-1), [
+        {
+          p: ['profile'],
+          od: { name: 'Ann', role: 'student' },
+          oi: { name: 'Kate' }
+        }
+      ])
+      assert.deepEqual($game.profile.get(), { name: 'Kate' })
+    } finally {
+      doc.submitOp = originalSubmitOp
+    }
+  })
+
+  it('uses compat set semantics for setReplace(undefined) on public documents', async () => {
+    const gameId = '_compat_public_setreplace_undefined'
+    const $game = await sub($.compatGames[gameId])
+    await $game.set({ name: 'One' })
+
+    const doc = getConnection().get('compatGames', gameId)
+    const originalSubmitOp = doc.submitOp.bind(doc)
+    const originalDel = doc.del.bind(doc)
+    const submittedOps = []
+    let delCalls = 0
+    doc.submitOp = (op, cb) => {
+      submittedOps.push(JSON.parse(JSON.stringify(op)))
+      return originalSubmitOp(op, cb)
+    }
+    doc.del = cb => {
+      delCalls += 1
+      return originalDel(cb)
+    }
+
+    try {
+      await $game.setReplace(undefined)
+
+      assert.equal(delCalls, 1)
+      assert.deepEqual(submittedOps, [])
+      assert.equal($game.get(), undefined)
+      assert.ok(doc.data, 'subscribed deleted docs must restore the empty missing-doc placeholder')
+      assert.deepEqual(doc.data, {})
+    } finally {
+      doc.submitOp = originalSubmitOp
+      doc.del = originalDel
+    }
+  })
+
+  it('public child set materializes missing nested object parents', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
 
     const gameId = '_compat_public_missing_object_parent'
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Missing Object' })
 
-    await $game.set('__dummyField.test', '123')
+    await $game.__dummyField.test.set('123')
 
     assert.equal($game.__dummyField.test.get(), '123')
     assert.deepEqual($game.get(), {
@@ -1548,7 +1262,7 @@ describe('SignalCompat public mutators', () => {
     const $game = await sub($.compatGames[gameId])
     await $game.set({ profile: 'legacy' })
 
-    await $game.set('profile.name', 'Kate')
+    await $game.profile.name.set('Kate')
 
     assert.deepEqual($game.profile.get(), { name: 'Kate' })
     assert.deepEqual($game.get(), {
@@ -1578,16 +1292,16 @@ describe('SignalCompat public mutators', () => {
     }
 
     try {
-      await $game.setDiff('count', 1)
+      await $game.count.setDiff(1)
       assert.equal(submittedOps.length, 0)
 
-      await $game.setDiff('profile', { name: 'Ann' })
+      await $game.profile.setDiff({ name: 'Ann' })
       assert.deepEqual(submittedOps.at(-1), [
         { p: ['profile'], od: { name: 'Ann' }, oi: { name: 'Ann' } }
       ])
       assert.deepEqual($game.profile.get(), { name: 'Ann' })
 
-      await $game.setDiff('list', [2, 3, 4])
+      await $game.list.setDiff([2, 3, 4])
       assert.deepEqual(submittedOps.at(-1), [
         { p: ['list'], od: [2, 3, 4], oi: [2, 3, 4] }
       ])
@@ -1602,11 +1316,11 @@ describe('SignalCompat public mutators', () => {
     const $game = await sub($.compatGames[gameId])
     await $game.set({ title: 'Game' })
 
-    const direct = await $game.increment('count', 1)
+    const direct = await $game.count.increment(1)
     assert.equal(direct, 1)
     assert.equal($game.count.get(), 1)
 
-    const nested = await $game.increment('stats.entriesNum', 2)
+    const nested = await $game.stats.entriesNum.increment(2)
     assert.equal(nested, 2)
     assert.equal($game.stats.entriesNum.get(), 2)
     assert.deepEqual($game.stats.get(), { entriesNum: 2 })
@@ -1617,22 +1331,22 @@ describe('SignalCompat public mutators', () => {
     const $game = await sub($.compatGames[gameId])
     await $game.set({ list: [], text: 'abc' })
 
-    const popEmpty = await $game.pop('list')
-    const shiftEmpty = await $game.shift('list')
+    const popEmpty = await $game.list.pop()
+    const shiftEmpty = await $game.list.shift()
     assert.equal(popEmpty, undefined)
     assert.equal(shiftEmpty, undefined)
 
-    await $game.push('list', 1)
-    await $game.push('list', 2)
-    await $game.push('list', 3)
-    const movedNeg = await $game.move('list', -1, 0)
+    await $game.list.push(1)
+    await $game.list.push(2)
+    await $game.list.push(3)
+    const movedNeg = await $game.list.move(-1, 0)
     assert.deepEqual(movedNeg, [3])
     assert.deepEqual($game.list.get(), [3, 1, 2])
 
-    await $game.stringInsert('text', 0, 'X')
-    await $game.stringInsert('text', 4, 'Y')
+    await $game.text.stringInsert(0, 'X')
+    await $game.text.stringInsert(4, 'Y')
     assert.equal($game.text.get(), 'XabcY')
-    await $game.stringRemove('text', 1, 10)
+    await $game.text.stringRemove(1, 10)
     assert.equal($game.text.get(), 'X')
   })
 
@@ -1641,19 +1355,19 @@ describe('SignalCompat public mutators', () => {
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Missing Array' })
 
-    const len = await $game.push('list', 1)
+    const len = await $game.list.push(1)
     assert.equal(len, 1)
     assert.deepEqual($game.list.get(), [1])
   })
 
-  it('regression: public push(path, value) materializes missing nested arrays through missing object parents', async () => {
+  it('public child push materializes missing nested arrays through missing object parents', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
 
     const gameId = '_compat_public_missing_nested_array'
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Missing Nested Array' })
 
-    const len = await $game.push('stats.tags', 'tag-1')
+    const len = await $game.stats.tags.push('tag-1')
 
     assert.equal(len, 1)
     assert.deepEqual($game.stats.tags.get(), ['tag-1'])
@@ -1672,16 +1386,16 @@ describe('SignalCompat public mutators', () => {
     const $game = await sub($.compatGames[gameId])
     await $game.set({ title: 'Game' })
 
-    const prevString = await $game.stringInsert('text', 0, 'abc')
+    const prevString = await $game.text.stringInsert(0, 'abc')
     assert.equal(prevString, undefined)
     assert.equal($game.text.get(), 'abc')
 
-    const removedMissingString = await $game.stringRemove('missingText', 0, 1)
+    const removedMissingString = await $game.missingText.stringRemove(0, 1)
     assert.equal(removedMissingString, undefined)
 
-    const popMissingArray = await $game.pop('missingList')
+    const popMissingArray = await $game.missingList.pop()
     assert.equal(popMissingArray, undefined)
-    const shiftMissingArray = await $game.shift('missingList')
+    const shiftMissingArray = await $game.missingList.shift()
     assert.equal(shiftMissingArray, undefined)
   })
 
@@ -1691,7 +1405,7 @@ describe('SignalCompat public mutators', () => {
     await $game.set({ list: 'nope' })
 
     await assert.rejects(
-      () => $game.push('list', 1),
+      () => $game.list.push(1),
       /Expected array at/
     )
   })
@@ -1707,7 +1421,7 @@ describe('SignalCompat public mutators', () => {
     assert.equal($game.get(), undefined)
 
     await $game.del()
-    await $game.del('name')
+    await $game.name.del()
     assert.equal($game.get(), undefined)
   })
 
@@ -1762,7 +1476,7 @@ describe('SignalCompat public mutators', () => {
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Compat Nested Subpath' })
 
-    await $game.set('media', {
+    await $game.media.set({
       id: 'media-1',
       _id: 'media-2',
       type: 'uploadedPDF'
@@ -1784,7 +1498,7 @@ describe('SignalCompat public mutators', () => {
       profile: { id: 'profile-1', _id: 'profile-1' }
     })
 
-    $._session.ref('activeGame', $game)
+    $._session.activeGame.ref($game)
 
     await $._session.activeGame.id.set('other')
     await $._session.activeGame._id.set('other2')
@@ -1799,15 +1513,15 @@ describe('SignalCompat public mutators', () => {
     assert.equal($._session.activeGame.profile._id.get(), 'profile-3')
   })
 
-  it('regression: root set(path, value) through public ref materializes missing nested object parents', async () => {
+  it('public ref child set materializes missing nested object parents', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
 
     const gameId = '_compat_public_ref_missing_object_parent'
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Compat Ref Missing Object' })
 
-    $._session.ref('activeGame', $game)
-    await $.set('_session.activeGame.__dummyField.test', '123')
+    $._session.activeGame.ref($game)
+    await $._session.activeGame.__dummyField.test.set('123')
 
     assert.equal($._session.activeGame.__dummyField.test.get(), '123')
     assert.equal($game.__dummyField.test.get(), '123')
@@ -1821,15 +1535,15 @@ describe('SignalCompat public mutators', () => {
     })
   })
 
-  it('regression: root push(path, value) through public ref materializes missing nested arrays', async () => {
+  it('public ref child push materializes missing nested arrays', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
 
     const gameId = '_compat_public_ref_missing_array'
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Compat Ref Missing Array' })
 
-    $._session.ref('activeGame', $game)
-    const len = await $.push('_session.activeGame.stats.tags', 'tag-1')
+    $._session.activeGame.ref($game)
+    const len = await $._session.activeGame.stats.tags.push('tag-1')
 
     assert.equal(len, 1)
     assert.deepEqual($._session.activeGame.stats.tags.get(), ['tag-1'])
@@ -1957,15 +1671,15 @@ describe('SignalCompat public mutators', () => {
     delete connection.collections.compatGames[gameId]
     _del(['compatGames', gameId])
 
-    const nextCount = await $game.increment('count', 1)
+    const nextCount = await $game.count.increment(1)
     assert.equal(nextCount, 1)
     assert.equal($game.count.get(), 1)
 
-    const len = await $game.push('list', 2)
+    const len = await $game.list.push(2)
     assert.equal(len, 2)
     assert.deepEqual($game.list.get(), [1, 2])
 
-    const prevText = await $game.stringInsert('text', 2, 'c')
+    const prevText = await $game.text.stringInsert(2, 'c')
     assert.equal(prevText, 'ab')
     assert.equal($game.text.get(), 'abc')
 
@@ -2016,7 +1730,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
   it('calls model method via ref target in compat mode', () => {
     const $sessionUser = $root._session.user
-    $root._session.ref('user', `${collection}.123`)
+    $root._session.user.ref(`${collection}.123`)
     assert.equal($sessionUser.path(), '_session.user')
     assert.equal($sessionUser.joinCourse('course_1'), `${collection}.123:course_1`)
   })
@@ -2028,7 +1742,7 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal($aliasSessionUser, $canonicalSessionUser)
     assert.equal($aliasSessionUser.path(), '_session.user')
 
-    $root._session.ref('user', `${collection}.123`)
+    $root._session.user.ref(`${collection}.123`)
 
     assert.equal($aliasSessionUser.joinCourse('course_alias_1'), `${collection}.123:course_alias_1`)
     assert.equal($canonicalSessionUser.joinCourse('course_alias_2'), `${collection}.123:course_alias_2`)
@@ -2041,7 +1755,7 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal($aliasSessionUser, $canonicalSessionUser)
     assert.equal($aliasSessionUser.path(), '_session.user')
 
-    $root.session.ref('user', `${collection}.xyz`)
+    $root.session.user.ref(`${collection}.xyz`)
 
     assert.equal($aliasSessionUser.joinCourse('course_alias_3'), `${collection}.xyz:course_alias_3`)
     assert.equal($canonicalSessionUser.joinCourse('course_alias_4'), `${collection}.xyz:course_alias_4`)
@@ -2053,8 +1767,8 @@ class NonCompatRefUserModel extends BaseSignal {
   })
 
   it('ref cycle does not loop infinitely and fails gracefully', () => {
-    $root._session.ref('a', '_session.b')
-    $root._session.ref('b', '_session.a')
+    $root._session.a.ref('_session.b')
+    $root._session.b.ref('_session.a')
     assert.throws(() => {
       $root._session.a.joinCourse('course_3')
     }, /Method "joinCourse" does not exist on signal "_session.a"/)
@@ -2062,7 +1776,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
   it('keeps raw signal identity and path unchanged', () => {
     const $before = $root._session.user
-    $root._session.ref('user', `${collection}.xyz`)
+    $root._session.user.ref(`${collection}.xyz`)
     const $after = $root._session.user
     assert.equal($before, $after)
     assert.equal($after.path(), '_session.user')
@@ -2464,13 +2178,8 @@ class NonCompatRefUserModel extends BaseSignal {
       /source path must be in a private collection/
     )
 
-    assert.throws(
-      () => $root.ref('users.alias', $root.users.u1),
-      /source path must be in a private collection/
-    )
-
-    $base.ref('user', $root.users.u1)
-    assert.equal($base.get('user.title'), 'Alice')
+    $base.user.ref($root.users.u1)
+    assert.equal($base.user.title.get(), 'Alice')
   })
 
   it('routes ref syncing through scheduler in batch mode (no intermediate alias snapshots)', async () => {
@@ -2522,11 +2231,11 @@ class NonCompatRefUserModel extends BaseSignal {
     unobserve(reaction)
   })
 
-  it('supports subpath refs from root', async () => {
+  it('supports refs from child signals', async () => {
     const $base = setup('subpath')
     const $session = $base.session
     const $target = $base.target
-    $session.ref('tutoringSession', $target)
+    $session.tutoringSession.ref($target)
 
     await $target.set({ active: true })
     assert.deepEqual($session.tutoringSession.get(), { active: true })
@@ -2535,20 +2244,19 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($target.get(), { active: false })
   })
 
-  it('set(path, value) on root resolves refs inside the path', async () => {
+  it('set(value) on child signal resolves refs inside the path', async () => {
     const $base = setup('setPathRef')
     const $session = $base.session
     const $target = $base.target
-    $session.ref('user', $target)
+    $session.user.ref($target)
 
-    const path = `${$session.path()}.user.superField`
-    await $root.set(path, 'superValue')
+    await $session.user.superField.set('superValue')
 
     assert.equal($target.superField.get(), 'superValue')
     assert.equal($session.user.superField.get(), 'superValue')
   })
 
-  it('set(path, value) on local signals works when root pointer is raw', async () => {
+  it('set(value) on local child signals works when root pointer is raw', async () => {
     setup('rawRootPathSet')
     const localId = '_raw_local_0'
     const cache = new Map()
@@ -2556,7 +2264,7 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupSegments.push(['$local', localId])
 
     await $local.set({ nodes: {} })
-    await $local.set('nodes.dropdown', { open: true })
+    await $local.nodes.dropdown.set({ open: true })
 
     assert.deepEqual($local.nodes.dropdown.get(), { open: true })
   })
@@ -2565,12 +2273,12 @@ class NonCompatRefUserModel extends BaseSignal {
     const $base = setup('remove')
     const $session = $base.session
     const $target = $base.target
-    $session.ref('tutoringSession', $target)
+    $session.tutoringSession.ref($target)
 
     await $target.set({ value: 1 })
     assert.deepEqual($session.tutoringSession.get(), { value: 1 })
 
-    $session.removeRef('tutoringSession')
+    $session.tutoringSession.removeRef()
 
     await $target.set({ value: 2 })
     assert.deepEqual($session.tutoringSession.get(), { value: 1 })
@@ -2620,18 +2328,14 @@ class NonCompatRefUserModel extends BaseSignal {
     $agg.refExtra(`${$base.path()}.dataSource`)
 
     assert.deepEqual($base.dataSource.get(), rows1)
-    assert.deepEqual($base.at('dataSource').get(), rows1)
-    assert.deepEqual($root.get(`${$base.path()}.dataSource`), rows1)
 
     const rows2 = [{ _id: 'row3', name: 'Third' }]
     setAggregationRuntime($agg, rows2)
 
     assert.deepEqual($base.dataSource.get(), rows2)
-    assert.deepEqual($base.at('dataSource').get(), rows2)
-    assert.deepEqual($root.get(`${$base.path()}.dataSource`), rows2)
   })
 
-  it('at() on aggregation rows is synchronous and returns a signal', () => {
+  it('child access on aggregation rows is synchronous and returns a signal', () => {
     setup('aggRowAtSync')
     const $agg = $root.query('courses', {
       $aggregate: [
@@ -2651,14 +2355,14 @@ class NonCompatRefUserModel extends BaseSignal {
       }
     ])
 
-    const $fromAt = $agg[0].at('description.text')
-    assert.equal(typeof $fromAt, 'function')
-    assert.equal(typeof $fromAt.get, 'function')
-    assert.equal($fromAt.get(), 'hello')
-    assert.equal($fromAt.path(), `${AGGREGATIONS}.${aggregationRuntimeHash}.0.description.text`)
+    const $fromChild = $agg[0].description.text
+    assert.equal(typeof $fromChild, 'function')
+    assert.equal(typeof $fromChild.get, 'function')
+    assert.equal($fromChild.get(), 'hello')
+    assert.equal($fromChild.path(), `${AGGREGATIONS}.${aggregationRuntimeHash}.0.description.text`)
   })
 
-  it('scope() on aggregation rows is synchronous and does not return a promise', () => {
+  it('root getter on aggregation rows is synchronous and does not return a promise', () => {
     setup('aggRowScopeSync')
     const $agg = $root.query('courses', {
       $aggregate: [
@@ -2676,10 +2380,10 @@ class NonCompatRefUserModel extends BaseSignal {
       }
     ])
 
-    const $fromScope = $agg[0].scope('_session')
-    assert.equal(typeof $fromScope, 'function')
-    assert.equal(typeof $fromScope.get, 'function')
-    assert.equal($fromScope instanceof Promise, false)
+    const $fromRoot = $agg[0].root
+    assert.equal(typeof $fromRoot, 'function')
+    assert.equal(typeof $fromRoot.get, 'function')
+    assert.equal($fromRoot instanceof Promise, false)
   })
 
   it('refExtra from aggregation is mirror-only and does not mutate source on target writes', async () => {
@@ -2819,10 +2523,10 @@ class NonCompatRefUserModel extends BaseSignal {
     await $base.virtual.config.enabled.set(true)
     await $base.virtual.config.nested.mode.set('voice')
 
-    assert.equal($base.virtual.get('config.enabled'), true)
-    assert.equal($base.virtual.get('config.nested.mode'), 'voice')
-    assert.equal($base.doc.get('config.enabled'), false)
-    assert.equal($base.doc.get('config.nested.mode'), 'text')
+    assert.equal($base.virtual.config.enabled.get(), true)
+    assert.equal($base.virtual.config.nested.mode.get(), 'voice')
+    assert.equal($base.doc.config.enabled.get(), false)
+    assert.equal($base.doc.config.nested.mode.get(), 'text')
 
     await $base.doc.set({
       config: {
@@ -2830,8 +2534,8 @@ class NonCompatRefUserModel extends BaseSignal {
         nested: { mode: 'audio' }
       }
     })
-    assert.equal($base.virtual.get('config.enabled'), true)
-    assert.equal($base.virtual.get('config.nested.mode'), 'audio')
+    assert.equal($base.virtual.config.enabled.get(), true)
+    assert.equal($base.virtual.config.nested.mode.get(), 'audio')
   })
 
   it('reacts to deep source mutations even when getter only returns the whole object', async () => {
@@ -2848,10 +2552,10 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupStartPaths = [targetPath]
     $root.start(targetPath, $base.doc, doc => doc)
 
-    assert.deepEqual($base.virtual.get('config.realtimeConfig'), { voice: 'alloy' })
+    assert.deepEqual($base.virtual.config.realtimeConfig.get(), { voice: 'alloy' })
 
-    await $base.doc.set('config.realtimeConfig.useProxyForVoice', true)
-    assert.deepEqual($base.virtual.get('config.realtimeConfig'), {
+    await $base.doc.config.realtimeConfig.useProxyForVoice.set(true)
+    assert.deepEqual($base.virtual.config.realtimeConfig.get(), {
       voice: 'alloy',
       useProxyForVoice: true
     })
@@ -2948,10 +2652,10 @@ class NonCompatRefUserModel extends BaseSignal {
     await $final.set(true)
     await $prompt.set('Draft prompt')
 
-    assert.equal($base.virtual.get('final'), true)
-    assert.equal($base.virtual.get('prompt'), 'Draft prompt')
-    assert.equal($base.doc.get('final'), undefined)
-    assert.equal($base.doc.get('prompt'), undefined)
+    assert.equal($base.virtual.final.get(), true)
+    assert.equal($base.virtual.prompt.get(), 'Draft prompt')
+    assert.equal($base.doc.final.get(), undefined)
+    assert.equal($base.doc.prompt.get(), undefined)
 
     await $base.doc.set({
       name: 'Stage 2',
@@ -3007,8 +2711,8 @@ class NonCompatRefUserModel extends BaseSignal {
 
     unobserve(reaction)
 
-    assert.equal($base.virtual.get('options.2'), 'Draft')
-    assert.equal($base.virtual.get('options.4'), 'Z')
+    assert.equal($base.virtual.options[2].get(), 'Draft')
+    assert.equal($base.virtual.options[4].get(), 'Z')
     assert.deepEqual(snapshots, [
       { hole: undefined, tail: undefined },
       { hole: undefined, tail: 'Z' },
@@ -3054,7 +2758,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
     unobserve(reaction)
 
-    assert.equal($base.virtual.get('options.2'), 'Draft 2')
+    assert.equal($base.virtual.options[2].get(), 'Draft 2')
     assert.deepEqual(snapshots, [
       undefined,
       null,
@@ -3076,12 +2780,12 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupStartPaths = [targetPath]
     $root.start(targetPath, $doc, doc => doc)
 
-    assert.equal($base.virtual.get('title'), 'Stage 1')
-    assert.deepEqual($base.virtual.get('options'), ['A'])
+    assert.equal($base.virtual.title.get(), 'Stage 1')
+    assert.deepEqual($base.virtual.options.get(), ['A'])
 
     await $doc.options[0].set('B')
 
-    assert.deepEqual($base.virtual.get('options'), ['B'])
+    assert.deepEqual($base.virtual.options.get(), ['B'])
   })
 
   it('syncs public doc array replace updates into started targets', async () => {
@@ -3099,10 +2803,10 @@ class NonCompatRefUserModel extends BaseSignal {
     await $doc.title.set('Stage 2')
     await $doc.options.set(['B'])
 
-    assert.equal($doc.get('title'), 'Stage 2')
-    assert.deepEqual($doc.get('options'), ['B'])
-    assert.equal($base.virtual.get('title'), 'Stage 2')
-    assert.deepEqual($base.virtual.get('options'), ['B'])
+    assert.equal($doc.title.get(), 'Stage 2')
+    assert.deepEqual($doc.options.get(), ['B'])
+    assert.equal($base.virtual.title.get(), 'Stage 2')
+    assert.deepEqual($base.virtual.options.get(), ['B'])
   })
 
   it('keeps immediate local sparse writes after public start before the next tick', async () => {
@@ -3118,7 +2822,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
     await $base.virtual.options[4].set('Z')
 
-    const options = raw($base.virtual.get('options'))
+    const options = raw($base.virtual.options.get())
     assert.equal(options.length, 5)
     assert.equal(options[0], 'A')
     assert.equal(options[1], undefined)
@@ -3164,8 +2868,8 @@ class NonCompatRefUserModel extends BaseSignal {
 
     await $doc.options[1].set(undefined)
 
-    const sourceOptions = raw($doc.get('options'))
-    const targetOptions = raw($base.virtual.get('options'))
+    const sourceOptions = raw($doc.options.get())
+    const targetOptions = raw($base.virtual.options.get())
     assert.equal($doc.options[1].get(), null)
     assert.equal($base.virtual.options[1].get(), null)
     assert.equal(sourceOptions[1], null)
@@ -3174,7 +2878,7 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal(Object.prototype.hasOwnProperty.call(targetOptions, 1), true)
   })
 
-  it('public compat setEach(path, object) keeps undefined keys as null like racer remote semantics', async () => {
+  it('public compat setEach(object) on child signal keeps undefined keys as null like racer remote semantics', async () => {
     const $base = setup('publicSetEachUndefinedObject')
     const $doc = $root[domainCollection]._compatPublicSetEachUndefinedObject
     await $doc.create({
@@ -3188,7 +2892,7 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupStartPaths = [targetPath]
     $root.start(targetPath, $doc, doc => doc)
 
-    await $doc.setEach('profile', { role: undefined })
+    await $doc.profile.setEach({ role: undefined })
 
     assert.deepEqual($doc.profile.get(), {
       name: 'Ann',
@@ -3238,8 +2942,8 @@ class NonCompatRefUserModel extends BaseSignal {
 
     unobserve(reaction)
 
-    assert.equal($base.virtual.get('options.2'), 'Draft')
-    assert.equal($base.virtual.get('options.4'), 'Z')
+    assert.equal($base.virtual.options[2].get(), 'Draft')
+    assert.equal($base.virtual.options[4].get(), 'Z')
     assert.deepEqual(snapshots, [
       { hole: undefined, tail: undefined },
       { hole: undefined, tail: 'Z' },
@@ -3282,7 +2986,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
     unobserve(reaction)
 
-    assert.equal($base.virtual.get('options.2'), 'Draft 2')
+    assert.equal($base.virtual.options[2].get(), 'Draft 2')
     assert.deepEqual(snapshots, [
       undefined,
       null,
@@ -3298,7 +3002,7 @@ class NonCompatRefUserModel extends BaseSignal {
   })
 
   it('priority: deref model method start() wins over compat fallback', () => {
-    $root._session.ref('activeUser', `${domainCollection}.user2`)
+    $root._session.activeUser.ref(`${domainCollection}.user2`)
     assert.equal(
       $root._session.activeUser.start('chat', 'u2'),
       `domain:${domainCollection}.user2:chat:u2`
@@ -3388,13 +3092,13 @@ class NonCompatRefUserModel extends BaseSignal {
     const $doc = $base.doc
     await $doc.set({ start: 'A', stop: 'B' })
 
-    assert.equal($doc.get('start'), 'A')
-    assert.equal($doc.get('stop'), 'B')
+    assert.equal($doc.start.get(), 'A')
+    assert.equal($doc.stop.get(), 'B')
 
     await $doc.start.set('C')
     await $doc.stop.set('D')
-    assert.equal($doc.get('start'), 'C')
-    assert.equal($doc.get('stop'), 'D')
+    assert.equal($doc.start.get(), 'C')
+    assert.equal($doc.stop.get(), 'D')
   })
 })
 

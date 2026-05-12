@@ -148,12 +148,12 @@ describeCompat('root-scoped public signals', () => {
   it('public model methods use owning root when touching private state', async () => {
     class RootScopedUserModel extends getRootSignal({ rootId: 'temp-root-for-model-class' }).constructor {
       static collection = PUBLIC_MODEL_COLLECTION
-      markCurrentViaScope () {
-        return this.scope('_session.currentUserId').set(this.getId())
+      markCurrentViaRootChild () {
+        return this.root._session.currentUserId.set(this.getId())
       }
 
       markCurrentViaRoot () {
-        return this.root.scope('_session.currentUserIdViaRoot').set(this.getId())
+        return this.root._session.currentUserIdViaRoot.set(this.getId())
       }
     }
     try { addModel(`${PUBLIC_MODEL_COLLECTION}.*`, RootScopedUserModel) } catch {}
@@ -164,8 +164,8 @@ describeCompat('root-scoped public signals', () => {
     await rootA[PUBLIC_MODEL_COLLECTION].a.set({ name: 'Alice' })
     await rootB[PUBLIC_MODEL_COLLECTION].b.set({ name: 'Bob' })
 
-    await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaScope()
-    await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaScope()
+    await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaRootChild()
+    await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaRootChild()
     await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaRoot()
     await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaRoot()
 

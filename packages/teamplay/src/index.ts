@@ -193,8 +193,6 @@ export { default as signal } from './orm/getSignal.ts'
 export { GLOBAL_ROOT_ID } from './orm/Root.ts'
 const getRuntimeRootSignal = _getRootSignal as (options: Record<string, any>) => unknown
 export const $: RootSignal = getRuntimeRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ }) as RootSignal
-export const $root: RootSignal = $
-export const model: RootSignal = $
 export default $
 export { default as sub } from './orm/sub.ts'
 export {

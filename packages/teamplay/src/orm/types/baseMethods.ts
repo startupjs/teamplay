@@ -15,6 +15,7 @@ export interface SignalValueMethods<TValue> {
   get: () => TValue
   peek: () => TValue
   set: (value: TValue) => Promise<void>
+  setReplace: (value: TValue) => Promise<void>
   assign: (value: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never) => Promise<void>
   del: () => Promise<void>
   increment: (value?: number) => Promise<number>

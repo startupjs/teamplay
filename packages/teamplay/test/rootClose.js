@@ -149,7 +149,7 @@ describeCompat('root close()', () => {
     assert.equal(__getRootContextForTests(rootIdA), undefined)
     assert.equal(docSubscriptions.subCount.get(hash), 1)
     assert.equal(docSubscriptions.docs.get(hash)?.activeTransportMode, 'subscribe')
-    assert.equal($docB.get('title'), 'Doc stale')
+    assert.equal($docB.title.get(), 'Doc stale')
 
     await closeSignal($rootB)
   })

@@ -3,7 +3,7 @@
 This folder contains the compatibility layer that emulates the old StartupJS (Racer/ShareDB) model API on top of Teamplay signals.
 
 It includes:
-1. `SignalCompat` — a signal class with legacy-style helpers like `.at()` and `.scope()`.
+1. `SignalCompat` — a signal class with Racer-compatible value semantics on the current signal path.
 2. Compat hooks — `useValue`, `useLocal`, `useDoc`, `useQuery`, and related async/batch aliases.
 
 All hooks are re-exported from `packages/teamplay/src/index.ts`.
@@ -17,30 +17,31 @@ Teamplay normally uses `Signal` as the default signal class. In compatibility mo
 export default globalThis?.teamplayCompatibilityMode ? SignalCompat : Signal
 ```
 
-`SignalCompat` extends `Signal` with convenience methods that match StartupJS behavior:
-- `at(path)` — access nested paths with dot notation.
-- `scope(path)` — resolve a path from the root (ignores current signal path).
-- `getCopy(path)`, `getDeepCopy(path)` — shallow/deep copies of data.
-- Mutators with optional subpaths: `set`, `del`, `increment`, `push`, `remove`, etc.
+`SignalCompat` extends `Signal` with convenience methods that match supported StartupJS behavior:
+- `getCopy()`, `getDeepCopy()` — shallow/deep copies of current signal data.
+- Mutators on the current signal path: `set`, `setReplace`, `del`, `increment`, `push`, `remove`, etc.
 - `leaf()`, `parent()` — path helpers.
+- `root` — owning root signal getter for explicit root traversal.
+
+Legacy cursor helpers `.at()` / `.scope()` and path-first overloads like `get(path)` / `set(path, value)`
+are intentionally not part of the current compat API. Use child-signal traversal instead.
 
 Example:
 
 ```js
 const $user = $.users.user1
-const $profile = $user.at('profile')
-const $rootProfile = $user.scope('users.user1.profile')
+const $profile = $user.profile
+const $rootProfile = $user.root.users.user1.profile
 const name = $profile.name.get()
 ```
 
 Note on `$` usage:
 - `$` is a root signal proxy and callable `$()`.
-- **For path strings** use `$.at('users.user1')` or `useModel('users.user1')`.
-- `$root` and `model` are aliases to `$` for compat.
+- Prefer direct child traversal (`$.users.user1`). Compat hooks may still accept path strings.
 
 ## SignalCompat API (Detailed)
 
-Below is a detailed reference for methods available on compat signals. Most methods come from `Signal` (base), while `SignalCompat` adds path-aware variants and legacy helpers.
+Below is a detailed reference for methods available on compat signals. Most methods come from `Signal` (base), while `SignalCompat` keeps supported Racer-compatible semantics without path-first overloads.
 
 ### Root Call `$()`
 
@@ -61,17 +62,6 @@ Returns the current signal path as a dot-separated string.
 $.users.user1.name.path() // "users.user1.name"
 ```
 
-### path(subpath)
-
-Returns a dot-separated path string for a nested subpath without creating a new signal. Accepts:
-- string with dot path (`'a.b.c'`)
-- integer index for arrays (`0`)
-
-```js
-$.users.user1.path('profile.age') // "users.user1.profile.age"
-$.items.path(0) // "items.0"
-```
-
 ### leaf()
 
 Returns the last path segment as a string. For root returns `''`.
@@ -89,33 +79,11 @@ $.users.user1.name.parent()    // $.users.user1
 $.users.user1.name.parent(2)   // $.users
 ```
 
-### at(subpath)
-
-Legacy path navigation. Accepts:
-- string with dot path (`'a.b.c'`)
-- integer index for arrays (`0`)
-- multiple path segments (`'a', 'b', 0`)
-
-```js
-$.users.user1.at('profile.name')
-$.users.user1.at('profile', 'name')
-$.items.at(0)
-```
-
-### scope(path)
-
-Resolve a path from root, ignoring the current signal path.
-
-```js
-$.users.user1.scope('users.user2')
-$.users.user1.scope('users', 'user2')
-```
-
-### ref(target) / ref(subpath, target)
+### ref(target)
 
 Creates a lightweight alias between signals (minimal Racer-style ref).
 Mutations on the alias are forwarded to the target. The alias mirrors target updates.
-Reads (`get`/`peek`) are forwarded to the target while the ref is active.
+Reads expose the mirrored target value while the ref is active.
 Ref mirroring is scheduled through Teamplay runtime scheduler, so updates remain batch-friendly
 and do not leak intermediate ref states during a single batched cycle.
 
@@ -129,16 +97,16 @@ const $user = $.users.user1
 $local.ref($user)
 
 const $session = $.session
-$session.ref('tutoringSession', $user)
+$session.tutoringSession.ref($user)
 ```
 
-### removeRef(path?)
+### removeRef()
 
 Stops syncing and forwarding for a ref.
 
 ```js
 $local.removeRef()
-$session.removeRef('tutoringSession')
+$session.tutoringSession.removeRef()
 ```
 
 ### ref() example (what equals / what doesn’t)
@@ -321,42 +289,41 @@ await $$agg.subscribe()
 const rows = $$agg.getExtra()
 ```
 
-### get(subpath?)
+### get()
 
 Returns the current value and tracks reactivity.
 
 ```js
 const name = $.users.user1.name.get()
-$root.get('$render.url')
-$user.get('profile.name')
-$user.get('profile', 'name')
+$root.$render.url.get()
+$user.profile.name.get()
 ```
 
-### peek(subpath?)
+### peek()
 
 Returns the current value **without** tracking reactivity.
 
 ```js
 const name = $.users.user1.name.peek()
-$user.peek('profile.name')
-$user.peek('profile', 'name')
+$user.profile.name.peek()
 ```
 
-### getCopy(subpath)
+### getCopy()
 
-Shallow copy of the value. Optional `subpath` works like `at()`.
+Shallow copy of the current signal value.
 
 ```js
 const copy = $.users.user1.getCopy()
-const copy2 = $.users.user1.getCopy('profile')
+const copy2 = $.users.user1.profile.getCopy()
 ```
 
-### getDeepCopy(subpath)
+### getDeepCopy()
 
-Deep copy of the value. Optional `subpath` works like `at()`.
+Deep copy of the current signal value.
 
 ```js
 const deep = $.users.user1.getDeepCopy()
+const profile = $.users.user1.profile.getDeepCopy()
 ```
 
 ### getId()
@@ -407,9 +374,10 @@ Compatibility mode intentionally aligns mutators with Racer. This differs from c
 
 | API | Core (`Signal`) | Compat (`SignalCompat`) |
 | --- | --- | --- |
-| `set` | Uses deep-diff path (`dataTree.set` + internal `setDiffDeep`). | Path-targeted replace semantics, Racer-like. `undefined` keeps delete semantics. |
-| `setEach` | Not a special API in core mutators. | Per-key compat `set` (not `assign` merge/delete behavior). |
-| `setDiffDeep` | Deep-diff engine (`utils/setDiffDeep.js`). | Recursive Racer-like diff implemented via compat mutators (`set` / `del`) on nested paths. |
+| `set` | Uses deep-diff path (`dataTree.set` + internal `setDiffDeep`). | Current-path replace semantics, Racer-like. `undefined` keeps delete semantics. |
+| `setReplace` | Explicit current-path replace. | Same current-path replace intent as compat `set` for non-`undefined` values. |
+| `setEach` | Not a special API in core mutators. | Per-key compat `set` on the current signal (not `assign` merge/delete behavior). |
+| `setDiffDeep` | Deep-diff engine (`utils/setDiffDeep.js`). | Recursive Racer-like diff implemented via compat mutators (`set` / `del`) below the current signal. |
 | `setDiff` | N/A as compat shim. | Racer-like full replace with exact-equality no-op (`===` / `NaN`). Equivalent objects / arrays still replace. |
 
 Migration note: compat behavior is intentionally Racer-aligned and may differ from core mutators.
@@ -439,35 +407,37 @@ This means a doc that arrived through `useQuery` / `useBatchQuery` will stay ava
 for immediate `useLocal` / `useModel` reads while that query remains subscribed, even if
 some unrelated `useDoc` subscriber for the same `collection.id` unmounts.
 
-### set(value) and set(path, value)
+### set(value) and setReplace(value)
 
-`SignalCompat` accepts both:
+`SignalCompat` mutates the current signal path only:
 
 ```js
 $.users.user1.name.set('Alice')
-$.users.user1.set('profile.name', 'Alice')
+$.users.user1.profile.name.set('Alice')
+$.users.user1.profile.setReplace({ name: 'Alice' })
 ```
 
-In compat mode, `set` replaces the value at the target path.
-- `set(path, null)` stores `null`.
-- `set(path, undefined)` applies current delete semantics.
+In compat mode, `set` replaces the value at the current path.
+- `set(null)` stores `null`.
+- `set(undefined)` applies current delete/nullish semantics.
+- `setReplace(value)` is the explicit replace API and exists in both compat and non-compat.
 
 ```js
-await $.users.user1.set('profile', { name: 'Ann', role: 'student' })
-await $.users.user1.set('profile', { name: 'Kate' }) // role is removed
+await $.users.user1.profile.set({ name: 'Ann', role: 'student' })
+await $.users.user1.profile.set({ name: 'Kate' }) // role is removed
 ```
 
-### setNull(path?, value)
+### setNull(value)
 
 Sets only if current value is `null` or `undefined`.
 
 ```js
-$.config.setNull('theme', 'light')
+$.config.theme.setNull('light')
 ```
 
-### setDiffDeep(path?, value)
+### setDiffDeep(value)
 
-Applies a recursive Racer-like diff using compat mutators (`set` / `del`) on subpaths.
+Applies a recursive Racer-like diff using compat mutators (`set` / `del`) below the current path.
 This is intentionally a compat implementation detail and differs from core deep-diff internals.
 
 ```js
@@ -475,22 +445,22 @@ await $.users.user1.set({ profile: { name: 'Ann', role: 'student' } })
 await $.users.user1.setDiffDeep({ profile: { name: 'Kate' } }) // deep-diff path
 ```
 
-### setDiff(path?, value)
+### setDiff(value)
 
-Racer-like full replace at the target path.
+Racer-like full replace at the current path.
 - No-op only when previous and next values are exactly equal (`===`) or both `NaN`
 - Equivalent objects / arrays still perform a replace
 - Unlike `setDiffDeep`, this is not a recursive diff
 
 ```js
-await $.users.user1.set('count', 1)
-await $.users.user1.setDiff('count', 1) // no-op
+await $.users.user1.count.set(1)
+await $.users.user1.count.setDiff(1) // no-op
 
 await $.users.user1.setDiff({ profile: { name: 'Kate' } })
-await $.users.user1.setDiff('profile', { name: 'Bob' }) // full replace
+await $.users.user1.profile.setDiff({ name: 'Bob' }) // full replace
 ```
 
-### setEach(path?, object)
+### setEach(object)
 
 Racer-like per-key set. `setEach` iterates keys and applies compat `set` for each key.
 - `setEach({ k: null })` stores `null`.
@@ -504,13 +474,13 @@ await $.users.user1.setEach({ name: 'Bob', age: null })
 
 | Call | Result |
 | --- | --- |
-| `set(path, null)` | stores `null` at `path` |
-| `set(path, undefined)` | applies delete semantics at `path` |
+| `set(null)` | stores `null` at the current path |
+| `set(undefined)` | applies delete semantics at the current path |
 | `setEach({ k: null })` | stores `null` for `k` |
 | `setEach({ k: undefined })` | applies delete semantics for `k` |
 
 ```js
-await $.users.user1.set('status', null) // status === null
+await $.users.user1.status.set(null) // status === null
 await $.users.user1.setEach({ status: undefined }) // status deleted
 ```
 
@@ -522,57 +492,57 @@ Assigns object fields. `null`/`undefined` deletes keys.
 $.users.user1.assign({ name: 'Bob', age: null })
 ```
 
-### del(path?)
+### del()
 
-Deletes a value. Can be used with a subpath.
+Deletes the current signal value.
 In compat mode, deleting a non-existing **public** document (or its subpath) is a no-op
 to match legacy racer behavior.
 
 ```js
-$.users.user1.del('profile.name')
+$.users.user1.profile.name.del()
 ```
 
-### increment(path?, byNumber = 1)
+### increment(byNumber = 1)
 
 Increments numeric values.
 
 ```js
-$.users.user1.increment('score', 2)
+$.users.user1.score.increment(2)
 ```
 
 ### push / unshift / insert / pop / shift
 
-Array mutators. All support optional `path`.
+Array mutators operate on the current array signal.
 
 ```js
-$.users.user1.push('tags', 'new')
-$.users.user1.insert('tags', 1, ['x', 'y'])
+$.users.user1.tags.push('new')
+$.users.user1.tags.insert(1, ['x', 'y'])
 ```
 
-### remove(path?, index, howMany?)
+### remove(index?, howMany?)
 
 Removes array elements. If called with **no arguments** on an array element signal, it removes that element.
 
 ```js
-$.users.user1.remove('tags', 1)
-$.users.user1.tags.at(0).remove()
+$.users.user1.tags.remove(1)
+$.users.user1.tags[0].remove()
 ```
 
-### move(path?, from, to, howMany?)
+### move(from, to, howMany?)
 
 Moves array elements.
 
 ```js
-$.users.user1.move('tags', 0, 2)
+$.users.user1.tags.move(0, 2)
 ```
 
 ### stringInsert / stringRemove
 
-String mutators. Support optional `path`.
+String mutators operate on the current string signal.
 
 ```js
-$.doc.stringInsert('title', 3, 'abc')
-$.doc.stringRemove('title', 1, 2)
+$.doc.title.stringInsert(3, 'abc')
+$.doc.title.stringRemove(1, 2)
 ```
 
 ### Error behavior and constraints
@@ -597,11 +567,11 @@ Example:
 ```js
 // public document
 const $user = $.users.user1
-await $user.increment('score', 1) // uses json0 op
+await $user.score.increment(1) // uses json0 op
 
 // private doc (allowed only when publicOnly = false)
 const $session = $.session
-await $session.set('token', 'abc')
+await $session.token.set('abc')
 ```
 
 ### Queries and Aggregations

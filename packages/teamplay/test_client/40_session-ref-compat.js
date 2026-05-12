@@ -47,8 +47,8 @@ describeCompat('session alias + ref contract', () => {
       })
       $.session.userId.set('u1')
       $.session.tenantId.set('t1')
-      $.session.ref('user', $.users.u1)
-      $.session.ref('tenant', $.tenants.t1)
+      $.session.user.ref($.users.u1)
+      $.session.tenant.ref($.tenants.t1)
     })
   }
 
@@ -66,8 +66,8 @@ describeCompat('session alias + ref contract', () => {
 
     expect($.session.user.email.path()).toBe('_session.user.email')
     expect($.session.tenant.questions.deposit.path()).toBe('_session.tenant.questions.deposit')
-    expect($.session.user.at().path()).toBe('_session.user')
-    expect($.session.tenant.at().path()).toBe('_session.tenant')
+    expect($.session.user.path()).toBe('_session.user')
+    expect($.session.tenant.path()).toBe('_session.tenant')
   })
 
   it('materializes target ids in plain session snapshot', async () => {
@@ -226,7 +226,7 @@ describeCompat('session alias + ref contract', () => {
 
     await act(async () => {
       $.session.userId.set('u2')
-      $.session.ref('user', $.users.u2)
+      $.session.user.ref($.users.u2)
     })
 
     await waitFor(() => {
@@ -262,7 +262,7 @@ describeCompat('session alias + ref contract', () => {
 
     await act(async () => {
       $.session.tenantId.set('t2')
-      $.session.ref('tenant', $.tenants.t2)
+      $.session.tenant.ref($.tenants.t2)
     })
 
     await waitFor(() => {
@@ -377,7 +377,7 @@ describeCompat('session alias + ref contract', () => {
 
     await act(async () => {
       $.session.tenantId.set('t2')
-      $.session.ref('tenant', $.tenants.t2)
+      $.session.tenant.ref($.tenants.t2)
     })
 
     await waitFor(() => {
@@ -442,7 +442,7 @@ describeCompat('session alias + ref contract', () => {
     expect(before?.name).toBe('Exxon Mobil')
 
     await act(async () => {
-      $.session.removeRef('tenant')
+      $.session.tenant.removeRef()
       await submitTenantRawOp('t1', [{ p: ['name'], od: 'Exxon Mobil', oi: 'Exxon After RemoveRef' }])
     })
 

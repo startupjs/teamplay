@@ -25,8 +25,8 @@ describeCompat('root-scoped refs and model events', () => {
     _set(['users', 'a'], { name: 'Alice' })
     _set(['users', 'b'], { name: 'Bob' })
 
-    $rootA._session.ref('user', 'users.a')
-    $rootB._session.ref('user', 'users.b')
+    $rootA._session.user.ref('users.a')
+    $rootB._session.user.ref('users.b')
 
     assert.equal($rootA._session.user.name.get(), 'Alice')
     assert.equal($rootB._session.user.name.get(), 'Bob')
@@ -39,15 +39,15 @@ describeCompat('root-scoped refs and model events', () => {
     _set(['users', 'a'], { name: 'Alice' })
     _set(['users', 'b'], { name: 'Bob' })
 
-    $rootA._session.ref('user', 'users.a')
-    $rootB._session.ref('user', 'users.b')
+    $rootA._session.user.ref('users.a')
+    $rootB._session.user.ref('users.b')
 
-    $rootA._session.removeRef('user')
+    $rootA._session.user.removeRef()
     _set(['users', 'a', 'name'], 'Alice 2')
     _set(['users', 'b', 'name'], 'Bob 2')
 
     assert.equal($rootA._session.user.name.get(), 'Alice')
-    assert.equal($rootB._session.get('user.name'), 'Bob 2')
+    assert.equal($rootB._session.user.name.get(), 'Bob 2')
   })
 
   it('isolates private model events by root', async () => {
@@ -90,8 +90,8 @@ describeCompat('root-scoped refs and model events', () => {
     _set(['users', 'a'], { name: 'Alice' })
     _set(['users', 'b'], { name: 'Bob' })
 
-    $rootA._session.ref('user', 'users.a')
-    $rootB._session.ref('user', 'users.b')
+    $rootA._session.user.ref('users.a')
+    $rootB._session.user.ref('users.b')
 
     $rootA.on('change', '_session.user.name', value => eventsA.push(value))
     $rootB.on('change', '_session.user.name', value => eventsB.push(value))

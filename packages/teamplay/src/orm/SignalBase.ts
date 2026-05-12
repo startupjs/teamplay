@@ -16,6 +16,8 @@ import uuid from '@teamplay/utils/uuid'
 import {
   get as _get,
   setPublicDoc as _setPublicDoc,
+  setPublicDocReplace as _setPublicDocReplace,
+  del as _del,
   dataTreeRaw,
   getRaw,
   getLogicalRootSnapshot,
@@ -39,6 +41,9 @@ import { isPrivateMutationForbidden } from './connection.ts'
 import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
+  isIdFieldPath,
+  isPublicDocPath,
+  normalizeIdFields,
   prepareAddPayload,
   resolveAddDocId
 } from './idFields.ts'
@@ -373,6 +378,43 @@ export class Signal<TValue = unknown> extends Function {
   }
 
   /**
+   * Replace this signal's value without deep-diffing object/array branches.
+   * @param value New value to store at this signal path.
+   */
+  async setReplace (value: TValue): Promise<void> {
+    if (arguments.length > 1) throw Error('Signal.setReplace() expects a single argument')
+    const segments = this[SEGMENTS]
+    if (segments.length === 0) throw Error('Can\'t set the root signal data')
+
+    const idFields = getIdFieldsForSegments(segments)
+    if (isIdFieldPath(segments, idFields)) return
+
+    const nextValue = isPublicDocPath(segments)
+      ? normalizeIdFields(value, idFields, segments[1])
+      : value
+
+    if (isPublicCollection(segments[0])) {
+      if (value === undefined) {
+        await _setPublicDoc(segments, nextValue)
+        if (segments.length === 2) {
+          _del(segments)
+        }
+      } else {
+        await _setPublicDocReplace(segments, nextValue)
+      }
+      return
+    }
+
+    if (isPrivateMutationForbidden()) {
+      throw Error(`
+        Can't modify private collections data when 'publicOnly' is enabled.
+        On the server you can only work with public collections.
+      `)
+    }
+    setReplacePrivateData(getSignalOwningRootId(this), segments, nextValue)
+  }
+
+  /**
    * Set multiple object fields at once. Fields set to `null` or `undefined` are deleted.
    * @param value Object containing fields to set or delete.
    */
@@ -623,7 +665,9 @@ export const extremelyLateBindings = {
     if (segments[0] === AGGREGATIONS) {
       const aggregationDocId = getAggregationDocId(segments, getRoot(signal)?.[ROOT_ID])
       if (aggregationDocId) {
-        if (segments.length === 3 && key === 'set') throw Error(ERRORS.setAggregationDoc(segments, key))
+        if (segments.length === 3 && (key === 'set' || key === 'setReplace')) {
+          throw Error(ERRORS.setAggregationDoc(segments, key))
+        }
         const collectionName = getAggregationCollectionName(segments)
         const subDocSegments = segments.slice(3)
         const $original = getSignal(getRoot(signal), [collectionName, aggregationDocId, ...subDocSegments])

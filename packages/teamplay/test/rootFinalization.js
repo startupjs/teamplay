@@ -226,7 +226,7 @@ describe('root finalization', () => {
       assert.equal(__getRootContextForTests(rootIdA), undefined)
       assert.equal(docSubscriptions.subCount.get(docHash), 1)
       assert.equal(docSubscriptions.docs.get(docHash)?.activeTransportMode, 'subscribe')
-      assert.equal($docB.get('name'), 'One')
+      assert.equal($docB.name.get(), 'One')
 
       await closeSignal($rootB)
     })

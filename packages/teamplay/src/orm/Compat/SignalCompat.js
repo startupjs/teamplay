@@ -54,26 +54,15 @@ import {
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
-  static [GETTERS] = [...DEFAULT_GETTERS, 'at', 'scope', 'getCopy', 'getDeepCopy']
+  static [GETTERS] = [...DEFAULT_GETTERS, 'getCopy', 'getDeepCopy']
 
   get root () {
-    return this.scope()
+    return getRoot(this) || this
   }
 
-  path (subpath) {
-    if (arguments.length > 1) throw Error('Signal.path() expects a single argument')
-    if (arguments.length === 0) return super.path()
-    const segments = parseAtSubpath(subpath, arguments.length, 'Signal.path()')
-    if (segments.length === 0) return super.path()
-    return [...this[SEGMENTS], ...segments].join('.')
-  }
-
-  at (subpath) {
-    const segments = arguments.length > 1
-      ? parseAtSegments(arguments, 'Signal.at()')
-      : parseAtSubpath(subpath, arguments.length, 'Signal.at()')
-    if (segments.length === 0) return this
-    return resolveRelativePathTarget(this, segments)
+  path () {
+    if (arguments.length > 0) throw Error('Signal.path() does not accept any arguments')
+    return super.path()
   }
 
   getId () {
@@ -88,18 +77,14 @@ class SignalCompat extends Signal {
     return super.getCollection()
   }
 
-  getCopy (subpath) {
-    if (arguments.length > 1) throw Error('Signal.getCopy() expects a single argument')
-    const segments = parseAtSubpath(subpath, arguments.length, 'Signal.getCopy()')
-    const value = getSignalValueAt(this, segments)
-    return shallowCopy(value)
+  getCopy () {
+    if (arguments.length > 0) throw Error('Signal.getCopy() does not accept any arguments')
+    return shallowCopy(this.get())
   }
 
-  getDeepCopy (subpath) {
-    if (arguments.length > 1) throw Error('Signal.getDeepCopy() expects a single argument')
-    const segments = parseAtSubpath(subpath, arguments.length, 'Signal.getDeepCopy()')
-    const value = getSignalValueAt(this, segments)
-    return deepCopy(value)
+  getDeepCopy () {
+    if (arguments.length > 0) throw Error('Signal.getDeepCopy() does not accept any arguments')
+    return deepCopy(this.get())
   }
 
   query (collection, params, options) {
@@ -164,56 +149,31 @@ class SignalCompat extends Signal {
   }
 
   get () {
-    if (arguments.length > 1) {
-      const segments = parseAtSegments(arguments, 'Signal.get()')
-      const $target = resolveRelativePathTarget(this, segments)
-      return Signal.prototype.get.call($target)
-    }
-    if (arguments.length === 1) {
-      if (arguments[0] == null) {
-        return Signal.prototype.get.apply(this, [])
-      }
-      const segments = parseAtSubpath(arguments[0], 1, 'Signal.get()')
-      const $target = resolveRelativePathTarget(this, segments)
-      return Signal.prototype.get.call($target)
-    }
+    if (arguments.length > 0) throw Error('Signal.get() does not accept any arguments')
     return Signal.prototype.get.apply(this, arguments)
   }
 
   peek () {
-    if (arguments.length > 1) {
-      const segments = parseAtSegments(arguments, 'Signal.peek()')
-      const $target = resolveRelativePathTarget(this, segments)
-      return Signal.prototype.peek.call($target)
-    }
-    if (arguments.length === 1) {
-      if (arguments[0] == null) {
-        const $target = resolveRefSignal(this)
-        if ($target !== this) return Signal.prototype.peek.apply($target, [])
-        return Signal.prototype.peek.apply(this, [])
-      }
-      const segments = parseAtSubpath(arguments[0], 1, 'Signal.peek()')
-      const $target = resolveRelativePathTarget(this, segments)
-      return Signal.prototype.peek.call($target)
-    }
+    if (arguments.length > 0) throw Error('Signal.peek() does not accept any arguments')
     const $target = resolveRefSignal(this)
     if ($target !== this) return Signal.prototype.peek.apply($target, arguments)
     return Signal.prototype.peek.apply(this, arguments)
   }
 
-  async set (path, value) {
+  async set (value) {
     const forwarded = forwardRef(this, 'set', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.set() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.set()')
-    } else if (arguments.length === 1) {
-      value = path
-    }
-    const $target = resolveRelativePathTarget(this, segments)
-    if (value === undefined) return Signal.prototype.set.call($target, value)
-    return setReplaceOnSignal($target, value)
+    if (arguments.length > 1) throw Error('Signal.set() expects a single argument')
+    if (value === undefined) return Signal.prototype.set.call(this, value)
+    return setReplaceOnSignal(this, value)
+  }
+
+  async setReplace (value) {
+    const forwarded = forwardRef(this, 'setReplace', arguments)
+    if (forwarded) return forwarded
+    if (arguments.length > 1) throw Error('Signal.setReplace() expects a single argument')
+    if (value === undefined) return Signal.prototype.set.call(this, value)
+    return setReplaceOnSignal(this, value)
   }
 
   async add (collectionOrValue, value) {
@@ -232,87 +192,48 @@ class SignalCompat extends Signal {
     return Signal.prototype.add.call(this, collectionOrValue)
   }
 
-  async setNull (path, value) {
+  async setNull (value) {
     const forwarded = forwardRef(this, 'setNull', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.setNull() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.setNull()')
-    } else if (arguments.length === 1) {
-      value = path
-    }
-    const $target = resolveRelativePathTarget(this, segments)
-    if ($target.get() != null) return
-    return setReplaceOnSignal($target, value)
+    if (arguments.length > 1) throw Error('Signal.setNull() expects a single argument')
+    if (this.get() != null) return
+    return setReplaceOnSignal(this, value)
   }
 
-  async create (path, value) {
+  async create (value) {
     const forwarded = forwardRef(this, 'create', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.create() expects zero to two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.create()')
-    } else if (arguments.length === 1) {
-      if (typeof path === 'string' || typeof path === 'number') {
-        segments = parseAtSubpath(path, 1, 'Signal.create()')
-        value = {}
-      } else {
-        value = path
-      }
-    } else {
+    if (arguments.length > 1) throw Error('Signal.create() expects zero or one argument')
+    if (arguments.length === 0) {
       value = {}
     }
-    const $target = resolveRelativePathTarget(this, segments)
-    ensureCreateTarget($target, 'Signal.create()')
-    if ($target.get() != null) {
-      throw Error(`Signal.create() may only be used on a non-existing document path. Path: ${$target.path()}`)
+    ensureCreateTarget(this, 'Signal.create()')
+    if (this.get() != null) {
+      throw Error(`Signal.create() may only be used on a non-existing document path. Path: ${this.path()}`)
     }
-    return setReplaceOnSignal($target, value)
+    return setReplaceOnSignal(this, value)
   }
 
-  async setDiffDeep (path, value) {
+  async setDiffDeep (value) {
     const forwarded = forwardRef(this, 'setDiffDeep', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.setDiffDeep() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.setDiffDeep()')
-    } else if (arguments.length === 1) {
-      value = path
-    }
-    const $target = resolveRelativePathTarget(this, segments)
-    return runInBatch(() => setDiffDeepOnSignal($target, value))
+    if (arguments.length > 1) throw Error('Signal.setDiffDeep() expects a single argument')
+    return runInBatch(() => setDiffDeepOnSignal(this, value))
   }
 
-  async setDiff (path, value) {
+  async setDiff (value) {
     const forwarded = forwardRef(this, 'setDiff', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.setDiff() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.setDiff()')
-    } else if (arguments.length === 1) {
-      value = path
-    }
-    const $target = resolveRelativePathTarget(this, segments)
-    const before = $target.peek()
+    if (arguments.length > 1) throw Error('Signal.setDiff() expects a single argument')
+    const before = this.peek()
     if (racerEqualCompat(before, value)) return
-    return setReplaceOnSignal($target, value)
+    return setReplaceOnSignal(this, value)
   }
 
-  async setEach (path, object) {
+  async setEach (object) {
     const forwarded = forwardRef(this, 'setEach', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.setEach() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.setEach()')
-    } else if (arguments.length === 1) {
-      object = path
-    }
-    const $target = resolveRelativePathTarget(this, segments)
+    if (arguments.length > 1) throw Error('Signal.setEach() expects a single argument')
     if (!object) return
     if (typeof object !== 'object') {
       throw Error('Signal.setEach() expects an object argument, got: ' + typeof object)
@@ -320,112 +241,74 @@ class SignalCompat extends Signal {
     return runInBatch(async () => {
       const promises = []
       for (const key of Object.keys(object)) {
-        promises.push(SignalCompat.prototype.set.call($target[key], object[key]))
+        promises.push(SignalCompat.prototype.set.call(this[key], object[key]))
       }
       await Promise.all(promises)
     })
   }
 
-  async del (path) {
+  async del () {
     const forwarded = forwardRef(this, 'del', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 1) throw Error('Signal.del() expects a single argument')
-    const segments = parseAtSubpath(path, arguments.length, 'Signal.del()')
-    const $target = resolveRelativePathTarget(this, segments)
+    if (arguments.length > 0) throw Error('Signal.del() does not accept any arguments')
     try {
-      return await Signal.prototype.del.call($target)
+      return await Signal.prototype.del.call(this)
     } catch (error) {
-      if (isMissingPublicDocDeleteError($target, error)) return
+      if (isMissingPublicDocDeleteError(this, error)) return
       throw error
     }
   }
 
-  async increment (path, byNumber) {
+  async increment (byNumber) {
     const forwarded = forwardRef(this, 'increment', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.increment() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.increment()')
-    } else if (arguments.length === 1) {
-      if (typeof path === 'number') {
-        byNumber = path
-      } else {
-        segments = parseAtSubpath(path, 1, 'Signal.increment()')
-      }
+    if (arguments.length > 1) throw Error('Signal.increment() expects zero or one argument')
+    if (byNumber != null && (typeof byNumber !== 'number' || !Number.isFinite(byNumber))) {
+      throw Error('Signal.increment() expects a numeric argument')
     }
-    const $target = resolveRelativePathTarget(this, segments)
-    return incrementOnSignal($target, byNumber)
+    return incrementOnSignal(this, byNumber)
   }
 
-  async push (path, value) {
+  async push (value) {
     const forwarded = forwardRef(this, 'push', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.push() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.push()')
-    } else {
-      value = path
-    }
-    const $target = resolveRelativePathTarget(this, segments)
-    return arrayPushOnSignal($target, value)
+    if (arguments.length > 1) throw Error('Signal.push() expects a single argument')
+    return arrayPushOnSignal(this, value)
   }
 
-  async unshift (path, value) {
+  async unshift (value) {
     const forwarded = forwardRef(this, 'unshift', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 2) throw Error('Signal.unshift() expects one or two arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      segments = parseAtSubpath(path, 1, 'Signal.unshift()')
-    } else {
-      value = path
-    }
-    const $target = resolveRelativePathTarget(this, segments)
-    return arrayUnshiftOnSignal($target, value)
+    if (arguments.length > 1) throw Error('Signal.unshift() expects a single argument')
+    return arrayUnshiftOnSignal(this, value)
   }
 
-  async insert (path, index, values) {
+  async insert (index, values) {
     const forwarded = forwardRef(this, 'insert', arguments)
     if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for insert')
-    if (arguments.length > 3) throw Error('Signal.insert() expects two or three arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      index = arguments[0]
-      values = arguments[1]
-    } else {
-      segments = parseAtSubpath(path, 1, 'Signal.insert()')
-      index = arguments[1]
-      values = arguments[2]
-    }
+    if (arguments.length > 2) throw Error('Signal.insert() expects two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
       throw Error('Signal.insert() expects a numeric index')
     }
-    const $target = resolveRelativePathTarget(this, segments)
-    return arrayInsertOnSignal($target, index, values)
+    return arrayInsertOnSignal(this, index, values)
   }
 
-  async pop (path) {
+  async pop () {
     const forwarded = forwardRef(this, 'pop', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 1) throw Error('Signal.pop() expects a single argument')
-    const segments = parseAtSubpath(path, arguments.length, 'Signal.pop()')
-    const $target = resolveRelativePathTarget(this, segments)
-    return arrayPopOnSignal($target)
+    if (arguments.length > 0) throw Error('Signal.pop() does not accept any arguments')
+    return arrayPopOnSignal(this)
   }
 
-  async shift (path) {
+  async shift () {
     const forwarded = forwardRef(this, 'shift', arguments)
     if (forwarded) return forwarded
-    if (arguments.length > 1) throw Error('Signal.shift() expects a single argument')
-    const segments = parseAtSubpath(path, arguments.length, 'Signal.shift()')
-    const $target = resolveRelativePathTarget(this, segments)
-    return arrayShiftOnSignal($target)
+    if (arguments.length > 0) throw Error('Signal.shift() does not accept any arguments')
+    return arrayShiftOnSignal(this)
   }
 
-  async remove (path, index, howMany) {
+  async remove (index, howMany) {
     const forwarded = forwardRef(this, 'remove', arguments)
     if (forwarded) return forwarded
     if (arguments.length === 0) {
@@ -438,111 +321,45 @@ class SignalCompat extends Signal {
       const $target = resolveSignal($root, segments)
       return arrayRemoveOnSignal($target, +index, howMany)
     }
-    if (arguments.length < 1) throw Error('Not enough arguments for remove')
-    if (arguments.length > 3) throw Error('Signal.remove() expects one to three arguments')
-    let segments = []
-    if (arguments.length === 1) {
-      if (typeof path === 'number') {
-        index = path
-      } else {
-        segments = parseAtSubpath(path, 1, 'Signal.remove()')
-      }
-    } else if (arguments.length === 2) {
-      if (typeof path === 'number') {
-        index = path
-        howMany = arguments[1]
-      } else {
-        segments = parseAtSubpath(path, 1, 'Signal.remove()')
-        index = arguments[1]
-      }
-    } else {
-      segments = parseAtSubpath(path, 1, 'Signal.remove()')
-      index = arguments[1]
-      howMany = arguments[2]
-    }
-    if (index == null && segments.length && typeof segments[segments.length - 1] === 'number') {
-      index = segments.pop()
-    }
+    if (arguments.length > 2) throw Error('Signal.remove() expects zero to two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
       throw Error('Signal.remove() expects a numeric index')
     }
-    const $target = resolveRelativePathTarget(this, segments)
-    return arrayRemoveOnSignal($target, index, howMany)
+    return arrayRemoveOnSignal(this, index, howMany)
   }
 
-  async move (path, from, to, howMany) {
+  async move (from, to, howMany) {
     const forwarded = forwardRef(this, 'move', arguments)
     if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for move')
-    if (arguments.length > 4) throw Error('Signal.move() expects two to four arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      from = arguments[0]
-      to = arguments[1]
-    } else if (arguments.length === 3) {
-      if (typeof path === 'number') {
-        from = arguments[0]
-        to = arguments[1]
-        howMany = arguments[2]
-      } else {
-        segments = parseAtSubpath(path, 1, 'Signal.move()')
-        from = arguments[1]
-        to = arguments[2]
-      }
-    } else {
-      segments = parseAtSubpath(path, 1, 'Signal.move()')
-      from = arguments[1]
-      to = arguments[2]
-      howMany = arguments[3]
-    }
+    if (arguments.length > 3) throw Error('Signal.move() expects two or three arguments')
     if (typeof from !== 'number' || !Number.isFinite(from) || typeof to !== 'number' || !Number.isFinite(to)) {
       throw Error('Signal.move() expects numeric from/to')
     }
-    const $target = resolveRelativePathTarget(this, segments)
-    return arrayMoveOnSignal($target, from, to, howMany)
+    return arrayMoveOnSignal(this, from, to, howMany)
   }
 
-  async stringInsert (path, index, text) {
+  async stringInsert (index, text) {
     const forwarded = forwardRef(this, 'stringInsert', arguments)
     if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for stringInsert')
-    if (arguments.length > 3) throw Error('Signal.stringInsert() expects two or three arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      index = arguments[0]
-      text = arguments[1]
-    } else {
-      segments = parseAtSubpath(path, 1, 'Signal.stringInsert()')
-      index = arguments[1]
-      text = arguments[2]
-    }
+    if (arguments.length > 2) throw Error('Signal.stringInsert() expects two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
       throw Error('Signal.stringInsert() expects a numeric index')
     }
-    const $target = resolveRelativePathTarget(this, segments)
-    return stringInsertOnSignal($target, index, text)
+    return stringInsertOnSignal(this, index, text)
   }
 
-  async stringRemove (path, index, howMany) {
+  async stringRemove (index, howMany) {
     const forwarded = forwardRef(this, 'stringRemove', arguments)
     if (forwarded) return forwarded
     if (arguments.length < 2) throw Error('Not enough arguments for stringRemove')
-    if (arguments.length > 3) throw Error('Signal.stringRemove() expects two or three arguments')
-    let segments = []
-    if (arguments.length === 2) {
-      index = arguments[0]
-      howMany = arguments[1]
-    } else {
-      segments = parseAtSubpath(path, 1, 'Signal.stringRemove()')
-      index = arguments[1]
-      howMany = arguments[2]
-    }
+    if (arguments.length > 2) throw Error('Signal.stringRemove() expects two arguments')
     if (typeof index !== 'number' || !Number.isFinite(index)) {
       throw Error('Signal.stringRemove() expects a numeric index')
     }
     if (howMany == null) howMany = 1
-    const $target = resolveRelativePathTarget(this, segments)
-    return stringRemoveOnSignal($target, index, howMany)
+    return stringRemoveOnSignal(this, index, howMany)
   }
 
   async assign (value) {
@@ -598,54 +415,43 @@ class SignalCompat extends Signal {
   }
 
   ref (path, target, options) {
-    if (arguments.length > 3) throw Error('Signal.ref() expects one to three arguments')
-    let $from = this
+    if (arguments.length < 1 || arguments.length > 2) throw Error('Signal.ref() expects one or two arguments')
     let $to
     if (arguments.length === 1) {
       $to = resolveRefTarget(this, path, 'Signal.ref()')
-    } else if (arguments.length === 2) {
-      if (isSignalLike(target) || typeof target === 'string') {
-        const segments = parseAtSubpath(path, 1, 'Signal.ref()')
-        $from = resolveSignal(this, segments)
-        $to = resolveRefTarget(this, target, 'Signal.ref()')
-      } else {
-        $to = resolveRefTarget(this, path, 'Signal.ref()')
-        options = target
-      }
     } else {
-      const segments = parseAtSubpath(path, 1, 'Signal.ref()')
-      $from = resolveSignal(this, segments)
-      $to = resolveRefTarget(this, target, 'Signal.ref()')
+      $to = resolveRefTarget(this, path, 'Signal.ref()')
+      options = target
     }
     if (!$to) throw Error('Signal.ref() expects a target path or signal')
-    if ($from === $to) return $from
-    ensurePrivateRefSource($from, 'Signal.ref()')
-    const store = getRefStore($from)
-    const fromPath = $from.path()
+    if (this === $to) return this
+    ensurePrivateRefSource(this, 'Signal.ref()')
+    const store = getRefStore(this)
+    const fromPath = this.path()
     const existing = store.get(fromPath)
     if (existing) existing.stop()
     const mirrorOnly = !!($to?.[IS_QUERY] || $to?.[IS_AGGREGATION])
-    const { stop, onChange } = createRefLink($from, $to, { mirrorOnly, options })
+    const { stop, onChange } = createRefLink(this, $to, { mirrorOnly, options })
     store.set(fromPath, { stop })
-    const fromRootId = (getRoot($from) || $from)?.[ROOT_ID]
+    const fromRootId = (getRoot(this) || this)?.[ROOT_ID]
     const toRootId = (getRoot($to) || $to)?.[ROOT_ID]
     if (!mirrorOnly) {
-      $from[REF_TARGET] = $to
-      setRefLink(fromRootId, fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
+      this[REF_TARGET] = $to
+      setRefLink(fromRootId, fromPath, $to.path(), this[SEGMENTS], $to[SEGMENTS], {
         mirrorOnly: false,
         fromRootId,
         toRootId
       })
     } else {
-      setRefLink(fromRootId, fromPath, $to.path(), $from[SEGMENTS], $to[SEGMENTS], {
+      setRefLink(fromRootId, fromPath, $to.path(), this[SEGMENTS], $to[SEGMENTS], {
         mirrorOnly: true,
         onChange,
         fromRootId,
         toRootId
       })
-      if ($from[REF_TARGET]) delete $from[REF_TARGET]
+      if (this[REF_TARGET]) delete this[REF_TARGET]
     }
-    return $from
+    return this
   }
 
   refExtra (path) {
@@ -673,37 +479,22 @@ class SignalCompat extends Signal {
     return SignalCompat.prototype.ref.call($target, this.ids)
   }
 
-  removeRef (path) {
-    if (arguments.length > 1) throw Error('Signal.removeRef() expects a single argument')
-    let $from = this
-    if (arguments.length === 1) {
-      const segments = parseAtSubpath(path, 1, 'Signal.removeRef()')
-      $from = resolveSignal(this, segments)
-    }
-    const store = getRefStore($from)
-    const fromPath = $from.path()
+  removeRef () {
+    if (arguments.length > 0) throw Error('Signal.removeRef() does not accept any arguments')
+    const store = getRefStore(this)
+    const fromPath = this.path()
     const existing = store.get(fromPath)
     if (existing) {
       existing.stop()
       store.delete(fromPath)
     }
-    const fromRootId = (getRoot($from) || $from)?.[ROOT_ID]
+    const fromRootId = (getRoot(this) || this)?.[ROOT_ID]
     removeRefLink(fromRootId, fromPath)
-    const $target = resolveRefSignal($from)
-    if ($target !== $from) {
-      setDiffDeepBypassRef($from, deepCopy($target.get()))
+    const $target = resolveRefSignal(this)
+    if ($target !== this) {
+      setDiffDeepBypassRef(this, deepCopy($target.get()))
     }
-    if ($from[REF_TARGET]) delete $from[REF_TARGET]
-  }
-
-  scope (path) {
-    const $root = getRoot(this) || this
-    if (arguments.length === 0) return $root
-    const segments = arguments.length > 1
-      ? parseAtSegments(arguments, 'Signal.scope()')
-      : parseAtSubpath(path, arguments.length, 'Signal.scope()')
-    if (segments.length === 0) return $root
-    return resolveRelativePathTarget($root, segments)
+    if (this[REF_TARGET]) delete this[REF_TARGET]
   }
 }
 
@@ -902,52 +693,12 @@ function parseAtSubpath (subpath, argsLength, methodName) {
   throw Error(`${methodName} expects a string or integer argument`)
 }
 
-function parseAtSegments (args, methodName) {
-  const segments = []
-  for (const arg of Array.from(args)) {
-    if (typeof arg === 'string') {
-      const parts = arg.split('.').filter(Boolean)
-      segments.push(...parts)
-      continue
-    }
-    if (typeof arg === 'number' && Number.isFinite(arg) && Number.isInteger(arg)) {
-      segments.push(arg)
-      continue
-    }
-    throw Error(`${methodName} expects string or integer path segments`)
-  }
-  return segments
-}
-
 function resolveSignal ($signal, segments) {
   let $cursor = $signal
   for (const segment of segments) {
     $cursor = $cursor[segment]
   }
   return $cursor
-}
-
-function resolveSignalWithRefs ($signal, relativeSegments) {
-  const baseSegments = Array.isArray($signal?.[SEGMENTS]) ? $signal[SEGMENTS] : []
-  const absoluteSegments = baseSegments.concat(relativeSegments)
-  const resolvedSegments = resolveRefSegmentsSafe(
-    absoluteSegments,
-    (getRoot($signal) || $signal)?.[ROOT_ID]
-  )
-  if (!resolvedSegments) return resolveSignal($signal, relativeSegments)
-
-  // Signals created through root functions can carry a raw root in [ROOT].
-  // For path-based ref writes we need proxy traversal semantics.
-  const $root = getRoot($signal) || $signal
-  const $traversalRoot = getRoot($root) || $root
-  return resolveSignal($traversalRoot, resolvedSegments)
-}
-
-function resolveRelativePathTarget ($signal, relativeSegments) {
-  if (!Array.isArray(relativeSegments) || relativeSegments.length === 0) {
-    return resolveSignal($signal, [])
-  }
-  return resolveSignalWithRefs($signal, relativeSegments)
 }
 
 function isMissingPublicDocDeleteError ($signal, error) {
@@ -1142,11 +893,6 @@ function deepEqualCompat (left, right) {
 
 function racerEqualCompat (left, right) {
   return left === right || (Number.isNaN(left) && Number.isNaN(right))
-}
-
-function getSignalValueAt ($signal, segments) {
-  const $target = resolveRelativePathTarget($signal, segments)
-  return $target.get()
 }
 
 async function setReplaceOnSignal ($signal, value) {

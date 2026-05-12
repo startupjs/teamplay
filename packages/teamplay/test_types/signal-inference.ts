@@ -122,6 +122,7 @@ type TypeAssertions = [
   CollectionAddReturnsId,
   CollectionMethodChainAddReturnsId,
   DocSetReturnsVoidPromise,
+  DocSetReplaceReturnsVoidPromise,
   DocAssignReturnsVoidPromise,
   NestedAssignReturnsVoidPromise,
   NestedPopReturnsItem,
@@ -569,6 +570,13 @@ const docSetResult = $game.set({
   },
   status: 'draft'
 })
+const docSetReplaceResult = $game.setReplace({
+  info: {
+    title: 'Go',
+    maxPlayers: 2
+  },
+  status: 'draft'
+})
 const docAssignResult = $game.assign({ status: 'started' })
 const nestedAssignResult = $game.info.assign({ maxPlayers: 4 })
 const poppedTag = $game.info.tags.pop()
@@ -640,6 +648,7 @@ type ModelThisNestedPathMethod = Expect<Equal<ReturnType<GameInfoModel['titleCas
 type CollectionAddReturnsId = Expect<Equal<typeof collectionAddId, Promise<string>>>
 type CollectionMethodChainAddReturnsId = Expect<Equal<typeof collectionMethodChainAddId, Promise<string>>>
 type DocSetReturnsVoidPromise = Expect<Equal<typeof docSetResult, Promise<void>>>
+type DocSetReplaceReturnsVoidPromise = Expect<Equal<typeof docSetReplaceResult, Promise<void>>>
 type DocAssignReturnsVoidPromise = Expect<Equal<typeof docAssignResult, Promise<void>>>
 type NestedAssignReturnsVoidPromise = Expect<Equal<typeof nestedAssignResult, Promise<void>>>
 type NestedPopReturnsItem = Expect<Equal<PromiseValue<typeof poppedTag>, string | undefined>>
