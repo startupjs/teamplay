@@ -10,6 +10,7 @@
   "scripts": {
     "start": "cd example && npm run start",
     "build": "yarn workspace @teamplay/utils build && yarn workspace @teamplay/schema build && yarn workspace teamplay build",
+    "clean": "rm -rf packages/utils/dist packages/schema/dist packages/teamplay/dist",
     "lint": "eslint .",
     "test": "yarn workspace babel-plugin-teamplay test && cd packages/teamplay && npm run test",
     "test-types:dist": "yarn build && yarn workspace teamplay test-types:dist",

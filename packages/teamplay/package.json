@@ -116,6 +116,12 @@
     "transform": {
       "^.+\\.ts$": "./test/ts-transform.cjs"
     },
+    "testEnvironmentOptions": {
+      "customExportConditions": [
+        "teamplay-ts",
+        "browser"
+      ]
+    },
     "extensionsToTreatAsEsm": [
       ".ts"
     ],

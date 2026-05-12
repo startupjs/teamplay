@@ -1,5 +1,6 @@
 import babel from '@babel/core'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, it } from 'mocha'
+import { jestExpect as expect } from 'mocha-expect-snapshot'
 import { execFileSync } from 'node:child_process'
 import { cpSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -291,6 +292,7 @@ describe('babel-plugin-teamplay', () => {
         module: 'ESNext',
         moduleResolution: 'Bundler',
         allowImportingTsExtensions: true,
+        customConditions: ['teamplay-ts'],
         baseUrl: '.',
         paths: { '@/*': ['./*'] },
         skipLibCheck: true,
