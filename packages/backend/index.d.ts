@@ -40,6 +40,7 @@ export interface DbExports {
 export function createBackend (options?: BackendOptions): any // Replace 'any' with Backend class type
 
 // Exports instances and constructors for Redis and database connections
+export function getRedis (options?: any): Redis
 export const redis: RedisExports['redis']
 export const redlock: RedisExports['redlock']
 export const Redlock: RedisExports['Redlock']

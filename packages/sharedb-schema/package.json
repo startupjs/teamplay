@@ -19,8 +19,6 @@
     "z-schema": "^4.2.3"
   },
   "devDependencies": {
-    "mocha": "^11.7.5",
-    "racer": "1.0.1",
-    "sharedb": "^5.0.0"
+    "mocha": "^11.7.5"
   }
 }
