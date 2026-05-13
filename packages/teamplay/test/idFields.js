@@ -1,10 +1,10 @@
 import { it, describe, before, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { $, sub, aggregation } from '../index.js'
-import { getConnection } from '../orm/connection.js'
+import { $, sub, aggregation } from '../src/index.ts'
+import { getConnection } from '../src/orm/connection.ts'
 import { afterEachTestGc } from './_helpers.js'
-import connect from '../connect/test.js'
-import { isMissingShareDoc } from '../orm/missingDoc.js'
+import connect from '../src/connect/test.js'
+import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 
 before(connect)
 
@@ -76,23 +76,22 @@ describe('Id fields in docs, queries, aggregations', () => {
     await $doc1.set({ name: 'A', active: true })
     await $doc2.set({ name: 'B', active: true })
 
-    const $$withId = aggregation(({ active }) => [{ $match: { active } }])
-    const $withId = await sub($$withId, { $collection: collection, active: true })
+    const _withId = aggregation(({ active }) => [{ $match: { active } }])
+    const $withId = await sub(_withId, { $collection: collection, active: true })
     const withId = $withId.get()
     assert.ok(withId.length >= 2)
     assert.ok(withId.every(doc => ('_id' in doc) || ('id' in doc)))
 
-    const $$noId = aggregation(() => [
+    const _noId = aggregation(() => [
       { $match: { active: true } },
       { $project: { _id: 0, name: 1 } }
     ])
-    const $noId = await sub($$noId, { $collection: collection })
+    const $noId = await sub(_noId, { $collection: collection })
     const noId = $noId.get()
     assert.ok(noId.length >= 2)
     assert.ok(noId.every(doc => !('_id' in doc) && !('id' in doc)))
 
-    const ids = $noId.getIds()
-    assert.ok(ids.every(id => id === undefined))
+    assert.deepEqual($noId.getIds(), [])
   })
 
   it('aggregation results do not include id in base mode', async () => {
@@ -106,8 +105,8 @@ describe('Id fields in docs, queries, aggregations', () => {
     await $doc1.set({ name: 'A', active: true })
     await $doc2.set({ name: 'B', active: true })
 
-    const $$withId = aggregation(({ active }) => [{ $match: { active } }])
-    const $withId = await sub($$withId, { $collection: collection, active: true })
+    const _withId = aggregation(({ active }) => [{ $match: { active } }])
+    const $withId = await sub(_withId, { $collection: collection, active: true })
     const withId = $withId.get()
     assert.ok(withId.length >= 2)
     assert.ok(withId.every(doc => doc._id))

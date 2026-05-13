@@ -1,0 +1,707 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`babel-plugin-teamplay eliminates default aggregation files for client builds 1`] = `
+"import { __aggregationHeader } from 'startupjs';
+type User = {
+  active: boolean;
+};
+export default __aggregationHeader<User[]>({
+  collection: "users/_active".split(/[\\\\/\\.]/).at(-2),
+  name: "users/_active".split(/[\\\\/\\.]/).at(-1)
+});"
+`;
+
+exports[`babel-plugin-teamplay eliminates server-only model code for client builds 1`] = `
+"import { __aggregationHeader } from 'teamplay';
+type User = {
+  active: boolean;
+};
+export const _active = __aggregationHeader<User[]>({
+  collection: "users",
+  name: "_active"
+});
+export const access = undefined;
+export const secret = undefined;"
+`;
+
+exports[`babel-plugin-teamplay eliminates server-only model code from nested plugin model folders 1`] = `
+"export const access = undefined;
+export const secret = undefined;"
+`;
+
+exports[`babel-plugin-teamplay eliminates serverOnly code outside model folders based on source usage 1`] = `
+"import { Signal } from 'startupjs';
+export default class FileModel extends Signal {
+  getBlob = undefined;
+}"
+`;
+
+exports[`babel-plugin-teamplay exports synchronous Node file-based models 1`] = `
+{
+  "users": {
+    "__esModule": true,
+    "_active": {
+      "name": "activeUsers",
+      "type": "function",
+    },
+    "access": {
+      "create": true,
+      "delete": false,
+      "read": true,
+      "update": {
+        "name": "update",
+        "type": "function",
+      },
+    },
+    "default": {
+      "name": "UsersModel",
+      "type": "function",
+    },
+    "schema": {
+      "name": {
+        "description": "Public display name",
+        "label": "User name",
+        "type": "string",
+      },
+      "profile": {
+        "properties": {
+          "bio": {
+            "label": "Bio",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+    },
+  },
+  "users.*": {
+    "__esModule": true,
+    "default": {
+      "name": "User",
+      "type": "function",
+    },
+  },
+}
+`;
+
+exports[`babel-plugin-teamplay generates require.context loading code 1`] = `
+"const autoInit = true;
+const __teamplayModelsContext = require.context("../models", true, /\\.[mc]?[jt]sx?$/);
+const models = (() => {
+  let modelPatterns = __teamplayModelsContext.keys().reduce((res, filePath) => {
+    const pattern = __teamplayGetModelPattern(filePath);
+    if (pattern === null) return res;
+    return {
+      ...res,
+      [pattern]: filePath
+    };
+  }, {});
+  modelPatterns = __teamplaySanitizeAndMergeModelPatterns(modelPatterns);
+  const res = {};
+  for (const [modelPattern, parts] of Object.entries(modelPatterns)) {
+    const fileParts = parts.map(part => {
+      if (part.type === 'model') return __teamplayModelsContext(part.value);
+      return {
+        [part.name]: __teamplayModelsContext(part.value).default
+      };
+    });
+    res[modelPattern] = Object.assign({}, ...fileParts);
+  }
+  return res;
+})();
+function __teamplayGetModelPattern(modelFilename) {
+  const MODEL_PATTERN_REGEX = /^[a-zA-Z0-9$_*.]+$/;
+  let pattern = modelFilename;
+  if (/\\*/.test(pattern)) throw Error("[models] Instead of '*' in model filename use '[id]'. Got: " + modelFilename);
+  pattern = pattern.replace(/\\[[^\\]]+\\]/g, '*');
+  pattern = pattern.replace(/^\\.\\//, '');
+  pattern = pattern.replace(/\\.[^.]+$/, '');
+  pattern = pattern.replace(/[\\\\/]/g, '.');
+  if (pattern.split('.').some(section => section.startsWith('-'))) return null;
+  if (!MODEL_PATTERN_REGEX.test(pattern)) {
+    throw Error("[models] Invalid model filename pattern: " + modelFilename + "\\n" + "It has to comply with the following regex: " + MODEL_PATTERN_REGEX.toString() + " with '[id]' instead of '*'");
+  }
+  if (pattern === 'index') pattern = '';
+  if (/\\.index$/.test(pattern)) pattern = pattern.replace(/\\.index$/, '');
+  return pattern;
+}
+function __teamplaySanitizeAndMergeModelPatterns(modelPatterns) {
+  const res = {};
+  for (const [modelPattern, value] of Object.entries(modelPatterns)) {
+    const sections = modelPattern.split('.');
+    const lastSection = sections.pop();
+    let pattern = sections.join('.');
+    let type;
+    let method = 'push';
+    if ((/^_/.test(lastSection) || /^\\$\\$/.test(lastSection)) && sections.length === 1 && sections[0] && !sections[0].startsWith('_')) {
+      type = 'aggregation';
+      if (/^\\$\\$/.test(lastSection)) {
+        console.warn('[teamplay] Legacy aggregation filename "' + value + '" is deprecated. ' + 'Rename it to "' + value.replace(/(^|[\\\\/])\\$\\$/, '$1_') + '". ' + 'Aggregation files should use "_" prefix.');
+      }
+    } else if (lastSection === 'schema') type = 'schema';else if (lastSection === 'access') type = 'access';else {
+      type = 'model';
+      pattern = modelPattern;
+      method = 'unshift';
+    }
+    res[pattern] ??= [];
+    res[pattern][method]({
+      type,
+      name: lastSection,
+      value
+    });
+  }
+  return res;
+}
+export { models, autoInit };"
+`;
+
+exports[`babel-plugin-teamplay generates static imports for file-based models 1`] = `
+"import * as _models_sessionConnectionTs from "../models/_session/connection.ts";
+import * as _models_sessionIndexTs from "../models/_session/index.ts";
+import _default from "../models/_session/schema.ts";
+import * as _modelsEventsIdTs from "../models/events/[id].ts";
+import * as _modelsEventsIdCommentsCommentIdTs from "../models/events/[id]/comments/[commentId].ts";
+import * as _modelsEventsIndexTs from "../models/events/index.ts";
+import _default2 from "../models/events/_active.ts";
+import _default3 from "../models/events/access.ts";
+import _default4 from "../models/events/schema.ts";
+const autoInit = false;
+const models = {
+  "_session.connection": Object.assign({}, _models_sessionConnectionTs),
+  "_session": Object.assign({}, _models_sessionIndexTs, {
+    "schema": _default
+  }),
+  "events.*": Object.assign({}, _modelsEventsIdTs),
+  "events.*.comments.*": Object.assign({}, _modelsEventsIdCommentsCommentIdTs),
+  "events": Object.assign({}, _modelsEventsIndexTs, {
+    "_active": _default2
+  }, {
+    "access": _default3
+  }, {
+    "schema": _default4
+  })
+};
+export { models, autoInit };"
+`;
+
+exports[`babel-plugin-teamplay generates teamplay-env.d.ts with schema field jsdoc 1`] = `
+"// This file is generated by TeamPlay. Do not edit manually.
+/* eslint-disable */
+import { type CollectionsFromManifest, type FromJsonSchema, type PathModelsFromManifest, type PrivateCollectionsFromManifest, type SignalChild } from 'teamplay'
+import type __PathModel0 from "./models/_session/connection.ts"
+import type __PathModel1 from "./models/_session/index.ts"
+import type __Schema2 from "./models/_session/schema.ts"
+import type __PathModel3 from "./models/events/[id].ts"
+import type __PathModel4 from "./models/events/[id]/comments/[commentId].ts"
+import type __CollectionModel5 from "./models/events/index.ts"
+import type __Schema6 from "./models/events/schema.ts"
+
+interface __TeamplayModelManifest {
+  "_session.connection": {
+    default: typeof __PathModel0
+  }
+  "_session": {
+    default: typeof __PathModel1
+    schema: typeof __Schema2
+  }
+  "events.*": {
+    default: typeof __PathModel3
+  }
+  "events.*.comments.*": {
+    default: typeof __PathModel4
+  }
+  "events": {
+    default: typeof __CollectionModel5
+    schema: typeof __Schema6
+  }
+}
+
+type __SessionPrivate = FromJsonSchema<typeof __Schema2>
+interface __SessionFields {
+  /**
+   * Session user id
+   */
+  readonly "userId": SignalChild<NonNullable<__SessionPrivate>["userId"], readonly ["_session", "userId"]>
+  /**
+   * Session user id
+   */
+  readonly "$userId": SignalChild<NonNullable<__SessionPrivate>["userId"], readonly ["_session", "userId"]>
+  readonly "banner": SignalChild<NonNullable<__SessionPrivate>["banner"], readonly ["_session", "banner"]> & __SessionFields_Banner
+  readonly "$banner": SignalChild<NonNullable<__SessionPrivate>["banner"], readonly ["_session", "banner"]> & __SessionFields_Banner
+}
+
+interface __SessionFields_Banner {
+  /**
+   * Banner visibility
+   */
+  readonly "visible": SignalChild<NonNullable<NonNullable<__SessionPrivate>["banner"]>["visible"], readonly ["_session", "banner", "visible"]>
+  /**
+   * Banner visibility
+   */
+  readonly "$visible": SignalChild<NonNullable<NonNullable<__SessionPrivate>["banner"]>["visible"], readonly ["_session", "banner", "visible"]>
+}
+type __EventsDoc = FromJsonSchema<typeof __Schema6>
+interface __EventsFields {
+  /**
+   * Event title
+   *
+   * Visible public event name
+   */
+  readonly "title": SignalChild<NonNullable<__EventsDoc>["title"], readonly ["events", "*", "title"]>
+  /**
+   * Event title
+   *
+   * Visible public event name
+   */
+  readonly "$title": SignalChild<NonNullable<__EventsDoc>["title"], readonly ["events", "*", "title"]>
+  /**
+   * Event description
+   */
+  readonly "description": SignalChild<NonNullable<__EventsDoc>["description"], readonly ["events", "*", "description"]>
+  /**
+   * Event description
+   */
+  readonly "$description": SignalChild<NonNullable<__EventsDoc>["description"], readonly ["events", "*", "description"]>
+  /**
+   * Event type
+   */
+  readonly "type": SignalChild<NonNullable<__EventsDoc>["type"], readonly ["events", "*", "type"]>
+  /**
+   * Event type
+   */
+  readonly "$type": SignalChild<NonNullable<__EventsDoc>["type"], readonly ["events", "*", "type"]>
+  /**
+   * Requires approval
+   */
+  readonly "required": SignalChild<NonNullable<__EventsDoc>["required"], readonly ["events", "*", "required"]>
+  /**
+   * Requires approval
+   */
+  readonly "$required": SignalChild<NonNullable<__EventsDoc>["required"], readonly ["events", "*", "required"]>
+  /**
+   * Enum named field
+   */
+  readonly "enum": SignalChild<NonNullable<__EventsDoc>["enum"], readonly ["events", "*", "enum"]>
+  /**
+   * Enum named field
+   */
+  readonly "$enum": SignalChild<NonNullable<__EventsDoc>["enum"], readonly ["events", "*", "enum"]>
+  /**
+   * Const named field
+   */
+  readonly "const": SignalChild<NonNullable<__EventsDoc>["const"], readonly ["events", "*", "const"]>
+  /**
+   * Const named field
+   */
+  readonly "$const": SignalChild<NonNullable<__EventsDoc>["const"], readonly ["events", "*", "const"]>
+  /**
+   * Event properties
+   */
+  readonly "properties": SignalChild<NonNullable<__EventsDoc>["properties"], readonly ["events", "*", "properties"]> & __EventsFields_Properties
+  /**
+   * Event properties
+   */
+  readonly "$properties": SignalChild<NonNullable<__EventsDoc>["properties"], readonly ["events", "*", "properties"]> & __EventsFields_Properties
+  readonly "active": SignalChild<NonNullable<__EventsDoc>["active"], readonly ["events", "*", "active"]>
+  readonly "$active": SignalChild<NonNullable<__EventsDoc>["active"], readonly ["events", "*", "active"]>
+  readonly "details": SignalChild<NonNullable<__EventsDoc>["details"], readonly ["events", "*", "details"]> & __EventsFields_Details
+  readonly "$details": SignalChild<NonNullable<__EventsDoc>["details"], readonly ["events", "*", "details"]> & __EventsFields_Details
+  readonly "createdAt": SignalChild<NonNullable<__EventsDoc>["createdAt"], readonly ["events", "*", "createdAt"]>
+  readonly "$createdAt": SignalChild<NonNullable<__EventsDoc>["createdAt"], readonly ["events", "*", "createdAt"]>
+}
+
+interface __EventsFields_Properties {
+  /**
+   * Color
+   */
+  readonly "color": SignalChild<NonNullable<NonNullable<__EventsDoc>["properties"]>["color"], readonly ["events", "*", "properties", "color"]>
+  /**
+   * Color
+   */
+  readonly "$color": SignalChild<NonNullable<NonNullable<__EventsDoc>["properties"]>["color"], readonly ["events", "*", "properties", "color"]>
+}
+
+interface __EventsFields_Details {
+  /**
+   * Summary
+   */
+  readonly "summary": SignalChild<NonNullable<NonNullable<__EventsDoc>["details"]>["summary"], readonly ["events", "*", "details", "summary"]>
+  /**
+   * Summary
+   */
+  readonly "$summary": SignalChild<NonNullable<NonNullable<__EventsDoc>["details"]>["summary"], readonly ["events", "*", "details", "summary"]>
+}
+
+declare module "./models/_session/schema" {
+  export default interface Session extends __SessionPrivate {}
+}
+declare module "./models/events/schema" {
+  export default interface Event extends __EventsDoc {}
+}
+
+declare module 'teamplay' {
+  interface TeamplayCollections extends CollectionsFromManifest<__TeamplayModelManifest> {}
+  interface TeamplayPrivateCollections extends PrivateCollectionsFromManifest<__TeamplayModelManifest> {}
+  interface TeamplayModels extends PathModelsFromManifest<__TeamplayModelManifest> {}
+  interface TeamplaySignalFields {
+    "_session": __SessionFields
+    "events.*": __EventsFields
+  }
+}
+"
+`;
+
+exports[`babel-plugin-teamplay keeps model server code when clientOnly is false 1`] = `
+"import { accessControl } from 'teamplay';
+export const access = accessControl({
+  create: () => true
+});"
+`;
+
+exports[`babel-plugin-teamplay loads file-based models directly in Node 1`] = `
+{
+  "users": {
+    "__esModule": true,
+    "_active": {
+      "name": "activeUsers",
+      "type": "function",
+    },
+    "access": {
+      "create": true,
+      "delete": false,
+      "read": true,
+      "update": {
+        "name": "update",
+        "type": "function",
+      },
+    },
+    "default": {
+      "name": "UsersModel",
+      "type": "function",
+    },
+    "schema": {
+      "name": {
+        "description": "Public display name",
+        "label": "User name",
+        "type": "string",
+      },
+      "profile": {
+        "properties": {
+          "bio": {
+            "label": "Bio",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+    },
+  },
+  "users.*": {
+    "__esModule": true,
+    "default": {
+      "name": "User",
+      "type": "function",
+    },
+  },
+}
+`;
+
+exports[`babel-plugin-teamplay loads file-based models synchronously in Node 1`] = `
+{
+  "users": {
+    "__esModule": true,
+    "_active": {
+      "name": "activeUsers",
+      "type": "function",
+    },
+    "access": {
+      "create": true,
+      "delete": false,
+      "read": true,
+      "update": {
+        "name": "update",
+        "type": "function",
+      },
+    },
+    "default": {
+      "name": "UsersModel",
+      "type": "function",
+    },
+    "schema": {
+      "name": {
+        "description": "Public display name",
+        "label": "User name",
+        "type": "string",
+      },
+      "profile": {
+        "properties": {
+          "bio": {
+            "label": "Bio",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+    },
+  },
+  "users.*": {
+    "__esModule": true,
+    "default": {
+      "name": "User",
+      "type": "function",
+    },
+  },
+}
+`;
+
+exports[`babel-plugin-teamplay snapshots client-transformed complex TypeScript model fixtures 1`] = `
+{
+  "models/-helpers/format.ts": "
+export default function formatTitle(title: string) {
+  return title.trim();
+}
+",
+  "models/_session/connection.ts": "
+import { Signal } from 'teamplay';
+interface ConnectionState {
+  token?: string;
+}
+export default class SessionConnectionModel extends Signal<ConnectionState> {
+  isConnected() {
+    return Boolean(this.token.get());
+  }
+}
+",
+  "models/_session/index.ts": "
+import { Signal } from 'teamplay';
+interface SessionState {
+  currentConnection?: string;
+}
+export default class SessionModel extends Signal<SessionState> {
+  hasConnection() {
+    return Boolean(this.currentConnection.get());
+  }
+}
+",
+  "models/_session/schema.ts": "
+import { defineSchema, type FromJsonSchema } from 'teamplay';
+const schema = defineSchema({
+  userId: {
+    type: 'string',
+    required: true,
+    label: 'Session user id'
+  },
+  banner: {
+    type: 'object',
+    properties: {
+      visible: {
+        type: 'boolean',
+        label: 'Banner visibility'
+      }
+    }
+  }
+});
+export default schema;
+export default interface Session extends FromJsonSchema<typeof schema> {}
+",
+  "models/events/[id].ts": "
+import { Signal } from 'teamplay';
+import type Event from './schema.ts';
+export default class EventModel extends Signal<Event> {
+  titleUpper() {
+    return this.title.get().toUpperCase();
+  }
+}
+",
+  "models/events/[id]/comments/[commentId].ts": "
+import { Signal } from 'teamplay';
+export interface EventComment {
+  message: string;
+}
+export default class EventCommentModel extends Signal<EventComment> {
+  preview() {
+    return this.message.get().slice(0, 10);
+  }
+}
+",
+  "models/events/_active.ts": "
+import { __aggregationHeader } from 'teamplay';
+import type Event from './schema.ts';
+interface EventSession {
+  userId?: string;
+  role?: 'admin' | 'member';
+}
+export default __aggregationHeader<Event[], EventSession>({
+  collection: "events/_active".split(/[\\\\/\\.]/).at(-2),
+  name: "events/_active".split(/[\\\\/\\.]/).at(-1)
+});
+",
+  "models/events/access.ts": "
+export default undefined;
+",
+  "models/events/index.ts": "
+import { Signal } from 'teamplay';
+import type Event from './schema.ts';
+export default class EventsModel extends Signal<Event[]> {
+  async addNew(event: Omit<Event, 'createdAt'>) {
+    return await this.add({
+      ...event,
+      createdAt: Date.now()
+    });
+  }
+}
+",
+  "models/events/schema.ts": "
+import { defineSchema, type FromJsonSchema } from 'teamplay';
+const schema = defineSchema({
+  title: {
+    type: 'string',
+    required: true,
+    label: 'Event title',
+    description: 'Visible public event name'
+  },
+  description: {
+    type: 'string',
+    label: 'Event description'
+  },
+  type: {
+    type: 'string',
+    label: 'Event type'
+  },
+  required: {
+    type: 'boolean',
+    label: 'Requires approval'
+  },
+  enum: {
+    type: 'string',
+    label: 'Enum named field'
+  },
+  const: {
+    type: 'number',
+    label: 'Const named field'
+  },
+  properties: {
+    type: 'object',
+    label: 'Event properties',
+    properties: {
+      color: {
+        type: 'string',
+        label: 'Color'
+      }
+    }
+  },
+  active: {
+    type: 'boolean'
+  },
+  details: {
+    type: 'object',
+    properties: {
+      summary: {
+        type: 'string',
+        label: 'Summary'
+      }
+    }
+  },
+  createdAt: {
+    type: 'number',
+    required: true
+  }
+});
+export default schema;
+export default interface Event extends FromJsonSchema<typeof schema> {}
+",
+}
+`;
+
+exports[`babel-plugin-teamplay snapshots client-transformed simple JavaScript model fixtures 1`] = `
+{
+  "models/-helpers/format.js": "
+export default function format() {}
+",
+  "models/users/[id].js": "
+export default class User {}
+",
+  "models/users/_active.js": "
+import { __aggregationHeader } from 'teamplay';
+export default __aggregationHeader({
+  collection: "users/_active".split(/[\\\\/\\.]/).at(-2),
+  name: "users/_active".split(/[\\\\/\\.]/).at(-1)
+});
+",
+  "models/users/access.js": "
+export default undefined;
+",
+  "models/users/index.js": "
+export default class UsersModel {}
+",
+  "models/users/schema.js": "
+const schema = {
+  name: {
+    type: 'string',
+    label: 'User name',
+    description: 'Public display name'
+  },
+  profile: {
+    type: 'object',
+    properties: {
+      bio: {
+        type: 'string',
+        label: 'Bio'
+      }
+    }
+  }
+};
+export default schema;
+",
+}
+`;
+
+exports[`babel-plugin-teamplay supports legacy $$ aggregation files with a warning 1`] = `
+[
+  "[teamplay] Legacy aggregation filename "models/users/$$active.js" is deprecated. Rename it to "models/users/_active.js". Aggregation files should use "_" prefix.",
+]
+`;
+
+exports[`babel-plugin-teamplay transforms direct file-based models imports 1`] = `
+"import * as _models_sessionConnectionTs from "../models/_session/connection.ts";
+import * as _models_sessionIndexTs from "../models/_session/index.ts";
+import _default from "../models/_session/schema.ts";
+import * as _modelsEventsIdTs from "../models/events/[id].ts";
+import * as _modelsEventsIdCommentsCommentIdTs from "../models/events/[id]/comments/[commentId].ts";
+import * as _modelsEventsIndexTs from "../models/events/index.ts";
+import _default2 from "../models/events/_active.ts";
+import _default3 from "../models/events/access.ts";
+import _default4 from "../models/events/schema.ts";
+const models = {
+  "_session.connection": Object.assign({}, _models_sessionConnectionTs),
+  "_session": Object.assign({}, _models_sessionIndexTs, {
+    "schema": _default
+  }),
+  "events.*": Object.assign({}, _modelsEventsIdTs),
+  "events.*.comments.*": Object.assign({}, _modelsEventsIdCommentsCommentIdTs),
+  "events": Object.assign({}, _modelsEventsIndexTs, {
+    "_active": _default2
+  }, {
+    "access": _default3
+  }, {
+    "schema": _default4
+  })
+};
+export default models;"
+`;
+
+exports[`babel-plugin-teamplay transforms direct file-based models imports with fallback folders 1`] = `
+"import * as _modelUsersIdJs from "../model/users/[id].js";
+import * as _modelUsersIndexJs from "../model/users/index.js";
+const models = {
+  "users.*": Object.assign({}, _modelUsersIdJs),
+  "users": Object.assign({}, _modelUsersIndexJs)
+};
+export default models;"
+`;
+
+exports[`babel-plugin-teamplay uses the legacy fallback folder with a warning 1`] = `
+[
+  "[teamplay] Using legacy "model/" models folder. Please migrate to "models/".",
+]
+`;

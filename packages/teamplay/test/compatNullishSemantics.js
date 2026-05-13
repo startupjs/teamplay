@@ -1,14 +1,14 @@
 import { before, afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
 
-import connect from '../connect/test.js'
+import connect from '../src/connect/test.js'
 import {
   del,
   getRaw,
   set,
   setPublicDocReplace,
   setReplace
-} from '../orm/dataTree.js'
+} from '../src/orm/dataTree.js'
 
 const PUBLIC_COLLECTION = 'compatNullishPublic'
 let publicDocCounter = 0

@@ -18,6 +18,14 @@ A signal containing an array of IDs for the documents in the query result.
 const userIds = $activeUsers.ids.get()
 ```
 
+### extra
+
+A signal containing extra query metadata returned by the server, such as count metadata.
+
+```javascript
+const extra = $activeUsers.extra.get()
+```
+
 ### getIds()
 
 Returns an array of ids for the query results.
@@ -25,6 +33,8 @@ Returns an array of ids for the query results.
 ```javascript
 const ids = $activeUsers.getIds()
 ```
+
+The result is always a `string[]`. Non-string ids are filtered out.
 
 ### map(callback)
 
@@ -64,4 +74,5 @@ for (const $user of $activeUsers) {
 
 - Query signals are reactive. Changes to the underlying data or to the query result will automatically update components using the query signal.
 - The documents within a query signal are themselves signals, allowing for nested reactivity.
- - For public documents in query results, `_id` is available in `get()` results and matches the document id.
+- For public documents in query results, `_id` is available in `get()` results and matches the document id.
+- `ids` and `extra` are reserved metadata properties on query signals. Use the collection path, such as `$.users['ids']`, when you need a document whose id has one of those names.

@@ -1,7 +1,7 @@
 import { describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { $, addModel } from '../index.js'
-import Signal from '../orm/Signal.js'
+import { $, addModel } from '../src/index.ts'
+import Signal from '../src/orm/Signal.ts'
 
 describe('Signal.getCollection() compatibility', () => {
   it('prefers static collection over path collection for compat-mounted model', () => {

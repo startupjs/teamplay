@@ -18,6 +18,7 @@ export default function validateSchema (backend, { models = {}, ...options } = {
       throw Error('factory model: NOT IMPLEMENTED')
     } else if (schema) {
       const collectionName = modelPattern
+      if (isPrivateCollectionName(collectionName)) continue
       if (/\./.test(collectionName)) throw Error(ERRORS.onlyTopLevelCollections(modelPattern))
       // transform schema from simplified format to full format
       schema = transformSchema(schema, { collectionName })
@@ -34,6 +35,10 @@ export default function validateSchema (backend, { models = {}, ...options } = {
 
   sharedbSchema(backend, options)
   console.log('✓ Security: JSON-schema validation of DB collections on backend is enabled')
+}
+
+function isPrivateCollectionName (collectionName) {
+  return /^[_$]/.test(collectionName)
 }
 
 const ERRORS = {

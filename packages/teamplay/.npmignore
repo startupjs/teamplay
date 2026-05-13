@@ -1,3 +1,6 @@
 CHANGELOG.md
+src/
 test/
 test_client/
+test_types/
+tsconfig*.json

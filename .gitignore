@@ -11,6 +11,7 @@
 
 # Node dependencies
 node_modules
+packages/*/dist
 
 # npm-debug log
 npm-debug.*

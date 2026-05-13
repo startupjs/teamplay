@@ -3,26 +3,26 @@ import { strict as assert } from 'node:assert'
 import {
   __DEBUG_SIGNALS_CACHE__ as signalsCache,
   getRootSignal
-} from '../index.js'
+} from '../src/index.ts'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
-import connect from '../connect/test.js'
-import { aggregationSubscriptions } from '../orm/Aggregation.js'
-import { docSubscriptions } from '../orm/Doc.js'
-import { getConnection } from '../orm/connection.js'
-import { del as _del } from '../orm/dataTree.js'
-import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
-import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
-import { getPrivateData, getPrivateDataRawRoot } from '../orm/privateData.js'
-import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
-import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.js'
+import connect from '../src/connect/test.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { getConnection } from '../src/orm/connection.ts'
+import { del as _del } from '../src/orm/dataTree.js'
+import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
+import { __resetRefLinksForTests } from '../src/orm/Compat/refRegistry.js'
+import { getPrivateData, getPrivateDataRawRoot } from '../src/orm/privateData.js'
+import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../src/orm/Query.js'
+import { __resetPendingRootDisposesForTests } from '../src/orm/disposeRootContext.ts'
 import {
   __getRootContextForTests,
   __resetRootContextsForTests,
   getRootOwnedSignalHashes,
   getRootOwnedRuntimeHashes
-} from '../orm/rootContext.js'
-import { getScopedSignalHash } from '../orm/rootScope.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+} from '../src/orm/rootContext.ts'
+import { getScopedSignalHash } from '../src/orm/rootScope.ts'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 
 before(connect)
 
@@ -149,7 +149,7 @@ describeCompat('root close()', () => {
     assert.equal(__getRootContextForTests(rootIdA), undefined)
     assert.equal(docSubscriptions.subCount.get(hash), 1)
     assert.equal(docSubscriptions.docs.get(hash)?.activeTransportMode, 'subscribe')
-    assert.equal($docB.get('title'), 'Doc stale')
+    assert.equal($docB.title.get(), 'Doc stale')
 
     await closeSignal($rootB)
   })

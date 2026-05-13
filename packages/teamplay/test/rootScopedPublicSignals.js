@@ -1,16 +1,16 @@
 import assert from 'assert'
 import { before, beforeEach, afterEach, describe, it } from 'mocha'
-import { addModel, getRootSignal } from '../index.js'
-import { docSubscriptions } from '../orm/Doc.js'
-import { getConnection } from '../orm/connection.js'
-import { del as _del, set as _set } from '../orm/dataTree.js'
-import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
-import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
-import { getPrivateData } from '../orm/privateData.js'
-import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../orm/Query.js'
-import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
-import { getRootOwnedRuntimeHashes } from '../orm/rootContext.js'
-import connect from '../connect/test.js'
+import { addModel, getRootSignal } from '../src/index.ts'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { getConnection } from '../src/orm/connection.ts'
+import { del as _del, set as _set } from '../src/orm/dataTree.js'
+import { __resetRefLinksForTests } from '../src/orm/Compat/refRegistry.js'
+import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
+import { getPrivateData } from '../src/orm/privateData.js'
+import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../src/orm/Query.js'
+import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
+import { getRootOwnedRuntimeHashes } from '../src/orm/rootContext.ts'
+import connect from '../src/connect/test.js'
 
 before(connect)
 
@@ -148,12 +148,12 @@ describeCompat('root-scoped public signals', () => {
   it('public model methods use owning root when touching private state', async () => {
     class RootScopedUserModel extends getRootSignal({ rootId: 'temp-root-for-model-class' }).constructor {
       static collection = PUBLIC_MODEL_COLLECTION
-      markCurrentViaScope () {
-        return this.scope('_session.currentUserId').set(this.getId())
+      markCurrentViaRootChild () {
+        return this.root()._session.currentUserId.set(this.getId())
       }
 
       markCurrentViaRoot () {
-        return this.root.scope('_session.currentUserIdViaRoot').set(this.getId())
+        return this.root()._session.currentUserIdViaRoot.set(this.getId())
       }
     }
     try { addModel(`${PUBLIC_MODEL_COLLECTION}.*`, RootScopedUserModel) } catch {}
@@ -164,8 +164,8 @@ describeCompat('root-scoped public signals', () => {
     await rootA[PUBLIC_MODEL_COLLECTION].a.set({ name: 'Alice' })
     await rootB[PUBLIC_MODEL_COLLECTION].b.set({ name: 'Bob' })
 
-    await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaScope()
-    await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaScope()
+    await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaRootChild()
+    await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaRootChild()
     await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaRoot()
     await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaRoot()
 

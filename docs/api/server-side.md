@@ -12,6 +12,24 @@ import { createBackend } from 'teamplay/server'
 const backend = createBackend()
 ```
 
+Common options:
+
+```ts
+const backend = createBackend({
+  validateSchema: true,
+  accessControl: true,
+  serverAggregate: true,
+  serverOnlyCollections: ['service']
+})
+```
+
+- `validateSchema`: validate public collection writes with registered schemas.
+- `accessControl`: enable access-control middleware for all collections. Collections without rules are denied by default.
+- `serverAggregate`: enable server-side aggregations.
+- `serverOnlyCollections`: collections that clients may not read or write through ShareDB.
+
+`serverOnlyCollections` forces the access middleware to initialize even when global `accessControl` is off. In that mode, only server-only collections and collections marked with `accessControl(..., { force: true })` are protected; all other collections keep the normal open behavior.
+
 ## initConnection(backend, options)
 
 Initializes the connection handler for WebSocket connections.

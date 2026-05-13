@@ -1,6 +1,6 @@
 import { it, describe } from 'mocha'
 import { strict as assert } from 'node:assert'
-import SubscriptionState, { STATE } from '../orm/SubscriptionState.js'
+import SubscriptionState, { STATE } from '../src/orm/SubscriptionState.js'
 
 function createControllablePromise () {
   let resolve, reject

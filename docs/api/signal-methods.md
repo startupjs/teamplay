@@ -10,6 +10,14 @@ Retrieves the current value of the signal.
 const value = $signal.get()
 ```
 
+## peek()
+
+Retrieves the current value without tracking it for reactive rendering.
+
+```javascript
+const value = $signal.peek()
+```
+
 ## set(value)
 
 Updates the value of the signal.
@@ -123,19 +131,25 @@ If both are provided, they must be equal, otherwise `add()` throws.
 
 ## getId()
 
-Returns the id for the current signal.
+Returns the usable string id for the document-like value represented by the current signal.
 
 ```javascript
 const id = $.users[userId].getId()
 ```
 
+For direct public document signals and query item signals, TeamPlay already knows the document id from the path and returns that id directly. For nested document-like values, private values, and aggregation rows, TeamPlay first checks string `_id` and `id` fields on the current value. If neither exists, it falls back to the string leaf segment of the signal path.
+
+If an explicit `_id` or `id` exists but is not a string, `getId()` returns `undefined`. The root signal and collection signals do not have ids and throw.
+
 ## getIds()
 
-Returns document ids for query or aggregation signals.
+Returns usable string ids for query or aggregation signals.
 
 ```javascript
 const ids = $activeUsers.getIds()
 ```
+
+For query signals, ids come from the subscribed query metadata. For aggregation signals, ids are read from each row's string `_id` or `id` field. Rows without a usable string id are omitted, so the result is always a `string[]`.
 
 ## getCollection()
 
@@ -161,6 +175,34 @@ Returns the last path segment as a string.
 ```javascript
 const key = $.users[userId].leaf()
 ```
+
+## path()
+
+Returns the dot-separated path of the signal.
+
+```javascript
+const path = $.users[userId].name.path() // 'users.abc123.name'
+```
+
+## toString()
+
+Returns a debug label for the signal. Primitive string coercion uses only the path, while `toString()` includes the `Signal` label:
+
+```javascript
+String($.users[userId].name)                      // 'users.abc123.name'
+$.users[userId].name.toString()                   // '[Signal users.abc123.name]'
+Object.prototype.toString.call($.users[userId])   // '[object Signal]'
+```
+
+## getAssociations()
+
+Returns association metadata registered on the signal's model class.
+
+```javascript
+const associations = $.users[userId].getAssociations()
+```
+
+This is mostly useful for model-integration libraries and legacy ORM compatibility helpers.
 
 ## assign(object)
 

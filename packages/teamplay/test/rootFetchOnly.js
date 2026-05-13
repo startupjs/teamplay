@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { setDefaultFetchOnly, getDefaultFetchOnly } from '../orm/connection.js'
-import { getRootFetchOnly, getRootSignal } from '../orm/Root.js'
-import { __getRootContextForTests, __resetRootContextsForTests } from '../orm/rootContext.js'
+import { setDefaultFetchOnly, getDefaultFetchOnly } from '../src/orm/connection.ts'
+import { getRootFetchOnly, getRootSignal } from '../src/orm/Root.ts'
+import { __getRootContextForTests, __resetRootContextsForTests } from '../src/orm/rootContext.ts'
 
 let previousDefaultFetchOnly
 

@@ -8,9 +8,9 @@ TeamPlay can run in three different modes. Pick the one that matches your needs 
 
 ## Modes
 
-- **In-memory (default)**: in-memory only, no server, no persistence across reloads.
+- **In-memory Mode (default)**: in-memory only, no server, no persistence across reloads.
 - **Offline Mode**: client-only with local persistence (browser or React Native), no server.
-- **Server Sync**: real-time synchronization with a backend server.
+- **Server Sync Mode**: real-time synchronization with a backend server.
 
 ## In-memory Mode
 
@@ -27,22 +27,17 @@ await connect()
 
 See [Offline Mode](/guide/offline-mode) for details and React Native setup.
 
-## Synchronization with Server
+## Server Sync Mode
 
-To enable synchronization with the server, follow these steps:
-
-### Client Setup
-
-Enable the connection on the client somewhere early in your client app:
+To sync data with a server, connect from the client somewhere early in your app startup:
 
 ```js
 import connect from 'teamplay/connect'
+
 await connect()
 ```
 
-### Server Setup
-
-On the server, you need to create the TeamPlay backend and then create a connection handler for WebSockets:
+On the server, create the TeamPlay backend and attach its WebSocket upgrade handler to your Node HTTP server:
 
 ```js
 import { createBackend, initConnection } from 'teamplay/server'
@@ -52,17 +47,29 @@ const { upgrade } = initConnection(backend)
 server.on('upgrade', upgrade) // Node's 'http' server instance
 ```
 
-## Database Configuration
+## Production Setup
 
-By default no extra database setup is needed and the data is gonna be saved into an SQLite file `local.db` in the root of your project.
+For development, no extra database setup is needed. If `MONGO_URL` is not set, TeamPlay stores server data in an SQLite file named `local.db` in the root of your project.
 
-You can still use the MongoDB query syntax with aggregations which is emulated using [`mingo`](https://github.com/kofrasa/mingo).
+You can still write MongoDB-style queries and aggregations in this local setup. TeamPlay emulates that query behavior with [`mingo`](https://github.com/kofrasa/mingo).
 
-- For production use, it's recommended to use [MongoDB](https://mongodb.com). It will be automatically used if you set the environment variable `MONGO_URL`.
-- When deploying to a cluster with multiple instances, you also have to provide the environment variable `REDIS_URL` ([Redis](https://redis.io)).
+For production, configure the services your deployment needs:
+
+- `MONGO_URL`: use [MongoDB](https://mongodb.com) instead of the local SQLite file.
+- `REDIS_URL`: required when you run multiple server instances, so real-time updates can be coordinated through [Redis](https://redis.io).
 
 :::note
-TeamPlay's `createBackend()` is a wrapper around creating a [ShareDB's backend](https://share.github.io/sharedb/api/backend). You can instead manually create a ShareDB backend yourself and pass it to `initConnection()`. `ShareDB` is re-exported from `teamplay/server`, you can get it as `import { ShareDB } from 'teamplay/server'`.
+TeamPlay's `createBackend()` is a wrapper around creating a [ShareDB backend](https://share.github.io/sharedb/api/backend). If you need lower-level control, you can create a ShareDB backend yourself and pass it to `initConnection()`. `ShareDB` is re-exported from `teamplay/server`, so you can import it as `import { ShareDB } from 'teamplay/server'`.
+:::
+
+## Optional ORM Setup
+
+TeamPlay works without an ORM setup: you can use signals, subscriptions, and real-time sync directly. When your app starts to have named collections such as users, games, orders, or events, the ORM gives you a conventional place to define document schemas, model methods, access rules, and server aggregations.
+
+To use the full ORM features, follow the [ORM Quick Start](/orm/index#quick-start). It shows the extra setup for the `models/` folder, the Babel plugin, and the shared `models.setup.ts` file used by both client and server.
+
+:::note
+StartupJS apps can skip the manual ORM setup. StartupJS configures model loading and initializes TeamPlay models automatically.
 :::
 
 Now that you have TeamPlay installed and configured, you're ready to start using it in your application!
