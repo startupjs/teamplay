@@ -100,6 +100,17 @@ describe('signal metadata helpers', () => {
     assert.deepEqual($root._metadataVirtual.field1.getAssociations(), [{ type: 'metadata' }])
   })
 
+  it('returns the owning root through root() without reserving root as a property', () => {
+    const $root = getRootSignal({ rootId: 'signal-metadata-root-method' })
+    const $field = $root._metadataVirtual.field1.title
+
+    assert.equal($root.root(), $root)
+    assert.equal($field.root(), $root)
+    assert.equal($field.root.path(), '_metadataVirtual.field1.title.root')
+    assert.notEqual($field.root, $root)
+    assert.throws(() => $field.root('nested'), /Signal.root\(\) does not accept any arguments/)
+  })
+
   it('keeps aggregation row metadata routed to the source collection', () => {
     const rootId = 'signal-metadata-aggregation-root'
     const $root = getRootSignal({ rootId })

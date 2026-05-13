@@ -149,11 +149,11 @@ describeCompat('root-scoped public signals', () => {
     class RootScopedUserModel extends getRootSignal({ rootId: 'temp-root-for-model-class' }).constructor {
       static collection = PUBLIC_MODEL_COLLECTION
       markCurrentViaRootChild () {
-        return this.root._session.currentUserId.set(this.getId())
+        return this.root()._session.currentUserId.set(this.getId())
       }
 
       markCurrentViaRoot () {
-        return this.root._session.currentUserIdViaRoot.set(this.getId())
+        return this.root()._session.currentUserIdViaRoot.set(this.getId())
       }
     }
     try { addModel(`${PUBLIC_MODEL_COLLECTION}.*`, RootScopedUserModel) } catch {}

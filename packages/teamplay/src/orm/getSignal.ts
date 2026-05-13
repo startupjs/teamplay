@@ -114,7 +114,6 @@ function getDefaultProxyHandlers ({
           return undefined
         }
       }
-      if (key === 'root') return Reflect.get(signal, key, receiver)
       return baseHandlers.get
         ? baseHandlers.get(signal, key, receiver)
         : Reflect.get(signal, key, receiver)

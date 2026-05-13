@@ -155,11 +155,11 @@ const userId = model.scope().get('_session.userId')
 
 // Цель
 const courseId = this.courseId.get()
-const $course = this.root.courses[courseId]
-const userId = model.root._session.userId.get()
+const $course = this.root().courses[courseId]
+const userId = model.root()._session.userId.get()
 ```
 
-Если `this.root` не должен быть частью target API для данного класса, нужно передавать root signal явно в model/helper.
+Если `this.root()` не должен быть частью target API для данного класса, нужно передавать root signal явно в model/helper.
 
 ## Query flows
 

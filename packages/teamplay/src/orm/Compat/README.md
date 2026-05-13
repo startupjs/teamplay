@@ -21,7 +21,7 @@ export default globalThis?.teamplayCompatibilityMode ? SignalCompat : Signal
 - `getCopy()`, `getDeepCopy()` — shallow/deep copies of current signal data.
 - Mutators on the current signal path: `set`, `setReplace`, `del`, `increment`, `push`, `remove`, etc.
 - `leaf()`, `parent()` — path helpers.
-- `root` — owning root signal getter for explicit root traversal.
+- `root()` — owning root signal method for explicit root traversal.
 
 Legacy cursor helpers `.at()` / `.scope()` and path-first overloads like `get(path)` / `set(path, value)`
 are intentionally not part of the current compat API. Use child-signal traversal instead.
@@ -31,7 +31,7 @@ Example:
 ```js
 const $user = $.users.user1
 const $profile = $user.profile
-const $rootProfile = $user.root.users.user1.profile
+const $rootProfile = $user.root().users.user1.profile
 const name = $profile.name.get()
 ```
 

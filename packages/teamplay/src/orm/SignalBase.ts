@@ -226,6 +226,12 @@ export class Signal<TValue = unknown> extends Function {
     return 'Signal'
   }
 
+  /** Return the owning root signal. */
+  root () {
+    if (arguments.length > 0) throw Error('Signal.root() does not accept any arguments')
+    return getRoot(this) || this
+  }
+
   /**
    * Return the parent signal `levels` above this signal.
    * @param levels Number of parent levels to walk upward. Defaults to `1`.

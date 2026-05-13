@@ -56,10 +56,6 @@ class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
   static [GETTERS] = [...DEFAULT_GETTERS, 'getCopy', 'getDeepCopy']
 
-  get root () {
-    return getRoot(this) || this
-  }
-
   path () {
     if (arguments.length > 0) throw Error('Signal.path() does not accept any arguments')
     return super.path()

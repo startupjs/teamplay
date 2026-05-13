@@ -121,11 +121,20 @@ describe('SignalCompat removed path helpers', () => {
     assert.equal($base.scope.get(), 'scope field')
   })
 
-  it('root getter returns the owning root', () => {
+  it('root() returns the owning root', () => {
     setup('root')
 
-    assert.equal($base.root, $root)
-    assert.equal($root.root, $root)
+    assert.equal($base.root(), $root)
+    assert.equal($root.root(), $root)
+  })
+
+  it('does not reserve root as a compat property anymore', () => {
+    const $root = getRootSignal({ rootId: 'compat-root-property-path' })
+    const $base = $root._compatRootProperty.base
+
+    assert.equal($base.root(), $root)
+    assert.equal($base.root.path(), '_compatRootProperty.base.root')
+    assert.notEqual($base.root, $root)
   })
 
   it('path only returns the current signal path', () => {
@@ -200,27 +209,27 @@ describe('SignalCompat.add()', () => {
     assert.equal($root._users[id].title.get(), 'Ann')
   })
 
-  it('supports root property with add(collection, value)', async () => {
+  it('supports root() with add(collection, value)', async () => {
     setup('rootProp')
     cleanupSegments.push(['_users'])
-    const id = await $root._users.root.add('_users', { title: 'Zoe' })
+    const id = await $root._users.root().add('_users', { title: 'Zoe' })
     assert.equal($root._users[id].title.get(), 'Zoe')
   })
 
-  it('uses root getter instead of path when in compat mode', async () => {
+  it('uses root() instead of path when in compat mode', async () => {
     setup('rootCompat')
     cleanupSegments.push(['_tenants'])
     const prevCompat = globalThis.teamplayCompatibilityMode
     globalThis.teamplayCompatibilityMode = true
     try {
-      const id = await $root._tenants.root.add('_tenants', { title: 'Acme' })
+      const id = await $root._tenants.root().add('_tenants', { title: 'Acme' })
       assert.equal($root._tenants[id].title.get(), 'Acme')
     } finally {
       globalThis.teamplayCompatibilityMode = prevCompat
     }
   })
 
-  it('uses raw-signal root to add via model.root', async function () {
+  it('uses raw-signal root to add via model.root()', async function () {
     if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) {
       this.skip()
     }
@@ -228,7 +237,7 @@ describe('SignalCompat.add()', () => {
     globalThis.teamplayCompatibilityMode = true
     try {
       const $root = getRootSignal({ rootId: 'compat_root_add' })
-      const id = await $root._tenants.root.add('_tenants', { title: 'Tenant 1' })
+      const id = await $root._tenants.root().add('_tenants', { title: 'Tenant 1' })
       assert.equal($root._tenants[id].title.get(), 'Tenant 1')
     } finally {
       globalThis.teamplayCompatibilityMode = prevCompat
@@ -2362,7 +2371,7 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.equal($fromChild.path(), `${AGGREGATIONS}.${aggregationRuntimeHash}.0.description.text`)
   })
 
-  it('root getter on aggregation rows is synchronous and does not return a promise', () => {
+  it('root() on aggregation rows is synchronous and does not return a promise', () => {
     setup('aggRowScopeSync')
     const $agg = $root.query('courses', {
       $aggregate: [
@@ -2380,7 +2389,7 @@ class NonCompatRefUserModel extends BaseSignal {
       }
     ])
 
-    const $fromRoot = $agg[0].root
+    const $fromRoot = $agg[0].root()
     assert.equal(typeof $fromRoot, 'function')
     assert.equal(typeof $fromRoot.get, 'function')
     assert.equal($fromRoot instanceof Promise, false)
