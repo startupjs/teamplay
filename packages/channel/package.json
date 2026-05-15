@@ -9,7 +9,7 @@
     "./server": "./server/index.js"
   },
   "dependencies": {
-    "sockjs": "github:sockjs/sockjs-node#46d2f846653a91822a02794b852886c7f137378c",
+    "@teamplay/sockjs": "^0.4.0-rc.1",
     "sockjs-client": "^1.6.1",
     "ws": "^1.1"
   },

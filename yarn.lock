@@ -2,7 +2,7 @@
 # Manual changes might be lost - proceed with caution!
 
 __metadata:
-  version: 8
+  version: 9
   cacheKey: 10c0
 
 "@ampproject/remapping@npm:^2.2.0":
@@ -3192,7 +3192,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@teamplay/channel@workspace:packages/channel"
   dependencies:
-    sockjs: "github:sockjs/sockjs-node#46d2f846653a91822a02794b852886c7f137378c"
+    "@teamplay/sockjs": "npm:^0.4.0-rc.1"
     sockjs-client: "npm:^1.6.1"
     ws: "npm:^1.1"
   languageName: unknown
@@ -3239,6 +3239,16 @@ __metadata:
     z-schema: "npm:^4.2.3"
   languageName: unknown
   linkType: soft
+
+"@teamplay/sockjs@npm:^0.4.0-rc.1":
+  version: 0.4.0-rc.1
+  resolution: "@teamplay/sockjs@npm:0.4.0-rc.1"
+  dependencies:
+    debug: "npm:^4.3.1"
+    faye-websocket: "npm:^0.11.3"
+  checksum: 10c0/eb99023fc1f5226e3430540b8415fb649e4330cdd0821309d2ce696ca6f7ad628e7f22b7eea3b26256010dc86c68bc0c7be78acd1c5a674414c87a25dfa6ed74
+  languageName: node
+  linkType: hard
 
 "@teamplay/utils@npm:^0.5.0-alpha.7, @teamplay/utils@workspace:packages/utils":
   version: 0.0.0-use.local
@@ -14880,17 +14890,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sockjs@github:sockjs/sockjs-node#46d2f846653a91822a02794b852886c7f137378c":
-  version: 0.4.0-rc.1
-  resolution: "sockjs@https://github.com/sockjs/sockjs-node.git#commit=46d2f846653a91822a02794b852886c7f137378c"
-  dependencies:
-    debug: "npm:^4.3.1"
-    faye-websocket: "npm:^0.11.3"
-    uuid: "npm:^8.1.0"
-  checksum: 10c0/f7a1121cf587d8eebfbeda02265282efec36449452651f0fe47ce9f9474f7e892f11c96f8369ac9e9e6f5015a8075cd42847c81a8fb0caa342466635e08b585f
-  languageName: node
-  linkType: hard
-
 "socks-proxy-agent@npm:^6.0.0":
   version: 6.2.1
   resolution: "socks-proxy-agent@npm:6.2.1"
@@ -16479,15 +16478,6 @@ __metadata:
   bin:
     uuid: ./bin/uuid
   checksum: 10c0/1c13950df865c4f506ebfe0a24023571fa80edf2e62364297a537c80af09c618299797bbf2dbac6b1f8ae5ad182ba474b89db61e0e85839683991f7e08795347
-  languageName: node
-  linkType: hard
-
-"uuid@npm:^8.1.0":
-  version: 8.3.2
-  resolution: "uuid@npm:8.3.2"
-  bin:
-    uuid: dist/bin/uuid
-  checksum: 10c0/bcbb807a917d374a49f475fae2e87fdca7da5e5530820ef53f65ba1d12131bd81a92ecf259cc7ce317cbe0f289e7d79fdfebcef9bfa3087c8c8a2fa304c9be54
   languageName: node
   linkType: hard
 
