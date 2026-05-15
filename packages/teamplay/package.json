@@ -1,6 +1,6 @@
 {
   "name": "teamplay",
-  "version": "0.5.0-alpha.9",
+  "version": "0.5.0-alpha.10",
   "description": "Full-stack signals ORM with multiplayer",
   "type": "module",
   "main": "./dist/index.js",
@@ -71,7 +71,7 @@
     "@startupjs/sharedb-mingo-memory": "^4.0.0-2",
     "@teamplay/backend": "^0.5.0-alpha.9",
     "@teamplay/cache": "^0.5.0-alpha.7",
-    "@teamplay/channel": "^0.5.0-alpha.7",
+    "@teamplay/channel": "^0.5.0-alpha.10",
     "@teamplay/debug": "^0.5.0-alpha.7",
     "@teamplay/schema": "^0.5.0-alpha.7",
     "@teamplay/utils": "^0.5.0-alpha.7",
