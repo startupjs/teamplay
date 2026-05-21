@@ -1,4 +1,5 @@
 import { observe, raw, unobserve } from '@nx-js/observer-util'
+import { getActiveDocOpContext } from '../Doc.js'
 import { getRoot } from '../Root.ts'
 import { scheduleReaction } from '../batchScheduler.js'
 
@@ -19,12 +20,16 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
   const targetSegments = parsePathSegments(targetPath)
   const $target = resolveSignal($root, targetSegments)
   const targetKey = $target.path()
+  const depPaths = deps
+    .map(dep => getStartDepPath(dep, $root))
+    .filter(Boolean)
 
   const store = getStartStore($root)
   const existing = store.get(targetKey)
   if (existing) existing.stop()
 
   let lastSourceSnapshot = UNSET
+  let lastTargetSnapshot = UNSET
   const reaction = observe(() => {
     const resolvedDeps = []
     for (const dep of deps) {
@@ -43,8 +48,25 @@ export function compatStartOnRoot ($root, targetPath, ...depsAndGetter) {
     if (lastSourceSnapshot !== UNSET && deepEqualStartValue(lastSourceSnapshot, sourceSnapshot)) {
       return
     }
+    const currentTargetSnapshot = lastTargetSnapshot === UNSET
+      ? UNSET
+      : detachStartValue($target.peek())
+    if (currentTargetSnapshot !== UNSET && deepEqualStartValue(currentTargetSnapshot, sourceSnapshot)) {
+      lastSourceSnapshot = sourceSnapshot
+      lastTargetSnapshot = sourceSnapshot
+      return
+    }
+    if (
+      currentTargetSnapshot !== UNSET &&
+      !deepEqualStartValue(lastTargetSnapshot, currentTargetSnapshot) &&
+      isActiveLocalDocOpForDeps(depPaths)
+    ) {
+      lastSourceSnapshot = sourceSnapshot
+      return
+    }
     lastSourceSnapshot = sourceSnapshot
     const detachedValue = detachStartValue(sourceSnapshot)
+    lastTargetSnapshot = detachStartValue(detachedValue)
     // Keep the detached snapshot to avoid aliasing source and target.
     // Old racer start() writes through diffDeep by default. In compat mode we must preserve
     // that behavior, but also avoid reading the target reactively inside start(), otherwise
@@ -97,8 +119,20 @@ function resolveStartDep (dep, $root) {
   }
 }
 
+function getStartDepPath (dep, $root) {
+  if (isSignalLike(dep)) return dep.path()
+  if (typeof dep === 'string') return resolveSignal($root, parsePathSegments(dep)).path()
+}
+
 function getStartDepValue ($signal) {
   return readReactiveSnapshot($signal.get())
+}
+
+function isActiveLocalDocOpForDeps (depPaths) {
+  const context = getActiveDocOpContext()
+  if (!context?.source) return false
+  const docPath = `${context.collection}.${context.docId}`
+  return depPaths.some(depPath => depPath === docPath || depPath.startsWith(docPath + '.'))
 }
 
 function readReactiveSnapshot (value) {

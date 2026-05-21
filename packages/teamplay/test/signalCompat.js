@@ -3005,6 +3005,52 @@ class NonCompatRefUserModel extends BaseSignal {
     ])
   })
 
+  it('does not overwrite a dirty started target from a delayed local public doc op', async () => {
+    const $base = setup('publicStartLocalSourceDirty')
+    const docId = '_compatPublicStartLocalSourceDirty'
+    const $doc = $root[domainCollection][docId]
+    await $doc.create({
+      title: 'A'
+    })
+    await $doc.subscribe()
+
+    const shareDoc = getConnection().get(domainCollection, docId)
+    const originalSubmitOp = shareDoc.submitOp.bind(shareDoc)
+    shareDoc.submitOp = (op, options, cb) => {
+      if (typeof options === 'function') {
+        cb = options
+        options = undefined
+      }
+      setTimeout(() => originalSubmitOp(op, options, cb), 25)
+    }
+
+    const targetPath = `${$base.path()}.virtual`
+    cleanupStartPaths = [targetPath]
+    $root.start(targetPath, $doc, doc => doc)
+
+    let syncTimer
+    const listener = $root.on('all', `${$base.virtual.path()}.**`, () => {
+      clearTimeout(syncTimer)
+      syncTimer = setTimeout(() => {
+        $doc.silent().setDiffDeep($base.virtual.getDeepCopy())
+      }, 10)
+    })
+
+    try {
+      await $base.virtual.title.set('AB')
+      await new Promise(resolve => setTimeout(resolve, 15))
+      await $base.virtual.title.set('ABC')
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      assert.equal($doc.title.get(), 'ABC')
+      assert.equal($base.virtual.title.get(), 'ABC')
+    } finally {
+      clearTimeout(syncTimer)
+      $root.removeListener('all', listener)
+      shareDoc.submitOp = originalSubmitOp
+    }
+  })
+
   it('priority: domain model method start() wins over compat fallback', () => {
     const $session = $root[domainCollection].session1
     assert.equal($session.start('chat', 'u1'), `domain:${domainCollection}.session1:chat:u1`)

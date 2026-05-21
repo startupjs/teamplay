@@ -18,6 +18,47 @@ import {
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 const DOC_FINALIZATION_TOKENS = new WeakMap()
+const RECENT_DOC_OP_CONTEXT_TTL = 100
+const ACTIVE_DOC_OP_CONTEXTS = []
+let recentDocOpContext
+
+export function getActiveDocOpContext () {
+  return ACTIVE_DOC_OP_CONTEXTS[ACTIVE_DOC_OP_CONTEXTS.length - 1] || recentDocOpContext
+}
+
+function pushActiveDocOpContext (collection, docId, source) {
+  const context = { collection, docId, source }
+  ACTIVE_DOC_OP_CONTEXTS.push(context)
+  recentDocOpContext = context
+}
+
+function popActiveDocOpContext (collection, docId, source) {
+  const current = ACTIVE_DOC_OP_CONTEXTS[ACTIVE_DOC_OP_CONTEXTS.length - 1]
+  if (current?.collection === collection && current?.docId === docId && current?.source === source) {
+    ACTIVE_DOC_OP_CONTEXTS.pop()
+    clearRecentDocOpContext(current)
+    return
+  }
+
+  let index = -1
+  for (let i = ACTIVE_DOC_OP_CONTEXTS.length - 1; i >= 0; i--) {
+    const context = ACTIVE_DOC_OP_CONTEXTS[i]
+    if (context.collection === collection && context.docId === docId && context.source === source) {
+      index = i
+      break
+    }
+  }
+  if (index === -1) return
+
+  const [context] = ACTIVE_DOC_OP_CONTEXTS.splice(index, 1)
+  clearRecentDocOpContext(context)
+}
+
+function clearRecentDocOpContext (context) {
+  setTimeout(() => {
+    if (recentDocOpContext === context) recentDocOpContext = undefined
+  }, RECENT_DOC_OP_CONTEXT_TTL)
+}
 
 function getDocFinalizationToken ($doc) {
   let token = DOC_FINALIZATION_TOKENS.get($doc)
@@ -159,7 +200,14 @@ class Doc {
     doc.on('create', () => this._refData())
     doc.on('del', () => this._refMissingData())
     if (isModelEventsEnabled()) {
-      doc.on('op', op => emitDocOp(this.collection, this.docId, op))
+      doc.on('before op', (_op, source) => pushActiveDocOpContext(this.collection, this.docId, source))
+      doc.on('op', (op, source) => {
+        try {
+          emitDocOp(this.collection, this.docId, op, source)
+        } finally {
+          popActiveDocOpContext(this.collection, this.docId, source)
+        }
+      })
     }
   }
 
@@ -876,14 +924,14 @@ function createPendingDestroyEntry () {
   }
 }
 
-function emitDocOp (collection, docId, op) {
+function emitDocOp (collection, docId, op, source) {
   if (!isModelEventsEnabled()) return
   const ops = Array.isArray(op) ? op : [op]
   for (const component of ops) {
     if (!component || !component.p) continue
     const baseSegments = [collection, docId]
     let pathSegments = baseSegments.concat(component.p)
-    const meta = {}
+    const meta = { source }
     let value
     let prevValue
 

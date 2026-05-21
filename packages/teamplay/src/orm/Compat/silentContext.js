@@ -11,38 +11,20 @@ export function isModelEventsSilentContextActive () {
 
 export function runInSilentContext (fn) {
   silentDepth += 1
-  let result
   try {
-    result = fn()
-  } catch (error) {
+    return fn()
+  } finally {
     silentDepth -= 1
-    throw error
   }
-  if (result?.then) {
-    return Promise.resolve(result).finally(() => {
-      silentDepth -= 1
-    })
-  }
-  silentDepth -= 1
-  return result
 }
 
 export function runInModelEventsSilentContext (fn) {
   modelEventsSilentDepth += 1
-  let result
   try {
-    result = fn()
-  } catch (error) {
+    return fn()
+  } finally {
     modelEventsSilentDepth -= 1
-    throw error
   }
-  if (result?.then) {
-    return Promise.resolve(result).finally(() => {
-      modelEventsSilentDepth -= 1
-    })
-  }
-  modelEventsSilentDepth -= 1
-  return result
 }
 
 export function __resetSilentContextForTests () {
