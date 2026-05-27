@@ -1821,6 +1821,7 @@ class NonCompatRefUserModel extends BaseSignal {
 
 ;(isCompatMode ? describe : describe.skip)('SignalCompat query API', () => {
   const collection = 'compatQueryApi'
+  const courseIdCollection = 'compatCourseIdAggregationRows'
   let cleanupQueryHashes = []
   let cleanupQueryRuntimeHashes = []
   let cleanupAggregationHashes = []
@@ -1831,6 +1832,10 @@ class NonCompatRefUserModel extends BaseSignal {
   before(() => {
     connect()
     addModel(`${collection}.*`, SignalCompat)
+    class CourseIdAggregationRow extends SignalCompat {
+      static ID_FIELDS = ['courseId']
+    }
+    addModel(`${courseIdCollection}.*`, CourseIdAggregationRow)
     $compatRoot = createCompatRoot()
     prevSubscriptionGcDelay = getSubscriptionGcDelay()
     setSubscriptionGcDelay(0)
@@ -1845,11 +1850,13 @@ class NonCompatRefUserModel extends BaseSignal {
   afterEach(async () => {
     querySubscriptions.subscribe = QuerySubscriptionsSubscribe
     aggregationSubscriptions.subscribe = AggregationSubscriptionsSubscribe
-    const docs = getConnection().collections?.[collection] || {}
-    for (const id of Object.keys(docs)) {
-      const doc = getConnection().get(collection, id)
-      if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
-      delete getConnection().collections?.[collection]?.[id]
+    for (const collectionName of [collection, courseIdCollection]) {
+      const docs = getConnection().collections?.[collectionName] || {}
+      for (const id of Object.keys(docs)) {
+        const doc = getConnection().get(collectionName, id)
+        if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
+        delete getConnection().collections?.[collectionName]?.[id]
+      }
     }
     for (const hash of cleanupQueryRuntimeHashes) delPrivateData($compatRoot[ROOT_ID], [QUERIES, hash])
     for (const hash of cleanupQueryHashes) delPrivateData($compatRoot[ROOT_ID], [QUERIES, hash])
@@ -1861,6 +1868,7 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupAggregationRuntimeHashes = []
     __resetImperativeQueryReadyTimeoutForTests()
     _del([collection])
+    _del([courseIdCollection])
   })
 
   afterEach(() => {
@@ -1910,6 +1918,23 @@ class NonCompatRefUserModel extends BaseSignal {
     cleanupAggregationRuntimeHashes.push(getAggregationRuntimeHash($agg))
     setAggregationRuntime($agg, [{ _id: 'a' }, { _id: 'b' }])
     assert.deepEqual($agg.getExtra(), [{ _id: 'a' }, { _id: 'b' }])
+  })
+
+  it('aggregation row getId uses source collection id fields in compat mode', () => {
+    const $agg = $compatRoot.query(courseIdCollection, { $aggregate: [] })
+    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
+    cleanupAggregationRuntimeHashes.push(aggregationRuntimeHash)
+
+    setAggregationRuntime($agg, [{
+      _id: aggregationRuntimeHash,
+      courseId: 'course-row-1',
+      name: 'Course Row'
+    }])
+
+    assert.equal($agg[0]._id.get(), aggregationRuntimeHash)
+    assert.equal($agg[0].courseId.get(), 'course-row-1')
+    assert.equal($agg[0].getId(), 'course-row-1')
+    assert.deepEqual($agg.getIds(), ['course-row-1'])
   })
 
   it('fetch() does not toggle the global fetchOnly default', async () => {

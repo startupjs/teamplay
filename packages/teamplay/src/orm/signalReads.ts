@@ -1,4 +1,4 @@
-import { AGGREGATIONS, IS_AGGREGATION } from './Aggregation.js'
+import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationRowId } from './Aggregation.js'
 import { HASH, IS_QUERY, QUERIES } from './Query.js'
 import { SEGMENTS } from './signalSymbols.ts'
 import type { PathSegment } from './types/path.ts'
@@ -85,7 +85,8 @@ export function getSignalIds<TSignal extends SignalReadOwner> (
   if ($signal[IS_AGGREGATION]) {
     const docs = context.readPrivateData(rootId, $signal[SEGMENTS], false)
     if (!Array.isArray(docs)) return []
-    return docs.map(getAggregationRowId).filter(isString)
+    const collectionName = getAggregationCollectionName($signal[SEGMENTS])
+    return docs.map(doc => getAggregationRowId(doc, collectionName)).filter(isString)
   }
 
   context.error(
@@ -107,12 +108,6 @@ export function isAggregationValueSignal<TSignal extends SignalReadOwner> (
 ): boolean {
   const segments = $signal[SEGMENTS]
   return segments.length >= 2 && segments[0] === AGGREGATIONS
-}
-
-function getAggregationRowId (doc: unknown): string | undefined {
-  const row = doc as { _id?: unknown, id?: unknown }
-  if (typeof row?._id === 'string') return row._id
-  if (typeof row?.id === 'string') return row.id
 }
 
 function isString (value: unknown): value is string {

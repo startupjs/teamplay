@@ -125,6 +125,27 @@ describe('signal metadata helpers', () => {
     assert.equal($aggregation[0].getCollection(), 'metadataAggDocs')
   })
 
+  it('uses source collection id fields for aggregation row metadata', () => {
+    class CourseIdAggregationModel extends Signal {
+      static ID_FIELDS = ['courseId']
+    }
+
+    addModel('metadataCourseIdAgg.*', CourseIdAggregationModel)
+
+    const rootId = 'signal-metadata-aggregation-custom-id-root'
+    const $root = getRootSignal({ rootId })
+    const $aggregation = getAggregationSignal('metadataCourseIdAgg', { $aggregate: [] }, { root: $root })
+    setPrivateData(rootId, [...$aggregation[SEGMENTS], 0], { courseId: 'course-1' })
+    setPrivateData(rootId, [...$aggregation[SEGMENTS], 1], {
+      _id: $aggregation[SEGMENTS][1],
+      courseId: 'course-2'
+    })
+
+    assert.equal($aggregation[0].getId(), 'course-1')
+    assert.equal($aggregation[1].getId(), 'course-2')
+    assert.deepEqual($aggregation.getIds(), ['course-1', 'course-2'])
+  })
+
   it('uses the path leaf for direct public document ids without observing id fields', () => {
     const $root = getRootSignal({ rootId: 'signal-metadata-public-id-observable-root' })
     setPublicData(['metadataPublicDocs', 'doc-1'], { _id: 'wrong-doc-id', name: 'Doc 1' })

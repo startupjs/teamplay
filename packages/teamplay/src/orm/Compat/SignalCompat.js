@@ -13,7 +13,7 @@ import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFi
 import { isPrivateMutationForbidden } from '../connection.ts'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
-import { IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
+import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
 import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields, isPlainObject } from '../idFields.ts'
 import {
   incrementPublic as _incrementPublic,
@@ -62,6 +62,7 @@ class SignalCompat extends Signal {
   }
 
   getId () {
+    if (isAggregationValuePath(this[SEGMENTS])) return super.getId()
     const $target = resolveRefSignal(this)
     if ($target !== this) return $target.getId()
     return super.getId()
@@ -601,6 +602,12 @@ function readRefValue ($signal) {
     if (isThenable(err)) return err
     throw err
   }
+}
+
+function isAggregationValuePath (segments) {
+  return Array.isArray(segments) &&
+    segments.length >= 3 &&
+    segments[0] === AGGREGATIONS
 }
 
 function resolveRefSignal ($signal) {

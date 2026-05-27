@@ -53,12 +53,12 @@ export function getSignalId (
   if (segments.length === 0) throw Error('Can\'t get the id of the root signal')
   if (segments.length === 1) throw Error('Can\'t get the id of a collection')
   if (isDirectPublicDocumentSegments(segments)) return getLeafId(segments)
+  if (segments[0] === AGGREGATIONS && segments.length === 3) {
+    return getAggregationDocId(segments, rootId, readPath)
+  }
   if (readPath) {
     const valueId = getValueIdFromPaths(segments, readPath)
     if (valueId.found) return valueId.id
-  }
-  if (segments[0] === AGGREGATIONS && segments.length === 3) {
-    return getAggregationDocId(segments, rootId)
   }
   return getLeafId(segments)
 }

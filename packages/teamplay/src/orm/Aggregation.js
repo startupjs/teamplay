@@ -17,6 +17,7 @@ import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
 
 export const IS_AGGREGATION = Symbol('is aggregation signal')
 export const AGGREGATIONS = '$aggregations'
+const DEFAULT_AGGREGATION_ID_FIELDS = ['_id', 'id']
 
 class Aggregation extends Query {
   _initData () {
@@ -53,13 +54,23 @@ aggregationSubscriptions.runtimeKind = 'aggregation'
 
 function injectAggregationIds (extra, collectionName) {
   if (!Array.isArray(extra)) return
-  const idFields = getIdFieldsForSegments([collectionName, ''])
+  const idFields = getCollectionIdFields(collectionName)
   for (const doc of extra) {
     if (!isPlainObject(doc)) continue
-    const docId = doc._id ?? doc.id
+    const docId = getAggregationRowId(doc, collectionName)
     if (docId == null) continue
-    if (idFields.includes('_id') && doc._id !== docId) doc._id = docId
-    if (idFields.includes('id') && doc.id !== docId) doc.id = docId
+    for (const field of idFields) {
+      if (doc[field] !== docId) doc[field] = docId
+    }
+  }
+}
+
+export function getAggregationRowId (row, collectionName) {
+  if (!isPlainObject(row)) return
+  const idFields = getAggregationIdFields(collectionName)
+  for (const field of idFields) {
+    const value = row[field]
+    if (typeof value === 'string') return value
   }
 }
 
@@ -91,18 +102,20 @@ export function isAggregationSignal ($signal) {
 }
 
 // example: ['$aggregations', '{"active":true}', 42]
-//          AND only if it also has either '_id' or 'id' field inside
+//          AND only if the aggregation row carries a source document id field
 export function getAggregationDocId (segments, rootId, method) {
   if (!(segments.length >= 3)) return
   if (!(segments[0] === AGGREGATIONS)) return
   if (!(typeof segments[2] === 'number')) return
+  const collectionName = getAggregationCollectionName(segments)
+  const idFields = getAggregationIdFields(collectionName)
   if (typeof method !== 'function') {
     method = path => rootId == null ? getRaw(path) : getPrivateData(rootId, path)
   }
-  const underscoreId = method([...segments.slice(0, 3), '_id'])
-  if (typeof underscoreId === 'string') return underscoreId
-  const id = method([...segments.slice(0, 3), 'id'])
-  if (typeof id === 'string') return id
+  for (const field of idFields) {
+    const id = method([...segments.slice(0, 3), field])
+    if (typeof id === 'string') return id
+  }
 }
 
 export function getAggregationCollectionName (segments) {
@@ -122,4 +135,19 @@ function parseAggregationSignalOptions (options) {
   }
   const { root, ...signalOptions } = options
   return { root, signalOptions }
+}
+
+function getAggregationIdFields (collectionName) {
+  const idFields = getCollectionIdFields(collectionName)
+  return uniq(idFields.concat(DEFAULT_AGGREGATION_ID_FIELDS))
+}
+
+function getCollectionIdFields (collectionName) {
+  return collectionName
+    ? getIdFieldsForSegments([collectionName, ''])
+    : []
+}
+
+function uniq (values) {
+  return Array.from(new Set(values))
 }
