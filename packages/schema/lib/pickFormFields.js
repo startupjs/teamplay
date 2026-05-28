@@ -26,7 +26,7 @@ export default function pickFormFields (schema, options) {
     for (const key in schema) {
       if (shouldIncludeField(key, schema[key], { include, exclude })) {
         const field = schema[key]
-        if (!field.label) field.label = camelCaseToLabel(key)
+        if (field.label === undefined || field.label === null) field.label = camelCaseToLabel(key)
       } else {
         delete schema[key]
       }
