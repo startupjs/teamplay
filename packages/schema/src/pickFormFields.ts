@@ -113,7 +113,7 @@ const ERRORS = {
     If you want to do it inside react component, you can use this pattern for the most effective cloning:
 
     \`\`\`
-        const $fields = useValue$(useMemo(() => JSON.parse(JSON.stringify(FORM_FIELDS)), []))
+        const $fields = $(useMemo(() => JSON.parse(JSON.stringify(FORM_FIELDS)), []))
     \`\`\`
 
     and then pass $fields to the Form component like this:

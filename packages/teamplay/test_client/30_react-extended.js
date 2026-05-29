@@ -7,15 +7,6 @@ import {
   useAsyncSub,
   observer,
   sub,
-  useValue,
-  useValue$,
-  useModel,
-  useLocal,
-  useLocal$,
-  useSession,
-  useSession$,
-  usePage,
-  usePage$,
   useBatch,
   useDoc,
   useDoc$,
@@ -34,7 +25,6 @@ import {
   useQueryDoc,
   useQueryDoc$,
   useAsyncQueryDoc,
-  useLocalDoc,
   emit,
   useOn,
   useEmit,
@@ -236,18 +226,6 @@ describe('compat helper hooks', () => {
     })
     jest.useRealTimers()
     expect(container.textContent).toBe('x')
-  })
-
-  it('useLocalDoc reads without subscription', async () => {
-    act(() => {
-      $._localDocs.doc1.set({ name: 'Local' })
-    })
-    const Component = observer(() => {
-      const [doc] = useLocalDoc('_localDocs', 'doc1')
-      return el('div', {}, doc?.name || '')
-    })
-    const { container } = render(el(Component))
-    expect(container.textContent).toBe('Local')
   })
 
   itCompat('undefined doc warning is emitted only once across rerenders', async () => {
@@ -723,7 +701,7 @@ describe('useSub edge cases', () => {
 
       useSubClassic($[collection], { courseId }, { batch: true })
       useBatch()
-      const [lesson] = useLocal(`${collection}.${lessonId}`)
+      const lesson = $[collection][lessonId].get()
       const stageIds = lesson?.stageIds
 
       return el(Fragment, null,
@@ -938,112 +916,6 @@ describe('$() in React context', () => {
   })
 })
 
-describe('useValue / useValue$', () => {
-  it('useValue$ mirrors $() for default values', async () => {
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $name = useValue$('John')
-      return fr(
-        el('span', {}, $name.get()),
-        el('button', { id: 'btn', onClick: () => $name.set('Jane') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#btn'))
-    expect(container.textContent).toBe('Jane')
-    expect(renders).toBe(2)
-  })
-
-  it('useValue returns [value, $signal]', async () => {
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [name, $name] = useValue('John')
-      return fr(
-        el('span', {}, name),
-        el('button', { id: 'btn2', onClick: () => $name.set('Jane') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#btn2'))
-    expect(container.textContent).toBe('Jane')
-    expect(renders).toBe(2)
-  })
-
-  itCompat('useValue materializes object state when setting nested child under primitive default', async () => {
-    const chatId = 'chat_1'
-
-    const Component = observer(() => {
-      const [, $visibleMap] = useValue(false)
-      return fr(
-        el('span', { id: 'state' }, JSON.stringify($visibleMap.get())),
-        el('span', { id: 'child' }, String($visibleMap[chatId].get())),
-        el('button', { id: 'btn3', onClick: () => $visibleMap[chatId].set(true) })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#state').textContent).toBe('false')
-    expect(container.querySelector('#child').textContent).toBe('undefined')
-
-    fireEvent.click(container.querySelector('#btn3'))
-    expect(container.querySelector('#state').textContent).toBe('{"chat_1":true}')
-    expect(container.querySelector('#child').textContent).toBe('true')
-  })
-})
-
-describe('useModel', () => {
-  it('useModel returns root signal when called without args', () => {
-    let $model
-    const Component = observer(() => {
-      $model = useModel()
-      return null
-    })
-    render(el(Component))
-    expect($model).toBe($)
-  })
-
-  it('useModel returns a signal for string path', () => {
-    let $model
-    const Component = observer(() => {
-      $model = useModel('users.u1')
-      return null
-    })
-    render(el(Component))
-    expect($model.path()).toBe('users.u1')
-  })
-
-  it('useModel returns the signal passed as argument', () => {
-    const $user = $.users.u2
-    let $model
-    const Component = observer(() => {
-      $model = useModel($user)
-      return null
-    })
-    render(el(Component))
-    expect($model).toBe($user)
-  })
-
-  it('useModel accepts signal-derived paths', () => {
-    let $model
-    const Component = observer(() => {
-      $model = useModel($.users.u3.path() + '.settings')
-      return null
-    })
-    render(el(Component))
-    expect($model.path()).toBe('users.u3.settings')
-  })
-})
-
 describe('emit / useOn / useEmit', () => {
   it('emit triggers handlers registered with useOn', () => {
     const handler = jest.fn()
@@ -1102,7 +974,7 @@ describe('emit / useOn / useEmit', () => {
     let calls = 0
 
     const Component = observer(() => {
-      const [, $errors] = usePage('errors')
+      const $errors = $.page.errors
 
       useOn('LessonSave', () => {
         calls++
@@ -1120,346 +992,6 @@ describe('emit / useOn / useEmit', () => {
 
     expect(calls).toBe(1)
     expect($.page.errors.get()).toEqual({ name: 'requiredField' })
-  })
-})
-
-describe('useLocal / useLocal$', () => {
-  it('useLocal returns [value, $signal] for local path', () => {
-    act(() => { $.page.lang.set('en') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [lang, $lang] = useLocal('_page.lang')
-      return fr(
-        el('span', { id: 'lang' }, lang || ''),
-        el('button', { id: 'btn', onClick: () => $lang.set('ru') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#lang').textContent).toBe('en')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#btn'))
-    expect(container.querySelector('#lang').textContent).toBe('ru')
-    expect(renders).toBe(2)
-  })
-
-  it('useLocal$ returns a signal for local path', () => {
-    act(() => { $.page.lang2.set('en') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $lang = useLocal$('_page.lang2')
-      return fr(
-        el('span', { id: 'lang2' }, $lang.get() || ''),
-        el('button', { id: 'btn2', onClick: () => $lang.set('de') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#lang2').textContent).toBe('en')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#btn2'))
-    expect(container.querySelector('#lang2').textContent).toBe('de')
-    expect(renders).toBe(2)
-  })
-
-  it('useLocal accepts a signal and resolves its path', () => {
-    const $lang = $.page.lang5
-    act(() => { $lang.set('en') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [lang, $resolved] = useLocal($lang)
-      return fr(
-        el('span', { id: 'langSig' }, lang || ''),
-        el('button', { id: 'langSigBtn', onClick: () => $resolved.set('fr') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#langSig').textContent).toBe('en')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#langSigBtn'))
-    expect(container.querySelector('#langSig').textContent).toBe('fr')
-    expect(renders).toBe(2)
-  })
-})
-
-describe('useSession / useSession$', () => {
-  it('useSession returns [value, $signal] for session path', () => {
-    act(() => { $.session.userId.set('u1') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [userId, $userId] = useSession('userId')
-      return fr(
-        el('span', { id: 'sid' }, userId || ''),
-        el('button', { id: 'sidbtn', onClick: () => $userId.set('u2') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#sid').textContent).toBe('u1')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#sidbtn'))
-    expect(container.querySelector('#sid').textContent).toBe('u2')
-    expect(renders).toBe(2)
-  })
-
-  it('useSession$ returns a signal for session path', () => {
-    act(() => { $.session.userId2.set('u1') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $userId = useSession$('userId2')
-      return fr(
-        el('span', { id: 'sid2' }, $userId.get() || ''),
-        el('button', { id: 'sidbtn2', onClick: () => $userId.set('u3') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#sid2').textContent).toBe('u1')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#sidbtn2'))
-    expect(container.querySelector('#sid2').textContent).toBe('u3')
-    expect(renders).toBe(2)
-  })
-
-  it('useSession without path returns root session', () => {
-    act(() => { $.session.rootFlag.set('yes') })
-
-    const Component = observer(() => {
-      const [session] = useSession()
-      return el('span', { id: 'sidRoot' }, session?.rootFlag || '')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#sidRoot').textContent).toBe('yes')
-  })
-})
-
-describe('usePage / usePage$', () => {
-  it('usePage returns [value, $signal] for page path', () => {
-    act(() => { $.page.lang3.set('en') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [lang, $lang] = usePage('lang3')
-      return fr(
-        el('span', { id: 'plang' }, lang || ''),
-        el('button', { id: 'plangbtn', onClick: () => $lang.set('ru') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#plang').textContent).toBe('en')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#plangbtn'))
-    expect(container.querySelector('#plang').textContent).toBe('ru')
-    expect(renders).toBe(2)
-  })
-
-  it('usePage$ returns a signal for page path', () => {
-    act(() => { $.page.lang4.set('en') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $lang = usePage$('lang4')
-      return fr(
-        el('span', { id: 'plang2' }, $lang.get() || ''),
-        el('button', { id: 'plangbtn2', onClick: () => $lang.set('de') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#plang2').textContent).toBe('en')
-    expect(renders).toBe(1)
-
-    fireEvent.click(container.querySelector('#plangbtn2'))
-    expect(container.querySelector('#plang2').textContent).toBe('de')
-    expect(renders).toBe(2)
-  })
-
-  it('usePage rerenders on external page-path updates via child setters', () => {
-    act(() => { $.page.langExternal.set('en') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [lang] = usePage('langExternal')
-      return el('span', { id: 'plangExternal' }, lang || '')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#plangExternal').textContent).toBe('en')
-    expect(renders).toBe(1)
-
-    act(() => { $.page.langExternal.set('fr') })
-    expect(container.querySelector('#plangExternal').textContent).toBe('fr')
-    expect(renders).toBe(2)
-  })
-
-  itCompat('usePage rerenders on external page-path updates via parent path setter', () => {
-    act(() => { $.page.langExternalCompat.set('en') })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [lang] = usePage('langExternalCompat')
-      return el('span', { id: 'plangExternalCompat' }, lang || '')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#plangExternalCompat').textContent).toBe('en')
-    expect(renders).toBe(1)
-
-    act(() => { $.page.langExternalCompat.set('it') })
-    expect(container.querySelector('#plangExternalCompat').textContent).toBe('it')
-    expect(renders).toBe(2)
-  })
-
-  it('usePage without path rerenders on deep external updates via child setters', () => {
-    act(() => {
-      $.page.set({
-        simple: 'one',
-        nested: { value: 'alpha' }
-      })
-    })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [page] = usePage()
-      return fr(
-        el('span', { id: 'pageSimple2' }, page?.simple || ''),
-        el('span', { id: 'pageNested2' }, page?.nested?.value || '')
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#pageSimple2').textContent).toBe('one')
-    expect(container.querySelector('#pageNested2').textContent).toBe('alpha')
-    expect(renders).toBe(1)
-
-    act(() => { $.page.simple.set('two') })
-    expect(container.querySelector('#pageSimple2').textContent).toBe('two')
-    expect(container.querySelector('#pageNested2').textContent).toBe('alpha')
-    expect(renders).toBe(2)
-
-    act(() => { $.page.nested.value.set('beta') })
-    expect(container.querySelector('#pageSimple2').textContent).toBe('two')
-    expect(container.querySelector('#pageNested2').textContent).toBe('beta')
-    expect(renders).toBe(3)
-
-    act(() => { $._page.nested.value.set('gamma') })
-    expect(container.querySelector('#pageNested2').textContent).toBe('gamma')
-    expect(renders).toBe(4)
-  })
-
-  itCompat('usePage without path rerenders on deep external updates via path setters', () => {
-    act(() => {
-      $.page.set({
-        simpleCompat: 'one',
-        nestedCompat: { value: 'alpha' }
-      })
-    })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [page] = usePage()
-      return fr(
-        el('span', { id: 'pageSimpleCompat' }, page?.simpleCompat || ''),
-        el('span', { id: 'pageNestedCompat' }, page?.nestedCompat?.value || '')
-      )
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#pageSimpleCompat').textContent).toBe('one')
-    expect(container.querySelector('#pageNestedCompat').textContent).toBe('alpha')
-    expect(renders).toBe(1)
-
-    act(() => { $.page.simpleCompat.set('two') })
-    expect(container.querySelector('#pageSimpleCompat').textContent).toBe('two')
-    expect(container.querySelector('#pageNestedCompat').textContent).toBe('alpha')
-    expect(renders).toBe(2)
-
-    act(() => { $._page.nestedCompat.value.set('gamma') })
-    expect(container.querySelector('#pageNestedCompat').textContent).toBe('gamma')
-    expect(renders).toBe(3)
-  })
-
-  it('usePage for nested object rerenders on deep external updates via child setters', () => {
-    act(() => {
-      $.page.deepObj.set({
-        child: { title: 'one' }
-      })
-    })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [deepObj] = usePage('deepObj')
-      return el('span', { id: 'pageDeepObj' }, deepObj?.child?.title || '')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#pageDeepObj').textContent).toBe('one')
-    expect(renders).toBe(1)
-
-    act(() => { $.page.deepObj.child.title.set('two') })
-    expect(container.querySelector('#pageDeepObj').textContent).toBe('two')
-    expect(renders).toBe(2)
-  })
-
-  it('usePage without path returns root page', () => {
-    act(() => { $.page.rootFlag.set('ok') })
-
-    const Component = observer(() => {
-      const [page] = usePage()
-      return el('span', { id: 'pageRoot' }, page?.rootFlag || '')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#pageRoot').textContent).toBe('ok')
-  })
-
-  itCompat('usePage for nested object rerenders on deep external updates via parent path setter', () => {
-    act(() => {
-      $.page.deepObjCompat.set({
-        child: { title: 'one' }
-      })
-    })
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [deepObj] = usePage('deepObjCompat')
-      return el('span', { id: 'pageDeepObjCompat' }, deepObj?.child?.title || '')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#pageDeepObjCompat').textContent).toBe('one')
-    expect(renders).toBe(1)
-
-    act(() => { $.page.deepObjCompat.child.title.set('three') })
-    expect(container.querySelector('#pageDeepObjCompat').textContent).toBe('three')
-    expect(renders).toBe(2)
   })
 })
 
@@ -1544,7 +1076,7 @@ describe('useDoc / useDoc$', () => {
       const Component = observer(() => {
         const [lessonId, setLessonId] = React.useState(lessonA)
         useDoc$(collection, lessonId)
-        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const lesson = $[collection][lessonId].get()
         const stageIds = lesson?.stageIds
         const text = stageIds ? stageIds.join(',') : 'undefined'
         seen.push(text)
@@ -1600,7 +1132,7 @@ describe('useDoc / useDoc$', () => {
       const Component = observer(() => {
         const [lessonId, setLessonId] = React.useState(lessonA)
         useDoc$(collection, lessonId)
-        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const lesson = $[collection][lessonId].get()
         const { stageIds } = lesson
         return fr(
           el('span', { id: 'syncDocTabLike' }, stageIds.join(',')),
@@ -1764,7 +1296,7 @@ describe('useBatchDoc / useBatchDoc$', () => {
       const Component = observer(() => {
         const [doc] = useBatchDoc(collection, docId)
         useBatch()
-        const [localDoc] = useLocal(`${collection}.${docId}`)
+        const localDoc = $[collection][docId].get()
         return fr(
           el('span', { id: 'batchDocReadyBarrier' }, localDoc?.name || 'pending'),
           el('span', { id: 'batchDocReadyBarrierHookValue' }, doc?.name || 'pending')
@@ -1995,7 +1527,7 @@ describe('useQuery / useQuery$', () => {
         const [lessonId, setLessonId] = React.useState(lessonA)
         const $query = useQuery$(collection, { courseId })
         const ids = $query.getIds()
-        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const lesson = $[collection][lessonId].get()
         const stageIds = lesson?.stageIds
         const stageText = stageIds ? stageIds.join(',') : 'undefined'
         seen.push(`${ids.length}:${stageText}`)
@@ -2023,7 +1555,7 @@ describe('useQuery / useQuery$', () => {
       await waitFor(() => {
         expect(container.querySelector('#syncQueryRouteSwitch').textContent).toBe('1:qb1,qb2')
       })
-      // `stageText` comes from a separate useLocal(path) which can be temporarily
+      // `stageText` comes from a separate local tree read which can be temporarily
       // unresolved when route state changes in the same tick. The contract here
       // is about query snapshot continuity (no empty query/fallback flash).
       expect(seen).not.toContain('0:undefined')
@@ -2035,16 +1567,16 @@ describe('useQuery / useQuery$', () => {
 
   // Stronger downstream contract we do NOT fix here:
   // parent keeps previous query snapshot during update-resubscribe,
-  // but a child may already switch to a new useLocal(path) in the same tick.
+  // but a child may already switch to a new local tree path in the same tick.
   // In that case the query snapshot is stable, yet the new local path can still
   // be temporarily unmaterialized (`missing`) until the new query finishes
   // materializing docs into the collection tree.
   //
   // This is different from the hook-level regression fixed in useSubDeferred().
   // The current fix guarantees "no fallback flash / keep previous hook snapshot",
-  // but it does NOT guarantee atomic materialization for sibling useLocal(newId).
+  // but it does NOT guarantee atomic materialization for sibling local reads.
   // Keep this scenario documented here so we do not forget the remaining gap.
-  it.skip('parent useQuery$ keeps child useLocal materialized on update resubscribe', async () => {
+  it.skip('parent useQuery$ keeps child local read materialized on update resubscribe', async () => {
     const collection = 'syncQueryChildUseLocalSwitch'
     const lessonA = 'lesson_sync_query_child_a'
     const lessonB = 'lesson_sync_query_child_b'
@@ -2059,7 +1591,7 @@ describe('useQuery / useQuery$', () => {
       const childCommits = []
 
       const Child = observer(({ lessonId }) => {
-        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const lesson = $[collection][lessonId].get()
         const text = lesson?.stageIds ? lesson.stageIds.join(',') : 'missing'
         childSeen.push(`render:${lessonId}:${text}`)
         React.useLayoutEffect(() => {
@@ -2287,7 +1819,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     }
   })
 
-  itCompat('batch query materializes doc for immediate useLocal read after useBatch', async () => {
+  itCompat('batch query materializes doc for immediate local read after useBatch', async () => {
     const lessonId = 'lesson_batch_local_1'
     const $lesson = await sub($.batchLocalLessons[lessonId])
     $lesson.set({ courseId: 'course_1', stageIds: ['s1', 's2'] })
@@ -2299,7 +1831,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     const Component = observer(() => {
       useBatchQuery('batchLocalLessons', { courseId: 'course_1' })
       useBatch()
-      const [lesson] = useLocal(`batchLocalLessons.${lessonId}`)
+      const lesson = $.batchLocalLessons[lessonId].get()
       const { stageIds } = lesson
       return el('span', { id: 'batchLocalRead' }, stageIds.join(','))
     }, { suspenseProps: { fallback: el('span', { id: 'batchLocalRead' }, 'Loading...') } })
@@ -2328,7 +1860,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     const Component = observer(() => {
       useBatchQuery('batchLocalLessons', { courseId: 'course_existing' })
       useBatch()
-      const [lesson] = useLocal(`batchLocalLessons.${lessonId}`)
+      const lesson = $.batchLocalLessons[lessonId].get()
       const { stageIds } = lesson
       return el('span', { id: 'batchLocalExisting' }, stageIds.join(','))
     }, { suspenseProps: { fallback: el('span', { id: 'batchLocalExisting' }, 'Loading...') } })
@@ -2353,7 +1885,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     function QueryOwner () {
       useBatchQuery('batchLocalLessons', { courseId: 'course_retained' })
       useBatch()
-      const [lesson] = useLocal(`batchLocalLessons.${lessonId}`)
+      const lesson = $.batchLocalLessons[lessonId].get()
       return el('span', { id: 'batchLocalRetained' }, lesson.stageIds.join(','))
     }
 
@@ -2417,7 +1949,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
 
       useBatchQuery(collection, { courseId })
       useBatch()
-      const [lesson] = useLocal(`${collection}.${lessonId}`)
+      const lesson = $[collection][lessonId].get()
       const stageIds = lesson?.stageIds
 
       return el(Fragment, null,
@@ -2464,7 +1996,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
         const [docs] = useBatchQuery(collection, { courseId, $sort: { createdAt: 1 } })
         useBatch()
         const firstId = docs[0]._id || docs[0].id
-        const [lesson] = useLocal(`${collection}.${firstId}`)
+        const lesson = $[collection][firstId].get()
         const { stageIds } = lesson
 
         return fr(
@@ -2494,7 +2026,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     }
   })
 
-  itCompat('batch query insert allows immediate useLocal read in same render cycle', async () => {
+  itCompat('batch query insert allows immediate local read in same render cycle', async () => {
     const collection = 'batchLocalLessonsInsert'
     const lessonId = 'lesson_batch_insert_1'
 
@@ -2503,7 +2035,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
       useBatch()
       if (!docs || docs.length === 0) return el('span', { id: 'batchLocalInsert' }, 'none')
       const firstId = docs[0]?._id ?? docs[0]?.id
-      const [lesson] = useLocal(`${collection}.${firstId}`)
+      const lesson = $[collection][firstId].get()
       const { stageIds } = lesson
       return el('span', { id: 'batchLocalInsert' }, stageIds.join(','))
     }, { suspenseProps: { fallback: el('span', { id: 'batchLocalInsert' }, 'Loading...') } })
@@ -2551,7 +2083,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
       const Component = observer(() => {
         useBatchQuery(collection, { courseId: 'course_query_ready' })
         useBatch()
-        const [lesson] = useLocal(`${collection}.${lessonId}`)
+        const lesson = $[collection][lessonId].get()
         const stageIds = lesson?.stageIds
         return el('span', { id: 'batchQueryReadyBarrier' }, stageIds ? stageIds.join(',') : 'pending')
       }, { suspenseProps: { fallback: el('span', { id: 'batchQueryReadyBarrier' }, 'Loading...') } })

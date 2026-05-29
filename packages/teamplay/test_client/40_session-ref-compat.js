@@ -1,7 +1,7 @@
 import { createElement as el, Fragment } from 'react'
 import { describe, it, beforeAll as before, afterEach, expect } from '@jest/globals'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { $, observer, useSession } from '../src/index.ts'
+import { $, observer } from '../src/index.ts'
 import connect from '../src/connect/test.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { del as _del } from '../src/orm/dataTree.js'
@@ -108,12 +108,13 @@ describeCompat('session alias + ref contract', () => {
     expect($.session.tenant.questions.deposit.getId()).toBe('deposit')
   })
 
-  it('useSession("user") reflects the dereferenced user value and writes through to the target doc', async () => {
+  it('session user ref reflects the dereferenced user value and writes through to the target doc', async () => {
     await setupSessionRefs()
 
     let lastUserSignal
     const Component = observer(() => {
-      const [user, $user] = useSession('user')
+      const $user = $.session.user
+      const user = $user.get()
       lastUserSignal = $user
       return el(Fragment, null,
         el('span', { id: 'sessionUserName' }, user?.name || ''),
@@ -147,11 +148,11 @@ describeCompat('session alias + ref contract', () => {
     })
   })
 
-  it('useSession("user") rerenders when the target user doc changes directly', async () => {
+  it('session user ref rerenders when the target user doc changes directly', async () => {
     await setupSessionRefs()
 
     const Component = observer(() => {
-      const [user] = useSession('user')
+      const user = $.session.user.get()
       return el('span', { id: 'sessionUserNameDirect' }, user?.name || '')
     })
 
@@ -167,13 +168,13 @@ describeCompat('session alias + ref contract', () => {
     })
   })
 
-  it('useSession on nested user and tenant paths follows direct target doc updates', async () => {
+  it('nested session user and tenant paths follow direct target doc updates', async () => {
     await setupSessionRefs()
 
     const Component = observer(() => {
-      const [userTimeZone] = useSession('user.timeZone')
-      const [tenantName] = useSession('tenant.name')
-      const [tenantDeposit] = useSession('tenant.questions.deposit')
+      const userTimeZone = $.session.user.timeZone.get()
+      const tenantName = $.session.tenant.name.get()
+      const tenantDeposit = $.session.tenant.questions.deposit.get()
       return el(Fragment, null,
         el('span', { id: 'nestedUserTimeZone' }, userTimeZone || ''),
         el('span', { id: 'nestedTenantName' }, tenantName || ''),
@@ -204,13 +205,14 @@ describeCompat('session alias + ref contract', () => {
     })
   })
 
-  it('useSession session refs switch to the new target when the session ref is rebound', async () => {
+  it('session user refs switch to the new target when the session ref is rebound', async () => {
     await setupSessionRefs()
 
     let latestUserSignal
     const Component = observer(() => {
-      const [user, $user] = useSession('user')
-      const [userTimeZone] = useSession('user.timeZone')
+      const $user = $.session.user
+      const user = $user.get()
+      const userTimeZone = $.session.user.timeZone.get()
       latestUserSignal = $user
       return el(Fragment, null,
         el('span', { id: 'reboundUserName' }, user?.name || ''),
@@ -244,9 +246,9 @@ describeCompat('session alias + ref contract', () => {
     await setupSessionRefs()
 
     const Component = observer(() => {
-      const [tenant] = useSession('tenant')
-      const [tenantName] = useSession('tenant.name')
-      const [tenantDeposit] = useSession('tenant.questions.deposit')
+      const tenant = $.session.tenant.get()
+      const tenantName = $.session.tenant.name.get()
+      const tenantDeposit = $.session.tenant.questions.deposit.get()
       return el(Fragment, null,
         el('span', { id: 'reboundTenantRootName' }, tenant?.name || ''),
         el('span', { id: 'reboundTenantName' }, tenantName || ''),
@@ -279,12 +281,13 @@ describeCompat('session alias + ref contract', () => {
     expect($.session.tenantId.get()).toBe('t2')
   })
 
-  it('useSession("tenant") rerenders when the target tenant doc changes directly', async () => {
+  it('session tenant ref rerenders when the target tenant doc changes directly', async () => {
     await setupSessionRefs()
 
     let lastTenantSignal
     const Component = observer(() => {
-      const [tenant, $tenant] = useSession('tenant')
+      const $tenant = $.session.tenant
+      const tenant = $tenant.get()
       lastTenantSignal = $tenant
       return el(Fragment, null,
         el('span', { id: 'sessionTenantName' }, tenant?.name || ''),
@@ -312,14 +315,14 @@ describeCompat('session alias + ref contract', () => {
     })
   })
 
-  it('useSession("tenant") stays in sync when the tenant doc changes via raw ShareDB ops', async () => {
+  it('session tenant ref stays in sync when the tenant doc changes via raw ShareDB ops', async () => {
     await setupSessionRefs()
     await act(async () => {
       await $.tenants.t1.subscribe()
     })
 
     const Component = observer(() => {
-      const [tenant] = useSession('tenant')
+      const tenant = $.session.tenant.get()
       return el(Fragment, null,
         el('span', { id: 'sessionTenantNameRawOp' }, tenant?.name || ''),
         el('span', { id: 'sessionTenantThemeRawOp' }, tenant?.branding?.theme || '')
@@ -368,7 +371,7 @@ describeCompat('session alias + ref contract', () => {
     })
 
     const Component = observer(() => {
-      const [tenantName] = useSession('tenant.name')
+      const tenantName = $.session.tenant.name.get()
       return el('span', { id: 'sessionTenantNameReboundRawOp' }, tenantName || '')
     })
 
@@ -410,7 +413,7 @@ describeCompat('session alias + ref contract', () => {
     })
 
     const Component = observer(() => {
-      const [tenantTheme] = useSession('tenant.branding.theme')
+      const tenantTheme = $.session.tenant.branding.theme.get()
       return el('span', { id: 'sessionTenantThemeDeleteRawOp' }, tenantTheme || '')
     })
 

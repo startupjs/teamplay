@@ -4,7 +4,7 @@ This folder contains the compatibility layer that emulates the old StartupJS (Ra
 
 It includes:
 1. `SignalCompat` — a signal class with Racer-compatible value semantics on the current signal path.
-2. Compat hooks — `useValue`, `useLocal`, `useDoc`, `useQuery`, and related async/batch aliases.
+2. Compat subscription hooks — `useDoc`, `useQuery`, and related async/batch aliases.
 
 All hooks are re-exported from `packages/teamplay/src/index.ts`.
 
@@ -404,7 +404,7 @@ If a new subscribe arrives before timeout, pending destroy is cancelled and the 
 
 Compat queries also retain lifecycle ownership of docs they materialize into DataTree.
 This means a doc that arrived through `useQuery` / `useBatchQuery` will stay available
-for immediate `useLocal` / `useModel` reads while that query remains subscribed, even if
+for immediate direct object-tree reads while that query remains subscribed, even if
 some unrelated `useDoc` subscriber for the same `collection.id` unmounts.
 
 ### set(value) and setReplace(value)
@@ -717,61 +717,6 @@ Limitations vs Racer:
 - Only `change`/`all` events are supported (no `insert`/`remove`/`move` event names).
 - `eventName` for `all` is always `'change'` in this compat layer.
 
-### Model Hook
-
-#### `useModel`
-
-```js
-const $root = useModel()
-const $user = useModel(`users.${userId}`)
-const $settings = useModel($user.path('settings'))
-```
-
-Returns a signal for the given path. Accepts:
-- no args → returns root signal
-- string path (`'users.123'`)
-- or a signal (returned as-is)
-
-### Value / Local Hooks
-
-#### `useValue$` / `useValue`
-
-```js
-const $count = useValue$(0)
-const [count, $count] = useValue(0)
-```
-
-These create a local signal backed by `$local`. Useful as a reactive `useState` alternative.
-
-#### `useLocal$` / `useLocal`
-
-```js
-const $lang = useLocal$('_page.lang')
-const [lang, $lang] = useLocal('_page.lang')
-```
-
-`useLocal` accepts:
-- a string path (`'_page.lang'`)
-- or a signal with `path()` (e.g. `$signal`).
-
-#### `useSession$` / `useSession`
-
-Sugar on top of `useLocal` with `_session` prefix.
-
-```js
-const [userId, $userId] = useSession('userId')
-const [session] = useSession() // root _session
-```
-
-#### `usePage$` / `usePage`
-
-Sugar on top of `useLocal` with `_page` prefix.
-
-```js
-const [lang, $lang] = usePage('lang')
-const [page] = usePage() // root _page
-```
-
 ### Doc Hooks
 
 #### `useDoc$` / `useDoc`
@@ -886,8 +831,8 @@ It throws while:
 - or subscribe promises are resolved but requested docs/queries are not yet
   materialized in DataTree.
 
-After `useBatch()` stops throwing in compat mode, immediate reads via
-`useLocal(...).get(...)` for already requested batch entities should not produce
+After `useBatch()` stops throwing in compat mode, immediate direct object-tree reads
+for already requested batch entities should not produce
 transient `undefined` caused by materialization races.
 
 ### Missing ShareDB Docs

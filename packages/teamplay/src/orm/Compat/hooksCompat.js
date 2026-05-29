@@ -8,74 +8,6 @@ import { isQueryReady } from './queryReadiness.js'
 const $root = getRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ })
 const emittedCompatWarnings = new Set()
 
-// Hook-compatible wrapper around $() for compatibility mode.
-export function useValue$ (defaultValue) {
-  return $root(defaultValue)
-}
-
-// Returns [value, $signal] similar to useState, but backed by $().
-export function useValue (defaultValue) {
-  const $sig = useValue$(defaultValue)
-  return [$sig.get(), $sig]
-}
-
-export function useModel (path) {
-  if (arguments.length === 0 || path == null) return $root
-  if (path && typeof path.path === 'function') return path
-  if (typeof path !== 'string') throw Error('useModel() expects a string path or a signal')
-  const segments = path.split('.').filter(Boolean)
-  if (segments.length === 0) return $root
-  let $cursor = $root
-  for (const segment of segments) {
-    $cursor = $cursor[segment]
-  }
-  return $cursor
-}
-
-export function useLocal$ (path) {
-  const resolvedPath = resolveLocalPath(path)
-  if (!resolvedPath) return $root
-  const segments = resolvedPath.split('.').filter(Boolean)
-  let $cursor = $root
-  for (const segment of segments) {
-    $cursor = $cursor[segment]
-  }
-  return $cursor
-}
-
-export function useLocal (path) {
-  const $sig = useLocal$(path)
-  return [$sig.get(), $sig]
-}
-
-export function useLocalDoc$ (collection, id) {
-  if (collection == null) throw Error('useLocalDoc() expects a collection name')
-  if (id == null) return undefined
-  return $root[collection][id]
-}
-
-export function useLocalDoc (collection, id) {
-  const $doc = useLocalDoc$(collection, id)
-  if (!$doc) return [undefined, undefined]
-  return [$doc.get(), $doc]
-}
-
-export function useSession$ (path) {
-  return useLocal$(prefixLocalPath('_session', path))
-}
-
-export function useSession (path) {
-  return useLocal(prefixLocalPath('_session', path))
-}
-
-export function usePage$ (path) {
-  return useLocal$(prefixLocalPath('_page', path))
-}
-
-export function usePage (path) {
-  return useLocal(prefixLocalPath('_page', path))
-}
-
 export function useBatch () {
   const promise = promiseBatcher.getPromiseAll()
   if (promise) throw promise
@@ -266,23 +198,6 @@ export function useAsyncQueryDoc (collection, query, options) {
 export function useAsyncQueryDoc$ (collection, query, options) {
   const [, $doc] = useAsyncQueryDoc(collection, query, options)
   return $doc
-}
-
-function resolveLocalPath (path) {
-  if (path && typeof path.path === 'function') return path.path()
-  if (typeof path === 'string') return path
-  if (path == null) return ''
-  throw Error('useLocal() expects a string path or a signal')
-}
-
-function prefixLocalPath (prefix, path) {
-  if (path == null || path === '') return prefix
-  let resolved = path
-  if (path && typeof path.path === 'function') resolved = path.path()
-  if (typeof resolved !== 'string') throw Error(`${prefix} hook expects a string path or a signal`)
-  if (resolved.startsWith(prefix + '.')) return resolved
-  if (resolved === prefix) return resolved
-  return `${prefix}.${resolved}`
 }
 
 function getDocSignal (collection, id, hookName) {
