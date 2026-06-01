@@ -208,16 +208,8 @@ export {
 export const observer = runtimeObserver as unknown as ObserverFunction
 export {
   useBatch,
-  useDoc,
-  useDoc$,
   useBatchDoc,
   useBatchDoc$,
-  useAsyncDoc,
-  useAsyncDoc$,
-  useQuery,
-  useQuery$,
-  useAsyncQuery,
-  useAsyncQuery$,
   useBatchQuery,
   useBatchQuery$,
   useQueryIds,

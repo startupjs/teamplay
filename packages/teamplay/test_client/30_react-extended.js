@@ -8,16 +8,8 @@ import {
   observer,
   sub,
   useBatch,
-  useDoc,
-  useDoc$,
   useBatchDoc,
   useBatchDoc$,
-  useAsyncDoc,
-  useAsyncDoc$,
-  useQuery,
-  useQuery$,
-  useAsyncQuery,
-  useAsyncQuery$,
   useBatchQuery,
   useBatchQuery$,
   useQueryIds,
@@ -43,9 +35,8 @@ import renderAttemptDestroyer from '../src/react/renderAttemptDestroyer.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../src/orm/dataTree.js'
 import connect from '../src/connect/test.js'
-import { SEGMENTS } from '../src/orm/Signal.ts'
 import { docSubscriptions } from '../src/orm/Doc.js'
-import { PARAMS as QUERY_PARAMS, querySubscriptions } from '../src/orm/Query.js'
+import { querySubscriptions } from '../src/orm/Query.js'
 import { aggregationSubscriptions, AGGREGATIONS } from '../src/orm/Aggregation.js'
 import { setPrivateData } from '../src/orm/privateData.js'
 import {
@@ -223,12 +214,13 @@ describe('compat helper hooks', () => {
     expect(container.textContent).toBe('x')
   })
 
-  itCompat('undefined doc warning is emitted only once across rerenders', async () => {
+  itCompat('undefined batch doc warning is emitted only once across rerenders', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
 
     const Component = observer(() => {
       const [count, setCount] = React.useState(0)
-      useDoc('chats', undefined)
+      useBatchDoc('chats', undefined)
+      useBatch()
 
       React.useEffect(() => {
         if (count === 0) setCount(1)
@@ -243,7 +235,7 @@ describe('compat helper hooks', () => {
     })
 
     const compatWarnings = warnSpy.mock.calls.filter(([message]) =>
-      String(message).includes('[useDoc] You are trying to subscribe to an undefined document id')
+      String(message).includes('[useBatchDoc] You are trying to subscribe to an undefined document id')
     )
     expect(compatWarnings).toHaveLength(1)
     warnSpy.mockRestore()
@@ -612,14 +604,15 @@ describe('useSub edge cases', () => {
     })
   })
 
-  itCompat('compat hook observer replays updates skipped during execution context', async () => {
+  it('subscribed observer replays updates skipped during execution context', async () => {
     act(() => {
       $.compatReplayDoc.test1.set({ name: 'John' })
       $.page.compatReplayFlag.set(false)
     })
 
     const Component = observer(() => {
-      const [doc] = useDoc('compatReplayDoc', 'test1')
+      const $doc = useSub($.compatReplayDoc.test1, { defer: false })
+      const doc = $doc.get()
       const flag = $.page.compatReplayFlag.get() || false
       if (!flag) $.page.compatReplayFlag.set(true)
       return el('span', { id: 'compatReplay' }, `${doc?.name || 'missing'}:${flag}`)
@@ -930,231 +923,6 @@ describe('emit / useOn / useEmit', () => {
   })
 })
 
-describe('useDoc / useDoc$', () => {
-  it('useDoc subscribes to a document and returns [doc, $doc]', async () => {
-    const $doc = await sub($.docHook.u1)
-    $doc.set({ name: 'John' })
-    await wait()
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [doc, $user] = useDoc('docHook', 'u1')
-      return fr(
-        el('span', { id: 'docName' }, doc?.name || ''),
-        el('button', { id: 'docBtn', onClick: () => $user.name.set('Jane') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    await wait()
-    expect(container.querySelector('#docName').textContent).toBe('John')
-    expect(renders).toBeGreaterThan(0)
-
-    fireEvent.click(container.querySelector('#docBtn'))
-    expect(container.querySelector('#docName').textContent).toBe('Jane')
-  })
-
-  it('useDoc$ returns a signal for a document', async () => {
-    const $doc = await sub($.docHook.u2)
-    $doc.set({ name: 'Alice' })
-    await wait()
-
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $user = useDoc$('docHook', 'u2')
-      return fr(
-        el('span', { id: 'docName2' }, $user.name.get() || ''),
-        el('button', { id: 'docBtn2', onClick: () => $user.name.set('Bob') })
-      )
-    })
-
-    const { container } = render(el(Component))
-    await wait()
-    expect(container.querySelector('#docName2').textContent).toBe('Alice')
-    expect(renders).toBeGreaterThan(0)
-
-    fireEvent.click(container.querySelector('#docBtn2'))
-    expect(container.querySelector('#docName2').textContent).toBe('Bob')
-  })
-
-  it('useDoc warns on undefined id and falls back to __NULL__', async () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-
-    const Component = observer(() => {
-      const [doc] = useDoc('warnDoc', undefined)
-      return el('span', { id: 'warnDoc' }, doc?.name || '')
-    }, { suspenseProps: { fallback: el('span', { id: 'warnDoc' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#warnDoc').textContent).toBe('Loading...')
-
-    await wait()
-    expect(warnSpy).toHaveBeenCalled()
-
-    warnSpy.mockRestore()
-  })
-
-  itCompat('sync useDoc$ keeps previous content on update resubscribe (no fallback flash, no transient undefined)', async () => {
-    const collection = 'syncDocRouteSwitch'
-    const lessonA = 'lesson_sync_doc_a'
-    const lessonB = 'lesson_sync_doc_b'
-    await $[collection][lessonA].set({ stageIds: ['a1'] })
-    await $[collection][lessonB].set({ stageIds: ['b1', 'b2'] })
-    _del([collection, lessonA])
-    _del([collection, lessonB])
-
-    setTestThrottling(80)
-    try {
-      const seen = []
-      const Component = observer(() => {
-        const [lessonId, setLessonId] = React.useState(lessonA)
-        useDoc$(collection, lessonId)
-        const lesson = $[collection][lessonId].get()
-        const stageIds = lesson?.stageIds
-        const text = stageIds ? stageIds.join(',') : 'undefined'
-        seen.push(text)
-        return fr(
-          el('span', { id: 'syncDocRouteSwitch' }, text),
-          el('button', {
-            id: 'syncDocRouteSwitchToB',
-            onClick: () => setLessonId(lessonB)
-          }, 'to-b'),
-          el('button', {
-            id: 'syncDocRouteSwitchToA',
-            onClick: () => setLessonId(lessonA)
-          }, 'to-a')
-        )
-      }, { suspenseProps: { fallback: el('span', { id: 'syncDocRouteSwitch' }, 'Loading...') } })
-
-      const { container } = render(el(Component))
-      expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('Loading...')
-      await waitFor(() => {
-        expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('a1')
-      })
-
-      fireEvent.click(container.querySelector('#syncDocRouteSwitchToB'))
-      await wait(10)
-      expect(container.querySelector('#syncDocRouteSwitch').textContent).not.toBe('Loading...')
-      await waitFor(() => {
-        expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('b1,b2')
-      })
-
-      fireEvent.click(container.querySelector('#syncDocRouteSwitchToA'))
-      await wait(10)
-      expect(container.querySelector('#syncDocRouteSwitch').textContent).not.toBe('Loading...')
-      await waitFor(() => {
-        expect(container.querySelector('#syncDocRouteSwitch').textContent).toBe('a1')
-      })
-      expect(seen).not.toContain('undefined')
-    } finally {
-      resetTestThrottling()
-    }
-  })
-
-  itCompat('tab-like stageIds destructuring with useDoc$ does not crash on fast switch', async () => {
-    const collection = 'syncDocTabLike'
-    const lessonA = 'lesson_sync_tab_a'
-    const lessonB = 'lesson_sync_tab_b'
-    await $[collection][lessonA].set({ stageIds: ['ta1'] })
-    await $[collection][lessonB].set({ stageIds: ['tb1', 'tb2'] })
-    _del([collection, lessonA])
-    _del([collection, lessonB])
-
-    setTestThrottling(80)
-    try {
-      const Component = observer(() => {
-        const [lessonId, setLessonId] = React.useState(lessonA)
-        useDoc$(collection, lessonId)
-        const lesson = $[collection][lessonId].get()
-        const { stageIds } = lesson
-        return fr(
-          el('span', { id: 'syncDocTabLike' }, stageIds.join(',')),
-          el('button', {
-            id: 'syncDocTabLikeSwitch',
-            onClick: () => setLessonId(curr => curr === lessonA ? lessonB : lessonA)
-          }, 'switch')
-        )
-      }, { suspenseProps: { fallback: el('span', { id: 'syncDocTabLike' }, 'Loading...') } })
-
-      const { container } = render(el(Component))
-      await waitFor(() => {
-        expect(container.querySelector('#syncDocTabLike').textContent).toBe('ta1')
-      })
-
-      fireEvent.click(container.querySelector('#syncDocTabLikeSwitch'))
-      await waitFor(() => {
-        expect(container.querySelector('#syncDocTabLike').textContent).toBe('tb1,tb2')
-      })
-    } finally {
-      resetTestThrottling()
-    }
-  })
-
-  itCompat('sync useDoc$ keeps previous content when the next doc subscribe stays pending', async () => {
-    const collection = 'syncDocPendingResubscribe'
-    const docA = 'doc_sync_pending_a'
-    const docB = 'doc_sync_pending_b'
-    await $[collection][docA].set({ name: 'Alpha' })
-    await $[collection][docB].set({ name: 'Beta' })
-
-    const originalSubscribe = docSubscriptions.subscribe.bind(docSubscriptions)
-    const consumeSpy = jest.spyOn(renderAttemptDestroyer, 'consumeThenableHandling')
-    let releaseSwitch
-    let delayed = false
-
-    docSubscriptions.subscribe = ($doc, options) => {
-      const [, docId] = $doc[SEGMENTS]
-      if (docId !== docB || delayed) return originalSubscribe($doc, options)
-      delayed = true
-      return new Promise(resolve => {
-        releaseSwitch = async () => {
-          const result = originalSubscribe($doc, options)
-          if (result?.then) await result
-          resolve()
-        }
-      })
-    }
-
-    try {
-      const Component = observer(() => {
-        const [docId, setDocId] = React.useState(docA)
-        const $doc = useDoc$(collection, docId)
-        return fr(
-          el('span', { id: 'syncDocPendingResubscribe' }, $doc.name.get() || 'empty'),
-          el('button', {
-            id: 'syncDocPendingResubscribeBtn',
-            onClick: () => setDocId(docB)
-          }, 'switch')
-        )
-      }, { suspenseProps: { fallback: el('span', { id: 'syncDocPendingResubscribe' }, 'Loading...') } })
-
-      const { container } = render(el(Component))
-      await waitFor(() => {
-        expect(container.querySelector('#syncDocPendingResubscribe').textContent).toBe('Alpha')
-      })
-      consumeSpy.mockClear()
-
-      fireEvent.click(container.querySelector('#syncDocPendingResubscribeBtn'))
-      await wait(20)
-      expect(consumeSpy).not.toHaveBeenCalled()
-      expect(container.querySelector('#syncDocPendingResubscribe').textContent).toBe('Alpha')
-
-      await act(async () => {
-        await releaseSwitch()
-      })
-
-      await waitFor(() => {
-        expect(container.querySelector('#syncDocPendingResubscribe').textContent).toBe('Beta')
-      })
-    } finally {
-      consumeSpy.mockRestore()
-      docSubscriptions.subscribe = originalSubscribe
-    }
-  })
-})
-
 describe('useBatchDoc / useBatchDoc$', () => {
   it('useBatchDoc works with useBatch suspense flush', async () => {
     const $doc = await sub($.docHook.u3)
@@ -1293,352 +1061,6 @@ describe('useBatchDoc / useBatchDoc$', () => {
       })
     } finally {
       resetTestThrottling()
-    }
-  })
-})
-
-describe('useAsyncDoc / useAsyncDoc$', () => {
-  it('useAsyncDoc returns undefined initially and then provides doc and $doc', async () => {
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const [doc, $doc] = useAsyncDoc('asyncDocHook', 'u1')
-      if (!$doc) return el('span', { id: 'asyncDoc' }, 'Waiting...')
-      return el('span', { id: 'asyncDoc' }, doc?.name || 'empty')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#asyncDoc').textContent).toBe('Waiting...')
-
-    await wait()
-    expect(container.querySelector('#asyncDoc').textContent).toBe('empty')
-
-    act(() => { $.asyncDocHook.u1.set({ name: 'John' }) })
-    expect(container.querySelector('#asyncDoc').textContent).toBe('John')
-    expect(renders).toBeGreaterThan(1)
-  })
-
-  it('useAsyncDoc$ returns signal after async subscribe', async () => {
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $doc = useAsyncDoc$('asyncDocHook', 'u2')
-      if (!$doc) return el('span', { id: 'asyncDoc2' }, 'Waiting...')
-      return el('span', { id: 'asyncDoc2' }, $doc.name.get() || 'empty')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#asyncDoc2').textContent).toBe('Waiting...')
-
-    await wait()
-    expect(container.querySelector('#asyncDoc2').textContent).toBe('empty')
-
-    act(() => { $.asyncDocHook.u2.set({ name: 'Alice' }) })
-    expect(container.querySelector('#asyncDoc2').textContent).toBe('Alice')
-    expect(renders).toBeGreaterThan(1)
-  })
-})
-
-describe('useQuery / useQuery$', () => {
-  it('useQuery subscribes to a query and returns [docs, $collection]', async () => {
-    const $a = await sub($.queryHook.q1)
-    const $b = await sub($.queryHook.q2)
-    $a.set({ name: 'Alice', active: true, createdAt: 1 })
-    $b.set({ name: 'Bob', active: false, createdAt: 2 })
-    await wait()
-
-    const Component = observer(() => {
-      const [docs, $collection] = useQuery('queryHook', { active: true, $sort: { createdAt: 1 } })
-      return fr(
-        el('span', { id: 'qNames' }, (docs || []).map(d => d.name).join(',')),
-        el('button', { id: 'qBtn', onClick: () => $collection.q1.active.set(false) })
-      )
-    }, { suspenseProps: { fallback: el('span', { id: 'qNames' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#qNames').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#qNames').textContent).toBe('Alice')
-
-    fireEvent.click(container.querySelector('#qBtn'))
-    await wait()
-    expect(container.querySelector('#qNames').textContent).toBe('')
-  })
-
-  it('useQuery$ returns a query signal', async () => {
-    const $a = await sub($.queryHook2.q1)
-    $a.set({ name: 'John', active: true, createdAt: 1 })
-    await wait()
-
-    const Component = observer(() => {
-      const $query = useQuery$('queryHook2', { active: true })
-      const ids = $query.getIds()
-      const docs = $query.get()
-      const name = docs && docs[0]?.name
-      return el('span', { id: 'qNames2' }, `${ids.join(',')}:${name || ''}`)
-    }, { suspenseProps: { fallback: el('span', { id: 'qNames2' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#qNames2').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#qNames2').textContent).toBe('q1:John')
-  })
-
-  itCompat('useQuery returns the same extra payload as useQuery$ for $count queries', async () => {
-    await act(async () => {
-      $.users.queryCountUser1.set({ _id: 'queryCountUser1', name: 'A' })
-      $.users.queryCountUser2.set({ _id: 'queryCountUser2', name: 'B' })
-    })
-
-    const query = {
-      _id: { $in: ['queryCountUser1', 'queryCountUser2'] },
-      $count: true
-    }
-
-    const Component = observer(() => {
-      const [count] = useQuery('users', query)
-      const $count = useQuery$('users', query)
-      return el('div', { id: 'queryCountValue' }, `${typeof count}:${String(count)}|${typeof $count.get()}:${String($count.get())}`)
-    }, { suspenseProps: { fallback: el('div', { id: 'queryCountValue' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#queryCountValue').textContent).toBe('Loading...')
-
-    await waitFor(() => {
-      expect(container.querySelector('#queryCountValue').textContent).toBe('number:2|number:2')
-    })
-
-    await act(async () => {
-      $.users.queryCountUser1.del()
-      $.users.queryCountUser2.del()
-    })
-  })
-
-  it('useQuery warns on undefined query and falls back to non-existent query', async () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-
-    const Component = observer(() => {
-      const [docs] = useQuery('warnQuery')
-      return el('span', { id: 'warnQuery' }, (docs || []).length ? 'has' : '')
-    }, { suspenseProps: { fallback: el('span', { id: 'warnQuery' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#warnQuery').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#warnQuery').textContent).toBe('')
-    expect(warnSpy).toHaveBeenCalled()
-
-    warnSpy.mockRestore()
-  })
-
-  it('useQuery throws on non-object query', () => {
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-    const Component = observer(() => {
-      useQuery('badQuery', 'oops')
-      return el('span', {}, 'bad')
-    })
-
-    expect(() => render(el(Component))).toThrow(/query must be an object/i)
-    errorSpy.mockRestore()
-  })
-
-  itCompat('sync useQuery$ keeps previous query snapshot on update resubscribe (no fallback flash, no transient empty query)', async () => {
-    const collection = 'syncQueryRouteSwitch'
-    const lessonA = 'lesson_sync_query_a'
-    const lessonB = 'lesson_sync_query_b'
-    await $[collection][lessonA].set({ courseId: 'courseA', stageIds: ['qa1'] })
-    await $[collection][lessonB].set({ courseId: 'courseB', stageIds: ['qb1', 'qb2'] })
-    _del([collection, lessonA])
-    _del([collection, lessonB])
-
-    setTestThrottling(80)
-    try {
-      const seen = []
-      const Component = observer(() => {
-        const [courseId, setCourseId] = React.useState('courseA')
-        const [lessonId, setLessonId] = React.useState(lessonA)
-        const $query = useQuery$(collection, { courseId })
-        const ids = $query.getIds()
-        const lesson = $[collection][lessonId].get()
-        const stageIds = lesson?.stageIds
-        const stageText = stageIds ? stageIds.join(',') : 'undefined'
-        seen.push(`${ids.length}:${stageText}`)
-        return fr(
-          el('span', { id: 'syncQueryRouteSwitch' }, `${ids.length}:${stageText}`),
-          el('button', {
-            id: 'syncQueryRouteSwitchBtn',
-            onClick: () => {
-              setCourseId('courseB')
-              setLessonId(lessonB)
-            }
-          }, 'switch')
-        )
-      }, { suspenseProps: { fallback: el('span', { id: 'syncQueryRouteSwitch' }, 'Loading...') } })
-
-      const { container } = render(el(Component))
-      expect(container.querySelector('#syncQueryRouteSwitch').textContent).toBe('Loading...')
-      await waitFor(() => {
-        expect(container.querySelector('#syncQueryRouteSwitch').textContent).toBe('1:qa1')
-      })
-
-      fireEvent.click(container.querySelector('#syncQueryRouteSwitchBtn'))
-      await wait(10)
-      expect(container.querySelector('#syncQueryRouteSwitch').textContent).not.toBe('Loading...')
-      await waitFor(() => {
-        expect(container.querySelector('#syncQueryRouteSwitch').textContent).toBe('1:qb1,qb2')
-      })
-      // `stageText` comes from a separate local tree read which can be temporarily
-      // unresolved when route state changes in the same tick. The contract here
-      // is about query snapshot continuity (no empty query/fallback flash).
-      expect(seen).not.toContain('0:undefined')
-      expect(seen).not.toContain('0:qb1,qb2')
-    } finally {
-      resetTestThrottling()
-    }
-  })
-
-  // Stronger downstream contract we do NOT fix here:
-  // parent keeps previous query snapshot during update-resubscribe,
-  // but a child may already switch to a new local tree path in the same tick.
-  // In that case the query snapshot is stable, yet the new local path can still
-  // be temporarily unmaterialized (`missing`) until the new query finishes
-  // materializing docs into the collection tree.
-  //
-  // This is different from the hook-level regression fixed in useSubDeferred().
-  // The current fix guarantees "no fallback flash / keep previous hook snapshot",
-  // but it does NOT guarantee atomic materialization for sibling local reads.
-  // Keep this scenario documented here so we do not forget the remaining gap.
-  it.skip('parent useQuery$ keeps child local read materialized on update resubscribe', async () => {
-    const collection = 'syncQueryChildUseLocalSwitch'
-    const lessonA = 'lesson_sync_query_child_a'
-    const lessonB = 'lesson_sync_query_child_b'
-    await $[collection][lessonA].set({ courseId: 'courseA', stageIds: ['qa1'] })
-    await $[collection][lessonB].set({ courseId: 'courseB', stageIds: ['qb1', 'qb2'] })
-    _del([collection, lessonA])
-    _del([collection, lessonB])
-
-    setTestThrottling(80)
-    try {
-      const childSeen = []
-      const childCommits = []
-
-      const Child = observer(({ lessonId }) => {
-        const lesson = $[collection][lessonId].get()
-        const text = lesson?.stageIds ? lesson.stageIds.join(',') : 'missing'
-        childSeen.push(`render:${lessonId}:${text}`)
-        React.useLayoutEffect(() => {
-          childCommits.push(`${lessonId}:${text}`)
-        }, [lessonId, text])
-        return el('span', { id: 'syncQueryChildUseLocalSwitchChild' }, text)
-      })
-
-      const Parent = observer(() => {
-        const [courseId, setCourseId] = React.useState('courseA')
-        const [lessonId, setLessonId] = React.useState(lessonA)
-        const $query = useQuery$(collection, { courseId })
-        const ids = $query.getIds()
-
-        return fr(
-          el('span', { id: 'syncQueryChildUseLocalSwitchStatus' }, `${ids.length}:${ids.join(',') || 'empty'}`),
-          el(Child, { lessonId }),
-          el('button', {
-            id: 'syncQueryChildUseLocalSwitchBtn',
-            onClick: () => {
-              setCourseId('courseB')
-              setLessonId(lessonB)
-            }
-          }, 'switch')
-        )
-      }, { suspenseProps: { fallback: el('span', { id: 'syncQueryChildUseLocalSwitchStatus' }, 'Loading...') } })
-
-      const { container } = render(el(Parent))
-      expect(container.querySelector('#syncQueryChildUseLocalSwitchStatus').textContent).toBe('Loading...')
-
-      await waitFor(() => {
-        expect(container.querySelector('#syncQueryChildUseLocalSwitchStatus').textContent).toBe(`1:${lessonA}`)
-        expect(container.querySelector('#syncQueryChildUseLocalSwitchChild').textContent).toBe('qa1')
-      })
-
-      fireEvent.click(container.querySelector('#syncQueryChildUseLocalSwitchBtn'))
-      await wait(10)
-      expect(container.querySelector('#syncQueryChildUseLocalSwitchStatus').textContent).not.toBe('Loading...')
-
-      await waitFor(() => {
-        expect(container.querySelector('#syncQueryChildUseLocalSwitchStatus').textContent).toBe(`1:${lessonB}`)
-        expect(container.querySelector('#syncQueryChildUseLocalSwitchChild').textContent).toBe('qb1,qb2')
-      })
-
-      expect(childSeen).not.toContain(`render:${lessonB}:missing`)
-      expect(childCommits).not.toContain(`${lessonB}:missing`)
-    } finally {
-      resetTestThrottling()
-    }
-  })
-
-  itCompat('sync useQuery$ keeps previous content when the next query subscribe stays pending', async () => {
-    const collection = 'syncQueryPendingResubscribe'
-    const docA = 'query_sync_pending_a'
-    const docB = 'query_sync_pending_b'
-    await $[collection][docA].set({ courseId: 'courseA', name: 'Alpha', createdAt: 1 })
-    await $[collection][docB].set({ courseId: 'courseB', name: 'Beta', createdAt: 1 })
-
-    const originalSubscribe = querySubscriptions.subscribe.bind(querySubscriptions)
-    const consumeSpy = jest.spyOn(renderAttemptDestroyer, 'consumeThenableHandling')
-    let releaseSwitch
-    let delayed = false
-
-    querySubscriptions.subscribe = ($query, options) => {
-      if ($query[QUERY_PARAMS]?.courseId !== 'courseB' || delayed) {
-        return originalSubscribe($query, options)
-      }
-      delayed = true
-      return new Promise(resolve => {
-        releaseSwitch = async () => {
-          const result = originalSubscribe($query, options)
-          if (result?.then) await result
-          resolve()
-        }
-      })
-    }
-
-    try {
-      const Component = observer(() => {
-        const [courseId, setCourseId] = React.useState('courseA')
-        const $query = useQuery$(collection, { courseId, $sort: { createdAt: 1 } })
-        const docs = $query.get() || []
-        return fr(
-          el('span', { id: 'syncQueryPendingResubscribe' }, docs.map(doc => doc.name).join(',') || 'empty'),
-          el('button', {
-            id: 'syncQueryPendingResubscribeBtn',
-            onClick: () => setCourseId('courseB')
-          }, 'switch')
-        )
-      }, { suspenseProps: { fallback: el('span', { id: 'syncQueryPendingResubscribe' }, 'Loading...') } })
-
-      const { container } = render(el(Component))
-      await waitFor(() => {
-        expect(container.querySelector('#syncQueryPendingResubscribe').textContent).toBe('Alpha')
-      })
-      consumeSpy.mockClear()
-
-      fireEvent.click(container.querySelector('#syncQueryPendingResubscribeBtn'))
-      await wait(20)
-      expect(consumeSpy).not.toHaveBeenCalled()
-      expect(container.querySelector('#syncQueryPendingResubscribe').textContent).toBe('Alpha')
-
-      await act(async () => {
-        await releaseSwitch()
-      })
-
-      await waitFor(() => {
-        expect(container.querySelector('#syncQueryPendingResubscribe').textContent).toBe('Beta')
-      })
-    } finally {
-      consumeSpy.mockRestore()
-      querySubscriptions.subscribe = originalSubscribe
     }
   })
 })
@@ -1829,7 +1251,7 @@ describe('useBatchQuery / useBatchQuery$', () => {
     })
 
     function DocSubscriber ({ visible }) {
-      useDoc('batchLocalLessons', visible ? lessonId : '__DUMMY__')
+      useSub($.batchLocalLessons[visible ? lessonId : '__DUMMY__'])
       if (!visible) return null
       return el('span', { id: 'batchDocSubscriber' }, 'subscribed')
     }
@@ -2157,79 +1579,6 @@ describe('useBatchQuery / useBatchQuery$', () => {
       $.stop(`${basePath}.virtual`)
       _del([basePath])
     }
-  })
-})
-
-describe('useAsyncQuery / useAsyncQuery$', () => {
-  it('useAsyncQuery returns undefined initially and then provides docs and $query', async () => {
-    const $a = await sub($.asyncQueryHook.q1)
-    const $b = await sub($.asyncQueryHook.q2)
-    $a.set({ name: 'Ann', active: true, createdAt: 1 })
-    $b.set({ name: 'Ben', active: false, createdAt: 2 })
-    await wait()
-
-    const Component = observer(() => {
-      const [docs] = useAsyncQuery('asyncQueryHook', { active: true })
-      if (docs == null) return el('span', { id: 'aqNames' }, 'Waiting...')
-      return el('span', { id: 'aqNames' }, (docs || []).map(d => d.name).join(','))
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#aqNames').textContent).toBe('Waiting...')
-
-    await wait()
-    expect(container.querySelector('#aqNames').textContent).toBe('Ann')
-  })
-
-  it('useAsyncQuery$ returns a query signal after async subscribe', async () => {
-    const $a = await sub($.asyncQueryHook2.q1)
-    $a.set({ name: 'Ivy', active: true, createdAt: 1 })
-    await wait()
-
-    const Component = observer(() => {
-      const $query = useAsyncQuery$('asyncQueryHook2', { active: true })
-      if (!$query) return el('span', { id: 'aqNames2' }, 'Loading...')
-      const ids = $query.getIds()
-      const docs = $query.get()
-      const name = docs && docs[0]?.name
-      return el('span', { id: 'aqNames2' }, `${ids.join(',')}:${name || ''}`)
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#aqNames2').textContent).toBe('Loading...')
-    await wait()
-    expect(container.querySelector('#aqNames2').textContent).toBe('q1:Ivy')
-  })
-
-  itCompat('useAsyncQuery returns the same extra payload as useAsyncQuery$ for $count queries', async () => {
-    await act(async () => {
-      $.users.asyncCountUser1.set({ _id: 'asyncCountUser1', name: 'A' })
-      $.users.asyncCountUser2.set({ _id: 'asyncCountUser2', name: 'B' })
-    })
-
-    const query = {
-      _id: { $in: ['asyncCountUser1', 'asyncCountUser2'] },
-      $count: true
-    }
-
-    const Component = observer(() => {
-      const [count] = useAsyncQuery('users', query)
-      const $count = useAsyncQuery$('users', query)
-      if (count == null || !$count) return el('div', { id: 'asyncCountValue' }, 'Waiting...')
-      return el('div', { id: 'asyncCountValue' }, `${typeof count}:${String(count)}|${typeof $count.get()}:${String($count.get())}`)
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#asyncCountValue').textContent).toBe('Waiting...')
-
-    await waitFor(() => {
-      expect(container.querySelector('#asyncCountValue').textContent).toBe('number:2|number:2')
-    })
-
-    await act(async () => {
-      $.users.asyncCountUser1.del()
-      $.users.asyncCountUser2.del()
-    })
   })
 })
 

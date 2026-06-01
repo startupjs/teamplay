@@ -13,17 +13,6 @@ export function useBatch () {
   if (promise) throw promise
 }
 
-export function useDoc$ (collection, id, options) {
-  const $doc = getDocSignal(collection, id, 'useDoc')
-  const normalizedOptions = normalizeSyncSubOptions(options)
-  return useSub($doc, undefined, normalizedOptions)
-}
-
-export function useDoc (collection, id, options) {
-  const $doc = useDoc$(collection, id, options)
-  return [$doc.get(), $doc]
-}
-
 export function useBatchDoc (collection, id, options) {
   const $doc = useBatchDoc$(collection, id, options)
   if (!$doc) return [undefined, undefined]
@@ -34,17 +23,6 @@ export function useBatchDoc$ (collection, id, _options) {
   const $doc = getDocSignal(collection, id, 'useBatchDoc')
   const options = _options ? { ..._options, ...BATCH_SUB_OPTIONS } : BATCH_SUB_OPTIONS
   return useSub($doc, undefined, options)
-}
-
-export function useAsyncDoc$ (collection, id, options) {
-  const $doc = getDocSignal(collection, id, 'useAsyncDoc')
-  return useAsyncSub($doc, undefined, options)
-}
-
-export function useAsyncDoc (collection, id, options) {
-  const $doc = useAsyncDoc$(collection, id, options)
-  if (!$doc) return [undefined, undefined]
-  return [$doc.get(), $doc]
 }
 
 function useSubscribedQuery (collection, query, options, hookName, subscribe) {
@@ -63,25 +41,14 @@ function getExtraQuerySignal ($query, normalizedQuery) {
   return isExtraQuery(normalizedQuery) ? $query.extra : $query
 }
 
-export function useQuery$ (collection, query, options) {
+function useSyncQueryResult (collection, query, options, hookName) {
   const normalizedOptions = normalizeSyncSubOptions(options)
-  const { $query } = useSubscribedQuery(collection, query, normalizedOptions, 'useQuery', useSub)
-  return $query
-}
-
-export function useQuery (collection, query, options) {
-  const normalizedOptions = normalizeSyncSubOptions(options)
-  const { $collection, $query } = useSubscribedQuery(collection, query, normalizedOptions, 'useQuery', useSub)
+  const { $collection, $query } = useSubscribedQuery(collection, query, normalizedOptions, hookName, useSub)
   return [$query.get(), $collection]
 }
 
-export function useAsyncQuery$ (collection, query, options) {
-  const { $query } = useSubscribedQuery(collection, query, options, 'useAsyncQuery', useAsyncSub)
-  return $query
-}
-
-export function useAsyncQuery (collection, query, options) {
-  const { $collection, $query } = useSubscribedQuery(collection, query, options, 'useAsyncQuery', useAsyncSub)
+function useAsyncQueryResult (collection, query, options, hookName) {
+  const { $collection, $query } = useSubscribedQuery(collection, query, options, hookName, useAsyncSub)
   if (!$query) return [undefined, $collection]
   return [$query.get(), $collection]
 }
@@ -102,7 +69,7 @@ export function useBatchQuery (collection, query, _options) {
 export function useQueryIds (collection, ids = [], options = {}) {
   const list = Array.isArray(ids) ? ids.slice() : []
   if (options?.reverse) list.reverse()
-  const [docs, $collection] = useQuery(collection, { _id: { $in: list } }, options)
+  const [docs, $collection] = useSyncQueryResult(collection, { _id: { $in: list } }, options, 'useQueryIds')
   if (!docs) return [docs, $collection]
   const docsById = new Map()
   for (const doc of docs) {
@@ -130,7 +97,7 @@ export function useBatchQueryIds (collection, ids = [], options = {}) {
 export function useAsyncQueryIds (collection, ids = [], options = {}) {
   const list = Array.isArray(ids) ? ids.slice() : []
   if (options?.reverse) list.reverse()
-  const [docs, $collection] = useAsyncQuery(collection, { _id: { $in: list } }, options)
+  const [docs, $collection] = useAsyncQueryResult(collection, { _id: { $in: list } }, options, 'useAsyncQueryIds')
   if (docs == null) return [undefined, $collection]
   const docsById = new Map()
   for (const doc of docs) {
@@ -148,7 +115,7 @@ export function useQueryDoc (collection, query, options) {
     $limit: 1,
     $sort: normalized.$sort || { createdAt: -1 }
   }
-  const [docs, $collection] = useQuery(collection, queryDoc, options)
+  const [docs, $collection] = useSyncQueryResult(collection, queryDoc, options, 'useQueryDoc')
   const doc = docs && docs[0]
   const docId = doc?._id ?? doc?.id
   const $doc = docId != null ? $collection[docId] : undefined
@@ -187,7 +154,7 @@ export function useAsyncQueryDoc (collection, query, options) {
     $limit: 1,
     $sort: normalized.$sort || { createdAt: -1 }
   }
-  const [docs, $collection] = useAsyncQuery(collection, queryDoc, options)
+  const [docs, $collection] = useAsyncQueryResult(collection, queryDoc, options, 'useAsyncQueryDoc')
   if (docs == null) return [undefined, undefined]
   const doc = docs && docs[0]
   const docId = doc?._id ?? doc?.id

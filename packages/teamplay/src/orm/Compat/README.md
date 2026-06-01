@@ -4,7 +4,7 @@ This folder contains the compatibility layer that emulates the old StartupJS (Ra
 
 It includes:
 1. `SignalCompat` — a signal class with Racer-compatible value semantics on the current signal path.
-2. Compat subscription hooks — `useDoc`, `useQuery`, and related async/batch aliases.
+2. Remaining compat subscription helpers — `useBatch`, batch hooks, and query id/doc helpers.
 
 All hooks are re-exported from `packages/teamplay/src/index.ts`.
 
@@ -403,9 +403,9 @@ When refCount drops to `0`, unsubscribe/destroy is scheduled after this delay.
 If a new subscribe arrives before timeout, pending destroy is cancelled and the same doc/query instance is reused.
 
 Compat queries also retain lifecycle ownership of docs they materialize into DataTree.
-This means a doc that arrived through `useQuery` / `useBatchQuery` will stay available
+This means a doc that arrived through `useSub` / `useBatchQuery` will stay available
 for immediate direct object-tree reads while that query remains subscribed, even if
-some unrelated `useDoc` subscriber for the same `collection.id` unmounts.
+some unrelated doc subscriber for the same `collection.id` unmounts.
 
 ### set(value) and setReplace(value)
 
@@ -583,8 +583,8 @@ Query signals:
 - Provide `getIds()` for convenience.
 
 ```js
-const [users, $users] = useQuery('users', { active: true })
-for (const $u of $users) {
+const $usersQuery = useSub($.users, { active: true })
+for (const $u of $usersQuery) {
   console.log($u.getId())
 }
 ```
@@ -596,7 +596,8 @@ Aggregations:
   You can only update subpaths.
 
 ```js
-const [items] = useQuery('orders', { $aggregate: [...] })
+const $itemsQuery = useSub($.orders, { $aggregate: [...] })
+const items = $itemsQuery.get()
 
 // OK: update field inside aggregation result doc
 items[0].amount.set(10)
@@ -614,11 +615,8 @@ They are designed to behave close to StartupJS hooks, but adapted to Teamplay’
 
 General notes:
 - Hooks should be used inside `observer()` components to get reactive updates.
-- Sync hooks (`useDoc`, `useQuery`) use Suspense by default (via `useSub`).
-- In compatibility mode, sync hooks are strict (`defer: false`) to match racer-like
-  semantics and avoid transient `undefined` / empty snapshots during fast navigation.
-  This is enforced by compat hooks (user `defer` option is ignored for sync hooks).
-- Async hooks (`useAsyncDoc`, `useAsyncQuery`) never throw; they return `undefined` until ready.
+- Direct compat doc/query hooks were removed. Use object-tree subscriptions instead:
+  `useSub($.users[userId])`, `useSub($.users, query)`, `useAsyncSub(...)`.
 - Batch hooks use a Suspense batch barrier (`useBatch`) and wait for both
   subscribe promises and DataTree materialization readiness.
 
@@ -717,26 +715,18 @@ Limitations vs Racer:
 - Only `change`/`all` events are supported (no `insert`/`remove`/`move` event names).
 - `eventName` for `all` is always `'change'` in this compat layer.
 
-### Doc Hooks
+### Doc Subscriptions
 
-#### `useDoc$` / `useDoc`
-
-```js
-const [user, $user] = useDoc('users', userId)
-```
-
-Behavior:
-- Subscribes to a single doc.
-- If `id == null`, a warning is logged and `__NULL__` is used.
-
-#### `useAsyncDoc$` / `useAsyncDoc`
+Direct compat doc hooks (`useDoc`, `useDoc$`, `useAsyncDoc`, `useAsyncDoc$`) are no
+longer exported. Use object-tree subscriptions:
 
 ```js
-const [user, $user] = useAsyncDoc('users', userId)
-if (!user) return 'Loading...'
-```
+const $user = useSub($.users[userId])
+const user = $user.get()
 
-Returns `undefined` until subscription resolves.
+const $asyncUser = useAsyncSub($.users[userId])
+const asyncUser = $asyncUser?.get()
+```
 
 #### Batch variants
 
@@ -745,40 +735,17 @@ Returns `undefined` until subscription resolves.
 - they also register a **materialization readiness check**:
   doc is considered ready only when it is visible in DataTree (or explicitly missing).
 
-### Query Hooks
+### Query Subscriptions
 
-#### `useQuery$` / `useQuery`
-
-```js
-const [users, $users] = useQuery('users', { active: true })
-```
-
-Important: the **second return value is the collection**, not the query signal.
-This matches StartupJS and makes updates easy:
+Direct compat query hooks (`useQuery`, `useQuery$`, `useAsyncQuery`,
+`useAsyncQuery$`) are no longer exported. Use object-tree subscriptions:
 
 ```js
-$users[userId].name.set('New Name')
+const $usersQuery = useSub($.users, { active: true })
+const users = $usersQuery.get()
+const ids = $usersQuery.getIds()
+const $users = $.users
 ```
-
-`useQuery$` returns the **query signal**:
-
-```js
-const $query = useQuery$('users', { active: true })
-const ids = $query.getIds()
-const docs = $query.get()
-```
-
-If `query == null`, a warning is logged and `{ _id: '__NON_EXISTENT__' }` is used.
-If `query` is not an object, an error is thrown.
-
-#### `useAsyncQuery$` / `useAsyncQuery`
-
-```js
-const [users, $users] = useAsyncQuery('users', { active: true })
-if (!users) return 'Loading...'
-```
-
-Async variant: no Suspense, returns `undefined` until ready.
 
 #### Batch variants
 
@@ -850,36 +817,38 @@ creation semantics from model mutators.
 
 ## Examples
 
-### useDoc with Suspense
+### Doc subscription with Suspense
 
 ```js
 const Component = observer(() => {
-  const [user, $user] = useDoc('users', userId)
+  const $user = useSub($.users[userId])
+  const user = $user.get()
   return <button onClick={() => $user.name.set('New')}>{user.name}</button>
 })
 ```
 
-### useAsyncDoc
+### Async doc subscription
 
 ```js
 const Component = observer(() => {
-  const [user] = useAsyncDoc('users', userId)
+  const $user = useAsyncSub($.users[userId])
+  const user = $user?.get()
   if (!user) return 'Loading...'
   return user.name
 })
 ```
 
-### useQuery / useQuery$
+### Query subscription
 
 ```js
 const Component = observer(() => {
-  const [users, $users] = useQuery('users', { active: true })
-  const $query = useQuery$('users', { active: true })
+  const $query = useSub($.users, { active: true })
+  const users = $query.get()
   const ids = $query.getIds()
   return (
     <>
       {users.map(u => <div key={u._id}>{u.name}</div>)}
-      <button onClick={() => $users[userId].name.set('New')}>Rename</button>
+      <button onClick={() => $.users[userId].name.set('New')}>Rename</button>
     </>
   )
 })
