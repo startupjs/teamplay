@@ -29,8 +29,8 @@ export interface UseSubOptions {
   defer?: boolean | number
   /** Batch Suspense promises across multiple subscriptions in one render attempt. */
   batch?: boolean
-  /** Enable compatibility cleanup for legacy observer render attempts. */
-  compatAttemptCleanup?: boolean
+  /** Enable cleanup for observer render attempts when a subscription suspends. */
+  renderAttemptCleanup?: boolean
 }
 
 let TEST_THROTTLING: false | number = false
@@ -261,13 +261,13 @@ function runUseSub (signal: unknown, params?: unknown, options?: UseSubOptions):
 export function useSubDeferred (
   signal: unknown,
   params?: unknown,
-  { async = false, defer, batch = false, compatAttemptCleanup = false }: UseSubOptions = {}
+  { async = false, defer, batch = false, renderAttemptCleanup = false }: UseSubOptions = {}
 ): unknown {
   const $signalRef = useRef<unknown>()
   const componentId = useId()
   const scheduleUpdate = useScheduleUpdate()
   const observerDefer = useDefer()
-  if (compatAttemptCleanup) markCompatComponent(componentId)
+  if (renderAttemptCleanup) markCompatComponent(componentId)
   if (batch) promiseBatcher.activate()
   defer ??= observerDefer ?? DEFAULT_DEFER
   if (defer) {
@@ -285,7 +285,7 @@ export function useSubDeferred (
       // On resubscribe we keep rendering previous signal and refresh in background.
       if (!hasPreviousSignal) {
         promiseBatcher.add(promise)
-        if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
+        if (renderAttemptCleanup) registerRenderAttemptCleanup(signal, params)
       } else {
         scheduleUpdate(promise)
       }
@@ -301,7 +301,7 @@ export function useSubDeferred (
       scheduleUpdate(promise)
       return $signalRef.current
     }
-    if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
+    if (renderAttemptCleanup) registerRenderAttemptCleanup(signal, params)
     throw promise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
@@ -316,13 +316,13 @@ export function useSubDeferred (
 export function useSubClassic (
   signal: unknown,
   params?: unknown,
-  { async = false, batch = false, compatAttemptCleanup = false }: UseSubOptions = {}
+  { async = false, batch = false, renderAttemptCleanup = false }: UseSubOptions = {}
 ): unknown {
   const id = executionContextTracker.newHookId()
   const componentId = useId()
   const cache = useCache(undefined)
   const scheduleUpdate = useScheduleUpdate()
-  if (compatAttemptCleanup) markCompatComponent(componentId)
+  if (renderAttemptCleanup) markCompatComponent(componentId)
   if (batch) promiseBatcher.activate()
   const promiseOrSignal = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
@@ -334,7 +334,7 @@ export function useSubClassic (
       // On resubscribe we keep rendering previous signal and refresh in background.
       if (!hasPreviousSignal) {
         promiseBatcher.add(promise)
-        if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
+        if (renderAttemptCleanup) registerRenderAttemptCleanup(signal, params)
       } else {
         scheduleUpdate(promise)
       }
@@ -352,7 +352,7 @@ export function useSubClassic (
         scheduleUpdate(promise)
         return
       }
-      if (compatAttemptCleanup) registerCompatAttemptCleanup(signal, params)
+      if (renderAttemptCleanup) registerRenderAttemptCleanup(signal, params)
       // in regular mode we throw the promise to be caught by Suspense
       // this way we guarantee that the signal with all the data
       // will always be there when component is rendered
@@ -404,10 +404,10 @@ function isThenable<TValue = unknown> (value: unknown): value is Promise<TValue>
     typeof (value as { then?: unknown }).then === 'function'
 }
 
-function registerCompatAttemptCleanup (_signal: unknown, _params: unknown): void {
-  // Compat hooks don't build per-hook init objects like Racer.
+function registerRenderAttemptCleanup (_signal: unknown, _params: unknown): void {
+  // Legacy hooks don't build per-hook init objects like Racer.
   // We still need a marker so trapRender can defer observer-shell cleanup
   // only when a real attempt cleanup exists.
   // This path must not arm suspense-gate keep-alive by itself.
-  renderAttemptDestroyer.armCompatAttemptCleanup()
+  renderAttemptDestroyer.armRenderAttemptCleanup()
 }

@@ -318,7 +318,7 @@ describe('useSub edge cases', () => {
     await pending
   })
 
-  itCompat('trapRender defers compat cleanup until thrown promise resolves', async () => {
+  itCompat('trapRender defers render-attempt cleanup until thrown promise resolves', async () => {
     const events = []
     let resolvePromise
     const pending = new Promise(resolve => {
@@ -329,7 +329,7 @@ describe('useSub edge cases', () => {
       render: () => {
         renderAttemptDestroyer.add(() => {
           events.push('attempt-cleanup')
-        }, { compat: true })
+        }, { renderAttemptCleanup: true })
         throw pending
       },
       cache: {
@@ -403,7 +403,7 @@ describe('useSub edge cases', () => {
     ])
   })
 
-  it('regression: compat attempt cleanup marker without handlers should still destroy shell (useSub/useDoc path)', async () => {
+  it('regression: render-attempt cleanup marker without handlers should still destroy shell (useSub/useDoc path)', async () => {
     const events = []
     let resolvePromise
     const pending = new Promise(resolve => {
@@ -412,9 +412,9 @@ describe('useSub edge cases', () => {
     const wrapped = trapRender({
       componentId: 'compatTrapRenderArmedNoCleanup',
       render: () => {
-        // This mirrors compat useSub/useDoc: it arms compat cleanup, but does not
+        // This mirrors legacy useSub/useDoc: it arms render-attempt cleanup, but does not
         // register per-attempt cleanup handlers in renderAttemptDestroyer.
-        renderAttemptDestroyer.armCompatAttemptCleanup()
+        renderAttemptDestroyer.armRenderAttemptCleanup()
         throw pending
       },
       cache: {
@@ -431,7 +431,7 @@ describe('useSub edge cases', () => {
       thrown = err
     }
 
-    // Expected stable behavior (alpha.88): no compat shell preservation without
+    // Expected stable behavior (alpha.88): no shell preservation without
     // real attempt cleanup handlers.
     expect(events).toEqual([
       'activate',
@@ -448,7 +448,7 @@ describe('useSub edge cases', () => {
     ])
   })
 
-  it('trapRender still destroys plain compat shell for thrown promises without compat arming', async () => {
+  it('trapRender still destroys plain compat shell for thrown promises without render-attempt cleanup arming', async () => {
     const events = []
     let resolvePromise
     const pending = new Promise(resolve => {

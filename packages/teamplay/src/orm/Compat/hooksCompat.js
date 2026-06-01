@@ -261,7 +261,7 @@ function isExtraQuery (query) {
 const BATCH_SUB_OPTIONS = Object.freeze({
   async: false,
   batch: true,
-  compatAttemptCleanup: true,
+  renderAttemptCleanup: true,
   // Batch hooks are a hard suspense barrier. Deferred params can skip the barrier
   // on route transitions and cause immediate reads from stale/empty local nodes.
   defer: false
@@ -274,7 +274,7 @@ function normalizeSyncSubOptions (options) {
   return {
     ...(options || {}),
     async: false,
-    compatAttemptCleanup: true,
+    renderAttemptCleanup: true,
     // Compat sync hooks are strict by design: no deferred snapshots between route/tab switches.
     defer: false
   }

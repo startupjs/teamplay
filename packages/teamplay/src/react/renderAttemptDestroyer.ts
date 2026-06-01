@@ -2,23 +2,26 @@ type DestroyAttempt = () => unknown | Promise<unknown>
 
 class RenderAttemptDestroyer {
   fns: DestroyAttempt[]
-  compatAttemptCleanupArmed: boolean
+  renderAttemptCleanupArmed: boolean
   suspenseGateArmed: boolean
 
   constructor () {
     this.fns = []
-    this.compatAttemptCleanupArmed = false
+    this.renderAttemptCleanupArmed = false
     this.suspenseGateArmed = false
   }
 
-  add (fn: DestroyAttempt | undefined, { compat = false }: { compat?: boolean } = {}): void {
+  add (
+    fn: DestroyAttempt | undefined,
+    { renderAttemptCleanup = false }: { renderAttemptCleanup?: boolean } = {}
+  ): void {
     if (typeof fn !== 'function') return
     this.fns.push(fn)
-    if (compat) this.compatAttemptCleanupArmed = true
+    if (renderAttemptCleanup) this.renderAttemptCleanupArmed = true
   }
 
-  armCompatAttemptCleanup (): void {
-    this.compatAttemptCleanupArmed = true
+  armRenderAttemptCleanup (): void {
+    this.renderAttemptCleanupArmed = true
   }
 
   armSuspenseGate (): void {
@@ -29,7 +32,7 @@ class RenderAttemptDestroyer {
     shouldKeepShellAlive: boolean
     destroyAttempt?: () => Promise<void>
   } {
-    const shouldRunAttemptCleanup = this.compatAttemptCleanupArmed && this.fns.length > 0
+    const shouldRunAttemptCleanup = this.renderAttemptCleanupArmed && this.fns.length > 0
     const shouldKeepShellAlive = this.suspenseGateArmed || shouldRunAttemptCleanup
     let destroyAttempt: (() => Promise<void>) | undefined
     if (shouldRunAttemptCleanup) {
@@ -48,7 +51,7 @@ class RenderAttemptDestroyer {
 
   reset (): void {
     this.fns.length = 0
-    this.compatAttemptCleanupArmed = false
+    this.renderAttemptCleanupArmed = false
     this.suspenseGateArmed = false
   }
 }
