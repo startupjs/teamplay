@@ -12,11 +12,6 @@ import {
   useBatchDoc$,
   useBatchQuery,
   useBatchQuery$,
-  useQueryIds,
-  useAsyncQueryIds,
-  useQueryDoc,
-  useQueryDoc$,
-  useAsyncQueryDoc,
   emit,
   useOn,
   useEmit,
@@ -1579,119 +1574,6 @@ describe('useBatchQuery / useBatchQuery$', () => {
       $.stop(`${basePath}.virtual`)
       _del([basePath])
     }
-  })
-})
-
-describe('useQueryIds / useAsyncQueryIds', () => {
-  it('useQueryIds returns docs in the same order as ids', async () => {
-    const $a = await sub($.queryIdsHook.a)
-    const $b = await sub($.queryIdsHook.b)
-    $a.set({ name: 'Alpha' })
-    $b.set({ name: 'Beta' })
-    await wait()
-
-    const Component = observer(() => {
-      const [docs, $collection] = useQueryIds('queryIdsHook', ['b', 'a'])
-      return fr(
-        el('span', { id: 'idsNames' }, (docs || []).map(d => d.name).join(',')),
-        el('button', { id: 'idsBtn', onClick: () => $collection.b.name.set('Beta2') })
-      )
-    }, { suspenseProps: { fallback: el('span', { id: 'idsNames' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#idsNames').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#idsNames').textContent).toBe('Beta,Alpha')
-
-    fireEvent.click(container.querySelector('#idsBtn'))
-    expect(container.querySelector('#idsNames').textContent).toBe('Beta2,Alpha')
-  })
-
-  it('useAsyncQueryIds returns undefined initially then docs', async () => {
-    const $a = await sub($.asyncQueryIdsHook.a)
-    $a.set({ name: 'One' })
-    await wait()
-
-    const Component = observer(() => {
-      const [docs] = useAsyncQueryIds('asyncQueryIdsHook', ['a'])
-      if (docs == null) return el('span', { id: 'asyncIds' }, 'Waiting...')
-      return el('span', { id: 'asyncIds' }, docs.map(d => d.name).join(','))
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#asyncIds').textContent).toBe('Waiting...')
-
-    await wait()
-    expect(container.querySelector('#asyncIds').textContent).toBe('One')
-  })
-})
-
-describe('useQueryDoc / useAsyncQueryDoc', () => {
-  it('useQueryDoc returns the newest doc by createdAt', async () => {
-    const $a = await sub($.queryDocHook.a)
-    const $b = await sub($.queryDocHook.b)
-    $a.set({ name: 'Old', type: 'x', createdAt: 1 })
-    $b.set({ name: 'New', type: 'x', createdAt: 2 })
-    await wait()
-
-    const Component = observer(() => {
-      const [doc, $doc] = useQueryDoc('queryDocHook', { type: 'x' })
-      return fr(
-        el('span', { id: 'qdoc' }, doc?.name || ''),
-        el('button', { id: 'qdocBtn', onClick: () => $doc.name.set('Newest') })
-      )
-    }, { suspenseProps: { fallback: el('span', { id: 'qdoc' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#qdoc').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#qdoc').textContent).toBe('New')
-
-    fireEvent.click(container.querySelector('#qdocBtn'))
-    expect(container.querySelector('#qdoc').textContent).toBe('Newest')
-  })
-
-  it('useQueryDoc$ returns a signal for the matched doc', async () => {
-    const $a = await sub($.queryDocHook2.a)
-    $a.set({ name: 'Doc', type: 'y', createdAt: 1 })
-    await wait()
-
-    const Component = observer(() => {
-      const $doc = useQueryDoc$('queryDocHook2', { type: 'y' })
-      return fr(
-        el('span', { id: 'qdoc2' }, $doc?.name.get() || ''),
-        el('button', { id: 'qdocBtn2', onClick: () => $doc.name.set('Doc2') })
-      )
-    }, { suspenseProps: { fallback: el('span', { id: 'qdoc2' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#qdoc2').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#qdoc2').textContent).toBe('Doc')
-
-    fireEvent.click(container.querySelector('#qdocBtn2'))
-    expect(container.querySelector('#qdoc2').textContent).toBe('Doc2')
-  })
-
-  it('useAsyncQueryDoc returns undefined initially then doc', async () => {
-    const $a = await sub($.asyncQueryDocHook.a)
-    $a.set({ name: 'AsyncDoc', type: 'z', createdAt: 1 })
-    await wait()
-
-    const Component = observer(() => {
-      const [doc] = useAsyncQueryDoc('asyncQueryDocHook', { type: 'z' })
-      if (!doc) return el('span', { id: 'aqdoc' }, 'Waiting...')
-      return el('span', { id: 'aqdoc' }, doc.name || '')
-    })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#aqdoc').textContent).toBe('Waiting...')
-
-    await wait()
-    expect(container.querySelector('#aqdoc').textContent).toBe('AsyncDoc')
   })
 })
 

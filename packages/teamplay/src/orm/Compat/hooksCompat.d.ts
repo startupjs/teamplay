@@ -3,12 +3,6 @@ export const useBatchDoc: any
 export const useBatchDoc$: any
 export const useBatchQuery: any
 export const useBatchQuery$: any
-export const useQueryIds: any
 export const useBatchQueryIds: any
-export const useAsyncQueryIds: any
-export const useQueryDoc: any
-export const useQueryDoc$: any
 export const useBatchQueryDoc: any
 export const useBatchQueryDoc$: any
-export const useAsyncQueryDoc: any
-export const useAsyncQueryDoc$: any

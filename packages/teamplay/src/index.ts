@@ -212,15 +212,9 @@ export {
   useBatchDoc$,
   useBatchQuery,
   useBatchQuery$,
-  useQueryIds,
   useBatchQueryIds,
-  useAsyncQueryIds,
-  useQueryDoc,
-  useQueryDoc$,
   useBatchQueryDoc,
-  useBatchQueryDoc$,
-  useAsyncQueryDoc,
-  useAsyncQueryDoc$
+  useBatchQueryDoc$
 } from './orm/Compat/hooksCompat.js'
 export { emit, useOn, useEmit } from './orm/Compat/eventsCompat.js'
 export {

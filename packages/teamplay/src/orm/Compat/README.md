@@ -762,32 +762,34 @@ const $users = $.users
 
 ### Query Helpers
 
-#### `useQueryIds`
+Non-batch query helper hooks (`useQueryIds`, `useAsyncQueryIds`,
+`useQueryDoc`, `useQueryDoc$`, `useAsyncQueryDoc`, `useAsyncQueryDoc$`) are no
+longer exported from TeamPlay compat. Keep product-specific query helpers in
+application code and build them on top of `useSub` / `useAsyncSub`.
+
+#### `useBatchQueryIds`
 
 ```js
-const [users] = useQueryIds('users', ['b', 'a'])
+const [users] = useBatchQueryIds('users', ['b', 'a'])
 // preserves order: users[0] is 'b', users[1] is 'a'
 ```
 
 Options:
 - `reverse: true` — reverse order of IDs before mapping.
 
-`useBatchQueryIds` and `useAsyncQueryIds` are batch/async variants.
-
-#### `useQueryDoc`
+#### `useBatchQueryDoc`
 
 Returns a **single doc** matched by query:
 
 ```js
-const [doc, $doc] = useQueryDoc('events', { slugId })
+const [doc, $doc] = useBatchQueryDoc('events', { slugId })
 ```
 
 Implementation details:
 - Adds `$limit: 1`
 - Adds default `$sort: { createdAt: -1 }` if `$sort` is missing
 
-`useQueryDoc$` returns only the doc signal (or `undefined`).
-`useBatchQueryDoc` / `useAsyncQueryDoc` are batch/async variants.
+`useBatchQueryDoc$` returns only the doc signal (or `undefined`).
 
 ### Batch Barrier
 
@@ -852,21 +854,6 @@ const Component = observer(() => {
     </>
   )
 })
-```
-
-### useQueryIds
-
-```js
-const [users] = useQueryIds('users', ['b', 'a'])
-// users are ordered by ids array
-```
-
-### useQueryDoc
-
-```js
-const [latest, $latest] = useQueryDoc('events', { type: 'webinar' })
-if (!latest) return null
-return <span>{latest.title}</span>
 ```
 
 ### Suspense Gates for Thrown Thenables
