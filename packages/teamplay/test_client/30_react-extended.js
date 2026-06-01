@@ -40,10 +40,6 @@ import { __resetSuspendMemoForTests } from '../src/react/useSuspendMemo.ts'
 import { useId, useNow, useTriggerUpdate, useUnmount } from '../src/react/helpers.ts'
 import trapRender from '../src/react/trapRender.js'
 import renderAttemptDestroyer from '../src/react/renderAttemptDestroyer.ts'
-import {
-  __resetCompatComponentRegistryForTests,
-  markCompatComponent
-} from '../src/react/compatComponentRegistry.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import { get as _get, set as _set, del as _del } from '../src/orm/dataTree.js'
 import connect from '../src/connect/test.js'
@@ -66,7 +62,6 @@ beforeEach(() => {
 afterEach(cleanup)
 afterEach(runGc)
 afterEach(() => {
-  __resetCompatComponentRegistryForTests()
   __resetEventsForTests()
   __resetCompatWarningsForTests()
   __resetSuspendMemoForTests()
@@ -318,51 +313,7 @@ describe('useSub edge cases', () => {
     await pending
   })
 
-  itCompat('trapRender defers render-attempt cleanup until thrown promise resolves', async () => {
-    const events = []
-    let resolvePromise
-    const pending = new Promise(resolve => {
-      resolvePromise = resolve
-    })
-    const wrapped = trapRender({
-      componentId: 'compatTrapRender',
-      render: () => {
-        renderAttemptDestroyer.add(() => {
-          events.push('attempt-cleanup')
-        }, { renderAttemptCleanup: true })
-        throw pending
-      },
-      cache: {
-        activate: () => events.push('activate'),
-        deactivate: () => events.push('deactivate')
-      },
-      destroy: where => events.push(`destroy:${where}`)
-    })
-
-    let thrown
-    try {
-      wrapped()
-    } catch (err) {
-      thrown = err
-    }
-
-    expect(events).toEqual([
-      'activate',
-      'deactivate'
-    ])
-    expect(typeof thrown?.then).toBe('function')
-
-    resolvePromise()
-    await thrown
-
-    expect(events).toEqual([
-      'activate',
-      'deactivate',
-      'attempt-cleanup'
-    ])
-  })
-
-  it('trapRender keeps observer shell alive only when compat path is explicitly armed', async () => {
+  it('trapRender keeps observer shell alive only when suspense gate is explicitly armed', async () => {
     const events = []
     let resolvePromise
     const pending = new Promise(resolve => {
@@ -400,92 +351,6 @@ describe('useSub edge cases', () => {
     expect(events).toEqual([
       'activate',
       'deactivate'
-    ])
-  })
-
-  it('regression: render-attempt cleanup marker without handlers should still destroy shell (useSub/useDoc path)', async () => {
-    const events = []
-    let resolvePromise
-    const pending = new Promise(resolve => {
-      resolvePromise = resolve
-    })
-    const wrapped = trapRender({
-      componentId: 'compatTrapRenderArmedNoCleanup',
-      render: () => {
-        // This mirrors legacy useSub/useDoc: it arms render-attempt cleanup, but does not
-        // register per-attempt cleanup handlers in renderAttemptDestroyer.
-        renderAttemptDestroyer.armRenderAttemptCleanup()
-        throw pending
-      },
-      cache: {
-        activate: () => events.push('activate'),
-        deactivate: () => events.push('deactivate')
-      },
-      destroy: where => events.push(`destroy:${where}`)
-    })
-
-    let thrown
-    try {
-      wrapped()
-    } catch (err) {
-      thrown = err
-    }
-
-    // Expected stable behavior (alpha.88): no shell preservation without
-    // real attempt cleanup handlers.
-    expect(events).toEqual([
-      'activate',
-      'destroy:trapRender.js'
-    ])
-    expect(thrown).toBe(pending)
-
-    resolvePromise()
-    await pending
-
-    expect(events).toEqual([
-      'activate',
-      'destroy:trapRender.js'
-    ])
-  })
-
-  it('trapRender still destroys plain compat shell for thrown promises without render-attempt cleanup arming', async () => {
-    const events = []
-    let resolvePromise
-    const pending = new Promise(resolve => {
-      resolvePromise = resolve
-    })
-    markCompatComponent('compatTrapRenderNoCleanup')
-    const wrapped = trapRender({
-      componentId: 'compatTrapRenderNoCleanup',
-      render: () => {
-        throw pending
-      },
-      cache: {
-        activate: () => events.push('activate'),
-        deactivate: () => events.push('deactivate')
-      },
-      destroy: where => events.push(`destroy:${where}`)
-    })
-
-    let thrown
-    try {
-      wrapped()
-    } catch (err) {
-      thrown = err
-    }
-
-    expect(events).toEqual([
-      'activate',
-      'destroy:trapRender.js'
-    ])
-    expect(thrown).toBe(pending)
-
-    resolvePromise()
-    await thrown
-
-    expect(events).toEqual([
-      'activate',
-      'destroy:trapRender.js'
     ])
   })
 
@@ -731,7 +596,23 @@ describe('useSub edge cases', () => {
     })
   })
 
-  itCompat('compat observer replays updates skipped during execution context', async () => {
+  it('observer replays updates skipped during execution context', async () => {
+    const $state = $({ count: 0 })
+
+    const Component = observer(() => {
+      const count = $state.count.get()
+      if (count < 2) $state.count.set(count + 1)
+      return el('span', { id: 'observerReplay' }, String(count))
+    })
+
+    const { container } = render(el(Component))
+
+    await waitFor(() => {
+      expect(container.querySelector('#observerReplay').textContent).toBe('2')
+    })
+  })
+
+  itCompat('compat hook observer replays updates skipped during execution context', async () => {
     act(() => {
       $.compatReplayDoc.test1.set({ name: 'John' })
       $.page.compatReplayFlag.set(false)

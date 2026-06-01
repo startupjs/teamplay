@@ -7,7 +7,6 @@ import executionContextTracker from './executionContextTracker.ts'
 import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helpers.ts'
 import trapRender from './trapRender.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
-import { isCompatComponent, unmarkCompatComponent } from './compatComponentRegistry.ts'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
 
@@ -41,7 +40,7 @@ export default function convertToObserver (BaseComponent, {
         if (!executionContextTracker.isActive()) {
           hasDeferredUpdateAfterExecutionContext = false
           triggerUpdate()
-        } else if (isCompatComponent(componentId)) {
+        } else {
           if (hasDeferredUpdateAfterExecutionContext) return
           hasDeferredUpdateAfterExecutionContext = true
           queueMicrotask(() => {
@@ -56,7 +55,6 @@ export default function convertToObserver (BaseComponent, {
       destroyRef.current = (where) => {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
         destroyRef.current = undefined
-        unmarkCompatComponent(componentId)
         unobserve(reactionRef.current)
         reactionRef.current = undefined
         destroyCache(where)
@@ -75,7 +73,6 @@ export default function convertToObserver (BaseComponent, {
 
     // clean up observer on unmount
     useUnmount(() => {
-      unmarkCompatComponent(componentId)
       destroyRef.current?.('useUnmount()')
     })
 

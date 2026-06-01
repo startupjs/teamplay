@@ -1,6 +1,5 @@
 import executionContextTracker from './executionContextTracker.ts'
-import { useCache, useId } from './helpers.ts'
-import { markCompatComponent } from './compatComponentRegistry.ts'
+import { useCache } from './helpers.ts'
 import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
 
 const IN_FLIGHT_BY_KEY = new Map<unknown, Promise<unknown>>()
@@ -19,7 +18,6 @@ export default function useSuspendMemo<TValue> (
   if (typeof factory !== 'function') throw Error('useSuspendMemo() expects a factory function')
   deps = normalizeDeps(deps)
 
-  const componentId = useId()
   const cache = useCache(undefined)
   const hookId = executionContextTracker.newHookId()
   const cacheKey = `suspendMemo:${hookId}`
@@ -37,7 +35,6 @@ export default function useSuspendMemo<TValue> (
 
   if (entry.status === 'done') return entry.value as TValue
   if (entry.status === 'pending') {
-    markCompatComponent(componentId)
     renderAttemptDestroyer.armSuspenseGate()
     throw entry.promise
   }
@@ -56,7 +53,6 @@ export default function useSuspendMemo<TValue> (
     })
     entry.status = 'pending'
     entry.promise = promise
-    markCompatComponent(componentId)
     renderAttemptDestroyer.armSuspenseGate()
     throw promise
   }
