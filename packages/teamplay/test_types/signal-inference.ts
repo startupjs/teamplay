@@ -8,6 +8,7 @@ import {
   defineModels,
   defineSchema,
   sub,
+  useAsyncSub,
   useSub,
   type AccessCreateContext as ExportedAccessCreateContext,
   type CollectionSpec,
@@ -551,6 +552,15 @@ const {
 const $subGame = sub($game)
 function useHookGame () {
   return useSub($game)
+}
+function useHookGameWithOptions () {
+  return useSub($game, { defer: false })
+}
+function useHookGameWithLegacyOptions () {
+  return useSub($game, undefined, { defer: false })
+}
+function useAsyncHookGameWithOptions () {
+  return useAsyncSub($game, { defer: false })
 }
 const $zodGame = $.zodGames[gameId]
 $game.start()

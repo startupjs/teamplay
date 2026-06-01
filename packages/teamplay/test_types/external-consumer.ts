@@ -92,6 +92,9 @@ function ExternalConsumerComponent () {
   const maybeHookUser = useSub(typedUserSignal)
   type _useSubResult = Assert<IsEqual<typeof maybeHookUser, Signal<UserDoc>>>
 
+  const maybeHookUserWithOptions = useSub(typedUserSignal, { defer: false })
+  type _useSubOptionsResult = Assert<IsEqual<typeof maybeHookUserWithOptions, Signal<UserDoc>>>
+
   const [apiCount, apiLoading, apiError] = useApi(async (userId: string) => userId.length, 'user1', { debounce: 5 })
   const countValue: number | undefined = apiCount
   const loadingValue: boolean = apiLoading

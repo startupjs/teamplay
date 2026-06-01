@@ -636,6 +636,42 @@ describe('useSub edge cases', () => {
     })
   })
 
+  it('useSub accepts options as the second argument for doc signals', async () => {
+    const $user = await sub($.useSubDocOptions.user1)
+    $user.set({ name: 'Doc options' })
+    await wait()
+
+    const Component = observer(() => {
+      const $doc = useSub($.useSubDocOptions.user1, { defer: false })
+      return el('span', { id: 'useSubDocOptions' }, $doc.name.get() || 'empty')
+    }, { suspenseProps: { fallback: el('span', { id: 'useSubDocOptions' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+
+    await waitFor(() => {
+      expect(container.querySelector('#useSubDocOptions').textContent).toBe('Doc options')
+    })
+  })
+
+  it('useSub keeps second object argument as query params for collection signals', async () => {
+    const $match = await sub($.useSubQueryDefer.q1)
+    const $miss = await sub($.useSubQueryDefer.q2)
+    $match.set({ name: 'Match', defer: false, createdAt: 1 })
+    $miss.set({ name: 'Miss', defer: true, createdAt: 2 })
+    await wait()
+
+    const Component = observer(() => {
+      const $docs = useSub($.useSubQueryDefer, { defer: false })
+      return el('span', { id: 'useSubQueryDefer' }, $docs.map($doc => $doc.name.get()).join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'useSubQueryDefer' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+
+    await waitFor(() => {
+      expect(container.querySelector('#useSubQueryDefer').textContent).toBe('Match')
+    })
+  })
+
   it('setTestThrottling validation - wrong values throw errors', () => {
     expect(() => setTestThrottling('invalid')).toThrow()
     expect(() => setTestThrottling(0)).toThrow()
@@ -677,6 +713,24 @@ describe('useAsyncSub', () => {
     const Component = observer(() => {
       renders++
       const $user = useAsyncSub($.users.asyncDoc)
+      if (!$user) return el('span', {}, 'Waiting...')
+      return el('span', {}, $user.name.get() || 'no name')
+    })
+
+    const { container } = render(el(Component))
+    expect(renders).toBe(1)
+    expect(container.textContent).toBe('Waiting...')
+
+    await wait()
+    expect(renders).toBe(2)
+    expect(container.textContent).toBe('no name')
+  })
+
+  it('useAsyncSub accepts options as the second argument for doc signals', async () => {
+    let renders = 0
+    const Component = observer(() => {
+      renders++
+      const $user = useAsyncSub($.users.asyncDocOptions, { defer: false })
       if (!$user) return el('span', {}, 'Waiting...')
       return el('span', {}, $user.name.get() || 'no name')
     })

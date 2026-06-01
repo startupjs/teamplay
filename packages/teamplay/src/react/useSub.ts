@@ -4,17 +4,18 @@ import sub from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer } from './helpers.ts'
 import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
-import type {
-  CollectionSignal,
-  ComputedQueryParamsInput,
-  DocumentSignal,
-  QueryParams,
-  RegisteredAggregationInput,
-  SignalModelConstructor,
-  SubResult,
-  TypedAggregationInput,
-  TypedAggregationSignal,
-  WildcardSignalPath
+import {
+  isPublicDocumentSignal,
+  type CollectionSignal,
+  type ComputedQueryParamsInput,
+  type DocumentSignal,
+  type QueryParams,
+  type RegisteredAggregationInput,
+  type SignalModelConstructor,
+  type SubResult,
+  type TypedAggregationInput,
+  type TypedAggregationSignal,
+  type WildcardSignalPath
 } from '../orm/Signal.ts'
 
 type RuntimeSub = (signal: unknown, params?: unknown) => unknown
@@ -29,6 +30,8 @@ export interface UseSubOptions {
   batch?: boolean
 }
 
+const USE_SUB_OPTION_KEYS = new Set<string>(['async', 'defer', 'batch'] satisfies Array<keyof UseSubOptions>)
+
 let TEST_THROTTLING: false | number = false
 
 // experimental feature to leverage useDeferredValue() to handle re-subscriptions.
@@ -36,6 +39,17 @@ let TEST_THROTTLING: false | number = false
 let USE_DEFERRED_VALUE: boolean = true
 // by default we want to defer stuff if possible instead of throwing promises
 let DEFAULT_DEFER: boolean = true
+
+/**
+ * Subscribe to a document signal in React async mode.
+ * @param signal Document signal to subscribe to.
+ * @param params Must be omitted for document subscriptions.
+ * @param options Subscription behavior options.
+ */
+export function useAsyncSub<TSignal extends DocumentSignal<any, any, any>> (
+  signal: TSignal,
+  options?: UseSubOptions
+): SubResult<TSignal>
 
 /**
  * Subscribe to a document signal in React async mode.
@@ -138,8 +152,20 @@ export function useAsyncSub<TOutput = unknown, TCollection extends string = stri
 ): SubResult<AggregationFunction<TOutput, TCollection>, AggregationParams | undefined>
 
 export function useAsyncSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
-  return runUseSub(signal, params, { ...options, async: true })
+  const normalized = normalizeUseSubArgs(signal, params, options)
+  return runUseSub(normalized.signal, normalized.params, { ...normalized.options, async: true })
 }
+
+/**
+ * Subscribe to a document signal in React.
+ * @param signal Document signal to subscribe to.
+ * @param params Must be omitted for document subscriptions.
+ * @param options Subscription behavior options.
+ */
+export default function useSub<TSignal extends DocumentSignal<any, any, any>> (
+  signal: TSignal,
+  options?: UseSubOptions
+): SubResult<TSignal>
 
 /**
  * Subscribe to a document signal in React.
@@ -242,7 +268,28 @@ export default function useSub<TOutput = unknown, TCollection extends string = s
 ): SubResult<AggregationFunction<TOutput, TCollection>, AggregationParams | undefined>
 
 export default function useSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
-  return runUseSub(signal, params, options)
+  const normalized = normalizeUseSubArgs(signal, params, options)
+  return runUseSub(normalized.signal, normalized.params, normalized.options)
+}
+
+function normalizeUseSubArgs (
+  signal: unknown,
+  params?: unknown,
+  options?: UseSubOptions
+): { signal: unknown, params?: unknown, options?: UseSubOptions } {
+  if (options === undefined && params !== undefined && isPublicDocumentSignal(signal) && isUseSubOptions(params)) {
+    return {
+      signal,
+      params: undefined,
+      options: params
+    }
+  }
+  return { signal, params, options }
+}
+
+function isUseSubOptions (value: unknown): value is UseSubOptions {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.keys(value).every(key => USE_SUB_OPTION_KEYS.has(key))
 }
 
 function runUseSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
