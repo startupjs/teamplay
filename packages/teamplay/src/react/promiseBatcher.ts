@@ -109,7 +109,7 @@ function warnAboutChecksDelay (checks: BatchReadinessCheck[]): void {
       state
     }
   })
-  console.warn('[teamplay] useBatch() is waiting for data materialization checks.', details)
+  console.warn('[teamplay] useBatchSub() is waiting for data materialization checks.', details)
 }
 
 function isDevMode (): boolean {

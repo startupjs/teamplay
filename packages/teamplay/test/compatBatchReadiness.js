@@ -1,12 +1,12 @@
 import { describe, it } from 'mocha'
 import { strictEqual } from 'assert'
-import { __COMPAT_BATCH_READY__ } from '../src/orm/Compat/hooksCompat.js'
+import { isQueryReady } from '../src/orm/Compat/queryReadiness.js'
 import { hashQuery, QUERIES } from '../src/orm/Query.js'
 import { AGGREGATIONS } from '../src/orm/Aggregation.js'
 import { set as _set, del as _del } from '../src/orm/dataTree.js'
 
 function checkReady (collection, hash, isAggregate, hasExtraResult = false) {
-  return __COMPAT_BATCH_READY__.isQueryReady(
+  return isQueryReady(
     collection,
     [QUERIES, hash, 'ids'],
     [QUERIES, hash, 'docs'],

@@ -32,6 +32,38 @@ export default observer(function ActiveUsers () {
 })
 ```
 
+For batch screens that need several subscriptions to become ready together, use
+`useBatchSub()` and close the barrier with a final no-argument call:
+
+```tsx
+import { $, observer, useBatchSub } from 'teamplay'
+
+export default observer(function CourseLessons ({ courseId }) {
+  const $course = useBatchSub($.courses[courseId], { defer: false })
+  const $lessons = useBatchSub($.lessons, { courseId }, { defer: false })
+
+  useBatchSub()
+
+  return (
+    <>
+      <h1>{$course.title.get()}</h1>
+      {$lessons.map($lesson => (
+        <div key={$lesson.getId()}>{$lesson.title.get()}</div>
+      ))}
+    </>
+  )
+})
+```
+
+`useBatchSub()` is the public batch subscription API. Legacy compat query hooks
+such as `useQuery`, `useQuery$`, `useBatchQuery`, and `useBatchQuery$` are not
+part of the object-tree API.
+
+`useBatchSub(signal, params, options)` is syntax sugar for
+`useSub(signal, params, { ...options, batch: true, async: false })`; the
+no-argument `useBatchSub()` call is syntax sugar for the lower-level
+`useSub(undefined, undefined, { batch: true })` barrier.
+
 ## Query Params
 
 Query params use Mongo-style syntax:

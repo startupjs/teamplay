@@ -4,9 +4,10 @@ This folder contains the compatibility layer that emulates the old StartupJS (Ra
 
 It includes:
 1. `SignalCompat` — a signal class with Racer-compatible value semantics on the current signal path.
-2. Remaining compat subscription helpers — `useBatch`, batch hooks, and query id/doc helpers.
+2. Compat event helpers for custom events and legacy model events.
 
-All hooks are re-exported from `packages/teamplay/src/index.ts`.
+React subscriptions are exposed through object-tree APIs from
+`packages/teamplay/src/index.ts`: `useSub`, `useAsyncSub`, and `useBatchSub`.
 
 ## Compatibility Mode Signal
 
@@ -403,7 +404,7 @@ When refCount drops to `0`, unsubscribe/destroy is scheduled after this delay.
 If a new subscribe arrives before timeout, pending destroy is cancelled and the same doc/query instance is reused.
 
 Compat queries also retain lifecycle ownership of docs they materialize into DataTree.
-This means a doc that arrived through `useSub` / `useBatchQuery` will stay available
+This means a doc that arrived through `useSub` / `useBatchSub` will stay available
 for immediate direct object-tree reads while that query remains subscribed, even if
 some unrelated doc subscriber for the same `collection.id` unmounts.
 
@@ -610,14 +611,14 @@ items[0].set({ amount: 10 }) // throws
 
 ## Compat Hooks Overview
 
-All hooks are built on top of Teamplay’s signal system and `useSub` / `useAsyncSub`.
-They are designed to behave close to StartupJS hooks, but adapted to Teamplay’s API.
+React subscription hooks are built on top of Teamplay's object-tree signal API.
+Compat path-based doc/query hooks are no longer exported.
 
 General notes:
 - Hooks should be used inside `observer()` components to get reactive updates.
 - Direct compat doc/query hooks were removed. Use object-tree subscriptions instead:
   `useSub($.users[userId])`, `useSub($.users, query)`, `useAsyncSub(...)`.
-- Batch hooks use a Suspense batch barrier (`useBatch`) and wait for both
+- Batch subscriptions use a Suspense batch barrier (`useBatchSub()`) and wait for both
   subscribe promises and DataTree materialization readiness.
 
 ### Events
@@ -728,12 +729,20 @@ const $asyncUser = useAsyncSub($.users[userId])
 const asyncUser = $asyncUser?.get()
 ```
 
-#### Batch variants
+For batch behavior use `useBatchSub`:
 
-`useBatchDoc` / `useBatchDoc$` participate in batch Suspense flow:
-- they register subscribe promises for `useBatch()`;
-- they also register a **materialization readiness check**:
-  doc is considered ready only when it is visible in DataTree (or explicitly missing).
+```js
+const $user = useBatchSub($.users[userId], { defer: false })
+useBatchSub()
+```
+
+`useBatchSub` is syntax sugar over `useSub(..., { batch: true, async: false })`.
+Both forms register subscribe promises for the batch barrier. The barrier can be
+closed with no-arg `useBatchSub()` or with
+`useSub(undefined, undefined, { batch: true })`.
+For document subscriptions it also registers a **materialization readiness check**:
+the doc is considered ready only when it is visible in DataTree (or explicitly
+missing).
 
 ### Query Subscriptions
 
@@ -747,11 +756,19 @@ const ids = $usersQuery.getIds()
 const $users = $.users
 ```
 
-#### Batch variants
+For batch behavior use `useBatchSub`:
 
-`useBatchQuery` / `useBatchQuery$` participate in batch Suspense flow:
-- they register subscribe promises for `useBatch()`;
-- they register a **query readiness check**:
+```js
+const $usersQuery = useBatchSub($.users, { active: true }, { defer: false })
+useBatchSub()
+const users = $usersQuery.get()
+```
+
+`useBatchSub` is syntax sugar over `useSub(..., { batch: true, async: false })`.
+Both forms register subscribe promises for the batch barrier. The barrier can be
+closed with no-arg `useBatchSub()` or with
+`useSub(undefined, undefined, { batch: true })`.
+For query subscriptions it also registers a **query readiness check**:
   query ids must be materialized in DataTree, and each `collection.id` from ids must
   be visible in DataTree (or explicitly missing).
 - for `$aggregate` queries, readiness is query-level:
@@ -762,45 +779,23 @@ const $users = $.users
 
 ### Query Helpers
 
-Non-batch query helper hooks (`useQueryIds`, `useAsyncQueryIds`,
-`useQueryDoc`, `useQueryDoc$`, `useAsyncQueryDoc`, `useAsyncQueryDoc$`) are no
-longer exported from TeamPlay compat. Keep product-specific query helpers in
-application code and build them on top of `useSub` / `useAsyncSub`.
-
-#### `useBatchQueryIds`
-
-```js
-const [users] = useBatchQueryIds('users', ['b', 'a'])
-// preserves order: users[0] is 'b', users[1] is 'a'
-```
-
-Options:
-- `reverse: true` — reverse order of IDs before mapping.
-
-#### `useBatchQueryDoc`
-
-Returns a **single doc** matched by query:
-
-```js
-const [doc, $doc] = useBatchQueryDoc('events', { slugId })
-```
-
-Implementation details:
-- Adds `$limit: 1`
-- Adds default `$sort: { createdAt: -1 }` if `$sort` is missing
-
-`useBatchQueryDoc$` returns only the doc signal (or `undefined`).
+Query helper hooks (`useQueryIds`, `useAsyncQueryIds`, `useQueryDoc`,
+`useQueryDoc$`, `useAsyncQueryDoc`, `useAsyncQueryDoc$`, and their batch
+variants) are no longer exported from TeamPlay compat. Keep product-specific
+query helpers in application code and build them on top of `useSub`,
+`useAsyncSub`, or `useBatchSub`.
 
 ### Batch Barrier
 
-`useBatch()` is a Suspense barrier for batch hooks.
+`useBatchSub()` with no arguments is a Suspense barrier for batch subscriptions.
+The lower-level equivalent is `useSub(undefined, undefined, { batch: true })`.
 
 It throws while:
 - batch subscribe promises are pending;
 - or subscribe promises are resolved but requested docs/queries are not yet
   materialized in DataTree.
 
-After `useBatch()` stops throwing in compat mode, immediate direct object-tree reads
+After `useBatchSub()` stops throwing, immediate direct object-tree reads
 for already requested batch entities should not produce
 transient `undefined` caused by materialization races.
 

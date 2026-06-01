@@ -198,6 +198,7 @@ export { default as sub } from './orm/sub.ts'
 export {
   default as useSub,
   useAsyncSub,
+  useBatchSub,
   setUseDeferredValue as __setUseDeferredValue,
   setDefaultDefer as __setDefaultDefer
 } from './react/useSub.ts'
@@ -206,16 +207,6 @@ export {
   useSuspendMemoByKey
 } from './react/useSuspendMemo.ts'
 export const observer = runtimeObserver as unknown as ObserverFunction
-export {
-  useBatch,
-  useBatchDoc,
-  useBatchDoc$,
-  useBatchQuery,
-  useBatchQuery$,
-  useBatchQueryIds,
-  useBatchQueryDoc,
-  useBatchQueryDoc$
-} from './orm/Compat/hooksCompat.js'
 export { emit, useOn, useEmit } from './orm/Compat/eventsCompat.js'
 export {
   useDidUpdate,

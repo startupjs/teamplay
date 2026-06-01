@@ -9,6 +9,7 @@ import {
   defineSchema,
   sub,
   useAsyncSub,
+  useBatchSub,
   useSub,
   type AccessCreateContext as ExportedAccessCreateContext,
   type CollectionSpec,
@@ -63,6 +64,8 @@ type TypeAssertions = [
   NestedDollarDestructureTagModel,
   SubKeepsDocumentModel,
   UseSubKeepsDocumentModel,
+  UseBatchSubKeepsDocumentModel,
+  UseBatchSubBarrier,
   ZodStructuralInference,
   NestedPathModelMethod,
   NestedArrayPathModelMethod,
@@ -74,6 +77,7 @@ type TypeAssertions = [
   QueryIndexDocumentModel,
   QueryIteratorDocumentModel,
   HookQueryIndexDocumentModel,
+  BatchHookQueryIndexDocumentModel,
   AggregationIndexDocumentModel,
   AggregationDocumentMethods,
   HookAggregationIndexDocumentModel,
@@ -562,6 +566,18 @@ function useHookGameWithLegacyOptions () {
 function useAsyncHookGameWithOptions () {
   return useAsyncSub($game, { defer: false })
 }
+function useBatchHookGameWithOptions () {
+  return useBatchSub($game, { defer: false })
+}
+function useBatchHookQueryGames () {
+  return useBatchSub($.games, { status: 'draft' }, { defer: false })
+}
+function useBatchBarrier () {
+  return useBatchSub()
+}
+function useSubBatchBarrier () {
+  return useSub(undefined, undefined, { batch: true })
+}
 const $zodGame = $.zodGames[gameId]
 $game.start()
 $game.info.title.set('Chess')
@@ -650,6 +666,8 @@ type DocDollarDestructureNestedModel = Expect<Equal<ReturnType<typeof $destructu
 type NestedDollarDestructureTagModel = Expect<Equal<ReturnType<typeof $destructuredTags[0]['label']>, string>>
 type SubKeepsDocumentModel = Expect<Equal<AwaitedSub<typeof $subGame>, typeof $game>>
 type UseSubKeepsDocumentModel = Expect<Equal<ReturnType<typeof useHookGame>, typeof $game>>
+type UseBatchSubKeepsDocumentModel = Expect<Equal<ReturnType<typeof useBatchHookGameWithOptions>, typeof $game>>
+type UseBatchSubBarrier = Expect<Equal<ReturnType<typeof useBatchBarrier>, void>>
 type ZodStructuralInference = Expect<Equal<ReturnType<typeof $zodGame.info.title.get>, string>>
 type NestedPathModelMethod = Expect<Equal<ReturnType<typeof $game.info.titleCase>, string>>
 type NestedArrayPathModelMethod = Expect<Equal<ReturnType<typeof $game.info.tags[0]['label']>, string>>
@@ -802,6 +820,8 @@ type QuerySignalType = Expect<Equal<QueryGames, CollectionQuerySignal<Game, type
 type QueryIndexDocumentModel = Expect<Equal<ReturnType<QueryGames[0]['info']['title']['get']>, string>>
 type QueryIteratorDocumentModel = Expect<Equal<ReturnType<QueryGameItem['info']['title']['get']>, string>>
 type HookQueryIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookQueryGame.info.maxPlayers.get>, number>>
+const $batchHookQueryGame = (null as unknown as ReturnType<typeof useBatchHookQueryGames>)[0]
+type BatchHookQueryIndexDocumentModel = Expect<Equal<ReturnType<typeof $batchHookQueryGame.info.maxPlayers.get>, number>>
 type AggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $aggregationGame.info.title.get>, string>>
 type AggregationDocumentMethods = Expect<Equal<ReturnType<typeof $aggregationGame.start>, Promise<void>>>
 type HookAggregationIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookAggregationGame.info.maxPlayers.get>, number>>

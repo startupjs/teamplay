@@ -920,6 +920,21 @@ function maybeMaterializeQueryDocsToCollection (collectionName, shareDocs) {
   }
 }
 
+export function materializeQueryDataDocsToCollection (collectionName, docs) {
+  if (!Array.isArray(docs)) return
+  for (const doc of docs) {
+    const rawDoc = raw(doc)
+    if (!isPlainObject(rawDoc)) continue
+    const docId = rawDoc._id ?? rawDoc.id
+    if (docId == null) continue
+    const existing = getRaw([collectionName, docId])
+    if (existing != null) continue
+    const idFields = getIdFieldsForSegments([collectionName, docId])
+    injectIdFields(rawDoc, idFields, docId)
+    _set([collectionName, docId], rawDoc)
+  }
+}
+
 export function hashQuery (collectionName, params) {
   params = normalizeQueryParamsForHash(params)
   // TODO: probably makes sense to use fast-stable-json-stringify for this because of the params

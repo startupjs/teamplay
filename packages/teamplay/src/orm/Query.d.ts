@@ -113,5 +113,6 @@ export class QuerySubscriptions {
 
 export const querySubscriptions: QuerySubscriptions
 export function getQuerySignal (collectionName: string, params: unknown, options?: QuerySignalOptions): Signal
+export function materializeQueryDataDocsToCollection (collectionName: string, docs: unknown): void
 export function hashQuery (collectionName: string, params: unknown): string
 export function parseQueryHash (hash: string): QueryHashParts

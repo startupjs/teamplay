@@ -15,6 +15,7 @@ import $, {
   useNow,
   useOnce,
   useScheduleUpdate,
+  useBatchSub,
   useSub,
   useSyncEffect,
   useSuspendMemo,
@@ -94,6 +95,13 @@ function ExternalConsumerComponent () {
 
   const maybeHookUserWithOptions = useSub(typedUserSignal, { defer: false })
   type _useSubOptionsResult = Assert<IsEqual<typeof maybeHookUserWithOptions, Signal<UserDoc>>>
+
+  const maybeBatchHookUser = useBatchSub(typedUserSignal, { defer: false })
+  type _useBatchSubResult = Assert<IsEqual<typeof maybeBatchHookUser, Signal<UserDoc>>>
+  const batchBarrierResult = useBatchSub()
+  type _useBatchSubBarrierResult = Assert<IsEqual<typeof batchBarrierResult, void>>
+  const useSubBatchBarrierResult = useSub(undefined, undefined, { batch: true })
+  type _useSubBatchBarrierResult = Assert<IsEqual<typeof useSubBatchBarrierResult, void>>
 
   const [apiCount, apiLoading, apiError] = useApi(async (userId: string) => userId.length, 'user1', { debounce: 5 })
   const countValue: number | undefined = apiCount

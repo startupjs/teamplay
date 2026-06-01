@@ -14,7 +14,7 @@ export default function trapRender ({ render, cache, destroy, componentId }) {
       promiseBatcher.reset()
       const res = render(...args)
       if (isDevMode() && promiseBatcher.isActive()) {
-        throw Error('[teamplay] useBatch* hooks were used without a closing useBatch() call.')
+        throw Error('[teamplay] batch subscriptions were used without a closing useBatchSub() call or useSub(undefined, undefined, { batch: true }) call.')
       }
       return res
     } catch (err) {

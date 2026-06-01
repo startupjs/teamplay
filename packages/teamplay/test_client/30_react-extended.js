@@ -5,13 +5,9 @@ import {
   $,
   useSub,
   useAsyncSub,
+  useBatchSub,
   observer,
   sub,
-  useBatch,
-  useBatchDoc,
-  useBatchDoc$,
-  useBatchQuery,
-  useBatchQuery$,
   emit,
   useOn,
   useEmit,
@@ -39,7 +35,6 @@ import {
   removeListener as removeCompatListener,
   __resetEventsForTests
 } from '../src/orm/Compat/eventsCompat.js'
-import { __resetCompatWarningsForTests } from '../src/orm/Compat/hooksCompat.js'
 
 before(connect)
 beforeEach(() => {
@@ -49,7 +44,6 @@ afterEach(cleanup)
 afterEach(runGc)
 afterEach(() => {
   __resetEventsForTests()
-  __resetCompatWarningsForTests()
   __resetSuspendMemoForTests()
 })
 
@@ -208,49 +202,22 @@ describe('compat helper hooks', () => {
     jest.useRealTimers()
     expect(container.textContent).toBe('x')
   })
-
-  itCompat('undefined batch doc warning is emitted only once across rerenders', async () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-
-    const Component = observer(() => {
-      const [count, setCount] = React.useState(0)
-      useBatchDoc('chats', undefined)
-      useBatch()
-
-      React.useEffect(() => {
-        if (count === 0) setCount(1)
-      }, [count])
-
-      return el('div', {}, String(count))
-    })
-
-    render(el(Component))
-    await waitFor(() => {
-      expect(warnSpy).toHaveBeenCalled()
-    })
-
-    const compatWarnings = warnSpy.mock.calls.filter(([message]) =>
-      String(message).includes('[useBatchDoc] You are trying to subscribe to an undefined document id')
-    )
-    expect(compatWarnings).toHaveLength(1)
-    warnSpy.mockRestore()
-  })
 })
 
 describe('useSub edge cases', () => {
-  itCompat('useBatchQuery$ returns extra value for $count queries', async () => {
+  it('useBatchSub query exposes extra value for $count queries', async () => {
     await act(async () => {
       $.users.countUser1.set({ _id: 'countUser1', name: 'A' })
       $.users.countUser2.set({ _id: 'countUser2', name: 'B' })
     })
 
     const Component = observer(() => {
-      const $count = useBatchQuery$('users', {
+      const $query = useBatchSub($.users, {
         _id: { $in: ['countUser1', 'countUser2'] },
         $count: true
-      })
-      useBatch()
-      const count = $count.get()
+      }, { defer: false })
+      useBatchSub()
+      const count = $query.extra.get()
       return el('div', {}, `${typeof count}:${String(count)}`)
     })
 
@@ -552,7 +519,7 @@ describe('useSub edge cases', () => {
       const [lessonId, setLessonId] = React.useState(lessonA)
 
       useSubClassic($[collection], { courseId }, { batch: true })
-      useBatch()
+      useBatchSub()
       const lesson = $[collection][lessonId].get()
       const stageIds = lesson?.stageIds
 
@@ -918,63 +885,249 @@ describe('emit / useOn / useEmit', () => {
   })
 })
 
-describe('useBatchDoc / useBatchDoc$', () => {
-  it('useBatchDoc works with useBatch suspense flush', async () => {
-    const $doc = await sub($.docHook.u3)
-    $doc.set({ name: 'Tom' })
+describe('useBatchSub', () => {
+  it('supports useSub batch option as the core batch API', async () => {
+    const $doc = await sub($.batchSubCore.u1)
+    await $doc.set({ name: 'Grace' })
     await wait()
 
     const Component = observer(() => {
-      const [doc, $user] = useBatchDoc('docHook', 'u3')
-      useBatch()
-      return fr(
-        el('span', { id: 'batchDoc' }, doc?.name || ''),
-        el('button', { id: 'batchDocBtn', onClick: () => $user.name.set('Tim') })
-      )
-    })
+      const $user = useSub($.batchSubCore.u1, { batch: true, defer: false })
+      useSub(undefined, undefined, { batch: true })
+      return el('span', { id: 'batchSubCore' }, $user.name.get() || '')
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubCore' }, 'Loading...') } })
 
     const { container } = render(el(Component))
-    await wait()
-    expect(container.querySelector('#batchDoc').textContent).toBe('Tom')
 
-    fireEvent.click(container.querySelector('#batchDocBtn'))
-    expect(container.querySelector('#batchDoc').textContent).toBe('Tim')
+    await waitFor(() => {
+      expect(container.querySelector('#batchSubCore').textContent).toBe('Grace')
+    })
   })
 
-  it('useBatchDoc$ works with useBatch suspense flush', async () => {
-    const $doc = await sub($.docHook.u4)
-    $doc.set({ name: 'Sam' })
+  it('subscribes to a doc and closes with a no-arg batch barrier call', async () => {
+    const $doc = await sub($.batchSubDoc.u1)
+    await $doc.set({ name: 'Ada' })
     await wait()
 
     const Component = observer(() => {
-      const $user = useBatchDoc$('docHook', 'u4')
-      useBatch()
-      return fr(
-        el('span', { id: 'batchDoc2' }, $user.name.get() || ''),
-        el('button', { id: 'batchDocBtn2', onClick: () => $user.name.set('Sue') })
-      )
-    })
+      const $user = useBatchSub($.batchSubDoc.u1, { defer: false })
+      useBatchSub()
+      return el('span', { id: 'batchSubDoc' }, $user.name.get() || '')
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubDoc' }, 'Loading...') } })
 
     const { container } = render(el(Component))
-    await wait()
-    expect(container.querySelector('#batchDoc2').textContent).toBe('Sam')
 
-    fireEvent.click(container.querySelector('#batchDocBtn2'))
-    expect(container.querySelector('#batchDoc2').textContent).toBe('Sue')
+    await waitFor(() => {
+      expect(container.querySelector('#batchSubDoc').textContent).toBe('Ada')
+    })
   })
 
-  it('throws clear error when useBatchDoc is used without useBatch', () => {
+  it('subscribes to a query and closes with a no-arg batch barrier call', async () => {
+    const $match = await sub($.batchSubQuery.q1)
+    const $miss = await sub($.batchSubQuery.q2)
+    await Promise.all([
+      $match.set({ name: 'Match', active: true, createdAt: 1 }),
+      $miss.set({ name: 'Miss', active: false, createdAt: 2 })
+    ])
+    await wait()
+
+    const Component = observer(() => {
+      const $query = useBatchSub($.batchSubQuery, { active: true }, { defer: false })
+      useBatchSub()
+      return el('span', { id: 'batchSubQuery' }, $query.map($doc => $doc.name.get()).join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubQuery' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchSubQuery').textContent).toBe('Match')
+    })
+  })
+
+  it('supports useSub query batch option as the core batch API', async () => {
+    const collection = 'batchSubCoreQuery'
+    const $match = await sub($[collection].q1)
+    const $miss = await sub($[collection].q2)
+    await Promise.all([
+      $match.set({ name: 'Core Match', active: true, createdAt: 1 }),
+      $miss.set({ name: 'Core Miss', active: false, createdAt: 2 })
+    ])
+    await wait()
+
+    const Component = observer(() => {
+      const $query = useSub($[collection], { active: true }, { batch: true, defer: false })
+      useSub(undefined, undefined, { batch: true })
+      return el('span', { id: 'batchSubCoreQuery' }, $query.map($doc => $doc.name.get()).join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubCoreQuery' }, 'Loading...') } })
+
+    const { container } = render(el(Component))
+
+    await waitFor(() => {
+      expect(container.querySelector('#batchSubCoreQuery').textContent).toBe('Core Match')
+    })
+  })
+
+  it('throws clear error when useBatchSub is used without a closing barrier call', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-    const Component = observer(() => {
-      useBatchDoc('docHook', 'missingBatch')
-      return el('span', { id: 'missingBatch' }, 'x')
-    })
-    expect(() => render(el(Component))).toThrow(/useBatch\* hooks were used without a closing useBatch\(\) call/i)
-    errorSpy.mockRestore()
+    try {
+      const Component = observer(() => {
+        useBatchSub($.batchSubMissingClose.u1, { defer: false })
+        return el('span', { id: 'batchSubMissingClose' }, 'x')
+      })
+      expect(() => render(el(Component))).toThrow(/batch subscriptions were used without a closing useBatchSub\(\) call/i)
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 
-  itCompat('useBatchDoc allows temporary undefined local snapshot after useBatch (guarded read)', async () => {
-    const collection = 'batchDocReadyBarrier'
+  it('throws clear error when useSub batch option is used without a closing barrier call', () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const Component = observer(() => {
+        useSub($.batchSubCoreMissingClose.u1, { batch: true, defer: false })
+        return el('span', { id: 'batchSubCoreMissingClose' }, 'x')
+      })
+      expect(() => render(el(Component))).toThrow(/batch subscriptions were used without a closing useBatchSub\(\) call/i)
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('keeps previous signal during update resubscribe', async () => {
+    const collection = 'batchSubRouteSwitch'
+    const docA = 'doc_batch_sub_route_a'
+    const docB = 'doc_batch_sub_route_b'
+    await $[collection][docA].set({ stageIds: ['a1'] })
+    await $[collection][docB].set({ stageIds: ['b1', 'b2'] })
+    _del([collection, docA])
+    _del([collection, docB])
+
+    setTestThrottling(80)
+    try {
+      const Component = observer(() => {
+        const [docId, setDocId] = React.useState(docA)
+        const $doc = useBatchSub($[collection][docId], { defer: false })
+        useBatchSub()
+        const { stageIds } = $doc.get()
+        return fr(
+          el('span', { id: 'batchSubRouteSwitch' }, stageIds.join(',')),
+          el('button', {
+            id: 'batchSubRouteSwitchBtn',
+            onClick: () => setDocId(docB)
+          }, 'switch')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'batchSubRouteSwitch' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchSubRouteSwitch').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchSubRouteSwitch').textContent).toBe('a1')
+      })
+
+      fireEvent.click(container.querySelector('#batchSubRouteSwitchBtn'))
+      expect(container.querySelector('#batchSubRouteSwitch').textContent).not.toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchSubRouteSwitch').textContent).toBe('b1,b2')
+      })
+    } finally {
+      resetTestThrottling()
+    }
+  })
+
+  it('keeps normal defer default for batch doc route switches', async () => {
+    const collection = 'batchSubDefaultDeferRouteSwitch'
+    const docA = 'doc_batch_sub_default_defer_route_a'
+    const docB = 'doc_batch_sub_default_defer_route_b'
+    await $[collection][docA].set({ stageIds: ['a1'] })
+    await $[collection][docB].set({ stageIds: ['b1', 'b2'] })
+    _del([collection, docA])
+    _del([collection, docB])
+
+    setTestThrottling(80)
+    try {
+      const Component = observer(() => {
+        const [docId, setDocId] = React.useState(docA)
+        const $doc = useBatchSub($[collection][docId])
+        useBatchSub()
+        const { stageIds } = $doc.get()
+        return fr(
+          el('span', { id: 'batchSubDefaultDeferRouteSwitch' }, stageIds.join(',')),
+          el('button', {
+            id: 'batchSubDefaultDeferRouteSwitchBtn',
+            onClick: () => setDocId(docB)
+          }, 'switch')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'batchSubDefaultDeferRouteSwitch' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchSubDefaultDeferRouteSwitch').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchSubDefaultDeferRouteSwitch').textContent).toBe('a1')
+      })
+
+      fireEvent.click(container.querySelector('#batchSubDefaultDeferRouteSwitchBtn'))
+      expect(container.querySelector('#batchSubDefaultDeferRouteSwitch').textContent).not.toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchSubDefaultDeferRouteSwitch').textContent).toBe('b1,b2')
+      })
+    } finally {
+      resetTestThrottling()
+    }
+  })
+
+  it('supports explicit defer true for batch query route switches', async () => {
+    const collection = 'batchSubExplicitDeferQuerySwitch'
+    const lessonA = 'lesson_batch_sub_explicit_defer_a'
+    const lessonB = 'lesson_batch_sub_explicit_defer_b'
+    await $[collection][lessonA].set({ courseId: 'course_a', stageIds: ['a1'], createdAt: 1 })
+    await $[collection][lessonB].set({ courseId: 'course_b', stageIds: ['b1', 'b2'], createdAt: 1 })
+    _del([collection, lessonA])
+    _del([collection, lessonB])
+
+    setTestThrottling(80)
+    try {
+      const Component = observer(() => {
+        const [courseId, setCourseId] = React.useState('course_a')
+        const $query = useBatchSub($[collection], { courseId, $sort: { createdAt: 1 } }, { defer: true })
+        useBatchSub()
+        const docs = $query.get()
+        const firstId = docs[0]?._id ?? docs[0]?.id
+        const lesson = $[collection][firstId].get()
+        const { stageIds } = lesson
+
+        return fr(
+          el('span', { id: 'batchSubExplicitDeferQuerySwitch' }, stageIds.join(',')),
+          el('button', {
+            id: 'batchSubExplicitDeferQuerySwitchBtn',
+            onClick: () => setCourseId('course_b')
+          }, 'switch')
+        )
+      }, { suspenseProps: { fallback: el('span', { id: 'batchSubExplicitDeferQuerySwitch' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchSubExplicitDeferQuerySwitch').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchSubExplicitDeferQuerySwitch').textContent).toBe('a1')
+      })
+
+      fireEvent.click(container.querySelector('#batchSubExplicitDeferQuerySwitchBtn'))
+      expect(container.querySelector('#batchSubExplicitDeferQuerySwitch').textContent).not.toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchSubExplicitDeferQuerySwitch').textContent).toBe('b1,b2')
+      })
+    } finally {
+      resetTestThrottling()
+    }
+  })
+
+  it('waits for doc materialization before closing the batch barrier', async () => {
+    const collection = 'batchSubDocReadyBarrier'
     const docId = 'doc_ready_1'
     await $[collection][docId].set({ name: 'Ready', active: true })
     _del([collection, docId])
@@ -992,217 +1145,63 @@ describe('useBatchDoc / useBatchDoc$', () => {
 
     try {
       const Component = observer(() => {
-        const [doc] = useBatchDoc(collection, docId)
-        useBatch()
+        const $doc = useBatchSub($[collection][docId], { defer: false })
+        useBatchSub()
         const localDoc = $[collection][docId].get()
         return fr(
-          el('span', { id: 'batchDocReadyBarrier' }, localDoc?.name || 'pending'),
-          el('span', { id: 'batchDocReadyBarrierHookValue' }, doc?.name || 'pending')
+          el('span', { id: 'batchSubDocReadyBarrier' }, localDoc?.name || 'pending'),
+          el('span', { id: 'batchSubDocReadyBarrierHookValue' }, $doc.name.get() || 'pending')
         )
-      }, { suspenseProps: { fallback: el('span', { id: 'batchDocReadyBarrier' }, 'Loading...') } })
+      }, { suspenseProps: { fallback: el('span', { id: 'batchSubDocReadyBarrier' }, 'Loading...') } })
 
       const { container } = render(el(Component))
-      expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Loading...')
+      expect(container.querySelector('#batchSubDocReadyBarrier').textContent).toBe('Loading...')
 
       await wait(20)
-      expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('pending')
+      expect(container.querySelector('#batchSubDocReadyBarrier').textContent).toBe('Loading...')
 
       await waitFor(() => {
-        expect(container.querySelector('#batchDocReadyBarrier').textContent).toBe('Ready')
-        expect(container.querySelector('#batchDocReadyBarrierHookValue').textContent).toBe('Ready')
+        expect(container.querySelector('#batchSubDocReadyBarrier').textContent).toBe('Ready')
+        expect(container.querySelector('#batchSubDocReadyBarrierHookValue').textContent).toBe('Ready')
       })
     } finally {
       docProto._refData = originalRefData
     }
   })
 
-  itCompat('useBatchDoc route switch keeps previous snapshot without update fallback', async () => {
-    const collection = 'batchDocRouteSwitch'
-    const docA = 'doc_batch_route_a'
-    const docB = 'doc_batch_route_b'
-    await $[collection][docA].set({ stageIds: ['a1'] })
-    await $[collection][docB].set({ stageIds: ['b1', 'b2'] })
-    _del([collection, docA])
-    _del([collection, docB])
-
-    setTestThrottling(80)
-    try {
-      const Component = observer(() => {
-        const [docId, setDocId] = React.useState(docA)
-        const [doc] = useBatchDoc(collection, docId)
-        useBatch()
-        const { stageIds } = doc
-        return fr(
-          el('span', { id: 'batchDocRouteSwitch' }, stageIds.join(',')),
-          el('button', {
-            id: 'batchDocRouteSwitchBtn',
-            onClick: () => setDocId(docB)
-          }, 'switch')
-        )
-      }, { suspenseProps: { fallback: el('span', { id: 'batchDocRouteSwitch' }, 'Loading...') } })
-
-      const { container } = render(el(Component))
-      expect(container.querySelector('#batchDocRouteSwitch').textContent).toBe('Loading...')
-
-      await waitFor(() => {
-        expect(container.querySelector('#batchDocRouteSwitch').textContent).toBe('a1')
-      })
-
-      fireEvent.click(container.querySelector('#batchDocRouteSwitchBtn'))
-      expect(container.querySelector('#batchDocRouteSwitch').textContent).not.toBe('Loading...')
-
-      await waitFor(() => {
-        expect(container.querySelector('#batchDocRouteSwitch').textContent).toBe('b1,b2')
-      })
-    } finally {
-      resetTestThrottling()
-    }
-  })
-})
-
-describe('useBatchQuery / useBatchQuery$', () => {
-  it('useBatchQuery works with useBatch suspense flush', async () => {
-    const $a = await sub($.queryHook3.q1)
-    $a.set({ name: 'Zoe', active: true, createdAt: 1 })
+  it('allows immediate local read after a batch query barrier', async () => {
+    const lessonId = 'lesson_batch_sub_local_1'
+    const $lesson = await sub($.batchSubLocalLessons[lessonId])
+    await $lesson.set({ courseId: 'course_1', stageIds: ['s1', 's2'] })
     await wait()
+
+    _del(['batchSubLocalLessons', lessonId])
+    expect(_get(['batchSubLocalLessons', lessonId])).toBe(undefined)
 
     const Component = observer(() => {
-      const [docs] = useBatchQuery('queryHook3', { active: true })
-      useBatch()
-      return el('span', { id: 'bqNames' }, (docs || []).map(d => d.name).join(','))
-    }, { suspenseProps: { fallback: el('span', { id: 'bqNames' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#bqNames').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#bqNames').textContent).toBe('Zoe')
-  })
-
-  it('useBatchQuery$ works with useBatch suspense flush', async () => {
-    const $a = await sub($.queryHook4.q1)
-    $a.set({ name: 'Mia', active: true, createdAt: 1 })
-    await wait()
-
-    const Component = observer(() => {
-      const $query = useBatchQuery$('queryHook4', { active: true })
-      useBatch()
-      const ids = $query.getIds()
-      const docs = $query.get()
-      const name = docs && docs[0]?.name
-      return el('span', { id: 'bqNames2' }, `${ids.join(',')}:${name || ''}`)
-    }, { suspenseProps: { fallback: el('span', { id: 'bqNames2' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#bqNames2').textContent).toBe('Loading...')
-
-    await wait()
-    expect(container.querySelector('#bqNames2').textContent).toBe('q1:Mia')
-  })
-
-  itCompat('useBatchQuery returns the same extra payload as useBatchQuery$ for $count queries', async () => {
-    await act(async () => {
-      $.users.batchCountUser1.set({ _id: 'batchCountUser1', name: 'A' })
-      $.users.batchCountUser2.set({ _id: 'batchCountUser2', name: 'B' })
-    })
-
-    const query = {
-      _id: { $in: ['batchCountUser1', 'batchCountUser2'] },
-      $count: true
-    }
-
-    const Component = observer(() => {
-      const [count] = useBatchQuery('users', query)
-      const $count = useBatchQuery$('users', query)
-      useBatch()
-      return el('div', { id: 'batchCountValue' }, `${typeof count}:${String(count)}|${typeof $count.get()}:${String($count.get())}`)
-    }, { suspenseProps: { fallback: el('div', { id: 'batchCountValue' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#batchCountValue').textContent).toBe('Loading...')
-
-    await waitFor(() => {
-      expect(container.querySelector('#batchCountValue').textContent).toBe('number:2|number:2')
-    })
-
-    await act(async () => {
-      $.users.batchCountUser1.del()
-      $.users.batchCountUser2.del()
-    })
-  })
-
-  itCompat('aggregate useBatchQuery resolves from query-level docs without waiting for collection docs', async () => {
-    const collection = 'batchAggregateClientReady'
-    const queryProto = aggregationSubscriptions.QueryClass.prototype
-    const originalInitData = queryProto._initData
-    queryProto._initData = function (...args) {
-      if (this.collectionName === collection && Array.isArray(this.params?.$aggregate)) {
-        for (const rootId of this.rootIds || []) {
-          setPrivateData(rootId, [AGGREGATIONS, this.hash], [{ _id: null, startedStageIds: ['s1', 's2'] }])
-        }
-        return
-      }
-      return originalInitData.apply(this, args)
-    }
-
-    try {
-      const Component = observer(() => {
-        const [rows] = useBatchQuery(collection, {
-          $aggregate: [
-            { $match: { active: true } },
-            { $group: { _id: null, startedStageIds: { $push: '$stageId' } } }
-          ]
-        })
-        useBatch()
-        const joined = (rows?.[0]?.startedStageIds || []).join(',')
-        return el('span', { id: 'batchAggregateClientReady' }, `${rows?.length || 0}:${joined}`)
-      }, { suspenseProps: { fallback: el('span', { id: 'batchAggregateClientReady' }, 'Loading...') } })
-
-      const { container } = render(el(Component))
-      expect(container.querySelector('#batchAggregateClientReady').textContent).toBe('Loading...')
-
-      await waitFor(() => {
-        expect(container.querySelector('#batchAggregateClientReady').textContent).toBe('1:s1,s2')
-      })
-      expect(_get([collection, null])).toBe(undefined)
-      expect(_get([collection, 'null'])).toBe(undefined)
-    } finally {
-      queryProto._initData = originalInitData
-    }
-  })
-
-  itCompat('batch query materializes doc for immediate local read after useBatch', async () => {
-    const lessonId = 'lesson_batch_local_1'
-    const $lesson = await sub($.batchLocalLessons[lessonId])
-    $lesson.set({ courseId: 'course_1', stageIds: ['s1', 's2'] })
-    await wait()
-
-    _del(['batchLocalLessons', lessonId])
-    expect(_get(['batchLocalLessons', lessonId])).toBe(undefined)
-
-    const Component = observer(() => {
-      useBatchQuery('batchLocalLessons', { courseId: 'course_1' })
-      useBatch()
-      const lesson = $.batchLocalLessons[lessonId].get()
+      useBatchSub($.batchSubLocalLessons, { courseId: 'course_1' }, { defer: false })
+      useBatchSub()
+      const lesson = $.batchSubLocalLessons[lessonId].get()
       const { stageIds } = lesson
-      return el('span', { id: 'batchLocalRead' }, stageIds.join(','))
-    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalRead' }, 'Loading...') } })
+      return el('span', { id: 'batchSubLocalRead' }, stageIds.join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubLocalRead' }, 'Loading...') } })
 
     const { container } = render(el(Component))
-    expect(container.querySelector('#batchLocalRead').textContent).toBe('Loading...')
+    expect(container.querySelector('#batchSubLocalRead').textContent).toBe('Loading...')
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalRead').textContent).toBe('s1,s2')
+      expect(container.querySelector('#batchSubLocalRead').textContent).toBe('s1,s2')
     })
   })
 
-  itCompat('batch query materialization does not overwrite existing doc in collection tree', async () => {
-    const lessonId = 'lesson_batch_local_existing'
-    const $lesson = await sub($.batchLocalLessons[lessonId])
-    $lesson.set({ courseId: 'course_existing', stageIds: ['db'] })
+  it('does not overwrite an existing doc while materializing query results', async () => {
+    const collection = 'batchSubLocalExisting'
+    const lessonId = 'lesson_batch_sub_local_existing'
+    const $lesson = await sub($[collection][lessonId])
+    await $lesson.set({ courseId: 'course_existing', stageIds: ['db'] })
     await wait()
 
-    _set(['batchLocalLessons', lessonId], {
+    _set([collection, lessonId], {
       _id: lessonId,
       id: lessonId,
       courseId: 'course_existing',
@@ -1210,45 +1209,46 @@ describe('useBatchQuery / useBatchQuery$', () => {
     })
 
     const Component = observer(() => {
-      useBatchQuery('batchLocalLessons', { courseId: 'course_existing' })
-      useBatch()
-      const lesson = $.batchLocalLessons[lessonId].get()
+      useBatchSub($[collection], { courseId: 'course_existing' }, { defer: false })
+      useBatchSub()
+      const lesson = $[collection][lessonId].get()
       const { stageIds } = lesson
-      return el('span', { id: 'batchLocalExisting' }, stageIds.join(','))
-    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalExisting' }, 'Loading...') } })
+      return el('span', { id: 'batchSubLocalExisting' }, stageIds.join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubLocalExisting' }, 'Loading...') } })
 
     const { container } = render(el(Component))
-    expect(container.querySelector('#batchLocalExisting').textContent).toBe('Loading...')
+    expect(container.querySelector('#batchSubLocalExisting').textContent).toBe('Loading...')
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalExisting').textContent).toBe('local')
+      expect(container.querySelector('#batchSubLocalExisting').textContent).toBe('local')
     })
   })
 
-  itCompat('batch query keeps materialized doc alive after unrelated doc subscriber unmounts', async () => {
-    const lessonId = 'lesson_batch_local_retained'
-    const $lesson = await sub($.batchLocalLessons[lessonId])
-    $lesson.set({ courseId: 'course_retained', stageIds: ['s1', 's2'] })
+  it('keeps materialized query docs alive after an unrelated doc subscriber unmounts', async () => {
+    const collection = 'batchSubLocalRetained'
+    const lessonId = 'lesson_batch_sub_local_retained'
+    const $lesson = await sub($[collection][lessonId])
+    await $lesson.set({ courseId: 'course_retained', stageIds: ['s1', 's2'] })
     await wait()
 
-    _del(['batchLocalLessons', lessonId])
-    expect(_get(['batchLocalLessons', lessonId])).toBe(undefined)
+    _del([collection, lessonId])
+    expect(_get([collection, lessonId])).toBe(undefined)
 
     function QueryOwner () {
-      useBatchQuery('batchLocalLessons', { courseId: 'course_retained' })
-      useBatch()
-      const lesson = $.batchLocalLessons[lessonId].get()
-      return el('span', { id: 'batchLocalRetained' }, lesson.stageIds.join(','))
+      useBatchSub($[collection], { courseId: 'course_retained' }, { defer: false })
+      useBatchSub()
+      const lesson = $[collection][lessonId].get()
+      return el('span', { id: 'batchSubLocalRetained' }, lesson.stageIds.join(','))
     }
 
     const QueryOwnerObserved = observer(QueryOwner, {
-      suspenseProps: { fallback: el('span', { id: 'batchLocalRetained' }, 'Loading...') }
+      suspenseProps: { fallback: el('span', { id: 'batchSubLocalRetained' }, 'Loading...') }
     })
 
     function DocSubscriber ({ visible }) {
-      useSub($.batchLocalLessons[visible ? lessonId : '__DUMMY__'])
+      useSub($[collection][visible ? lessonId : '__DUMMY__'])
       if (!visible) return null
-      return el('span', { id: 'batchDocSubscriber' }, 'subscribed')
+      return el('span', { id: 'batchSubDocSubscriber' }, 'subscribed')
     }
 
     const DocSubscriberObserved = observer(DocSubscriber)
@@ -1265,31 +1265,33 @@ describe('useBatchQuery / useBatchQuery$', () => {
     }
 
     const { container } = render(el(Root))
-    expect(container.querySelector('#batchLocalRetained').textContent).toBe('Loading...')
+    expect(container.querySelector('#batchSubLocalRetained').textContent).toBe('Loading...')
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalRetained').textContent).toBe('s1,s2')
+      expect(container.querySelector('#batchSubLocalRetained').textContent).toBe('s1,s2')
     })
 
     await waitFor(() => {
-      expect(container.querySelector('#batchDocSubscriber')).toBe(null)
+      expect(container.querySelector('#batchSubDocSubscriber')).toBe(null)
     })
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalRetained').textContent).toBe('s1,s2')
-      expect(_get(['batchLocalLessons', lessonId]).stageIds).toEqual(['s1', 's2'])
+      expect(container.querySelector('#batchSubLocalRetained').textContent).toBe('s1,s2')
+      expect(_get([collection, lessonId]).stageIds).toEqual(['s1', 's2'])
     })
   })
 
-  itCompat('batch query param switch does not suspend on update resubscribe', async () => {
-    const collection = 'batchLocalLessonsSwitch'
-    const lessonA = 'lesson_batch_switch_1'
-    const lessonB = 'lesson_batch_switch_2'
+  it('keeps previous query signal during update resubscribe', async () => {
+    const collection = 'batchSubLocalLessonsSwitch'
+    const lessonA = 'lesson_batch_sub_switch_1'
+    const lessonB = 'lesson_batch_sub_switch_2'
 
     const $lessonA = await sub($[collection][lessonA])
     const $lessonB = await sub($[collection][lessonB])
-    $lessonA.set({ courseId: 'course_a', stageIds: ['a1'] })
-    $lessonB.set({ courseId: 'course_b', stageIds: ['b1', 'b2'] })
+    await Promise.all([
+      $lessonA.set({ courseId: 'course_a', stageIds: ['a1'] }),
+      $lessonB.set({ courseId: 'course_b', stageIds: ['b1', 'b2'] })
+    ])
     await wait()
 
     _del([collection, lessonA])
@@ -1299,43 +1301,42 @@ describe('useBatchQuery / useBatchQuery$', () => {
       const [courseId, setCourseId] = React.useState('course_a')
       const [lessonId, setLessonId] = React.useState(lessonA)
 
-      useBatchQuery(collection, { courseId })
-      useBatch()
+      useBatchSub($[collection], { courseId }, { defer: false })
+      useBatchSub()
       const lesson = $[collection][lessonId].get()
       const stageIds = lesson?.stageIds
 
       return el(Fragment, null,
-        el('span', { id: 'batchLocalSwitch' }, stageIds ? stageIds.join(',') : 'pending'),
+        el('span', { id: 'batchSubLocalSwitch' }, stageIds ? stageIds.join(',') : 'pending'),
         el('button', {
-          id: 'batchLocalSwitchBtn',
+          id: 'batchSubLocalSwitchBtn',
           onClick: () => {
             setCourseId('course_b')
             setLessonId(lessonB)
           }
         }, 'switch')
       )
-    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalSwitch' }, 'Loading...') } })
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubLocalSwitch' }, 'Loading...') } })
 
     const { container } = render(el(Component))
-    expect(container.querySelector('#batchLocalSwitch').textContent).toBe('Loading...')
+    expect(container.querySelector('#batchSubLocalSwitch').textContent).toBe('Loading...')
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalSwitch').textContent).toBe('a1')
+      expect(container.querySelector('#batchSubLocalSwitch').textContent).toBe('a1')
     })
 
-    fireEvent.click(container.querySelector('#batchLocalSwitchBtn'))
-    // Update resubscribe should not suspend the whole tree.
-    expect(container.querySelector('#batchLocalSwitch').textContent).not.toBe('Loading...')
+    fireEvent.click(container.querySelector('#batchSubLocalSwitchBtn'))
+    expect(container.querySelector('#batchSubLocalSwitch').textContent).not.toBe('Loading...')
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalSwitch').textContent).toBe('b1,b2')
+      expect(container.querySelector('#batchSubLocalSwitch').textContent).toBe('b1,b2')
     })
   })
 
-  itCompat('batch query switch keeps previous docs for no-guard local read', async () => {
-    const collection = 'batchLocalLessonsSwitchNoGuard'
-    const lessonA = 'lesson_batch_switch_no_guard_1'
-    const lessonB = 'lesson_batch_switch_no_guard_2'
+  it('keeps previous docs for no-guard local reads during query switches', async () => {
+    const collection = 'batchSubLocalLessonsSwitchNoGuard'
+    const lessonA = 'lesson_batch_sub_switch_no_guard_1'
+    const lessonB = 'lesson_batch_sub_switch_no_guard_2'
     await $[collection][lessonA].set({ courseId: 'course_a', stageIds: ['a1'], createdAt: 1 })
     await $[collection][lessonB].set({ courseId: 'course_b', stageIds: ['b1', 'b2'], createdAt: 1 })
     _del([collection, lessonA])
@@ -1345,70 +1346,74 @@ describe('useBatchQuery / useBatchQuery$', () => {
     try {
       const Component = observer(() => {
         const [courseId, setCourseId] = React.useState('course_a')
-        const [docs] = useBatchQuery(collection, { courseId, $sort: { createdAt: 1 } })
-        useBatch()
+        const $query = useBatchSub($[collection], { courseId, $sort: { createdAt: 1 } }, { defer: false })
+        useBatchSub()
+        const docs = $query.get()
         const firstId = docs[0]._id || docs[0].id
         const lesson = $[collection][firstId].get()
         const { stageIds } = lesson
 
         return fr(
-          el('span', { id: 'batchLocalSwitchNoGuard' }, stageIds.join(',')),
+          el('span', { id: 'batchSubLocalSwitchNoGuard' }, stageIds.join(',')),
           el('button', {
-            id: 'batchLocalSwitchNoGuardBtn',
+            id: 'batchSubLocalSwitchNoGuardBtn',
             onClick: () => setCourseId('course_b')
           }, 'switch')
         )
-      }, { suspenseProps: { fallback: el('span', { id: 'batchLocalSwitchNoGuard' }, 'Loading...') } })
+      }, { suspenseProps: { fallback: el('span', { id: 'batchSubLocalSwitchNoGuard' }, 'Loading...') } })
 
       const { container } = render(el(Component))
-      expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).toBe('Loading...')
+      expect(container.querySelector('#batchSubLocalSwitchNoGuard').textContent).toBe('Loading...')
 
       await waitFor(() => {
-        expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).toBe('a1')
+        expect(container.querySelector('#batchSubLocalSwitchNoGuard').textContent).toBe('a1')
       })
 
-      fireEvent.click(container.querySelector('#batchLocalSwitchNoGuardBtn'))
-      expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).not.toBe('Loading...')
+      fireEvent.click(container.querySelector('#batchSubLocalSwitchNoGuardBtn'))
+      expect(container.querySelector('#batchSubLocalSwitchNoGuard').textContent).not.toBe('Loading...')
 
       await waitFor(() => {
-        expect(container.querySelector('#batchLocalSwitchNoGuard').textContent).toBe('b1,b2')
+        expect(container.querySelector('#batchSubLocalSwitchNoGuard').textContent).toBe('b1,b2')
       })
     } finally {
       resetTestThrottling()
     }
   })
 
-  itCompat('batch query insert allows immediate local read in same render cycle', async () => {
-    const collection = 'batchLocalLessonsInsert'
-    const lessonId = 'lesson_batch_insert_1'
+  it('allows immediate local read after a query insert in the same render cycle', async () => {
+    const collection = 'batchSubLocalLessonsInsert'
+    const lessonId = 'lesson_batch_sub_insert_1'
 
     const Component = observer(() => {
-      const [docs] = useBatchQuery(collection, { courseId: 'course_insert', $sort: { createdAt: 1 } })
-      useBatch()
-      if (!docs || docs.length === 0) return el('span', { id: 'batchLocalInsert' }, 'none')
+      const $query = useBatchSub($[collection], { courseId: 'course_insert', $sort: { createdAt: 1 } }, { defer: false })
+      useBatchSub()
+      const docs = $query.get()
+      if (!docs || docs.length === 0) return el('span', { id: 'batchSubLocalInsert' }, 'none')
       const firstId = docs[0]?._id ?? docs[0]?.id
       const lesson = $[collection][firstId].get()
       const { stageIds } = lesson
-      return el('span', { id: 'batchLocalInsert' }, stageIds.join(','))
-    }, { suspenseProps: { fallback: el('span', { id: 'batchLocalInsert' }, 'Loading...') } })
+      return el('span', { id: 'batchSubLocalInsert' }, stageIds.join(','))
+    }, { suspenseProps: { fallback: el('span', { id: 'batchSubLocalInsert' }, 'Loading...') } })
 
     const { container } = render(el(Component))
-    expect(container.querySelector('#batchLocalInsert').textContent).toBe('Loading...')
+    expect(container.querySelector('#batchSubLocalInsert').textContent).toBe('Loading...')
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalInsert').textContent).toBe('none')
+      expect(container.querySelector('#batchSubLocalInsert').textContent).toBe('none')
     })
 
-    const $lesson = await sub($[collection][lessonId])
-    $lesson.set({ courseId: 'course_insert', stageIds: ['i1', 'i2'], createdAt: 1 })
+    await act(async () => {
+      const $lesson = await sub($[collection][lessonId])
+      await $lesson.set({ courseId: 'course_insert', stageIds: ['i1', 'i2'], createdAt: 1 })
+    })
 
     await waitFor(() => {
-      expect(container.querySelector('#batchLocalInsert').textContent).toBe('i1,i2')
+      expect(container.querySelector('#batchSubLocalInsert').textContent).toBe('i1,i2')
     })
   })
 
-  itCompat('useBatchQuery allows temporary undefined local snapshot after useBatch (guarded read)', async () => {
-    const collection = 'batchQueryReadyBarrier'
+  it('waits for query materialization before closing the batch barrier', async () => {
+    const collection = 'batchSubQueryReadyBarrier'
     const lessonId = 'lesson_query_ready_1'
     await $[collection][lessonId].set({ courseId: 'course_query_ready', stageIds: ['q1', 'q2'] })
     _del([collection, lessonId])
@@ -1433,27 +1438,70 @@ describe('useBatchQuery / useBatchQuery$', () => {
 
     try {
       const Component = observer(() => {
-        useBatchQuery(collection, { courseId: 'course_query_ready' })
-        useBatch()
+        useBatchSub($[collection], { courseId: 'course_query_ready' }, { defer: false })
+        useBatchSub()
         const lesson = $[collection][lessonId].get()
         const stageIds = lesson?.stageIds
-        return el('span', { id: 'batchQueryReadyBarrier' }, stageIds ? stageIds.join(',') : 'pending')
-      }, { suspenseProps: { fallback: el('span', { id: 'batchQueryReadyBarrier' }, 'Loading...') } })
+        return el('span', { id: 'batchSubQueryReadyBarrier' }, stageIds ? stageIds.join(',') : 'pending')
+      }, { suspenseProps: { fallback: el('span', { id: 'batchSubQueryReadyBarrier' }, 'Loading...') } })
 
       const { container } = render(el(Component))
-      expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('Loading...')
+      expect(container.querySelector('#batchSubQueryReadyBarrier').textContent).toBe('Loading...')
 
       await wait(20)
-      expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('pending')
+      expect(container.querySelector('#batchSubQueryReadyBarrier').textContent).toBe('Loading...')
 
       await waitFor(() => {
-        expect(container.querySelector('#batchQueryReadyBarrier').textContent).toBe('q1,q2')
+        expect(container.querySelector('#batchSubQueryReadyBarrier').textContent).toBe('q1,q2')
       })
     } finally {
       queryProto._initData = originalInitData
     }
   })
 
+  it('resolves aggregation batch subscriptions from aggregation-level docs', async () => {
+    const collection = 'batchSubAggregateClientReady'
+    const queryProto = aggregationSubscriptions.QueryClass.prototype
+    const originalInitData = queryProto._initData
+    queryProto._initData = function (...args) {
+      if (this.collectionName === collection && Array.isArray(this.params?.$aggregate)) {
+        for (const rootId of this.rootIds || []) {
+          setPrivateData(rootId, [AGGREGATIONS, this.hash], [{ _id: null, startedStageIds: ['s1', 's2'] }])
+        }
+        return
+      }
+      return originalInitData.apply(this, args)
+    }
+
+    try {
+      const Component = observer(() => {
+        const $rows = useBatchSub($[collection], {
+          $aggregate: [
+            { $match: { active: true } },
+            { $group: { _id: null, startedStageIds: { $push: '$stageId' } } }
+          ]
+        }, { defer: false })
+        useBatchSub()
+        const rows = $rows.get()
+        const joined = (rows?.[0]?.startedStageIds || []).join(',')
+        return el('span', { id: 'batchSubAggregateClientReady' }, `${rows?.length || 0}:${joined}`)
+      }, { suspenseProps: { fallback: el('span', { id: 'batchSubAggregateClientReady' }, 'Loading...') } })
+
+      const { container } = render(el(Component))
+      expect(container.querySelector('#batchSubAggregateClientReady').textContent).toBe('Loading...')
+
+      await waitFor(() => {
+        expect(container.querySelector('#batchSubAggregateClientReady').textContent).toBe('1:s1,s2')
+      })
+      expect(_get([collection, null])).toBe(undefined)
+      expect(_get([collection, 'null'])).toBe(undefined)
+    } finally {
+      queryProto._initData = originalInitData
+    }
+  })
+})
+
+describe('SignalCompat.start() React bindings', () => {
   itCompat('compat start keeps pre-bound child signals reactive across object syncs', async () => {
     const basePath = '_compatStartReactBinding'
     _del([basePath])
