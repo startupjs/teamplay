@@ -12,6 +12,8 @@
  * 3. If extremely late bindings are enabled, to prevent name collisions when accessing fields
  *    in the raw data tree which have the same name as signal's methods
  */
+import { raw } from '@nx-js/observer-util'
+import arrayDiff from 'arraydiff'
 import uuid from '@teamplay/utils/uuid'
 import {
   get as _get,
@@ -35,13 +37,14 @@ import {
 import getSignal, { rawSignal } from './getSignal.ts'
 import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
-import { AGGREGATIONS, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
+import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.ts'
 import { isPrivateMutationForbidden } from './connection.ts'
 import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
   isIdFieldPath,
+  isPlainObject,
   isPublicDocPath,
   normalizeIdFields,
   prepareAddPayload,
@@ -287,6 +290,26 @@ export class Signal<TValue = unknown> extends Function {
     return getSignalIds(this, SIGNAL_READ_CONTEXT)
   }
 
+  /** Return query extra data, aggregation data, or undefined for ordinary signals. */
+  getExtra (): unknown {
+    if (arguments.length > 0) throw Error('Signal.getExtra() does not accept any arguments')
+    if (this[IS_AGGREGATION]) return this.get()
+    if (this[IS_QUERY]) return this.extra.get()
+    return undefined
+  }
+
+  /** Return a shallow copy of the current value. */
+  getCopy (): TValue {
+    if (arguments.length > 0) throw Error('Signal.getCopy() does not accept any arguments')
+    return shallowCopy(this.get())
+  }
+
+  /** Return a deep copy of the current value. */
+  getDeepCopy (): TValue {
+    if (arguments.length > 0) throw Error('Signal.getDeepCopy() does not accept any arguments')
+    return deepCopy(this.get())
+  }
+
   /** Read the current value without tracking it for reactive rendering. */
   peek (): TValue {
     if (arguments.length > 0) throw Error('Signal.peek() does not accept any arguments')
@@ -418,6 +441,47 @@ export class Signal<TValue = unknown> extends Function {
       `)
     }
     setReplacePrivateData(getSignalOwningRootId(this), segments, nextValue)
+  }
+
+  /** Set the current value only when it is null or undefined. */
+  async setNull (value: TValue): Promise<void> {
+    if (arguments.length > 1) throw Error('Signal.setNull() expects a single argument')
+    if (this.get() != null) return
+    await this.setReplace(value)
+  }
+
+  /** Replace the current value unless it is exactly equal to the new value. */
+  async setDiff (value: TValue): Promise<void> {
+    if (arguments.length > 1) throw Error('Signal.setDiff() expects a single argument')
+    const before = this.peek()
+    if (racerEqual(before, value)) return
+    await this.setReplace(value)
+  }
+
+  /** Recursively diff objects and arrays at the current signal path. */
+  async setDiffDeep (value: TValue): Promise<void> {
+    if (arguments.length > 1) throw Error('Signal.setDiffDeep() expects a single argument')
+    await runInBatch(() => setDiffDeepOnSignal(this, value))
+  }
+
+  /**
+   * Set multiple object fields with per-key replace semantics.
+   * Unlike assign(), null is stored as null and undefined follows setReplace() semantics.
+   * @param object Object containing fields to set.
+   */
+  async setEach (object: NonNullable<TValue> extends object ? Partial<NonNullable<TValue>> : never): Promise<void> {
+    if (arguments.length > 1) throw Error('Signal.setEach() expects a single argument')
+    if (!object) return
+    if (typeof object !== 'object') {
+      throw Error('Signal.setEach() expects an object argument, got: ' + typeof object)
+    }
+    await runInBatch(async () => {
+      const promises = []
+      for (const key of Object.keys(object)) {
+        promises.push(this[key].setReplace(object[key]))
+      }
+      await Promise.all(promises)
+    })
   }
 
   /**
@@ -637,6 +701,179 @@ export class Signal<TValue = unknown> extends Function {
   // clone () {}
   // async assign () {}
   // async splice () {}
+}
+
+async function setDiffDeepOnSignal ($target, value) {
+  if ($target[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
+  await diffDeepOnSignal($target, $target.peek(), value)
+}
+
+async function diffDeepOnSignal ($signal, before, after) {
+  if (before === after) return
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const diff = arrayDiff(before, after, deepEqual)
+    if (!diff.length) return
+    const index = getSingleArrayReplacementIndex(diff)
+    if (index != null) {
+      await diffDeepOnSignal(getChildSignal($signal, index), before[index], after[index])
+      return
+    }
+    await applyArrayDiff($signal, diff)
+    return
+  }
+
+  if (isDiffableObject(before, after)) {
+    const preservePath = $signal[SEGMENTS]
+    for (const key of Object.keys(before)) {
+      if (Object.prototype.hasOwnProperty.call(after, key)) continue
+      await deleteForDiffDeep(getChildSignal($signal, key), preservePath)
+    }
+    for (const key of Object.keys(after)) {
+      await diffDeepOnSignal(getChildSignal($signal, key), before[key], after[key])
+    }
+    return
+  }
+
+  await $signal.setReplace(after)
+}
+
+function isDiffableObject (before, after) {
+  if (!isPlainObject(before) || !isPlainObject(after)) return false
+  if (isReactLike(before) || isReactLike(after)) return false
+  return true
+}
+
+function isReactLike (value) {
+  return !!(value && typeof value === 'object' && typeof value.$$typeof === 'symbol')
+}
+
+function getSingleArrayReplacementIndex (diff) {
+  if (!Array.isArray(diff) || diff.length !== 2) return null
+  const first = diff[0]
+  const second = diff[1]
+  if (
+    first instanceof arrayDiff.RemoveDiff &&
+    second instanceof arrayDiff.InsertDiff &&
+    first.index === second.index &&
+    first.howMany === 1 &&
+    second.values.length === 1
+  ) {
+    return first.index
+  }
+  return null
+}
+
+async function applyArrayDiff ($signal, diff) {
+  for (const item of diff) {
+    if (item instanceof arrayDiff.InsertDiff) {
+      await $signal.insert(item.index, item.values)
+      continue
+    }
+    if (item instanceof arrayDiff.RemoveDiff) {
+      await $signal.remove(item.index, item.howMany)
+      continue
+    }
+    if (item instanceof arrayDiff.MoveDiff) {
+      await $signal.move(item.from, item.to, item.howMany)
+    }
+  }
+}
+
+async function deleteForDiffDeep ($signal, preservePath) {
+  const segments = $signal[SEGMENTS]
+  const idFields = getIdFieldsForSegments(segments)
+  if (isIdFieldPath(segments, idFields)) return
+  if (isPublicCollection(segments[0])) {
+    await $signal.del()
+    return
+  }
+  if (isPrivateMutationForbidden()) {
+    throw Error(`
+      Can't modify private collections data when 'publicOnly' is enabled.
+      On the server you can only work with public collections.
+    `)
+  }
+  delPrivateData(getSignalOwningRootId($signal), segments, { preservePath })
+}
+
+function getChildSignal ($parent, key) {
+  return getSignal(getRoot($parent) || $parent, [...$parent[SEGMENTS], key])
+}
+
+function deepEqual (left, right) {
+  if (left === right) return true
+  if (left == null || right == null) return false
+  if (typeof left !== 'object' || typeof right !== 'object') return false
+  if (Array.isArray(left) !== Array.isArray(right)) return false
+
+  if (Array.isArray(left)) {
+    if (left.length !== right.length) return false
+    for (let i = 0; i < left.length; i++) {
+      if (!deepEqual(left[i], right[i])) return false
+    }
+    return true
+  }
+
+  if (!isPlainObject(left) || !isPlainObject(right)) return false
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false
+    if (!deepEqual(left[key], right[key])) return false
+  }
+  return true
+}
+
+function racerEqual (left, right) {
+  return left === right || (Number.isNaN(left) && Number.isNaN(right))
+}
+
+function shallowCopy (value) {
+  const rawValue = raw(value)
+  if (Array.isArray(rawValue)) return rawValue.slice()
+  if (rawValue && typeof rawValue === 'object') return { ...rawValue }
+  return rawValue
+}
+
+function deepCopy (value) {
+  const rawValue = raw(value)
+  if (!rawValue || typeof rawValue !== 'object') return rawValue
+  if (typeof globalThis.structuredClone === 'function') {
+    try {
+      return globalThis.structuredClone(rawValue)
+    } catch {}
+  }
+  return racerDeepCopy(rawValue)
+}
+
+// Racer-style deep copy:
+// - Preserves prototypes by instantiating via `new value.constructor()`
+// - Copies own enumerable props recursively
+// - Keeps functions as-is (no cloning)
+// - Handles Date by creating a new Date
+// Limitations: does not handle cyclic refs, Map/Set/RegExp/TypedArray, non-enumerables.
+function racerDeepCopy (value) {
+  if (value instanceof Date) return new Date(value)
+  if (typeof value === 'object') {
+    if (value === null) return null
+    if (Array.isArray(value)) {
+      const array = []
+      for (let i = value.length; i--;) {
+        array[i] = racerDeepCopy(value[i])
+      }
+      return array
+    }
+    const object = new value.constructor()
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        object[key] = racerDeepCopy(value[key])
+      }
+    }
+    return object
+  }
+  return value
 }
 
 // dot syntax returns a child signal only if no such method or property exists

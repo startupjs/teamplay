@@ -108,6 +108,7 @@ type TypeAssertions = [
   QueryCollectionAdd,
   QueryIdsSignal,
   QueryExtraSignal,
+  QueryGetExtraValue,
   CollectionQueryIdsSignal,
   CollectionQueryExtraSignal,
   QueryArrayMutatorBlocked,
@@ -128,6 +129,12 @@ type TypeAssertions = [
   CollectionMethodChainAddReturnsId,
   DocSetReturnsVoidPromise,
   DocSetReplaceReturnsVoidPromise,
+  DocSetNullReturnsVoidPromise,
+  DocSetDiffReturnsVoidPromise,
+  DocSetDiffDeepReturnsVoidPromise,
+  DocSetEachReturnsVoidPromise,
+  DocGetCopyValue,
+  DocGetDeepCopyValue,
   DocAssignReturnsVoidPromise,
   NestedAssignReturnsVoidPromise,
   NestedPopReturnsItem,
@@ -603,6 +610,23 @@ const docSetReplaceResult = $game.setReplace({
   },
   status: 'draft'
 })
+const docSetNullResult = $game.status.setNull('draft')
+const docSetDiffResult = $game.setDiff({
+  info: {
+    title: 'Go',
+    maxPlayers: 2
+  },
+  status: 'draft'
+})
+const docSetDiffDeepResult = $game.setDiffDeep({
+  info: {
+    title: 'Go',
+    maxPlayers: 2
+  }
+})
+const docSetEachResult = $game.setEach({ status: 'started' })
+const docGetCopy = $game.getCopy()
+const docGetDeepCopy = $game.getDeepCopy()
 const docAssignResult = $game.assign({ status: 'started' })
 const nestedAssignResult = $game.info.assign({ maxPlayers: 4 })
 const poppedTag = $game.info.tags.pop()
@@ -677,6 +701,12 @@ type CollectionAddReturnsId = Expect<Equal<typeof collectionAddId, Promise<strin
 type CollectionMethodChainAddReturnsId = Expect<Equal<typeof collectionMethodChainAddId, Promise<string>>>
 type DocSetReturnsVoidPromise = Expect<Equal<typeof docSetResult, Promise<void>>>
 type DocSetReplaceReturnsVoidPromise = Expect<Equal<typeof docSetReplaceResult, Promise<void>>>
+type DocSetNullReturnsVoidPromise = Expect<Equal<typeof docSetNullResult, Promise<void>>>
+type DocSetDiffReturnsVoidPromise = Expect<Equal<typeof docSetDiffResult, Promise<void>>>
+type DocSetDiffDeepReturnsVoidPromise = Expect<Equal<typeof docSetDiffDeepResult, Promise<void>>>
+type DocSetEachReturnsVoidPromise = Expect<Equal<typeof docSetEachResult, Promise<void>>>
+type DocGetCopyValue = Expect<Equal<typeof docGetCopy, Game>>
+type DocGetDeepCopyValue = Expect<Equal<typeof docGetDeepCopy, Game>>
 type DocAssignReturnsVoidPromise = Expect<Equal<typeof docAssignResult, Promise<void>>>
 type NestedAssignReturnsVoidPromise = Expect<Equal<typeof nestedAssignResult, Promise<void>>>
 type NestedPopReturnsItem = Expect<Equal<PromiseValue<typeof poppedTag>, string | undefined>>
@@ -898,6 +928,7 @@ const $firstQueryGame = $resolvedQueryGames.reduce(($firstGame, $secondGame) => 
 const $resolvedOpenQueryGames = $resolvedQueryGames.findOpenGames()
 const $plainQueryIds = $plainQuerySignal.ids
 const $plainQueryExtra = $plainQuerySignal.extra
+const plainQueryExtra = $plainQuerySignal.getExtra()
 const $resolvedQueryIds = $resolvedQueryGames.ids
 const $resolvedQueryExtra = $resolvedQueryGames.extra
 // @ts-expect-error query signals are array-readable but not array-mutable at the top level
@@ -932,6 +963,7 @@ type QueryCollectionModelMethod = Expect<Equal<HasFindOpenGames<QueryGames>, tru
 type QueryCollectionAdd = Expect<Equal<typeof resolvedOpenQueryAddId, Promise<string>>>
 type QueryIdsSignal = Expect<Equal<ReturnType<typeof $plainQueryIds.get>, string[]>>
 type QueryExtraSignal = Expect<Equal<ReturnType<typeof $plainQueryExtra.get>, unknown>>
+type QueryGetExtraValue = Expect<Equal<typeof plainQueryExtra, unknown>>
 type CollectionQueryIdsSignal = Expect<Equal<ReturnType<typeof $resolvedQueryIds.get>, string[]>>
 type CollectionQueryExtraSignal = Expect<Extends<typeof $resolvedQueryExtra, { get: () => unknown }>>
 type QueryArrayMutatorBlocked = Expect<Equal<NonNullable<QueryGames['push']>, never>>

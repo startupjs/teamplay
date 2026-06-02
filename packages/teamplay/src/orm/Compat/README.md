@@ -18,9 +18,17 @@ Teamplay normally uses `Signal` as the default signal class. In compatibility mo
 export default globalThis?.teamplayCompatibilityMode ? SignalCompat : Signal
 ```
 
-`SignalCompat` extends `Signal` with convenience methods that match supported StartupJS behavior:
+The base `Signal` API now includes the current-path convenience methods used by
+regular TeamPlay code:
 - `getCopy()`, `getDeepCopy()` — shallow/deep copies of current signal data.
+- `getExtra()` — query extra / aggregation rows getter.
+- `setDiff()`, `setDiffDeep()`, `setEach()`, `setNull()` — current-path mutators.
 - Mutators on the current signal path: `set`, `setReplace`, `del`, `increment`, `push`, `remove`, etc.
+
+`SignalCompat` keeps legacy behavior that still needs compatibility handling:
+- `ref()` / `removeRef()` forwarding and mirror semantics.
+- imperative `query()` / `subscribe()` / `fetch()` lifecycle helpers.
+- model events and `silent()` wrappers.
 - `leaf()`, `parent()` — path helpers.
 - `root()` — owning root signal method for explicit root traversal.
 
@@ -377,12 +385,13 @@ Compatibility mode intentionally aligns mutators with Racer. This differs from c
 | --- | --- | --- |
 | `set` | Uses deep-diff path (`dataTree.set` + internal `setDiffDeep`). | Current-path replace semantics, Racer-like. `undefined` keeps delete semantics. |
 | `setReplace` | Explicit current-path replace. | Same current-path replace intent as compat `set` for non-`undefined` values. |
-| `setEach` | Not a special API in core mutators. | Per-key compat `set` on the current signal (not `assign` merge/delete behavior). |
-| `setDiffDeep` | Deep-diff engine (`utils/setDiffDeep.js`). | Recursive Racer-like diff implemented via compat mutators (`set` / `del`) below the current signal. |
-| `setDiff` | N/A as compat shim. | Racer-like full replace with exact-equality no-op (`===` / `NaN`). Equivalent objects / arrays still replace. |
+| `setEach` | Per-key replace semantics on the current signal. | Same core behavior plus ref forwarding. |
+| `setDiffDeep` | Recursive current-path diff with empty target object preservation. | Same core behavior plus ref forwarding and silent/ref mirror handling. |
+| `setDiff` | Racer-like full replace with exact-equality no-op (`===` / `NaN`). Equivalent objects / arrays still replace. | Same core behavior plus ref forwarding. |
 
-Migration note: compat behavior is intentionally Racer-aligned and may differ from core mutators.
-Composite compat mutators (`setEach`, `setDiffDeep`) apply updates atomically for Teamplay-scheduled observers via the runtime batch scheduler.
+Migration note: these convenience mutators are available in both modes. Compat mode
+adds legacy ref/event behavior around them, but the current-path API shape is the same.
+Composite mutators (`setEach`, `setDiffDeep`) apply updates atomically for Teamplay-scheduled observers via the runtime batch scheduler.
 
 ### Subscription GC Delay (Compat)
 
@@ -438,8 +447,8 @@ $.config.theme.setNull('light')
 
 ### setDiffDeep(value)
 
-Applies a recursive Racer-like diff using compat mutators (`set` / `del`) below the current path.
-This is intentionally a compat implementation detail and differs from core deep-diff internals.
+Applies a recursive current-path diff below the current path.
+Stale object keys are removed recursively and empty target objects are preserved.
 
 ```js
 await $.users.user1.set({ profile: { name: 'Ann', role: 'student' } })
@@ -463,9 +472,9 @@ await $.users.user1.profile.setDiff({ name: 'Bob' }) // full replace
 
 ### setEach(object)
 
-Racer-like per-key set. `setEach` iterates keys and applies compat `set` for each key.
+Per-key replace. `setEach` iterates keys and applies current-path replace semantics for each key.
 - `setEach({ k: null })` stores `null`.
-- `setEach({ k: undefined })` applies current delete semantics.
+- `setEach({ k: undefined })` keeps `undefined` for private values and normalizes public document subpaths to `null`.
 
 ```js
 await $.users.user1.setEach({ name: 'Bob', age: null })
@@ -478,11 +487,11 @@ await $.users.user1.setEach({ name: 'Bob', age: null })
 | `set(null)` | stores `null` at the current path |
 | `set(undefined)` | applies delete semantics at the current path |
 | `setEach({ k: null })` | stores `null` for `k` |
-| `setEach({ k: undefined })` | applies delete semantics for `k` |
+| `setEach({ k: undefined })` | private: keeps key with `undefined`; public doc subpath: normalizes to `null` |
 
 ```js
 await $.users.user1.status.set(null) // status === null
-await $.users.user1.setEach({ status: undefined }) // status deleted
+await $._session.userDraft.setEach({ status: undefined }) // key exists with undefined
 ```
 
 ### assign(object)

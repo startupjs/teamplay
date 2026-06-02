@@ -29,9 +29,9 @@
 | `model.get('a.b')` | `model.a.b.get()` |
 | `model.peek('a.b')` | `model.a.b.peek()` |
 | `model.set('a.b', value)` | `model.a.b.set(value)` или `model.a.b.setReplace(value)` |
-| `model.setDiff('a.b', value)` | `model.a.b.setDiff(value)`, если такой API будет добавлен. |
-| `model.setDiffDeep('a.b', value)` | `model.a.b.setDiffDeep(value)`, если такой API будет добавлен. |
-| `model.setEach('a.b', object)` | `model.a.b.setEach(object)`, если такой API будет добавлен. |
+| `model.setDiff('a.b', value)` | `model.a.b.setDiff(value)` |
+| `model.setDiffDeep('a.b', value)` | `model.a.b.setDiffDeep(value)` |
+| `model.setEach('a.b', object)` | `model.a.b.setEach(object)` |
 | `model.del('a.b')` | `model.a.b.del()` |
 | `model.push('a.b', item)` | `model.a.b.push(item)` |
 | `model.stringInsert('a.b', index, text)` | `model.a.b.stringInsert(index, text)` |
@@ -57,8 +57,8 @@
 | Менять ли `Signal.set(value)` в non-compat? | Нет, по умолчанию не менять. Это существующий API для других проектов. |
 | Добавлять ли `Signal.setReplace(value)`? | Да, как explicit current-signal method для replacement semantics. |
 | Нужен ли `setReplace(path, value)`? | Нет как целевой API. Для migration можно временно закрывать adapter-ом, но core method должен быть `setReplace(value)`. |
-| Что должен делать `setReplace(undefined)` на local/private? | Требует решения. Возможные варианты: сохранить explicit `undefined` как compat/local Racer semantics или вести себя как strict replace заданным значением. |
-| Что должен делать `setReplace(undefined)` на public doc/subpath? | Требует решения. Compat public replace нормализует `undefined` в `null` на subpath; whole-doc `undefined` через base `set` может удалить doc. |
+| Что делает `setReplace(undefined)` на local/private? | Сохраняет explicit `undefined` по local/private Racer-like semantics. |
+| Что делает `setReplace(undefined)` на public doc/subpath? | Public subpath нормализует `undefined` в `null`; whole public doc `undefined` удаляет документ. |
 | Нужен ли `setReplace` в compat? | Имеет смысл добавить как alias/explicit API, чтобы migration code мог одинаково работать в обоих режимах. |
 
 ## Группы поведения и варианты
@@ -66,9 +66,9 @@
 | Группа | Потенциальный permanent non-compat API | Временный adapter/shim | Refactor callers |
 |---|---|---|---|
 | Replace writes | `setReplace(value)` | `set(path, value)` -> resolve path -> `setReplace(value)` | Переписать на child traversal и `setReplace`. |
-| `setDiff` | Возможно `setDiff(value)` без path overload. | `setDiff(path, value)` adapter. | Переписать на child traversal. |
-| `setDiffDeep` | Возможно `setDiffDeep(value)` без path overload, если recursive diff нужен вне LMS. | `setDiffDeep(path, value)` adapter. | Переписать на child traversal. |
-| `setEach` | Возможно `setEach(object)` без path overload, если нужна Racer-like per-key set semantics. | `setEach(path, object)` adapter. | Проверить, где можно заменить на `assign`, а где нельзя из-за nullish semantics. |
+| `setDiff` | `setDiff(value)` без path overload. | `setDiff(path, value)` adapter. | Переписать на child traversal. |
+| `setDiffDeep` | `setDiffDeep(value)` без path overload. | `setDiffDeep(path, value)` adapter. | Переписать на child traversal. |
+| `setEach` | `setEach(object)` без path overload. | `setEach(path, object)` adapter. | Проверить, где можно заменить на explicit per-key operations, а где нужен именно `setEach`. |
 | Getters with path | Не добавлять. | `get(path)` / `peek(path)` adapter. | Переписать на child traversal. |
 | Array/string/increment path overloads | Не добавлять. | Path-first adapter для legacy modules. | Переписать на child traversal. |
 | `.at()` / `.scope()` | Не добавлять как target API. | Adapter на время migration. | Переписать на direct child traversal/root traversal. |
@@ -95,10 +95,7 @@
 
 | Тема | Что решить |
 |---|---|
-| `setReplace(undefined)` | Единая semantics для local/private/public или разные semantics по storage layer. |
-| `setDiff(value)` | Добавлять ли permanent API в non-compat или оставить только adapter/refactor. |
-| `setDiffDeep(value)` | Нужен ли как public API non-compat или достаточно internal `setDiffDeep` + adapter для LMS. |
-| `setEach(object)` | Добавлять ли из-за отличия от `assign`, или мигрировать callers на явные per-key operations. |
+| Path overload adapters for mutators | Насколько долго держать временный adapter для `setDiff(path, value)`, `setDiffDeep(path, value)`, `setEach(path, object)`. |
 | Query adapter lifespan | Насколько долго сохранять Racer-like imperative query API для LMS/deps. |
 | Refs/start/model events | Переносить частями, держать adapter, или переписывать LMS flows. |
 | Dependent modules | Какие legacy APIs нужны не LMS напрямую, а `@startupjs/*` и `@dmapper/*`. |

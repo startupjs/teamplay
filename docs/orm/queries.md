@@ -132,6 +132,13 @@ const extra = $activeUsers.extra.get()
 
 `ids` contains the ordered document ids for the current query result. `extra` contains server-provided metadata such as count results when the query returns it.
 
+You can also use method aliases when that reads better in imperative code:
+
+```ts
+const ids = $activeUsers.getIds()
+const extra = $activeUsers.getExtra()
+```
+
 These names are reserved on query signals. If a real document id is `ids` or `extra`, access that document through the collection object tree:
 
 ```ts

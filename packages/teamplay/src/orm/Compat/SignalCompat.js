@@ -54,7 +54,7 @@ import {
 
 class SignalCompat extends Signal {
   static ID_FIELDS = ['_id', 'id']
-  static [GETTERS] = [...DEFAULT_GETTERS, 'getCopy', 'getDeepCopy']
+  static [GETTERS] = DEFAULT_GETTERS
 
   path () {
     if (arguments.length > 0) throw Error('Signal.path() does not accept any arguments')

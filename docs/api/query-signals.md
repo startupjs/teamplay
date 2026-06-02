@@ -36,6 +36,16 @@ const ids = $activeUsers.getIds()
 
 The result is always a `string[]`. Non-string ids are filtered out.
 
+### getExtra()
+
+Returns extra query metadata.
+
+```javascript
+const extra = $activeUsers.getExtra()
+```
+
+For query signals, this is equivalent to `$activeUsers.extra.get()`. For aggregation signals, `getExtra()` returns the aggregation rows, the same value as `.get()`.
+
 ### map(callback)
 
 Maps over the documents in the query result.
