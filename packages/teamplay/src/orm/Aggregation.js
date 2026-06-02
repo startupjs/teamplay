@@ -5,6 +5,7 @@ import {
   QuerySubscriptions,
   hashQuery,
   Query,
+  cloneQueryParams,
   HASH,
   PARAMS,
   COLLECTION_NAME,
@@ -75,7 +76,7 @@ export function getAggregationRowId (row, collectionName) {
 }
 
 export function getAggregationSignal (collectionName, params, options) {
-  params = JSON.parse(JSON.stringify(params))
+  params = cloneQueryParams(collectionName, params)
   const transportHash = hashQuery(collectionName, params)
   const { root, signalOptions } = parseAggregationSignalOptions(options)
 

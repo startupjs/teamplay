@@ -974,32 +974,45 @@ describe('QuerySubscriptions', () => {
     assert.equal(query.activeTransportMode, 'idle')
   })
 
-  it('normalizes undefined values in query params the same way as Racer in compat mode', () => {
+  it('drops undefined object fields in query params and warns in compat mode', () => {
+    const originalWarn = console.warn
+    const warnings = []
+    console.warn = (...args) => warnings.push(args)
+
     const rawParams = {
       $or: [
         { entity: 'group', entityId: undefined },
         { entity: 'lesson', entityId: 'lesson-1' }
       ]
     }
-    const expectedParams = process.env.TEAMPLAY_COMPAT === '1'
-      ? {
-          $or: [
-            { entity: 'group', entityId: null },
-            { entity: 'lesson', entityId: 'lesson-1' }
-          ]
-        }
-      : {
-          $or: [
-            { entity: 'group' },
-            { entity: 'lesson', entityId: 'lesson-1' }
-          ]
-        }
+    const expectedParams = {
+      $or: [
+        { entity: 'group' },
+        { entity: 'lesson', entityId: 'lesson-1' }
+      ]
+    }
 
-    const $query = getQuerySignal('gamesQuery', rawParams)
-    const hash = hashQuery('gamesQuery', rawParams)
+    let $query
+    let hash
+    try {
+      $query = getQuerySignal('gamesQuery', rawParams)
+      hash = hashQuery('gamesQuery', rawParams)
+    } finally {
+      console.warn = originalWarn
+    }
 
     assert.deepEqual($query[QUERY_PARAMS], expectedParams, 'stored params should match normalized shape')
     assert.equal(hash, JSON.stringify({ query: ['gamesQuery', expectedParams] }), 'query hash should match normalized params')
+    if (process.env.TEAMPLAY_COMPAT === '1') {
+      assert.equal(warnings.length, 1, 'compat mode should warn once for this collection/path set')
+      assert.match(warnings[0][0], /undefined values/)
+      assert.deepEqual(warnings[0][1], {
+        collectionName: 'gamesQuery',
+        paths: ['$or[0].entityId']
+      })
+    } else {
+      assert.equal(warnings.length, 0, 'non-compat mode should not warn')
+    }
   })
 
   it('creates distinct query signals per root while keeping transport hash shared', () => {

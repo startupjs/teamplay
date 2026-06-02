@@ -477,7 +477,7 @@ export class QuerySubscriptions {
 
   subscribe ($query, { intent = 'subscribe' } = {}) {
     const collectionName = $query[COLLECTION_NAME]
-    const params = cloneQueryParams($query[PARAMS])
+    const params = cloneQueryParams(collectionName, $query[PARAMS])
     const transportHash = $query[HASH]
     const rootId = getOwningRootId($query)
     const ownerKey = getQueryOwnerKey(rootId, transportHash)
@@ -936,7 +936,7 @@ export function materializeQueryDataDocsToCollection (collectionName, docs) {
 }
 
 export function hashQuery (collectionName, params) {
-  params = normalizeQueryParamsForHash(params)
+  params = normalizeQueryParamsForHash(collectionName, params)
   // TODO: probably makes sense to use fast-stable-json-stringify for this because of the params
   return JSON.stringify({ query: [collectionName, params] })
 }
@@ -951,7 +951,7 @@ export function parseQueryHash (hash) {
 }
 
 export function getQuerySignal (collectionName, params, options) {
-  params = cloneQueryParams(params)
+  params = cloneQueryParams(collectionName, params)
   const transportHash = hashQuery(collectionName, params)
   const { root, signalOptions } = parseQuerySignalOptions(options)
   const signalHash = getScopedSignalHash(root?.[ROOT_ID] ?? signalOptions.rootId, transportHash, 'querySignal')
@@ -1008,9 +1008,9 @@ function getQueryOwnerKey (rootId, transportHash) {
   return getScopedSignalHash(rootId, transportHash, 'queryOwner')
 }
 
-function cloneQueryParams (params) {
-  if (!isCompatEnv()) return JSON.parse(JSON.stringify(params))
-  return cloneQueryParamsCompat(params)
+export function cloneQueryParams (collectionName, params) {
+  warnIfCompatQueryParamsHaveUndefinedFields(collectionName, params)
+  return JSON.parse(JSON.stringify(params))
 }
 
 function parseQuerySignalOptions (options) {
@@ -1024,24 +1024,62 @@ function parseQuerySignalOptions (options) {
   return { root, signalOptions }
 }
 
-function normalizeQueryParamsForHash (params) {
-  if (!isCompatEnv()) return params
-  return cloneQueryParamsCompat(params)
+function normalizeQueryParamsForHash (collectionName, params) {
+  warnIfCompatQueryParamsHaveUndefinedFields(collectionName, params)
+  return params
 }
 
-// Racer compat: keep query keys with undefined values by normalizing them to null
-// instead of dropping them via JSON serialization.
-function cloneQueryParamsCompat (value) {
-  if (value === undefined) return null
-  if (value == null || typeof value !== 'object') return value
-  if (Array.isArray(value)) return value.map(item => cloneQueryParamsCompat(item))
-  const object = {}
-  for (const key in value) {
-    if (Object.prototype.hasOwnProperty.call(value, key)) {
-      object[key] = cloneQueryParamsCompat(value[key])
+const warnedUndefinedQueryParamKeys = new Set()
+
+function warnIfCompatQueryParamsHaveUndefinedFields (collectionName, params) {
+  if (!isCompatEnv()) return
+
+  const paths = getUndefinedQueryParamFieldPaths(params)
+  if (paths.length === 0) return
+
+  const key = `${collectionName || '<unknown>'}:${paths.join(',')}`
+  if (warnedUndefinedQueryParamKeys.has(key)) return
+  warnedUndefinedQueryParamKeys.add(key)
+
+  console.warn(
+    '[teamplay] Compat query params contain object fields with undefined values. ' +
+    'TeamPlay now clones query params like non-compat mode, so these fields are dropped ' +
+    'instead of being converted to null. Normalize query params explicitly.',
+    {
+      collectionName,
+      paths
+    },
+    new Error().stack
+  )
+}
+
+function getUndefinedQueryParamFieldPaths (value) {
+  const paths = []
+  collectUndefinedQueryParamFieldPaths(value, '', paths, new WeakSet())
+  return paths
+}
+
+function collectUndefinedQueryParamFieldPaths (value, path, paths, seen) {
+  if (value == null || typeof value !== 'object') return
+  if (seen.has(value)) return
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      collectUndefinedQueryParamFieldPaths(value[i], `${path}[${i}]`, paths, seen)
     }
+    return
   }
-  return object
+
+  for (const key in value) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue
+    const childPath = path ? `${path}.${key}` : key
+    if (value[key] === undefined) {
+      paths.push(childPath)
+      continue
+    }
+    collectUndefinedQueryParamFieldPaths(value[key], childPath, paths, seen)
+  }
 }
 
 function createPendingDestroyEntry () {
