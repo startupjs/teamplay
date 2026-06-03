@@ -180,20 +180,6 @@ class SignalCompat extends Signal {
     return setReplaceOnSignal(this, value)
   }
 
-  async create (value) {
-    const forwarded = forwardRef(this, 'create', arguments)
-    if (forwarded) return forwarded
-    if (arguments.length > 1) throw Error('Signal.create() expects zero or one argument')
-    if (arguments.length === 0) {
-      value = {}
-    }
-    ensureCreateTarget(this, 'Signal.create()')
-    if (this.get() != null) {
-      throw Error(`Signal.create() may only be used on a non-existing document path. Path: ${this.path()}`)
-    }
-    return setReplaceOnSignal(this, value)
-  }
-
   async setDiffDeep (value) {
     const forwarded = forwardRef(this, 'setDiffDeep', arguments)
     if (forwarded) return forwarded
@@ -932,15 +918,6 @@ function ensureValueTarget ($signal) {
   const segments = $signal[SEGMENTS]
   if (segments.length < 2) throw Error('Can\'t mutate on a collection or root signal')
   if ($signal[IS_QUERY]) throw Error('Mutators can\'t be used on a query signal')
-  return segments
-}
-
-function ensureCreateTarget ($signal, methodName) {
-  const segments = $signal[SEGMENTS]
-  if ($signal[IS_QUERY]) throw Error(`${methodName} can't be used on a query signal`)
-  if (segments.length !== 2) {
-    throw Error(`${methodName} may only be used on a document path`)
-  }
   return segments
 }
 

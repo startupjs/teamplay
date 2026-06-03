@@ -579,30 +579,11 @@ describe('SignalCompat mutators without subpath overloads', () => {
     assert.equal($base.b.get(), 3)
   })
 
-  it('create creates a non-existing document and throws on second create', async () => {
-    setup('create')
-    const $doc = $base.doc1
-    await $doc.create({ title: 'first' })
-    assert.deepEqual($doc.get(), { title: 'first' })
-    await assert.rejects(
-      $doc.create({ title: 'second' }),
-      /non-existing document path/
-    )
-    assert.deepEqual($doc.get(), { title: 'first' })
-  })
-
-  it('create uses child signals instead of subpath arguments', async () => {
-    setup('create-child')
-    await $base.doc2.create({ title: 'child create' })
-    assert.deepEqual($base.doc2.get(), { title: 'child create' })
-  })
-
-  it('create throws on non-document paths', async () => {
-    setup('create-invalid')
-    await assert.rejects(
-      $base.create({ a: 1 }),
-      /document path/
-    )
+  it('does not expose create as a compat mutator anymore', async () => {
+    setup('create-removed')
+    assert.equal(Object.prototype.hasOwnProperty.call(SignalCompat.prototype, 'create'), false)
+    await $base.doc.create.set('ordinary field')
+    assert.equal($base.doc.create.get(), 'ordinary field')
   })
 
   it('setDiffDeep uses child signals instead of subpath arguments', async () => {
@@ -1681,7 +1662,7 @@ describeCompat('SignalCompat public mutators', () => {
 
     const gameId = '_compat_public_snapshot_drop'
     const $game = $.compatGames[gameId]
-    await $game.create({ count: 0, list: [1], text: 'ab' })
+    await $.compatGames.add({ id: gameId, count: 0, list: [1], text: 'ab' })
     await new Promise(resolve => setTimeout(resolve, 10))
 
     const connection = getConnection()
@@ -2813,7 +2794,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('syncs public doc array leaf updates into started targets', async () => {
     const $base = setup('publicStartSanity')
     const $doc = $root[domainCollection]._compatPublicStartSanity
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicStartSanity',
       title: 'Stage 1',
       options: ['A']
     })
@@ -2833,7 +2815,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('syncs public doc array replace updates into started targets', async () => {
     const $base = setup('publicStartArrayReplace')
     const $doc = $root[domainCollection]._compatPublicStartArrayReplace
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicStartArrayReplace',
       title: 'Stage 1',
       options: ['A']
     })
@@ -2854,7 +2837,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('keeps immediate local sparse writes after public start before the next tick', async () => {
     const $base = setup('publicStartImmediateLocalWrite')
     const $doc = $root[domainCollection]._compatPublicStartImmediateLocalWrite
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicStartImmediateLocalWrite',
       options: ['A']
     })
 
@@ -2879,7 +2863,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('public compat set(undefined) keeps object keys as null like racer remote semantics', async () => {
     const $base = setup('publicSetUndefinedObject')
     const $doc = $root[domainCollection]._compatPublicSetUndefinedObject
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicSetUndefinedObject',
       title: 'Stage 1',
       flag: true
     })
@@ -2899,7 +2884,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('public compat set(undefined) keeps array slots as null like racer remote semantics', async () => {
     const $base = setup('publicSetUndefinedArray')
     const $doc = $root[domainCollection]._compatPublicSetUndefinedArray
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicSetUndefinedArray',
       title: 'Stage 1',
       options: ['A', 'B', 'C']
     })
@@ -2923,7 +2909,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('public compat setEach(object) on child signal keeps undefined keys as null like racer remote semantics', async () => {
     const $base = setup('publicSetEachUndefinedObject')
     const $doc = $root[domainCollection]._compatPublicSetEachUndefinedObject
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicSetEachUndefinedObject',
       profile: {
         name: 'Ann',
         role: 'student'
@@ -2951,7 +2938,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('keeps pre-bound sparse array child signals reactive after public reverse sync with null-normalized source', async () => {
     const $base = setup('publicSparseArrayChildSignals')
     const $doc = $root[domainCollection]._compatPublicSparseArrayChildSignals
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicSparseArrayChildSignals',
       options: ['A']
     })
 
@@ -2997,7 +2985,8 @@ class NonCompatRefUserModel extends BaseSignal {
   it('keeps sparse array child signals writable across repeated public reverse sync leaf updates', async () => {
     const $base = setup('publicSparseArrayRepeatedLeafSync')
     const $doc = $root[domainCollection]._compatPublicSparseArrayRepeatedLeafSync
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: '_compatPublicSparseArrayRepeatedLeafSync',
       options: ['A']
     })
 
@@ -3042,7 +3031,8 @@ class NonCompatRefUserModel extends BaseSignal {
     const $base = setup('publicStartLocalSourceDirty')
     const docId = '_compatPublicStartLocalSourceDirty'
     const $doc = $root[domainCollection][docId]
-    await $doc.create({
+    await $root[domainCollection].add({
+      id: docId,
       title: 'A'
     })
     await $doc.subscribe()

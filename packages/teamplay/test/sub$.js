@@ -185,16 +185,16 @@ describe('$sub() function. Modifying documents', () => {
     }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
   })
 
-  it('compat: allows immediate subpath set after create() without subscribe', async () => {
+  it('compat: allows immediate subpath set after add() without subscribe', async () => {
     if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
 
-    const gameId = '_compat_create_then_subpath_set'
+    const gameId = '_compat_add_then_subpath_set'
+    await $.games.add({ _id: gameId, name: 'Added' })
     const $game = $.games[gameId]
 
-    await $game.create({ name: 'Created' })
     await $game.players.set(1)
 
-    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 1 })
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 1 })
     const doc = getConnection().get('games', gameId)
     assert.equal(doc.data.players, 1)
 
@@ -204,13 +204,13 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
-  it('compat: allows delayed subpath set after create() without subscribe', async () => {
+  it('compat: allows delayed subpath set after add() without subscribe when doc snapshot is dropped', async () => {
     if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
 
-    const gameId = '_compat_create_delayed_subpath_set'
+    const gameId = '_compat_add_delayed_subpath_set_after_snapshot_drop'
+    await $.games.add({ _id: gameId, name: 'Added' })
     const $game = $.games[gameId]
 
-    await $game.create({ name: 'Created' })
     await new Promise(resolve => setTimeout(resolve, 10))
     const connection = getConnection()
     delete connection.collections.games[gameId]
@@ -218,7 +218,7 @@ describe('$sub() function. Modifying documents', () => {
 
     await $game.players.set(2)
 
-    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 2 })
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 2 })
     const doc = getConnection().get('games', gameId)
     assert.equal(doc.data.players, 2)
 

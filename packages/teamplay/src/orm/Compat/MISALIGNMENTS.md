@@ -26,7 +26,7 @@
 | Root ShareDB access: `$root.connection`, `model.root().connection` | Средне. Rich-text/editor flows и deps ждут прямой ShareDB connection. | Не добавлять connection на любой signal. Дать explicit exported accessor или root/server adapter. | Это инфраструктурная зависимость, не signal-data API. |
 | Legacy lifecycle: `close(callback)` | Высоко в server/cron/api/hooks/webhooks и `@startupjs/worker`. | Держать explicit compatible lifecycle API или adapter. Постепенно переводить callers на awaitable root lifecycle. | `close(callback)` массовый и относительно изолированный; переписать всё сразу дорого. |
 | Compat `id` injection вместе с `_id` | Средне, нужно дополнительно проверить runtime callsites. | Не менять base semantics. Target refactor на `_id`; adapter может временно добавлять `id` для old flows. | Base добавляет `_id`, compat добавляет `_id` + `id` для docs/query/aggregation/local add. Добавление `id` в base меняет форму данных для non-compat проектов. |
-| Public subpath write on missing doc / immediate writes after create/add | Средне в server/model code. | Найти sequences `create/add` -> immediate subpath writes. Где нужно, добавить explicit subscribe/fetch/create flow или narrow adapter. | Compat может использовать cached raw state, пока ShareDB doc snapshot ещё пустой. Base non-compat считает doc missing и может throw. |
+| Public subpath write on missing doc / immediate writes after add | Средне в server/model code. | Найти sequences `add` -> immediate subpath writes. Где нужно, добавить explicit subscribe/fetch flow или narrow adapter. | Compat может использовать cached raw state, пока ShareDB doc snapshot ещё пустой. Base non-compat считает doc missing и может throw. |
 
 ## Recommended Order
 
