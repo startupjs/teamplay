@@ -1,5 +1,10 @@
+import isServer from '../utils/isServer.ts'
 import { getRootContext } from './rootContext.ts'
-import { getPrivateDataSegments, isPrivateCollectionSegments } from './rootScope.ts'
+import {
+  getPrivateDataSegments,
+  isGlobalRootId,
+  isPrivateCollectionSegments
+} from './rootScope.ts'
 import {
   arrayInsert as _arrayInsert,
   arrayMove as _arrayMove,
@@ -14,6 +19,12 @@ import {
   stringInsertLocal as _stringInsertLocal,
   stringRemoveLocal as _stringRemoveLocal
 } from './dataTree.js'
+
+const warnedGlobalRootPrivateCollections = new Set()
+
+export function __resetPrivateDataWarningsForTests () {
+  warnedGlobalRootPrivateCollections.clear()
+}
 
 export function getPrivateDataRoot (rootId, create = false) {
   return getRootContext(rootId, create)?.getPrivateDataRoot()
@@ -38,6 +49,7 @@ export function setPrivateData (rootId, logicalSegments, value) {
   }
   const context = getRootContext(rootId, true)
   if (!context) return
+  warnGlobalRootPrivateMutation(rootId, logicalSegments)
   const segments = getPrivateDataSegments(logicalSegments)
   _set(segments, value, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
@@ -48,6 +60,7 @@ export function setReplacePrivateData (rootId, logicalSegments, value) {
   }
   const context = getRootContext(rootId, true)
   if (!context) return
+  warnGlobalRootPrivateMutation(rootId, logicalSegments)
   const segments = getPrivateDataSegments(logicalSegments)
   _setReplace(segments, value, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
 }
@@ -56,6 +69,7 @@ export function delPrivateData (rootId, logicalSegments, options = {}) {
   if (!isPrivateCollectionSegments(logicalSegments)) return
   const context = getRootContext(rootId, false)
   if (!context) return
+  warnGlobalRootPrivateMutation(rootId, logicalSegments)
   const segments = getPrivateDataSegments(logicalSegments)
   _del(segments, context.getPrivateDataRoot(), getModelEventContext(rootId, logicalSegments))
   pruneEmptyPrivateParents(context.getPrivateDataRoot(), context.getPrivateDataRawRoot(), segments, options)
@@ -123,7 +137,19 @@ function getRequiredPrivateContext (rootId, logicalSegments, methodName) {
   if (!isPrivateCollectionSegments(logicalSegments)) {
     throw Error(`${methodName} expects private collection segments`)
   }
+  warnGlobalRootPrivateMutation(rootId, logicalSegments)
   return getRootContext(rootId, true)
+}
+
+function warnGlobalRootPrivateMutation (rootId, logicalSegments) {
+  if (!isServer || !isGlobalRootId(rootId) || !isPrivateCollectionSegments(logicalSegments)) return
+  const collection = String(logicalSegments[0])
+  if (warnedGlobalRootPrivateCollections.has(collection)) return
+  warnedGlobalRootPrivateCollections.add(collection)
+  console.warn(
+    `[teamplay] Writing to private collection "${collection}" on the global server root. ` +
+    'Use a request-scoped root, getRootSignal({ rootId }), or req.model for per-request private state.'
+  )
 }
 
 function getModelEventContext (rootId, logicalSegments) {

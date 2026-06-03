@@ -9,7 +9,6 @@ type MaybePromise<TValue> = TValue | Promise<TValue>
 export interface SignalStorageMutationContext<TSignal> {
   getOwningRootId: ($signal: TSignal) => string | undefined
   isPublicCollection: (segment: PathSegment | undefined) => boolean
-  isPrivateMutationForbidden: () => boolean
 }
 
 export interface SignalStorageMutationHandlers<TResult> {
@@ -40,19 +39,8 @@ export async function runSignalStorageMutation<TSignal, TResult> (
     }
   }
 
-  ensurePrivateMutationAllowed(context)
   return {
     skipped: false,
     value: await handlers.private(context.getOwningRootId($signal), segments)
   }
-}
-
-export function ensurePrivateMutationAllowed<TSignal> (
-  context: Pick<SignalStorageMutationContext<TSignal>, 'isPrivateMutationForbidden'>
-): void {
-  if (!context.isPrivateMutationForbidden()) return
-  throw Error(`
-    Can't modify private collections data when 'publicOnly' is enabled.
-    On the server you can only work with public collections.
-  `)
 }

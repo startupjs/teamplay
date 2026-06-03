@@ -560,16 +560,17 @@ $.doc.title.stringRemove(1, 2)
 Some operations are not allowed:
 - Mutating root or collection signals throws.
 - Array/string mutators on query signals throw.
-- In `publicOnly` mode, private mutations throw.
 
-### Public Collections and `publicOnly`
+### Public and Private Collections
 
 Public collections are those **not** starting with `_` or `$`.  
 Private collections start with `_` or `$` (e.g. `_session`, `_page`, `$render`).
 
 Behavior:
 - Public collections use **JSON0 ops** for mutators (`increment`, array/string ops).
-- When `publicOnly` is enabled, **private** mutations throw.
+- Private collections are stored in root-scoped private storage.
+- `setPublicOnly()` is a deprecated no-op kept for older bootstrap code.
+- On the server, private writes through the global root log a warning because they create process-global private state.
 - ID fields are normalized and protected for public documents (`_id`/`id`).
 
 Example:
@@ -579,8 +580,8 @@ Example:
 const $user = $.users.user1
 await $user.score.increment(1) // uses json0 op
 
-// private doc (allowed only when publicOnly = false)
-const $session = $.session
+// request/root-scoped private doc
+const $session = req.model._session
 await $session.token.set('abc')
 ```
 

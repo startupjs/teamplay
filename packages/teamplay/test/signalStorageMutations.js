@@ -46,28 +46,14 @@ describe('signal storage mutation helpers', () => {
       { type: 'private', rootId: 'storage-root', segments: ['_session', 'tags'] }
     ])
   })
-
-  it('rejects private mutations when publicOnly is active', async () => {
-    await assert.rejects(
-      () => runSignalStorageMutation(
-        mutationSignal(['_session', 'tags']),
-        structuralStorageContext({ privateMutationForbidden: true }),
-        ['_session', 'tags'],
-        storageHandlers([])
-      ),
-      /Can't modify private collections data when 'publicOnly' is enabled/
-    )
-  })
 })
 
 function structuralStorageContext ({
-  rootId = 'storage-mutation-root',
-  privateMutationForbidden = false
+  rootId = 'storage-mutation-root'
 } = {}) {
   return {
     getOwningRootId: () => rootId,
-    isPublicCollection: segment => typeof segment === 'string' && segment[0] !== '_' && segment[0] !== '$',
-    isPrivateMutationForbidden: () => privateMutationForbidden
+    isPublicCollection: segment => typeof segment === 'string' && segment[0] !== '_' && segment[0] !== '$'
   }
 }
 

@@ -39,7 +39,6 @@ import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.ts'
-import { isPrivateMutationForbidden } from './connection.ts'
 import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
@@ -157,7 +156,6 @@ const SIGNAL_READ_CONTEXT = {
 const SIGNAL_VALUE_MUTATION_CONTEXT = {
   getOwningRootId: getSignalOwningRootId,
   isPublicCollection,
-  isPrivateMutationForbidden,
   setPublicDoc: _setPublicDoc,
   setPrivateData,
   deletePublicDoc (segments) {
@@ -434,12 +432,6 @@ export class Signal<TValue = unknown> extends Function {
       return
     }
 
-    if (isPrivateMutationForbidden()) {
-      throw Error(`
-        Can't modify private collections data when 'publicOnly' is enabled.
-        On the server you can only work with public collections.
-      `)
-    }
     setReplacePrivateData(getSignalOwningRootId(this), segments, nextValue)
   }
 
@@ -787,12 +779,6 @@ async function deleteForDiffDeep ($signal, preservePath) {
   if (isPublicCollection(segments[0])) {
     await $signal.del()
     return
-  }
-  if (isPrivateMutationForbidden()) {
-    throw Error(`
-      Can't modify private collections data when 'publicOnly' is enabled.
-      On the server you can only work with public collections.
-    `)
   }
   delPrivateData(getSignalOwningRootId($signal), segments, { preservePath })
 }

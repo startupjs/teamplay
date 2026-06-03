@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert'
-import { afterEach, describe, it } from 'mocha'
+import { afterEach, before, describe, it } from 'mocha'
 import { getRootSignal } from '../src/index.ts'
+import connect from '../src/connect/test.js'
 import { del as delPublicData, get as getPublicData } from '../src/orm/dataTree.js'
 import { delPrivateData, getPrivateData } from '../src/orm/privateData.js'
 import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
@@ -11,6 +12,8 @@ import {
 } from '../src/orm/signalValueMutations.ts'
 
 describe('signal value mutation helpers', () => {
+  before(connect)
+
   afterEach(() => {
     delPublicData(['mutationDocs'])
     delPublicData(['signalValueMutationDocs'])
@@ -72,28 +75,20 @@ describe('signal value mutation helpers', () => {
     ])
   })
 
-  it('protects root, whole public collections, and publicOnly private writes', async () => {
-    const forbiddenContext = structuralMutationContext({ privateMutationForbidden: true })
+  it('protects root and whole public collections while allowing private writes', async () => {
+    const context = structuralMutationContext()
 
     await assert.rejects(
-      () => setSignalValue(mutationSignal([]), forbiddenContext, true),
+      () => setSignalValue(mutationSignal([]), context, true),
       /Can't set the root signal data/
     )
     await assert.rejects(
-      () => deleteSignalValue(mutationSignal([]), forbiddenContext),
+      () => deleteSignalValue(mutationSignal([]), context),
       /Can't delete the root signal data/
     )
     await assert.rejects(
-      () => deleteSignalValue(mutationSignal(['mutationDocs']), forbiddenContext),
+      () => deleteSignalValue(mutationSignal(['mutationDocs']), context),
       /Can't delete the whole collection/
-    )
-    await assert.rejects(
-      () => setSignalValue(mutationSignal(['_session', 'flag']), forbiddenContext, true),
-      /Can't modify private collections data when 'publicOnly' is enabled/
-    )
-    await assert.rejects(
-      () => deleteSignalValue(mutationSignal(['_session', 'flag']), forbiddenContext),
-      /Can't modify private collections data when 'publicOnly' is enabled/
     )
   })
 
@@ -119,13 +114,11 @@ describe('signal value mutation helpers', () => {
 
 function structuralMutationContext ({
   calls = [],
-  rootId = 'structural-mutation-root',
-  privateMutationForbidden = false
+  rootId = 'structural-mutation-root'
 } = {}) {
   return {
     getOwningRootId: () => rootId,
     isPublicCollection: segment => typeof segment === 'string' && segment[0] !== '_' && segment[0] !== '$',
-    isPrivateMutationForbidden: () => privateMutationForbidden,
     setPublicDoc (segments, value) {
       calls.push({ type: 'setPublicDoc', segments: [...segments], value })
     },

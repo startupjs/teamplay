@@ -4,10 +4,7 @@ import {
   isPublicDocPath,
   normalizeIdFields
 } from './idFields.ts'
-import {
-  ensurePrivateMutationAllowed,
-  type SignalStorageMutationContext
-} from './signalStorageMutations.ts'
+import type { SignalStorageMutationContext } from './signalStorageMutations.ts'
 import { SEGMENTS } from './signalSymbols.ts'
 import type { PathSegment } from './types/path.ts'
 
@@ -47,7 +44,6 @@ export async function setSignalValue<TSignal extends SignalValueMutationOwner> (
     return
   }
 
-  ensurePrivateMutationAllowed(context)
   context.setPrivateData(context.getOwningRootId($signal), segments, nextValue)
 }
 
@@ -67,6 +63,5 @@ export async function deleteSignalValue<TSignal extends SignalValueMutationOwner
     return
   }
 
-  ensurePrivateMutationAllowed(context)
   context.deletePrivateData(context.getOwningRootId($signal), segments)
 }

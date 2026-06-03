@@ -1,5 +1,3 @@
-import { isCompatEnv } from './compatEnv.js'
-
 export interface TeamplayShareDoc {
   data?: unknown
   fetch?: (callback?: (error?: unknown) => void) => void
@@ -21,7 +19,8 @@ export interface TeamplayConnection {
 
 export let connection: TeamplayConnection | undefined
 let defaultFetchOnly: boolean | undefined
-export let publicOnly: boolean | undefined
+/** @deprecated Root-scoped private data made the publicOnly write guard obsolete. */
+export const publicOnly = false
 
 export function setConnection (_connection: TeamplayConnection | undefined): void {
   connection = _connection
@@ -45,12 +44,17 @@ export function setFetchOnly (_fetchOnly: boolean): void {
   setDefaultFetchOnly(_fetchOnly)
 }
 
+/**
+ * @deprecated No-op kept for compatibility with older server bootstrap code.
+ * Private collections are root-scoped; server safety now relies on avoiding
+ * writes to private collections through the global root.
+ */
 export function setPublicOnly (_publicOnly: boolean): void {
-  publicOnly = _publicOnly
 }
 
+/** @deprecated publicOnly no longer blocks private writes. */
 export function isPrivateMutationForbidden (): boolean {
-  return !!publicOnly && !isCompatEnv()
+  return false
 }
 
 const ERRORS = {

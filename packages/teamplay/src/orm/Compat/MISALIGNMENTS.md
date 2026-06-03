@@ -10,6 +10,7 @@
 - base string/array/increment current-signal methods and `useSub` / `useAsyncSub` / `useBatchSub`.
 - aligned query params clone/hash: compat now drops object fields with `undefined` like non-compat and logs a transition warning.
 - aligned subscription GC delay: both compat and non-compat default to a `3000ms` grace window.
+- deprecated `publicOnly` private-write guard: `setPublicOnly()` is a no-op in both modes; server global-root private writes log a warning.
 
 ## Remaining Decision Matrix
 
@@ -24,7 +25,6 @@
 | Root ShareDB access: `$root.connection`, `model.root().connection` | Средне. Rich-text/editor flows и deps ждут прямой ShareDB connection. | Не добавлять connection на любой signal. Дать explicit exported accessor или root/server adapter. | Это инфраструктурная зависимость, не signal-data API. |
 | Legacy lifecycle: `close(callback)` | Высоко в server/cron/api/hooks/webhooks и `@startupjs/worker`. | Держать explicit compatible lifecycle API или adapter. Постепенно переводить callers на awaitable root lifecycle. | `close(callback)` массовый и относительно изолированный; переписать всё сразу дорого. |
 | Compat `id` injection вместе с `_id` | Средне, нужно дополнительно проверить runtime callsites. | Не менять base semantics. Target refactor на `_id`; adapter может временно добавлять `id` для old flows. | Base добавляет `_id`, compat добавляет `_id` + `id` для docs/query/aggregation/local add. Добавление `id` в base меняет форму данных для non-compat проектов. |
-| `publicOnly` private writes | Низко-средне. Может проявиться на client-side `_session` / `_page` writes. | Non-compat strict behavior оставить. LMS callers/config чинить явно; adapter может временно ослаблять только если без этого блокируется переход. | Compat разрешает private writes при `publicOnly`, non-compat запрещает. Strict behavior безопаснее. |
 | Public subpath write on missing doc / immediate writes after create/add | Средне в server/model code. | Найти sequences `create/add` -> immediate subpath writes. Где нужно, добавить explicit subscribe/fetch/create flow или narrow adapter. | Compat может использовать cached raw state, пока ShareDB doc snapshot ещё пустой. Base non-compat считает doc missing и может throw. |
 
 ## Recommended Order
@@ -35,7 +35,7 @@
 | 2 | Пройти LMS server/model query flows: `.query()` / `.subscribe()` / `.fetch()` / `getIds()` / `getExtra()`. | Список мест, где нужен adapter, explicit query primitive или сохранение compat readiness/transport semantics. |
 | 3 | Отдельно разобрать refs и virtual docs (`start/stop`, `silent`, model events). | Решение: оставить LMS helper, adapter или перепроектировать flows. |
 | 4 | Разобрать server lifecycle: `connection`, `close(callback)`. | Явный lifecycle API без Racer-style model object leakage. |
-| 5 | Smoke без compat: route transitions, rich-text, virtual fields/stages, query-heavy server flows, task/status screens, publicOnly client paths. | Проверка runtime/timing gaps, которые не ловятся static scan-ом. |
+| 5 | Smoke без compat: route transitions, rich-text, virtual fields/stages, query-heavy server flows, task/status screens, server warnings for global-root private writes. | Проверка runtime/timing gaps, которые не ловятся static scan-ом. |
 
 ## Do Not Reintroduce
 
