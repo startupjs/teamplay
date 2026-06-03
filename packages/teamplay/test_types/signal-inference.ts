@@ -8,6 +8,7 @@ import {
   defineModels,
   defineSchema,
   sub,
+  unsub,
   useAsyncSub,
   useBatchSub,
   useSub,
@@ -23,6 +24,8 @@ import {
   type PrivateCollectionsFromManifest,
   type QueryParams,
   type QuerySignal,
+  type SubMode,
+  type SubOptions,
   type TeamplayPluginOption,
   type TypedAggregationInput,
   type TypedSignal,
@@ -74,6 +77,12 @@ type TypeAssertions = [
   QueryNestedPathModelMethod,
   AggregationNestedPathModelMethod,
   QuerySignalType,
+  SubWithFetchModeKeepsDocumentModel,
+  SubWithSubscribeModeKeepsDocumentModel,
+  SubQueryWithFetchModeKeepsQueryModel,
+  SubOptionsMode,
+  SubModeValue,
+  UnsubReturn,
   QueryIndexDocumentModel,
   QueryIteratorDocumentModel,
   HookQueryIndexDocumentModel,
@@ -561,6 +570,13 @@ const {
   $tags: $destructuredTags
 } = $destructuredInfo
 const $subGame = sub($game)
+const $subGameFetch = sub($game, { mode: 'fetch' })
+const $subGameSubscribe = sub($game, { mode: 'subscribe' })
+const subOptions: SubOptions = { mode: 'fetch' }
+const subMode: SubMode = 'subscribe'
+const unsubResult = unsub($game)
+// @ts-expect-error sub mode only accepts auto, fetch, or subscribe
+sub($game, { mode: 'invalid' })
 function useHookGame () {
   return useSub($game)
 }
@@ -689,6 +705,11 @@ type DocDollarDestructureStatus = Expect<Equal<ReturnType<typeof $destructuredSt
 type DocDollarDestructureNestedModel = Expect<Equal<ReturnType<typeof $destructuredInfo.titleCase>, string>>
 type NestedDollarDestructureTagModel = Expect<Equal<ReturnType<typeof $destructuredTags[0]['label']>, string>>
 type SubKeepsDocumentModel = Expect<Equal<AwaitedSub<typeof $subGame>, typeof $game>>
+type SubWithFetchModeKeepsDocumentModel = Expect<Equal<AwaitedSub<typeof $subGameFetch>, typeof $game>>
+type SubWithSubscribeModeKeepsDocumentModel = Expect<Equal<AwaitedSub<typeof $subGameSubscribe>, typeof $game>>
+type SubOptionsMode = Expect<Equal<typeof subOptions['mode'], SubMode | undefined>>
+type SubModeValue = Expect<Equal<typeof subMode, 'subscribe'>>
+type UnsubReturn = Expect<Equal<typeof unsubResult, Promise<void> | void>>
 type UseSubKeepsDocumentModel = Expect<Equal<ReturnType<typeof useHookGame>, typeof $game>>
 type UseBatchSubKeepsDocumentModel = Expect<Equal<ReturnType<typeof useBatchHookGameWithOptions>, typeof $game>>
 type UseBatchSubBarrier = Expect<Equal<ReturnType<typeof useBatchBarrier>, void>>
@@ -761,6 +782,7 @@ type DefinedSchemaInference = Expect<Equal<FromJsonSchema<typeof definedSchema>,
 }>>
 
 const $queryGames = sub($.games, { status: 'draft' })
+const $queryGamesFetch = sub($.games, { status: 'draft' }, { mode: 'fetch' })
 sub($.games, { 'info.maxPlayers': { $gte: 2 }, 'info.title': { $regex: /chess/i } })
 sub($.games, { 'flags.flag-active': true })
 sub($.games, { 'flags.flag-active': { $eq: true } })
@@ -847,6 +869,7 @@ type QueryGameItem = QueryGames extends Iterable<infer Item> ? Item : never
 const $roleCount = (null as unknown as RoleCounts)[0]
 const $roleCountRow = (null as unknown as RoleCountRows)[0]
 type QuerySignalType = Expect<Equal<QueryGames, CollectionQuerySignal<Game, typeof GamesModel, typeof GameModel, readonly ['games']>>>
+type SubQueryWithFetchModeKeepsQueryModel = Expect<Equal<AwaitedSub<typeof $queryGamesFetch>, QueryGames>>
 type QueryIndexDocumentModel = Expect<Equal<ReturnType<QueryGames[0]['info']['title']['get']>, string>>
 type QueryIteratorDocumentModel = Expect<Equal<ReturnType<QueryGameItem['info']['title']['get']>, string>>
 type HookQueryIndexDocumentModel = Expect<Equal<ReturnType<typeof $hookQueryGame.info.maxPlayers.get>, number>>

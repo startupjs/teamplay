@@ -14,7 +14,7 @@ import { it, describe, before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
-import { $, sub } from '../src/index.ts'
+import { $, sub, unsub } from '../src/index.ts'
 import { docSubscriptions, DocSubscriptions } from '../src/orm/Doc.js'
 import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 import {
@@ -1536,6 +1536,58 @@ describe('sub() function - error handling and edge cases', () => {
     await docSubscriptions.unsubscribe($game)
     const doc = getConnection().get('games', gameId)
     if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
+  })
+
+  it('unsub() uses the mode recorded by sub()', async () => {
+    const gameId = '_sub_unsub_mode'
+    const $game = $.games[gameId]
+    const doc = getConnection().get('games', gameId)
+    const originalFetch = doc.fetch.bind(doc)
+    const originalUnfetch = doc.unfetch?.bind(doc)
+    const originalSubscribe = doc.subscribe.bind(doc)
+    const originalUnsubscribe = doc.unsubscribe.bind(doc)
+    const calls = []
+
+    doc.fetch = function (...args) {
+      calls.push('fetch')
+      return originalFetch(...args)
+    }
+    if (originalUnfetch) {
+      doc.unfetch = function (...args) {
+        calls.push('unfetch')
+        return originalUnfetch(...args)
+      }
+    }
+    doc.subscribe = function (...args) {
+      calls.push('subscribe')
+      return originalSubscribe(...args)
+    }
+    doc.unsubscribe = function (...args) {
+      calls.push('unsubscribe')
+      return originalUnsubscribe(...args)
+    }
+
+    try {
+      await sub($game, { mode: 'fetch' })
+      await sub($game, { mode: 'subscribe' })
+      await unsub($game)
+      await unsub($game)
+
+      assert.deepEqual(calls, [
+        'fetch',
+        originalUnfetch ? 'unfetch' : 'unsubscribe',
+        'subscribe',
+        'unsubscribe',
+        'fetch',
+        originalUnfetch ? 'unfetch' : 'unsubscribe'
+      ])
+    } finally {
+      doc.fetch = originalFetch
+      if (originalUnfetch) doc.unfetch = originalUnfetch
+      doc.subscribe = originalSubscribe
+      doc.unsubscribe = originalUnsubscribe
+      if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
+    }
   })
 })
 

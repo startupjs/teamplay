@@ -9,7 +9,7 @@ For the full model convention, read [ORM](/orm/index). For generated types and `
 Import TeamPlay APIs through StartupJS:
 
 ```ts
-import { $, Signal, observer, pug, sub, useSub } from 'startupjs'
+import { $, Signal, observer, pug, sub, unsub, useSub } from 'startupjs'
 ```
 
 Use direct `teamplay` imports only for low-level integration code.
@@ -134,8 +134,10 @@ Use `sub()` outside React:
 ```ts
 const $task = await sub($.tasks[taskId])
 await $task.toggle()
+await unsub($task)
 
 const $openTasks = await sub($.tasks, { done: false })
+await unsub($openTasks)
 ```
 
 Private client state such as `$._session` is local and does not need subscriptions.

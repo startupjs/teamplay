@@ -284,6 +284,13 @@ await $$active.fetch()
 $$active.unfetch()
 ```
 
+In non-compat object-tree code, use explicit transport mode instead:
+
+```js
+const $active = await sub($.users, { active: true }, { mode: 'fetch' })
+await unsub($active)
+```
+
 ### getExtra()
 
 Returns the query/aggregation `extra` payload:

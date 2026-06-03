@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub, aggregation } from '../src/index.ts'
+import { $, sub, unsub, aggregation } from '../src/index.ts'
 import { get as _get, del as _del } from '../src/orm/dataTree.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { hashQuery } from '../src/orm/Query.js'
@@ -87,6 +87,31 @@ describe('$sub() function', () => {
     assert.equal($game3, $game3Duplicate, 'duplicate signal is the same as the original')
     await cbPromise(cb => doc3.del(cb))
     await cbPromise(cb => doc4.del(cb))
+  })
+
+  it('supports Promise.all for parallel subscriptions', async () => {
+    const gameId1 = '_promise_all_1'
+    const gameId2 = '_promise_all_2'
+    const doc1 = getConnection().get('games', gameId1)
+    const doc2 = getConnection().get('games', gameId2)
+    await cbPromise(cb => doc1.create({ name: 'Parallel 1', active: true }, cb))
+    await cbPromise(cb => doc2.create({ name: 'Parallel 2', active: true }, cb))
+
+    const [$game1, $game2, $activeGames] = await Promise.all([
+      sub($.games[gameId1]),
+      sub($.games[gameId2]),
+      sub($.games, { active: true })
+    ])
+
+    assert.equal($game1.name.get(), 'Parallel 1')
+    assert.equal($game2.name.get(), 'Parallel 2')
+    assert.deepEqual($activeGames.getIds().filter(id => id === gameId1 || id === gameId2).sort(), [gameId1, gameId2])
+
+    await cbPromise(cb => doc1.del(cb))
+    await cbPromise(cb => doc2.del(cb))
+    await unsub($activeGames)
+    await unsub($game1)
+    await unsub($game2)
   })
 
   it.skip('doc: deep data also observable after .get()', async () => {
@@ -390,6 +415,37 @@ describe('$sub() function. Queries', () => {
       { _id: '_1', name: 'Game 1', active: true, players: 1 },
       { _id: '_2', name: 'Game 2', active: true }
     ], 'query signal has updated data')
+  })
+
+  it('supports explicit fetch and subscribe modes for queries', async () => {
+    const connection = getConnection()
+    const originalCreateFetchQuery = connection.createFetchQuery.bind(connection)
+    const originalCreateSubscribeQuery = connection.createSubscribeQuery.bind(connection)
+    const calls = []
+
+    connection.createFetchQuery = function (...args) {
+      calls.push('fetch')
+      return originalCreateFetchQuery(...args)
+    }
+    connection.createSubscribeQuery = function (...args) {
+      calls.push('subscribe')
+      return originalCreateSubscribeQuery(...args)
+    }
+
+    try {
+      const $fetchQuery = await sub($.games, { active: true }, { mode: 'fetch' })
+      assert.deepEqual($fetchQuery.getIds().slice().sort(), ['_1', '_2'])
+      await unsub($fetchQuery)
+
+      const $liveQuery = await sub($.games, { active: false }, { mode: 'subscribe' })
+      assert.deepEqual($liveQuery.getIds(), ['_3'])
+      await unsub($liveQuery)
+
+      assert.deepEqual(calls, ['fetch', 'subscribe'])
+    } finally {
+      connection.createFetchQuery = originalCreateFetchQuery
+      connection.createSubscribeQuery = originalCreateSubscribeQuery
+    }
   })
 
   it('query should be iterable', async () => {

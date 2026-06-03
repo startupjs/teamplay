@@ -5,7 +5,8 @@ import { docSubscriptions } from './Doc.js'
 import { querySubscriptions, getQuerySignal } from './Query.js'
 import type { QuerySignalOptions } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
-import { getRoot } from './Root.ts'
+import { getRoot, ROOT_ID } from './Root.ts'
+import { isRootContextClosed } from './rootContext.ts'
 import isServer from '../utils/isServer.ts'
 import type {
   CollectionSignal,
@@ -23,6 +24,23 @@ import type {
   WildcardSignalPath
 } from './Signal.ts'
 
+export type SubMode = 'auto' | 'fetch' | 'subscribe'
+
+export interface SubOptions {
+  mode?: SubMode
+}
+
+type SubIntent = 'fetch' | 'subscribe'
+type SubRecordKind = 'doc' | 'query' | 'aggregation'
+
+interface SubRecord {
+  kind: SubRecordKind
+  intent: SubIntent
+  disposed: boolean
+}
+
+const SUB_RECORDS = new WeakMap<SignalBaseInstance, SubRecord[]>()
+
 /**
  * Subscribe to an aggregation with explicit output typing outside React.
  * @param $aggregation Typed aggregation input.
@@ -33,7 +51,8 @@ export default function sub<
   TDocumentModel extends SignalModelConstructor<TDocument>
 > (
   $aggregation: TypedAggregationInput<TDocument, TDocumentModel>,
-  params?: AggregationParams
+  params?: AggregationParams,
+  options?: SubOptions
 ): MaybePromise<TypedAggregationSignal<TDocument, TDocumentModel>>
 
 /**
@@ -43,7 +62,8 @@ export default function sub<
  */
 export default function sub<TCollection extends string, TOutput = unknown> (
   $aggregation: RegisteredAggregationInput<TCollection, TOutput>,
-  params?: AggregationParams
+  params?: AggregationParams,
+  options?: SubOptions
 ): MaybePromise<SubResult<RegisteredAggregationInput<TCollection, TOutput>>>
 
 /**
@@ -53,7 +73,8 @@ export default function sub<TCollection extends string, TOutput = unknown> (
  */
 export default function sub<TOutput, TCollection extends string> (
   $aggregation: ClientAggregationFunction<TOutput, TCollection>,
-  params?: AggregationParams
+  params?: AggregationParams,
+  options?: SubOptions
 ): MaybePromise<SubResult<ClientAggregationFunction<TOutput, TCollection>>>
 
 /**
@@ -63,7 +84,8 @@ export default function sub<TOutput, TCollection extends string> (
  */
 export default function sub<TOutput = unknown, TCollection extends string = string> (
   $aggregation: AggregationFunction<TOutput, TCollection>,
-  params?: AggregationParams
+  params?: AggregationParams,
+  options?: SubOptions
 ): MaybePromise<SubResult<AggregationFunction<TOutput, TCollection>>>
 
 /**
@@ -71,7 +93,8 @@ export default function sub<TOutput = unknown, TCollection extends string = stri
  * @param $signal Document signal to subscribe to.
  */
 export default function sub<TSignal extends DocumentSignal<any, any, any>> (
-  $signal: TSignal
+  $signal: TSignal,
+  options?: SubOptions
 ): MaybePromiseSubResult<TSignal>
 
 /**
@@ -86,7 +109,8 @@ export default function sub<
   TCollectionPath extends WildcardSignalPath
 > (
   $collection: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
-  params: QueryParams<TDocument>
+  params: QueryParams<TDocument>,
+  options?: SubOptions
 ): MaybePromiseSubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, QueryParams<TDocument>>
 
 /**
@@ -104,10 +128,11 @@ export default function sub<
   TParams extends object
 > (
   $collection: CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>,
-  params: TParams & ComputedQueryParamsInput<TParams>
+  params: TParams & ComputedQueryParamsInput<TParams>,
+  options?: SubOptions
 ): MaybePromiseSubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, TParams>
 
-export default function sub ($signal: unknown, params?: unknown): unknown {
+export default function sub ($signal: unknown, params?: unknown, options?: SubOptions): unknown {
   // TODO: temporarily disable support for multiple subscriptions
   //       since this has to be properly cached using useDeferredSignal() in useSub()
   // if (Array.isArray($signal)) {
@@ -117,23 +142,23 @@ export default function sub ($signal: unknown, params?: unknown): unknown {
   // }
   if (Array.isArray($signal)) throw Error('sub() does not support multiple subscriptions yet')
   if (isRuntimePublicDocumentSignal($signal)) {
-    if (arguments.length > 1) {
+    if (arguments.length > 2) {
       throw Error(ERRORS.subDocArguments($signal, ...Array.from(arguments).slice(1)))
     }
-    return doc$($signal)
+    return doc$($signal, parseSubOptions(params as SubOptions | undefined))
   } else if (isRuntimePublicCollectionSignal($signal)) {
-    if (arguments.length !== 2) {
+    if (arguments.length < 2 || arguments.length > 3) {
       throw Error(ERRORS.subQueryArguments($signal, params, ...Array.from(arguments).slice(2)))
     }
-    return query$($signal, params)
+    return query$($signal, params, parseSubOptions(options))
   } else if (isClientAggregationFunction($signal)) {
-    return getAggregationFromFunction($signal, $signal.collection, params)
+    return getAggregationFromFunction($signal, $signal.collection, params, parseSubOptions(options))
   } else if (isAggregationHeader($signal)) {
     const aggregationParams = {
       $aggregationName: $signal.name,
       $params: sanitizeAggregationParams(params)
     }
-    return aggregation$($signal.collection, aggregationParams)
+    return aggregation$($signal.collection, aggregationParams, undefined, parseSubOptions(options))
   } else if (isAggregationFunction($signal)) {
     if (isServer) {
       const serverParams = asRecord(params)
@@ -143,7 +168,7 @@ export default function sub ($signal: unknown, params?: unknown): unknown {
       }
       const aggregationParams = { ...serverParams }
       delete aggregationParams.$collection
-      return getAggregationFromFunction($signal, collection, aggregationParams)
+      return getAggregationFromFunction($signal, collection, aggregationParams, parseSubOptions(options))
     } else {
       throw Error(ERRORS.gotAggregationFunction($signal))
     }
@@ -154,10 +179,26 @@ export default function sub ($signal: unknown, params?: unknown): unknown {
   }
 }
 
+export function unsub ($signal: unknown): Promise<void> | void {
+  if (!($signal instanceof Signal)) return
+  const record = takeSubRecord($signal)
+  if (!record) return
+  record.disposed = true
+
+  const $root = getRoot($signal)
+  const rootId = $root?.[ROOT_ID]
+  if (isRootContextClosed(rootId)) return
+
+  if (record.kind === 'doc') return docSubscriptions.unsubscribe($signal, { intent: record.intent })
+  if (record.kind === 'query') return querySubscriptions.unsubscribe($signal, { intent: record.intent })
+  if (record.kind === 'aggregation') return aggregationSubscriptions.unsubscribe($signal, { intent: record.intent })
+}
+
 function getAggregationFromFunction (
   fn: AggregationFunction<unknown, string> | ClientAggregationFunction<unknown, string>,
   collection: string,
-  params?: unknown
+  params?: unknown,
+  subOptions?: ResolvedSubOptions
 ): SignalBaseInstance | Promise<SignalBaseInstance> {
   const aggregationParams = sanitizeAggregationParams(params) as AggregationParams
   let session: unknown
@@ -169,37 +210,41 @@ function getAggregationFromFunction (
   // should match the context in @teamplay/backend/features/serverAggregate.js
   const context = { collection, session, isServer }
   const result = fn(aggregationParams, context)
-  return aggregation$(collection, Array.isArray(result) ? { $aggregate: result } : result)
+  return aggregation$(collection, Array.isArray(result) ? { $aggregate: result } : result, undefined, subOptions)
 }
 
-function doc$ ($doc: SignalBaseInstance): SignalBaseInstance | Promise<SignalBaseInstance> {
-  const promise = docSubscriptions.subscribe($doc)
-  if (!promise) return $doc
-  return new Promise(resolve => promise.then(() => resolve($doc)))
+function doc$ ($doc: SignalBaseInstance, subOptions: ResolvedSubOptions): SignalBaseInstance | Promise<SignalBaseInstance> {
+  const promise = docSubscriptions.subscribe($doc, { intent: subOptions.intent })
+  return returnSubscribedSignal($doc, 'doc', subOptions.intent, promise)
 }
 
-function query$ ($collection: SignalBaseInstance, params: unknown): SignalBaseInstance | Promise<SignalBaseInstance> {
+function query$ (
+  $collection: SignalBaseInstance,
+  params: unknown,
+  subOptions: ResolvedSubOptions
+): SignalBaseInstance | Promise<SignalBaseInstance> {
   const collectionName = $collection[SEGMENTS][0]
   if (typeof collectionName !== 'string') throw Error(ERRORS.queryCollectionName($collection))
   if (typeof params !== 'object') throw Error(ERRORS.queryParamsObject(collectionName, params))
   const signalOptions = getQuerySignalOptions($collection)
   const queryParams = params as Record<string, unknown> | null
-  if (queryParams?.$aggregate || queryParams?.$aggregationName) return aggregation$(collectionName, params, signalOptions)
+  if (queryParams?.$aggregate || queryParams?.$aggregationName) {
+    return aggregation$(collectionName, params, signalOptions, subOptions)
+  }
   const $query = getQuerySignal(collectionName, params, signalOptions)
-  const promise = querySubscriptions.subscribe($query)
-  if (!promise) return $query
-  return new Promise(resolve => promise.then(() => resolve($query)))
+  const promise = querySubscriptions.subscribe($query, { intent: subOptions.intent })
+  return returnSubscribedSignal($query, 'query', subOptions.intent, promise)
 }
 
 function aggregation$ (
   collectionName: string,
   params: unknown,
-  signalOptions?: QuerySignalOptions
+  signalOptions?: QuerySignalOptions,
+  subOptions: ResolvedSubOptions = parseSubOptions()
 ): SignalBaseInstance | Promise<SignalBaseInstance> {
   const $aggregationQuery = getAggregationSignal(collectionName, params, signalOptions)
-  const promise = aggregationSubscriptions.subscribe($aggregationQuery)
-  if (!promise) return $aggregationQuery
-  return new Promise(resolve => promise.then(() => resolve($aggregationQuery)))
+  const promise = aggregationSubscriptions.subscribe($aggregationQuery, { intent: subOptions.intent })
+  return returnSubscribedSignal($aggregationQuery, 'aggregation', subOptions.intent, promise)
 }
 
 function api$ (_fn: (...args: unknown[]) => unknown, _args: unknown): never {
@@ -241,14 +286,66 @@ function isApiFunction (value: unknown): value is (...args: unknown[]) => unknow
   return typeof value === 'function' && !(value instanceof Signal)
 }
 
+interface ResolvedSubOptions {
+  intent: SubIntent
+}
+
+function parseSubOptions (options?: SubOptions): ResolvedSubOptions {
+  const mode = options?.mode ?? 'auto'
+  if (mode !== 'auto' && mode !== 'fetch' && mode !== 'subscribe') {
+    throw Error(`sub() option mode must be "auto", "fetch", or "subscribe". Got: ${mode}`)
+  }
+  return {
+    intent: mode === 'fetch' ? 'fetch' : 'subscribe'
+  }
+}
+
+function returnSubscribedSignal (
+  $signal: SignalBaseInstance,
+  kind: SubRecordKind,
+  intent: SubIntent,
+  promise?: Promise<void> | void
+): SignalBaseInstance | Promise<SignalBaseInstance> {
+  if (!promise) {
+    addSubRecord($signal, kind, intent)
+    return $signal
+  }
+  return promise.then(() => {
+    addSubRecord($signal, kind, intent)
+    return $signal
+  })
+}
+
+function addSubRecord ($signal: SignalBaseInstance, kind: SubRecordKind, intent: SubIntent): void {
+  let records = SUB_RECORDS.get($signal)
+  if (!records) {
+    records = []
+    SUB_RECORDS.set($signal, records)
+  }
+  records.push({ kind, intent, disposed: false })
+}
+
+function takeSubRecord ($signal: SignalBaseInstance): SubRecord | undefined {
+  const records = SUB_RECORDS.get($signal)
+  if (!records) return
+  for (let i = records.length - 1; i >= 0; i--) {
+    const record = records[i]
+    if (record.disposed) continue
+    records.splice(i, 1)
+    if (records.length === 0) SUB_RECORDS.delete($signal)
+    return record
+  }
+  SUB_RECORDS.delete($signal)
+}
+
 const ERRORS = {
   subDocArguments: ($signal: SignalBaseInstance, ...args: unknown[]) => `
-    sub($doc) accepts only 1 argument - the document signal to subscribe to
+    sub($doc) accepts one or two arguments - the document signal and optional options.
     Doc: ${$signal[SEGMENTS]}
     Got args: ${[$signal, ...args]}
   `,
   subQueryArguments: ($signal: SignalBaseInstance, params: unknown, ...args: unknown[]) => `
-    sub($collection, params) accepts 2 arguments - the collection signal and an object with query params.
+    sub($collection, params) accepts two or three arguments - the collection signal, query params, and optional options.
     If you want to subscribe to all documents in a collection, pass an empty object: sub($collection, {}).
     Collection: ${$signal[SEGMENTS]}
     Params: ${params}
