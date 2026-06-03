@@ -202,34 +202,40 @@ describe('SignalCompat.add()', () => {
     for (const segments of cleanupSegments) _del(segments)
   })
 
-  it('supports root add(collection, value)', async () => {
+  it('rejects root add(collection, value)', async () => {
     setup('root')
     cleanupSegments.push(['_users'])
-    const id = await $root.add('_users', { title: 'Ann' })
-    assert.equal($root._users[id].title.get(), 'Ann')
+    await assert.rejects(
+      $root.add('_users', { title: 'Ann' }),
+      /Signal\.add\(\) expects a single argument/
+    )
   })
 
-  it('supports root() with add(collection, value)', async () => {
+  it('rejects root() with add(collection, value)', async () => {
     setup('rootProp')
     cleanupSegments.push(['_users'])
-    const id = await $root._users.root().add('_users', { title: 'Zoe' })
-    assert.equal($root._users[id].title.get(), 'Zoe')
+    await assert.rejects(
+      $root._users.root().add('_users', { title: 'Zoe' }),
+      /Signal\.add\(\) expects a single argument/
+    )
   })
 
-  it('uses root() instead of path when in compat mode', async () => {
+  it('rejects root add(collection, value) when in compat mode', async () => {
     setup('rootCompat')
     cleanupSegments.push(['_tenants'])
     const prevCompat = globalThis.teamplayCompatibilityMode
     globalThis.teamplayCompatibilityMode = true
     try {
-      const id = await $root._tenants.root().add('_tenants', { title: 'Acme' })
-      assert.equal($root._tenants[id].title.get(), 'Acme')
+      await assert.rejects(
+        $root._tenants.root().add('_tenants', { title: 'Acme' }),
+        /Signal\.add\(\) expects a single argument/
+      )
     } finally {
       globalThis.teamplayCompatibilityMode = prevCompat
     }
   })
 
-  it('uses raw-signal root to add via model.root()', async function () {
+  it('rejects raw-signal root add(collection, value) via model.root()', async function () {
     if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) {
       this.skip()
     }
@@ -237,8 +243,10 @@ describe('SignalCompat.add()', () => {
     globalThis.teamplayCompatibilityMode = true
     try {
       const $root = getRootSignal({ rootId: 'compat_root_add' })
-      const id = await $root._tenants.root().add('_tenants', { title: 'Tenant 1' })
-      assert.equal($root._tenants[id].title.get(), 'Tenant 1')
+      await assert.rejects(
+        $root._tenants.root().add('_tenants', { title: 'Tenant 1' }),
+        /Signal\.add\(\) expects a single argument/
+      )
     } finally {
       globalThis.teamplayCompatibilityMode = prevCompat
     }

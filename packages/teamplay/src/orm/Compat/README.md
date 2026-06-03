@@ -32,8 +32,9 @@ regular TeamPlay code:
 - `leaf()`, `parent()` — path helpers.
 - `root()` — owning root signal method for explicit root traversal.
 
-Legacy cursor helpers `.at()` / `.scope()` and path-first overloads like `get(path)` / `set(path, value)`
-are intentionally not part of the current compat API. Use child-signal traversal instead.
+Legacy cursor helpers `.at()` / `.scope()`, path-first overloads like `get(path)` / `set(path, value)`,
+and root-call collection helpers like `add(collection, object)` are intentionally not part of the current
+compat API. Use child-signal traversal instead.
 
 Example:
 
@@ -42,6 +43,7 @@ const $user = $.users.user1
 const $profile = $user.profile
 const $rootProfile = $user.root().users.user1.profile
 const name = $profile.name.get()
+const id = await $.users.add({ name: 'Ada' })
 ```
 
 Note on `$` usage:

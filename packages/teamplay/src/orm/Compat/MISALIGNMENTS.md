@@ -6,6 +6,7 @@
 
 - removed React hooks: `useDoc*`, `useQuery*`, `useBatch*`, `useQueryIds*`, `useQueryDoc*`;
 - removed path/cursor surface: `.at()`, `.scope()`, `get(path)`, `peek(path)`, `set(path, value)`, path-overloads для mutators;
+- removed legacy root-call collection add: `add(collection, object)`; use `$root[collection].add(object)`;
 - added base methods: `setReplace()`, `setNull()`, `setDiff()`, `setDiffDeep()`, `setEach()`, `getCopy()`, `getDeepCopy()`, `getExtra()`;
 - base string/array/increment current-signal methods and `useSub` / `useAsyncSub` / `useBatchSub`.
 - aligned query params clone/hash: compat now drops object fields with `undefined` like non-compat and logs a transition warning.

@@ -172,22 +172,6 @@ class SignalCompat extends Signal {
     return setReplaceOnSignal(this, value)
   }
 
-  async add (collectionOrValue, value) {
-    const isRoot = this[SEGMENTS].length === 0
-    const isRootCollectionCall = isRoot && typeof collectionOrValue === 'string'
-
-    if (isRootCollectionCall) {
-      if (arguments.length !== 2) throw Error('Signal.add() expects (collection, object)')
-      if (!value || typeof value !== 'object') throw Error('Signal.add() expects an object argument')
-      const $root = getRoot(this) || this
-      const $collection = resolveSignal($root, [collectionOrValue])
-      return $collection.add(value)
-    }
-
-    if (arguments.length > 1) throw Error('Signal.add() expects a single argument')
-    return Signal.prototype.add.call(this, collectionOrValue)
-  }
-
   async setNull (value) {
     const forwarded = forwardRef(this, 'setNull', arguments)
     if (forwarded) return forwarded
