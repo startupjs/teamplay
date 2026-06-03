@@ -1297,7 +1297,7 @@ describe('QuerySubscriptions', () => {
 describe('Subscription GC grace delay', () => {
   afterEach(assertTrackedManagersAndReset)
   const gcDelay = 30
-  const defaultCompatGcDelay = 3000
+  const defaultGcDelay = 3000
 
   beforeEach(() => {
     setSubscriptionGcDelay(gcDelay)
@@ -1308,14 +1308,9 @@ describe('Subscription GC grace delay', () => {
     __resetSubscriptionGcDelayForTests()
   })
 
-  it('uses non-zero default delay in compat mode and zero in non-compat', () => {
+  it('uses the same non-zero default delay in compat and non-compat modes', () => {
     __resetSubscriptionGcDelayForTests()
-    const expectedCompat = process.env.TEAMPLAY_COMPAT === '1'
-    if (expectedCompat) {
-      assert.equal(getSubscriptionGcDelay(), defaultCompatGcDelay, 'compat default delay should match racer-like grace window')
-    } else {
-      assert.equal(getSubscriptionGcDelay(), 0, 'non-compat default delay should be zero')
-    }
+    assert.equal(getSubscriptionGcDelay(), defaultGcDelay, 'default delay should keep a grace window')
     setSubscriptionGcDelay(gcDelay)
   })
 
