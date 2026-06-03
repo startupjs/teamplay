@@ -173,14 +173,14 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (isIdFieldPath(segments, idFields)) return
   const doc = getConnection().get(collection, docId)
-  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal: true })
   if (!docState.exists && segments.length > 2) {
-    docState = await resolvePublicDocStateWithCompatFetchFallback({
+    docState = await resolvePublicDocStateWithFetchFallback({
       collection,
       docId,
       doc,
       idFields,
-      hydrateCompatDocData: true
+      hydrateDocDataFromLocal: true
     })
   }
   if (!docState.exists && deleteValue) throw Error(ERRORS.deleteNonExistentDoc(segments))
@@ -265,14 +265,14 @@ export async function setPublicDocReplace (segments, value) {
   const idFields = getIdFieldsForSegments([collection, docId])
   if (isIdFieldPath(segments, idFields)) return
   const doc = getConnection().get(collection, docId)
-  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData: true })
+  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal: true })
   if (!docState.exists && segments.length > 2) {
-    docState = await resolvePublicDocStateWithCompatFetchFallback({
+    docState = await resolvePublicDocStateWithFetchFallback({
       collection,
       docId,
       doc,
       idFields,
-      hydrateCompatDocData: true
+      hydrateDocDataFromLocal: true
     })
   }
   // make sure that the value is not observable to not trigger extra reads. And clone it
@@ -359,9 +359,10 @@ async function createPublicDocAndHydrateLocal ({
     doc.create(newDoc, err => err ? reject(err) : resolve())
   })
 
-  // In compatibility mode we must allow immediate subpath writes after create()
-  // even when the ShareDB snapshot hasn't been loaded via subscribe/fetch yet.
-  if (isCompatEnv() && doc?.data == null) {
+  // Keep public creates immediately writable even when the ShareDB snapshot has
+  // not been loaded via subscribe/fetch yet. UI flows rely on optimistic add()
+  // followed by child writes without waiting for DB confirmation.
+  if (doc?.data == null) {
     const localDoc = JSON.parse(JSON.stringify(newDoc || {}))
     if (isPlainObject(localDoc)) injectIdFields(localDoc, idFields, docId)
     setReplace([collection, docId], localDoc)
@@ -378,7 +379,7 @@ function resolvePublicDocState ({
   docId,
   doc,
   idFields,
-  hydrateCompatDocData = false
+  hydrateDocDataFromLocal = false
 }) {
   ensureLocalDocSyncedWithShareDoc({ collection, docId, doc, idFields })
 
@@ -395,34 +396,41 @@ function resolvePublicDocState ({
   }
 
   const localSnapshot = getRaw([collection, docId])
-  if (!(isCompatEnv() && localSnapshot != null)) {
+  if (localSnapshot == null) {
     return { exists: false, snapshot: undefined, source: 'none' }
   }
 
-  // In compat mode local raw data can be the source of truth between create/add
-  // and later subpath mutations even if ShareDB doc.data is currently empty.
-  if (hydrateCompatDocData) {
+  // Local raw data can be the source of truth between add() and later subpath
+  // mutations even if ShareDB doc.data is currently empty or was recreated.
+  if (hydrateDocDataFromLocal) {
     doc.data = localSnapshot
   }
 
   return { exists: true, snapshot: localSnapshot, source: 'local' }
 }
 
-async function resolvePublicDocStateWithCompatFetchFallback ({
+async function resolvePublicDocStateWithFetchFallback ({
   collection,
   docId,
   doc,
   idFields,
-  hydrateCompatDocData = false
+  hydrateDocDataFromLocal = false
 }) {
-  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData })
-  if (docState.exists || !isCompatEnv()) return docState
+  let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal })
+  if (docState.exists) return docState
+
+  const shouldFetch = isCompatEnv() || (
+    getRaw([collection, docId]) != null &&
+    isMissingShareDoc(doc) &&
+    doc.version == null
+  )
+  if (!shouldFetch) return docState
 
   await new Promise((resolve, reject) => {
     doc.fetch(err => err ? reject(err) : resolve())
   })
 
-  docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateCompatDocData })
+  docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal })
   return docState
 }
 
@@ -583,12 +591,12 @@ export async function incrementPublic (segments, byNumber) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+  const docState = await resolvePublicDocStateWithFetchFallback({
     collection,
     docId,
     doc,
     idFields,
-    hydrateCompatDocData: true
+    hydrateDocDataFromLocal: true
   })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const current = getRaw(segments)
@@ -624,12 +632,12 @@ export async function arrayInsertPublic (segments, index, values) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+  const docState = await resolvePublicDocStateWithFetchFallback({
     collection,
     docId,
     doc,
     idFields,
-    hydrateCompatDocData: true
+    hydrateDocDataFromLocal: true
   })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   let current = getRaw(segments)
@@ -679,12 +687,12 @@ export async function arrayRemovePublic (segments, index, howMany = 1) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+  const docState = await resolvePublicDocStateWithFetchFallback({
     collection,
     docId,
     doc,
     idFields,
-    hydrateCompatDocData: true
+    hydrateDocDataFromLocal: true
   })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const arr = getRaw(segments) || []
@@ -703,12 +711,12 @@ export async function arrayMovePublic (segments, from, to, howMany = 1) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+  const docState = await resolvePublicDocStateWithFetchFallback({
     collection,
     docId,
     doc,
     idFields,
-    hydrateCompatDocData: true
+    hydrateDocDataFromLocal: true
   })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const arr = getRaw(segments) || []
@@ -775,12 +783,12 @@ export async function stringInsertPublic (segments, index, text) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+  const docState = await resolvePublicDocStateWithFetchFallback({
     collection,
     docId,
     doc,
     idFields,
-    hydrateCompatDocData: true
+    hydrateDocDataFromLocal: true
   })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)
@@ -804,12 +812,12 @@ export async function stringRemovePublic (segments, index, howMany) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithCompatFetchFallback({
+  const docState = await resolvePublicDocStateWithFetchFallback({
     collection,
     docId,
     doc,
     idFields,
-    hydrateCompatDocData: true
+    hydrateDocDataFromLocal: true
   })
   if (!docState.exists) throw Error(ERRORS.nonExistingDoc(segments))
   const relativePath = segments.slice(2)

@@ -36,7 +36,43 @@ describe('Public doc create consistency', () => {
       const subscribedDoc = $doc.get()
       assert.ok(subscribedDoc, `doc is missing after subscribe (iteration ${i}, id ${id})`)
       assert.equal(subscribedDoc._id || subscribedDoc.id, id)
-      await docSubscriptions.unsubscribe($doc)
+      await docSubscriptions.destroy([collection, id])
     }
+  })
+
+  it('allows optimistic child writes after non-awaited add', async () => {
+    const id = `course_${Date.now()}_optimistic_${Math.random().toString(36).slice(2, 10)}`
+    createdIds.push(id)
+
+    const addPromise = $[collection].add({ id, name: 'Optimistic course' })
+    const $doc = $[collection][id]
+    await $doc.parentId.set('parent_1')
+    await addPromise
+
+    assert.deepEqual($doc.get(), {
+      _id: id,
+      name: 'Optimistic course',
+      parentId: 'parent_1'
+    })
+    assert.equal(getConnection().get(collection, id).data.parentId, 'parent_1')
+  })
+
+  it('uses local add snapshot when ShareDB doc object is recreated before child write', async () => {
+    const id = `course_${Date.now()}_recreated_${Math.random().toString(36).slice(2, 10)}`
+    createdIds.push(id)
+
+    await $[collection].add({ id, name: 'Recreated doc course' })
+    const $doc = $[collection][id]
+    const connection = getConnection()
+    delete connection.collections[collection][id]
+
+    await $doc.parentId.set('parent_2')
+
+    assert.deepEqual($doc.get(), {
+      _id: id,
+      name: 'Recreated doc course',
+      parentId: 'parent_2'
+    })
+    assert.equal(getConnection().get(collection, id).data.parentId, 'parent_2')
   })
 })
