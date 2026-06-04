@@ -4,9 +4,11 @@ import { afterEachTestGc, runGc } from './_helpers.js'
 import { $, sub, unsub, aggregation } from '../src/index.ts'
 import { get as _get, del as _del } from '../src/orm/dataTree.js'
 import { getConnection } from '../src/orm/connection.ts'
-import { hashQuery } from '../src/orm/Query.js'
+import { hashQuery, querySubscriptions } from '../src/orm/Query.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
 import { getPrivateData } from '../src/orm/privateData.js'
-import { getRoot, ROOT_ID } from '../src/orm/Root.ts'
+import { getRoot, getRootSignal, ROOT_ID } from '../src/orm/Root.ts'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 import connect from '../src/connect/test.js'
 
 before(connect)
@@ -524,6 +526,95 @@ describe('$sub() function. Aggregations', () => {
     ], 'query signal has updated data')
   })
 
+  it('subscribes to raw collection $aggregate query and exposes rows through getExtra()', async () => {
+    const collection = 'gamesRawAggregations'
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const $root = getRootSignal({ rootId: 'sub-raw-aggregation' })
+    const $game1 = $root[collection].raw_1
+    const $game2 = $root[collection].raw_2
+    const $game3 = $root[collection].raw_3
+    const prevSubscriptionGcDelay = getSubscriptionGcDelay()
+    let $activeGames
+
+    await Promise.all([
+      $game1.set({ name: 'Raw Game 1', active: true }),
+      $game2.set({ name: 'Raw Game 2', active: true }),
+      $game3.set({ name: 'Raw Game 3', active: false })
+    ])
+
+    setSubscriptionGcDelay(0)
+    try {
+      $activeGames = await sub($root[collection], params)
+      const rootId = getRoot($activeGames)?.[ROOT_ID]
+      const expectedRows = [
+        { _id: 'raw_1', name: 'Raw Game 1', active: true },
+        { _id: 'raw_2', name: 'Raw Game 2', active: true }
+      ]
+
+      assert.deepEqual(
+        sanitizeAggregationResult($activeGames.get()).sort(sortById),
+        expectedRows,
+        'raw $aggregate result is available through .get()'
+      )
+      assert.deepEqual(
+        sanitizeAggregationResult($activeGames.getExtra()).sort(sortById),
+        expectedRows,
+        'raw $aggregate result is available through .getExtra()'
+      )
+      assert.deepEqual(
+        $activeGames.getIds().slice().sort(),
+        ['raw_1', 'raw_2'],
+        '.getIds() reads ids from raw $aggregate rows'
+      )
+      assert.deepEqual(
+        sanitizeAggregations(getPrivateData(rootId, ['$aggregations']) || {}),
+        {
+          [hashQuery(collection, params)]: expectedRows
+        },
+        'raw $aggregate data is stored in aggregation private data'
+      )
+    } finally {
+      if ($activeGames) await unsub($activeGames)
+      setSubscriptionGcDelay(prevSubscriptionGcDelay)
+      await Promise.all([
+        $game1.del(),
+        $game2.del(),
+        $game3.del()
+      ])
+    }
+  })
+
+  it('unsubscribes raw collection $aggregate queries through aggregation subscriptions', async () => {
+    const collection = 'gamesRawAggregationUnsub'
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const hash = hashQuery(collection, params)
+    const $root = getRootSignal({ rootId: 'sub-raw-aggregation-unsub' })
+    const $game = $root[collection].raw_unsub_1
+    const prevSubscriptionGcDelay = getSubscriptionGcDelay()
+    let $activeGames
+
+    await $game.set({ name: 'Raw Unsub Game', active: true })
+
+    setSubscriptionGcDelay(0)
+    try {
+      $activeGames = await sub($root[collection], params)
+
+      assert.equal($activeGames.getExtra().length, 1)
+      assert.equal(aggregationSubscriptions.queries.has(hash), true, 'aggregation runtime is tracked')
+      assert.equal(querySubscriptions.queries.has(hash), false, 'raw $aggregate is not tracked as an ordinary query')
+
+      await unsub($activeGames)
+      $activeGames = undefined
+
+      assert.equal(aggregationSubscriptions.queries.has(hash), false, 'aggregation runtime is cleaned up')
+      assert.equal(querySubscriptions.queries.has(hash), false, 'ordinary query runtime was never created')
+    } finally {
+      if ($activeGames) await unsub($activeGames)
+      setSubscriptionGcDelay(prevSubscriptionGcDelay)
+      await $game.del()
+    }
+  })
+
   it('.getId() on a signal from aggregation should return the id of the document', async () => {
     const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
@@ -593,4 +684,8 @@ function sanitizeAggregations (aggregations) {
 function sanitizeAggregationResult (results) {
   if (Array.isArray(results)) return results.map(dropSharedbMetaFields)
   return dropSharedbMetaFields(results)
+}
+
+function sortById (left, right) {
+  return String(left._id).localeCompare(String(right._id))
 }
