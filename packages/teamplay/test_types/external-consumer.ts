@@ -66,6 +66,13 @@ initModels(manifest)
 
 const root: RootSignal = $
 const scopedRoot = getRootSignal()
+const closeResult: Promise<void> = scopedRoot.close()
+const closeCallbackResult: void = scopedRoot.close(err => {
+  const closeError: unknown = err
+  void closeError
+})
+void closeResult
+void closeCallbackResult
 const $user = scopedRoot.users.user1
 const typedUserSignal: Signal<UserDoc> = $user
 const runtimeSignal: RuntimeSignalInstance<UserDoc> = typedUserSignal

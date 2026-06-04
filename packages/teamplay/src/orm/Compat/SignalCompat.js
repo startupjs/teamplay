@@ -9,7 +9,7 @@ import {
   isPublicCollectionSignal,
   isPublicDocumentSignal
 } from '../SignalBase.ts'
-import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID, unregisterRootFinalizer } from '../Root.ts'
+import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID } from '../Root.ts'
 import { docSubscriptions } from '../Doc.js'
 import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
@@ -36,7 +36,6 @@ import { runInBatch } from '../batchScheduler.js'
 import { runInSilentContext, runInModelEventsSilentContext, isSilentContextActive } from './silentContext.js'
 import universal$ from '../../react/universal$.ts'
 import { getRootContext } from '../rootContext.ts'
-import disposeRootContext from '../disposeRootContext.ts'
 import {
   arrayInsertPrivateData,
   arrayMovePrivateData,
@@ -120,22 +119,6 @@ class SignalCompat extends Signal {
     if (this[IS_AGGREGATION]) return this.get()
     if (this[IS_QUERY]) return this.extra.get()
     return undefined
-  }
-
-  close (callback) {
-    if (arguments.length > 1) throw Error('Signal.close() expects zero or one argument')
-    if (callback != null && typeof callback !== 'function') {
-      throw Error('Signal.close() expects callback to be a function')
-    }
-    const $root = getRoot(this) || this
-    const rootId = $root?.[ROOT_ID]
-    unregisterRootFinalizer($root)
-    disposeRootContext(rootId)
-      .then(() => callback?.())
-      .catch(err => {
-        if (callback) callback(err)
-        else console.error(err)
-      })
   }
 
   silent (value) {

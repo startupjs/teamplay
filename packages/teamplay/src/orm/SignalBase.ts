@@ -38,7 +38,12 @@ import getSignal, { rawSignal } from './getSignal.ts'
 import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
-import { ROOT_FUNCTION, ROOT_ID, getRoot } from './Root.ts'
+import {
+  ROOT_FUNCTION,
+  ROOT_ID,
+  closeRootSignal,
+  getRoot
+} from './Root.ts'
 import {
   DEFAULT_ID_FIELDS,
   getIdFieldsForSegments,
@@ -265,6 +270,16 @@ export class Signal<TValue = unknown> extends Function {
     if (fn == null) return
     if (typeof fn !== 'function') throw Error('Signal.batch() expects a function argument')
     return runInBatch(fn)
+  }
+
+  close (): Promise<void>
+  close (callback: (err?: unknown) => void): void
+  close (callback?: (err?: unknown) => void): Promise<void> | void {
+    if (arguments.length > 1) throw Error('Signal.close() expects zero or one argument')
+    if (callback != null && typeof callback !== 'function') {
+      throw Error('Signal.close() expects callback to be a function')
+    }
+    return callback ? closeRootSignal(this, callback) : closeRootSignal(this)
   }
 
   /**

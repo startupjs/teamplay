@@ -27,6 +27,8 @@ export type RootSignalRuntime = SignalBaseInstance & {
   [ROOT_ID]?: string
 }
 
+export type RootCloseCallback = (err?: unknown) => void
+
 type FinalizationRegistryConstructor = new (
   cleanupCallback: (heldValue: string) => void
 ) => {
@@ -76,6 +78,31 @@ export function getRoot (signal: RootSignalRuntime | undefined): RootSignalRunti
   if (signal[ROOT]) return signal[ROOT]
   else if (signal[ROOT_ID]) return signal
   else return undefined
+}
+
+export function closeRootSignalAsync (signal: RootSignalRuntime | undefined): Promise<void> {
+  const $root = getRoot(signal) || signal
+  const rootId = $root?.[ROOT_ID]
+  unregisterRootFinalizer($root)
+  return disposeRootContext(rootId)
+}
+
+export function closeRootSignal (signal: RootSignalRuntime | undefined): Promise<void>
+export function closeRootSignal (
+  signal: RootSignalRuntime | undefined,
+  callback?: RootCloseCallback
+): void
+export function closeRootSignal (
+  signal: RootSignalRuntime | undefined,
+  callback?: RootCloseCallback
+): Promise<void> | void {
+  const promise = closeRootSignalAsync(signal)
+  if (!callback) return promise
+  promise
+    .then(() => callback?.())
+    .catch(err => {
+      callback(err)
+    })
 }
 
 export function getRootFetchOnly (rootOrRootId: RootSignalRuntime | string | undefined): boolean {

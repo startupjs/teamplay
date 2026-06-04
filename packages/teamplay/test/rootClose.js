@@ -37,6 +37,70 @@ function assertGlobalSubscriptionManagersConsistent () {
   assertQuerySubscriptionsConsistent(aggregationSubscriptions)
 }
 
+describe('root close lifecycle', () => {
+  afterEach(async () => {
+    assertGlobalSubscriptionManagersConsistent()
+    await docSubscriptions.clear()
+    await querySubscriptions.clear()
+    await aggregationSubscriptions.clear()
+    assertGlobalSubscriptionManagersConsistent()
+    __resetRefLinksForTests()
+    __resetModelEventsForTests()
+    __resetPendingRootDisposesForTests()
+    __resetRootContextsForTests()
+  })
+
+  it('close returns a promise and cleans private storage for owning root', async () => {
+    const $rootA = getRootSignal({ rootId: 'close-async-private-A' })
+    const $rootB = getRootSignal({ rootId: 'close-async-private-B' })
+
+    await $rootA._session.userId.set('user-a')
+    await $rootA._page.lang.set('en')
+    await $rootB._session.userId.set('user-b')
+
+    const result = $rootA.close()
+    assert.equal(typeof result?.then, 'function')
+    await result
+
+    assert.equal($rootA._session.userId.get(), undefined)
+    assert.equal($rootA._page.lang.get(), undefined)
+    assert.equal($rootB._session.userId.get(), 'user-b')
+    assert.equal(getPrivateDataRawRoot('close-async-private-A'), undefined)
+    assert.ok(getPrivateDataRawRoot('close-async-private-B'))
+  })
+
+  it('close remains fire-and-forget and supports a completion callback', async () => {
+    const $root = getRootSignal({ rootId: 'close-callback-root' })
+
+    await $root._session.userId.set('user-a')
+    await closeSignal($root)
+
+    assert.equal(__getRootContextForTests('close-callback-root'), undefined)
+    assert.equal(getPrivateDataRawRoot('close-callback-root'), undefined)
+  })
+
+  it('close promise closes owning root even when called on a child signal', async () => {
+    const $root = getRootSignal({ rootId: 'close-async-child-root' })
+    const $child = $root._session.userId
+
+    await $child.set('child-user')
+    await $child.close()
+
+    assert.equal(__getRootContextForTests('close-async-child-root'), undefined)
+    assert.equal(getPrivateDataRawRoot('close-async-child-root'), undefined)
+    assert.equal($root._session.userId.get(), undefined)
+  })
+
+  it('validates close arguments', async () => {
+    const $root = getRootSignal({ rootId: 'close-validation-root' })
+
+    assert.throws(() => $root.close('bad'), /Signal\.close\(\) expects callback to be a function/)
+    assert.throws(() => $root.close(() => {}, () => {}), /Signal\.close\(\) expects zero or one argument/)
+
+    await $root.close()
+  })
+})
+
 describeCompat('root close()', () => {
   let prevSubscriptionGcDelay
 
@@ -240,7 +304,8 @@ describeCompat('root close()', () => {
     assert.ok(ownedSignalHashes.every(hash => signalsCache.get(hash)))
 
     const result = $root.close()
-    assert.equal(result, undefined)
+    assert.equal(typeof result?.then, 'function')
+    await result
     await closeSignal($root)
 
     assert.ok(ownedSignalHashes.every(hash => !signalsCache.get(hash)))
