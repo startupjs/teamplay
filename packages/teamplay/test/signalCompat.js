@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
 import { $, sub, unsub, addModel, aggregation, getRootSignal } from '../src/index.ts'
 import { get as _get, del as _del } from '../src/orm/dataTree.js'
-import { getConnection, setConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../src/orm/connection.ts'
+import { getConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../src/orm/connection.ts'
 import connect from '../src/connect/test.js'
 import SignalCompat from '../src/orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../src/orm/SignalBase.ts'
@@ -255,27 +255,15 @@ describe('SignalCompat.add()', () => {
 })
 
 describe('SignalCompat.root.connection', () => {
-  it('returns ShareDB connection in compat mode', () => {
+  it('does not expose ShareDB connection through root', () => {
     const prevCompat = globalThis.teamplayCompatibilityMode
     globalThis.teamplayCompatibilityMode = true
-    const prevConnection = (() => {
-      try {
-        return getConnection()
-      } catch {
-        return undefined
-      }
-    })()
 
     try {
       const $root = getRootSignal({ rootId: 'compat_conn' })
-      if (prevConnection) {
-        assert.equal($root.connection, prevConnection)
-      }
-      const dummyConnection = { get: () => null }
-      setConnection(dummyConnection)
-      assert.equal($root.connection, dummyConnection)
+      assert.notEqual($root.connection, getConnection())
+      assert.equal($root.connection.path(), 'connection')
     } finally {
-      setConnection(prevConnection)
       globalThis.teamplayCompatibilityMode = prevCompat
     }
   })

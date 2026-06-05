@@ -263,7 +263,7 @@ const shareDoc = $root.connection.get('texts', textId)
 const shareDoc = connection.get('texts', textId)
 ```
 
-На transition можно оставить root adapter, но не стоит делать `.connection` свойством любого signal.
+Не оставлять root adapter в общем signal API: connection должен приходить через explicit accessor.
 
 ## `close(callback)`
 

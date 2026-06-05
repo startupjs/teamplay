@@ -1,12 +1,11 @@
 import Cache from './Cache.ts'
-import Signal, { SEGMENTS, regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.ts'
+import Signal, { regularBindings, extremelyLateBindings, isPublicCollection, isPrivateCollection } from './Signal.ts'
 import { findModel } from './addModel.ts'
 import { LOCAL } from './$.js'
 import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.ts'
 import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
 import { isCompatEnv } from './compatEnv.js'
-import { getConnection } from './connection.ts'
 import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
 import { getSignalIdentityHash } from './rootScope.ts'
 import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.ts'
@@ -100,25 +99,9 @@ export default function getSignal ($root?: RootSignalRuntime, segments: PathSegm
 function getDefaultProxyHandlers ({
   useExtremelyLateBindings
 }: ProxyHandlerOptions = {}): ProxyHandler<RootSignalRuntime> {
-  const baseHandlers = (
+  return (
     useExtremelyLateBindings ? extremelyLateBindings : regularBindings
   ) as ProxyHandler<RootSignalRuntime>
-  if (!isCompatEnv() || baseHandlers !== extremelyLateBindings) return baseHandlers
-  return {
-    ...baseHandlers,
-    get (signal: RootSignalRuntime, key: string | symbol, receiver: unknown): unknown {
-      if (key === 'connection' && signal[SEGMENTS].length === 0) {
-        try {
-          return getConnection()
-        } catch {
-          return undefined
-        }
-      }
-      return baseHandlers.get
-        ? baseHandlers.get(signal, key, receiver)
-        : Reflect.get(signal, key, receiver)
-    }
-  }
 }
 
 export function getSignalClass (
