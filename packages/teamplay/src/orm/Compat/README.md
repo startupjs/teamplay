@@ -172,7 +172,7 @@ Reactivity:
 - Further target updates are mirrored through compat model-change events.
 
 ```js
-const $query = $.query('courses', { active: true })
+const $query = await sub($.courses, { active: true })
 const $table = $._page.tables._adminCourses
 
 // mirror query.extra/docs into page model
@@ -230,35 +230,29 @@ Source of truth is root API (`$root.stop(...)`), but non-root calls are supporte
 $root.stop('_virtual.lesson')
 ```
 
-### query(collection, query, options?)
+### Removed: query() / subscribe() / unsubscribe()
 
-Creates a query signal **without** subscribing. Supports shorthand params:
-- array of ids → `{ _id: { $in: ids } }`
-- single id → `{ _id: id }`
+Compat no longer exposes Racer-style imperative query lifecycle helpers:
 
-If `query` is `undefined`, a safe non-existent query is used.
-If `query` contains `$aggregate` or `$aggregationName`, an aggregation signal is returned.
+- `model.query(collection, params)`
+- `$query.subscribe()` / `$query.unsubscribe()`
+- `model.subscribe(...signals)` / `model.unsubscribe(...signals)`
+
+Use the explicit Teamplay subscription API instead:
 
 ```js
-const $$active = $.query('users', { active: true })
-const $$byIds = $.query('users', ['u1', 'u2'])
-const $$single = $.query('users', 'u1')
-const $$agg = $.query('stores', { $aggregate: [{ $match: { active: true } }] })
+const $active = await sub($.users, { active: true })
+const $user = await sub($.users.user1)
+
+await unsub($active)
+await unsub($user)
 ```
 
-### subscribe(...signals) / unsubscribe(...signals)
-
-Subscribes or unsubscribes doc/query/aggregation signals.
-- If called on a signal with **no args**, it subscribes/unsubscribes **that** signal.
-- If passed arguments, it treats them as a list (arrays are flattened, falsy values ignored).
+For aggregations:
 
 ```js
-const $$active = $.query('users', { active: true })
-await $$active.subscribe()
-
-const $user = $.users.user1
-await $.subscribe($user, $$active)
-$.unsubscribe($user, $$active)
+const $rows = await sub($.stores, { $aggregate: [{ $match: { active: true } }] })
+await unsub($rows)
 ```
 
 ### close(callback?)
@@ -276,15 +270,7 @@ model.close(() => console.log('closed'))
 
 ### fetch(...signals) / unfetch(...signals)
 
-Fetch-only variants of `subscribe` / `unsubscribe`. They load data once without a live subscription.
-
-```js
-const $$active = $.query('users', { active: true })
-await $$active.fetch()
-$$active.unfetch()
-```
-
-In non-compat object-tree code, use explicit transport mode instead:
+Fetch-only helpers remain for direct doc/query signals, but new code should prefer explicit transport mode:
 
 ```js
 const $active = await sub($.users, { active: true }, { mode: 'fetch' })
@@ -298,12 +284,10 @@ Returns the query/aggregation `extra` payload:
 - Aggregation signals → the aggregated array (same as `.get()`)
 
 ```js
-const $$count = $.query('users', { active: true, $count: true })
-await $$count.subscribe()
+const $$count = await sub($.users, { active: true, $count: true })
 const count = $$count.getExtra()
 
-const $$agg = $.query('stores', { $aggregate: [{ $match: { active: true } }] })
-await $$agg.subscribe()
+const $$agg = await sub($.stores, { $aggregate: [{ $match: { active: true } }] })
 const rows = $$agg.getExtra()
 ```
 

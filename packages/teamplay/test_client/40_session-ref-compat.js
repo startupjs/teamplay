@@ -1,7 +1,7 @@
 import { createElement as el, Fragment } from 'react'
 import { describe, it, beforeAll as before, afterEach, expect } from '@jest/globals'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { $, observer } from '../src/index.ts'
+import { $, observer, sub } from '../src/index.ts'
 import connect from '../src/connect/test.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { del as _del } from '../src/orm/dataTree.js'
@@ -318,7 +318,7 @@ describeCompat('session alias + ref contract', () => {
   it('session tenant ref stays in sync when the tenant doc changes via raw ShareDB ops', async () => {
     await setupSessionRefs()
     await act(async () => {
-      await $.tenants.t1.subscribe()
+      await sub($.tenants.t1)
     })
 
     const Component = observer(() => {
@@ -366,8 +366,8 @@ describeCompat('session alias + ref contract', () => {
   it('tenant ref keeps following the rebound tenant under raw ShareDB ops', async () => {
     await setupSessionRefs()
     await act(async () => {
-      await $.tenants.t1.subscribe()
-      await $.tenants.t2.subscribe()
+      await sub($.tenants.t1)
+      await sub($.tenants.t2)
     })
 
     const Component = observer(() => {
@@ -409,7 +409,7 @@ describeCompat('session alias + ref contract', () => {
   it('tenant ref mirrors target field deletion from raw ShareDB ops', async () => {
     await setupSessionRefs()
     await act(async () => {
-      await $.tenants.t1.subscribe()
+      await sub($.tenants.t1)
     })
 
     const Component = observer(() => {
@@ -438,7 +438,7 @@ describeCompat('session alias + ref contract', () => {
   it('removeRef freezes alias snapshot even when target changes via raw ShareDB ops', async () => {
     await setupSessionRefs()
     await act(async () => {
-      await $.tenants.t1.subscribe()
+      await sub($.tenants.t1)
     })
 
     const before = $.session.tenant.get()

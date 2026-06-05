@@ -2,7 +2,8 @@ import { afterEach, before, beforeEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
 import {
   __DEBUG_SIGNALS_CACHE__ as signalsCache,
-  getRootSignal
+  getRootSignal,
+  sub
 } from '../src/index.ts'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 import connect from '../src/connect/test.js'
@@ -177,8 +178,8 @@ describeCompat('root close()', () => {
     const hash = JSON.stringify([DOC_COLLECTION, '_1'])
 
     await $docA.set({ title: 'Doc 1' })
-    await $docA.subscribe()
-    await $docB.subscribe()
+    await sub($docA)
+    await sub($docB)
 
     assert.equal(docSubscriptions.subCount.get(hash), 2)
 
@@ -202,8 +203,8 @@ describeCompat('root close()', () => {
     const ownerKeyA = JSON.stringify({ owner: [rootIdA, hash] })
 
     await $docA.set({ title: 'Doc stale' })
-    await $docA.subscribe()
-    await $docB.subscribe()
+    await sub($docA)
+    await sub($docB)
 
     docSubscriptions.ownerRecords.delete(ownerKeyA)
     docSubscriptions.entries.get(hash)?.owners.delete(ownerKeyA)
@@ -225,19 +226,14 @@ describeCompat('root close()', () => {
     await $rootA[QUERY_COLLECTION]._1.set({ title: 'One', active: true })
     await $rootA[QUERY_COLLECTION]._2.set({ title: 'Two', active: true })
 
-    const $queryA = $rootA.query(QUERY_COLLECTION, { active: true })
-    const $queryB = $rootB.query(QUERY_COLLECTION, { active: true })
-    const $aggA = $rootA.query(QUERY_COLLECTION, {
+    const $queryA = await sub($rootA[QUERY_COLLECTION], { active: true })
+    const $queryB = await sub($rootB[QUERY_COLLECTION], { active: true })
+    const $aggA = await sub($rootA[QUERY_COLLECTION], {
       $aggregate: [{ $match: { active: true } }]
     })
-    const $aggB = $rootB.query(QUERY_COLLECTION, {
+    const $aggB = await sub($rootB[QUERY_COLLECTION], {
       $aggregate: [{ $match: { active: true } }]
     })
-
-    await $queryA.subscribe()
-    await $queryB.subscribe()
-    await $aggA.subscribe()
-    await $aggB.subscribe()
 
     await closeSignal($rootA)
 
@@ -260,8 +256,7 @@ describeCompat('root close()', () => {
     const $root = getRootSignal({ rootId })
 
     await $root[QUERY_COLLECTION]._stale1.set({ title: 'One', active: true })
-    const $query = $root.query(QUERY_COLLECTION, { active: true })
-    await $query.subscribe()
+    const $query = await sub($root[QUERY_COLLECTION], { active: true })
 
     const transportHash = $query[QUERY_HASH]
     const ownerKey = getScopedSignalHash(rootId, transportHash, 'queryOwner')

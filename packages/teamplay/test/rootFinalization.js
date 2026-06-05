@@ -1,6 +1,6 @@
 import { before, beforeEach, afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal } from '../src/index.ts'
+import { getRootSignal, sub } from '../src/index.ts'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 import connect from '../src/connect/test.js'
 import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
@@ -143,11 +143,8 @@ describe('root finalization', () => {
       await $rootA[QUERY_COLLECTION]._1.set({ name: 'One', active: true })
       await $rootA._session.marker.set('root-a')
 
-      let $queryA = $rootA.query(QUERY_COLLECTION, { active: true })
-      const $queryB = $rootB.query(QUERY_COLLECTION, { active: true })
-
-      await $queryA.subscribe()
-      await $queryB.subscribe()
+      let $queryA = await sub($rootA[QUERY_COLLECTION], { active: true })
+      const $queryB = await sub($rootB[QUERY_COLLECTION], { active: true })
 
       const transportHash = $queryA[QUERY_HASH]
       assert.equal(querySubscriptions.transportSubCount.get(transportHash), 2)
@@ -176,11 +173,8 @@ describe('root finalization', () => {
 
       await $rootA[QUERY_COLLECTION][docId].set({ name: 'One', marker })
 
-      let $queryA = $rootA.query(QUERY_COLLECTION, { marker })
-      const $queryB = $rootB.query(QUERY_COLLECTION, { marker })
-
-      await $queryA.subscribe()
-      await $queryB.subscribe()
+      let $queryA = await sub($rootA[QUERY_COLLECTION], { marker })
+      const $queryB = await sub($rootB[QUERY_COLLECTION], { marker })
 
       const transportHash = $queryA[QUERY_HASH]
       assert.equal(querySubscriptions.transportSubCount.get(transportHash), 2)
@@ -212,8 +206,8 @@ describe('root finalization', () => {
       let $docA = $rootA[DOC_COLLECTION][docId]
       const $docB = $rootB[DOC_COLLECTION][docId]
 
-      await $docA.subscribe()
-      await $docB.subscribe()
+      await sub($docA)
+      await sub($docB)
 
       assert.equal(docSubscriptions.subCount.get(docHash), 2)
       assert.equal(docSubscriptions.docs.get(docHash)?.activeTransportMode, 'subscribe')

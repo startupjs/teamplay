@@ -1,6 +1,6 @@
 import assert from 'assert'
 import { before, beforeEach, afterEach, describe, it } from 'mocha'
-import { addModel, getRootSignal } from '../src/index.ts'
+import { addModel, getRootSignal, sub, unsub } from '../src/index.ts'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { del as _del, set as _set } from '../src/orm/dataTree.js'
@@ -72,11 +72,8 @@ describeCompat('root-scoped public signals', () => {
     await rootA[PUBLIC_COLLECTION]._1.set({ name: 'Game 1', active: true })
     await rootA[PUBLIC_COLLECTION]._2.set({ name: 'Game 2', active: true })
 
-    const $queryA = rootA.query(PUBLIC_COLLECTION, { active: true })
-    const $queryB = rootB.query(PUBLIC_COLLECTION, { active: true })
-
-    await $queryA.subscribe()
-    await $queryB.subscribe()
+    const $queryA = await sub(rootA[PUBLIC_COLLECTION], { active: true })
+    const $queryB = await sub(rootB[PUBLIC_COLLECTION], { active: true })
 
     assert.notStrictEqual($queryA, $queryB)
     assert.equal($queryA[QUERY_HASH], $queryB[QUERY_HASH])
@@ -85,8 +82,8 @@ describeCompat('root-scoped public signals', () => {
     assert.ok(getPrivateData('query-public-root-A', [QUERIES, $queryA[QUERY_HASH], 'ids']))
     assert.ok(getPrivateData('query-public-root-B', [QUERIES, $queryB[QUERY_HASH], 'ids']))
 
-    await $queryA.unsubscribe()
-    await $queryB.unsubscribe()
+    await unsub($queryA)
+    await unsub($queryB)
   })
 
   it('tracks query runtime ownership inside root contexts while transport stays shared', async () => {
@@ -95,11 +92,8 @@ describeCompat('root-scoped public signals', () => {
 
     await rootA[PUBLIC_VIEW_COLLECTION]._1.set({ name: 'Game 1', active: true })
 
-    const $queryA = rootA.query(PUBLIC_VIEW_COLLECTION, { active: true })
-    const $queryB = rootB.query(PUBLIC_VIEW_COLLECTION, { active: true })
-
-    await $queryA.subscribe()
-    await $queryB.subscribe()
+    const $queryA = await sub(rootA[PUBLIC_VIEW_COLLECTION], { active: true })
+    const $queryB = await sub(rootB[PUBLIC_VIEW_COLLECTION], { active: true })
 
     assert.deepEqual(
       Array.from(getRootOwnedRuntimeHashes('query-view-root-A', 'query')),
@@ -110,14 +104,14 @@ describeCompat('root-scoped public signals', () => {
       [$queryB[QUERY_HASH]]
     )
 
-    await $queryA.unsubscribe()
+    await unsub($queryA)
     assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('query-view-root-A', 'query')), [])
     assert.deepEqual(
       Array.from(getRootOwnedRuntimeHashes('query-view-root-B', 'query')),
       [$queryB[QUERY_HASH]]
     )
 
-    await $queryB.unsubscribe()
+    await unsub($queryB)
     assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('query-view-root-B', 'query')), [])
   })
 

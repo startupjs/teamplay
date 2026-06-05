@@ -11,8 +11,8 @@ import {
 } from '../SignalBase.ts'
 import { getRoot, ROOT, ROOT_ID, getRootSignal, GLOBAL_ROOT_ID } from '../Root.ts'
 import { docSubscriptions } from '../Doc.js'
-import { IS_QUERY, getQuerySignal, querySubscriptions } from '../Query.js'
-import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions, getAggregationSignal } from '../Aggregation.js'
+import { IS_QUERY, querySubscriptions } from '../Query.js'
+import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../Aggregation.js'
 import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields, isPlainObject } from '../idFields.ts'
 import {
   incrementPublic as _incrementPublic,
@@ -82,36 +82,14 @@ class SignalCompat extends Signal {
     return deepCopy(this.get())
   }
 
-  query (collection, params, options) {
-    if (arguments.length < 1 || arguments.length > 3) throw Error('Signal.query() expects one to three arguments')
-    if (typeof collection !== 'string') throw Error('Signal.query() expects collection to be a string')
-    const normalized = normalizeQueryParams(collection, params)
-    const root = getRoot(this) || (this[ROOT_ID] ? this : undefined)
-    const scopedOptions = withQueryScopeOptions(options, root)
-    if (isAggregationParams(normalized)) {
-      return getAggregationSignal(collection, normalized, scopedOptions)
-    }
-    return getQuerySignal(collection, normalized, scopedOptions)
-  }
-
-  subscribe (...items) {
-    if (items.length > 0) return subscribeMany(items, 'subscribe')
-    return subscribeSelf(this)
-  }
-
-  unsubscribe (...items) {
-    if (items.length > 0) return subscribeMany(items, 'unsubscribe')
-    return unsubscribeSelf(this)
-  }
-
   fetch (...items) {
-    if (items.length > 0) return subscribeMany(items, 'subscribe', 'fetch')
-    return subscribeSelf(this, 'fetch')
+    if (items.length > 0) return subscribeMany(items, 'subscribe', 'fetch', 'fetch')
+    return subscribeSelf(this, 'fetch', 'fetch')
   }
 
   unfetch (...items) {
-    if (items.length > 0) return subscribeMany(items, 'unsubscribe', 'fetch')
-    return unsubscribeSelf(this, 'fetch')
+    if (items.length > 0) return subscribeMany(items, 'unsubscribe', 'fetch', 'unfetch')
+    return unsubscribeSelf(this, 'fetch', 'unfetch')
   }
 
   getExtra () {
@@ -1020,54 +998,17 @@ function deepCopy (value) {
   return racerDeepCopy(rawValue)
 }
 
-function normalizeQueryParams (collection, params) {
-  if (params == null) {
-    console.warn(`
-      [Signal.query] Query is undefined. Got:
-        ${collection}, ${params}
-      Falling back to {_id: '__NON_EXISTENT__'} query to prevent critical crash.
-      You should prevent situations when the \`query\` is undefined.
-    `)
-    return { _id: '__NON_EXISTENT__' }
-  }
-  if (Array.isArray(params)) {
-    return { _id: { $in: params.slice() } }
-  }
-  if (typeof params === 'string' || typeof params === 'number') {
-    return { _id: params }
-  }
-  if (typeof params !== 'object') {
-    throw Error(`Signal.query() expects params to be an object, array, or id. Got: ${params}`)
-  }
-  return params
-}
-
-function isAggregationParams (params) {
-  return Boolean(params?.$aggregate || params?.$aggregationName)
-}
-
-function withQueryScopeOptions (options, $root) {
-  if (!options || typeof options !== 'object') {
-    if (!$root) return options
-    return { root: $root }
-  }
-
-  const nextOptions = { ...options }
-  if (nextOptions.root == null && $root) nextOptions.root = $root
-  return nextOptions
-}
-
-function subscribeMany (items, action, intent = 'subscribe') {
+function subscribeMany (items, action, intent = 'subscribe', methodName = action) {
   const targets = flattenItems(items)
   const promises = []
   for (const target of targets) {
     if (!target) continue
     if (!(target instanceof Signal)) {
-      throw Error(`Signal.${action}() accepts only Signal instances. Got: ${target}`)
+      throw Error(`Signal.${methodName}() accepts only Signal instances. Got: ${target}`)
     }
     const result = action === 'subscribe'
-      ? subscribeSelf(target, intent)
-      : unsubscribeSelf(target, intent)
+      ? subscribeSelf(target, intent, methodName)
+      : unsubscribeSelf(target, intent, methodName)
     if (result?.then) promises.push(result)
   }
   if (promises.length) return Promise.all(promises)
@@ -1085,7 +1026,7 @@ function flattenItems (items, result = []) {
   return result
 }
 
-function subscribeSelf ($signal, intent = 'subscribe') {
+function subscribeSelf ($signal, intent = 'subscribe', methodName = 'subscribe') {
   if ($signal[IS_QUERY]) {
     return (async () => {
       await querySubscriptions.subscribe($signal, { intent })
@@ -1100,25 +1041,25 @@ function subscribeSelf ($signal, intent = 'subscribe') {
   }
   if (isPublicDocumentSignal($signal)) return docSubscriptions.subscribe($signal, { intent })
   if (isPublicCollectionSignal($signal)) {
-    throw Error('Signal.subscribe() expects a query signal. Use .query() for collections.')
+    throw Error(`Signal.${methodName}() expects a document or query signal. Use sub($collection, params, { mode: 'fetch' }) for collection fetches.`)
   }
   if ($signal[SEGMENTS].length === 0) {
-    throw Error('Signal.subscribe() cannot be called on the root signal')
+    throw Error(`Signal.${methodName}() cannot be called on the root signal`)
   }
-  throw Error('Signal.subscribe() expects a document or query signal')
+  throw Error(`Signal.${methodName}() expects a document or query signal`)
 }
 
-function unsubscribeSelf ($signal, intent = 'subscribe') {
+function unsubscribeSelf ($signal, intent = 'subscribe', methodName = 'unsubscribe') {
   if ($signal[IS_QUERY]) return querySubscriptions.unsubscribe($signal, { intent })
   if ($signal[IS_AGGREGATION]) return aggregationSubscriptions.unsubscribe($signal, { intent })
   if (isPublicDocumentSignal($signal)) return docSubscriptions.unsubscribe($signal, { intent })
   if (isPublicCollectionSignal($signal)) {
-    throw Error('Signal.unsubscribe() expects a query signal. Use .query() for collections.')
+    throw Error(`Signal.${methodName}() expects a document or query signal`)
   }
   if ($signal[SEGMENTS].length === 0) {
-    throw Error('Signal.unsubscribe() cannot be called on the root signal')
+    throw Error(`Signal.${methodName}() cannot be called on the root signal`)
   }
-  throw Error('Signal.unsubscribe() expects a document or query signal')
+  throw Error(`Signal.${methodName}() expects a document or query signal`)
 }
 
 // Racer-style deep copy:

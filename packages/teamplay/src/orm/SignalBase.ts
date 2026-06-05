@@ -892,8 +892,8 @@ export const regularBindings = {
   }
 }
 
-const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds', 'getExtra', 'subscribe', 'unsubscribe', 'fetch', 'unfetch']
-const AGGREGATION_ALLOWED_METHODS = ['subscribe', 'unsubscribe', 'fetch', 'unfetch', 'ref', 'removeRef', 'refExtra', 'refIds']
+const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds', 'getExtra', 'fetch', 'unfetch']
+const AGGREGATION_ALLOWED_METHODS = ['fetch', 'unfetch', 'ref', 'removeRef', 'refExtra', 'refIds']
 
 // dot syntax always returns a child signal even if such method or property exists.
 // The method is only called when the signal is explicitly called as a function,
