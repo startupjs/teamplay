@@ -27,10 +27,9 @@ describeCompat('session alias + ref contract', () => {
 
   async function setupSessionRefs () {
     await act(async () => {
-      await $.users.u1.set({ id: 'u1', name: 'Alice', email: 'alice@example.com', timeZone: 'Europe/Kyiv', profile: { lang: 'en' }, baseLearnLanguages: ['en'] })
-      await $.users.u2.set({ id: 'u2', name: 'Bob', email: 'bob@example.com', timeZone: 'Europe/Istanbul', profile: { lang: 'tr' }, baseLearnLanguages: ['tr'] })
+      await $.users.u1.set({ name: 'Alice', email: 'alice@example.com', timeZone: 'Europe/Kyiv', profile: { lang: 'en' }, baseLearnLanguages: ['en'] })
+      await $.users.u2.set({ name: 'Bob', email: 'bob@example.com', timeZone: 'Europe/Istanbul', profile: { lang: 'tr' }, baseLearnLanguages: ['tr'] })
       await $.tenants.t1.set({
-        id: 't1',
         name: 'Exxon Mobil',
         features: { credits: true },
         branding: { theme: 'dark' },
@@ -38,7 +37,6 @@ describeCompat('session alias + ref contract', () => {
         questions: { deposit: 15 }
       })
       await $.tenants.t2.set({
-        id: 't2',
         name: 'Chevron',
         features: { credits: false },
         branding: { theme: 'light' },
@@ -78,9 +76,9 @@ describeCompat('session alias + ref contract', () => {
     expect(session.user).toBeDefined()
     expect(session.tenant).toBeDefined()
     expect(session.user._id).toBe('u1')
-    expect(session.user.id).toBe('u1')
+    expect(session.user).not.toHaveProperty('id')
     expect(session.tenant._id).toBe('t1')
-    expect(session.tenant.id).toBe('t1')
+    expect(session.tenant).not.toHaveProperty('id')
   })
 
   it('exposes the same session user/tenant signals through alias and canonical paths', async () => {

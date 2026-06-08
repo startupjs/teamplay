@@ -1228,7 +1228,6 @@ describeCompat('SignalCompat public mutators', () => {
     assert.equal($game.__dummyField.test.get(), '123')
     assert.deepEqual($game.get(), {
       _id: gameId,
-      id: gameId,
       name: 'Missing Object',
       __dummyField: {
         test: '123'
@@ -1248,7 +1247,6 @@ describeCompat('SignalCompat public mutators', () => {
     assert.deepEqual($game.profile.get(), { name: 'Kate' })
     assert.deepEqual($game.get(), {
       _id: gameId,
-      id: gameId,
       profile: {
         name: 'Kate'
       }
@@ -1354,7 +1352,6 @@ describeCompat('SignalCompat public mutators', () => {
     assert.deepEqual($game.stats.tags.get(), ['tag-1'])
     assert.deepEqual($game.get(), {
       _id: gameId,
-      id: gameId,
       name: 'Missing Nested Array',
       stats: {
         tags: ['tag-1']
@@ -1406,18 +1403,18 @@ describeCompat('SignalCompat public mutators', () => {
     assert.equal($game.get(), undefined)
   })
 
-  it('injects _id/id into compat docs and protects top-level identity fields', async () => {
+  it('injects only _id into compat docs and protects top-level _id', async () => {
     const gameId = '_compat_public_ids'
     const $game = await sub($.compatGames[gameId])
     await $game.set({ name: 'Compat' })
 
     const data = $game.get()
     assert.equal(data._id, gameId)
-    assert.equal(data.id, gameId)
+    assert.ok(!('id' in data))
 
     await $game.id.set('other')
     await $game._id.set('other2')
-    assert.equal($game.id.get(), gameId)
+    assert.equal($game.id.get(), 'other')
     assert.equal($game._id.get(), gameId)
   })
 
@@ -1444,7 +1441,7 @@ describeCompat('SignalCompat public mutators', () => {
       }
     })
 
-    assert.equal($game.id.get(), gameId)
+    assert.equal($game.id.get(), undefined)
     assert.equal($game._id.get(), gameId)
     assert.equal($game.profile.id.get(), 'profile-4')
     assert.equal($game.profile._id.get(), 'profile-5')
@@ -1486,7 +1483,7 @@ describeCompat('SignalCompat public mutators', () => {
     await $._session.activeGame.profile.id.set('profile-2')
     await $._session.activeGame.profile._id.set('profile-3')
 
-    assert.equal($game.id.get(), gameId)
+    assert.equal($game.id.get(), 'other')
     assert.equal($game._id.get(), gameId)
     assert.equal($game.profile.id.get(), 'profile-2')
     assert.equal($game.profile._id.get(), 'profile-3')
@@ -1508,7 +1505,6 @@ describeCompat('SignalCompat public mutators', () => {
     assert.equal($game.__dummyField.test.get(), '123')
     assert.deepEqual($game.get(), {
       _id: gameId,
-      id: gameId,
       name: 'Compat Ref Missing Object',
       __dummyField: {
         test: '123'
@@ -1531,7 +1527,6 @@ describeCompat('SignalCompat public mutators', () => {
     assert.deepEqual($game.stats.tags.get(), ['tag-1'])
     assert.deepEqual($game.get(), {
       _id: gameId,
-      id: gameId,
       name: 'Compat Ref Missing Array',
       stats: {
         tags: ['tag-1']
@@ -1539,7 +1534,7 @@ describeCompat('SignalCompat public mutators', () => {
     })
   })
 
-  it('injects _id/id in compat queries', async () => {
+  it('injects only _id in compat queries', async () => {
     const id1 = '_compat_query_1'
     const id2 = '_compat_query_2'
     const $game1 = await sub($.compatGames[id1])
@@ -1550,11 +1545,12 @@ describeCompat('SignalCompat public mutators', () => {
     const $query = await sub($.compatGames, { active: true })
     const results = $query.get()
     assert.equal(results.length, 2)
-    assert.ok(results.every(doc => doc._id && doc.id))
+    assert.ok(results.every(doc => doc._id))
+    assert.ok(results.every(doc => !('id' in doc)))
     assert.deepEqual($query.getIds().slice().sort(), [id1, id2])
   })
 
-  it('compat aggregations expose _id/id by default', async () => {
+  it('compat aggregations expose only _id by default', async () => {
     const id1 = '_compat_agg_1'
     const id2 = '_compat_agg_2'
     const $game1 = await sub($.compatGames[id1])
@@ -1567,37 +1563,37 @@ describeCompat('SignalCompat public mutators', () => {
     const results = $agg.get()
     assert.ok(results.length >= 2)
     assert.ok(results.every(doc => doc._id))
-    assert.ok(results.every(doc => doc.id))
+    assert.ok(results.every(doc => !('id' in doc)))
   })
 
-  it('compat add accepts equal id and _id', async () => {
+  it('compat add accepts equal id and _id without storing id', async () => {
     const id = await $.compatGames.add({ id: 'custom', _id: 'custom', name: 'Compat Add' })
     const $doc = await sub($.compatGames[id])
     const data = $doc.get()
     assert.equal(data._id, id)
-    assert.equal(data.id, id)
+    assert.ok(!('id' in data))
   })
 
-  it('compat local add injects both id fields for all accepted top-level variants', async () => {
+  it('compat local add injects only _id for all accepted top-level variants', async () => {
     const collection = '_compatLocalAdd'
     addModel(`${collection}.*`, SignalCompat)
     const $collection = $[collection]
     try {
       const generatedId = await $collection.add({ name: 'Generated' })
       assert.equal($collection[generatedId]._id.get(), generatedId)
-      assert.equal($collection[generatedId].id.get(), generatedId)
+      assert.ok(!('id' in $collection[generatedId].get()))
 
       const fromId = await $collection.add({ id: 'local-id', name: 'From Id' })
       assert.equal($collection[fromId]._id.get(), 'local-id')
-      assert.equal($collection[fromId].id.get(), 'local-id')
+      assert.ok(!('id' in $collection[fromId].get()))
 
       const fromUnderscoreId = await $collection.add({ _id: 'local-underscore-id', name: 'From _id' })
       assert.equal($collection[fromUnderscoreId]._id.get(), 'local-underscore-id')
-      assert.equal($collection[fromUnderscoreId].id.get(), 'local-underscore-id')
+      assert.ok(!('id' in $collection[fromUnderscoreId].get()))
 
       const fromBoth = await $collection.add({ id: 'local-both', _id: 'local-both', name: 'From Both' })
       assert.equal($collection[fromBoth]._id.get(), 'local-both')
-      assert.equal($collection[fromBoth].id.get(), 'local-both')
+      assert.ok(!('id' in $collection[fromBoth].get()))
     } finally {
       _del([collection])
     }
@@ -1614,7 +1610,7 @@ describeCompat('SignalCompat public mutators', () => {
       })
       const data = $collection[createdId].get()
       assert.equal(data._id, createdId)
-      assert.equal(data.id, createdId)
+      assert.ok(!('id' in data))
       assert.equal(data.profile.id, 'profile-1')
       assert.equal(data.profile._id, 'profile-2')
     } finally {
