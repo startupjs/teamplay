@@ -186,7 +186,7 @@ Adds a new item to a collection signal, automatically generating a unique ID.
 const newId = await $signal.add({ name: 'New Item' })
 ```
 
-`add()` accepts either `id` or `_id` as a provided document ID.
+`add()` accepts configured identity fields as a provided document ID. It also accepts legacy `id` and `_id` inputs for compatibility.
 If both are provided, they must be equal, otherwise `add()` throws.
 
 ## getId()
@@ -331,4 +331,4 @@ await $user.assign({
 - All methods that modify data (`set()`, `setReplace()`, `setNull()`, `setDiff()`, `setDiffDeep()`, `setEach()`, `del()`, `push()`, `pop()`, `increment()`, `add()`, `assign()`) are asynchronous and return Promises. This ensures data consistency with the server.
 - The `get()` method is synchronous and returns the current local value of the signal.
 - These methods can be chained on nested signals, e.g., `$.users[userId].name.set('New Name')`.
- - For public documents, the `_id` field is present in `get()` results and matches the document id. Attempts to change `_id` are ignored.
+- For public documents, configured identity fields are present in `get()` results and match the document id. `idFields` defaults to `['_id']`; attempts to change configured identity fields are ignored.

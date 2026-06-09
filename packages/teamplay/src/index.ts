@@ -227,6 +227,18 @@ export {
   setPublicOnly
 } from './orm/connection.ts'
 export type { TeamplayConnection, TeamplayShareDoc } from './orm/connection.ts'
+export {
+  TEAMPLAY_RUNTIME_CONFIG_SYMBOL,
+  configureTeamplay,
+  getTeamplayConfig,
+  getDefaultIdFields,
+  setDefaultIdFields
+} from './config.ts'
+export type {
+  IdField,
+  IdFields,
+  TeamplayRuntimeConfig
+} from './config.ts'
 export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.ts'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.ts'
 export { GUID_PATTERN, defineSchema, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'

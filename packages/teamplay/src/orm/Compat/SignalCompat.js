@@ -51,7 +51,6 @@ import {
 } from '../privateData.js'
 
 class SignalCompat extends Signal {
-  static ID_FIELDS = ['_id']
   static [GETTERS] = DEFAULT_GETTERS
 
   path () {

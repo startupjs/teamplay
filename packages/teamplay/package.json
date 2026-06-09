@@ -26,6 +26,11 @@
       "teamplay-ts": "./src/connect/index.js",
       "default": "./dist/connect/index.js"
     },
+    "./config": {
+      "teamplay-ts": "./src/config.ts",
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
     "./server": {
       "teamplay-ts": "./src/server.js",
       "types": "./dist/server.d.ts",

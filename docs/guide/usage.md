@@ -49,7 +49,7 @@ $.users[userId].profilePicture.del()
 
 ### `_id` in Public Documents
 
-For public documents, the `_id` field is available in `get()` results and matches the document id. Attempts to set or modify `_id` are ignored.
+For public documents, the `_id` field is available in `get()` results and matches the document id. Attempts to set or modify configured identity fields are ignored. `idFields` defaults to `['_id']`; applications can configure additional top-level identity fields such as `id`.
 
 ## The `$()` Function: Creating Local Signals
 

@@ -2,6 +2,7 @@ import createChannel from '@teamplay/channel/server'
 import backendCreateBackend from '@teamplay/backend'
 import { getModels } from './orm/initModels.ts'
 import { connection, setConnection, setDefaultFetchOnly, setPublicOnly } from './orm/connection.ts'
+import { configureTeamplay } from './config.ts'
 
 export { default as ShareDB } from 'sharedb'
 export {
@@ -37,10 +38,12 @@ export default createBackend
 export function initConnection (backend, {
   fetchOnly = true,
   publicOnly = true,
+  idFields,
   ...options
 } = {}) {
   if (!backend) throw Error('backend is required')
   if (connection) throw Error('Connection already exists')
+  if (idFields !== undefined) configureTeamplay({ idFields })
   setConnection(backend.connect())
   setDefaultFetchOnly(fetchOnly)
   setPublicOnly(publicOnly)

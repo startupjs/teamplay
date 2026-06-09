@@ -77,7 +77,7 @@
 | `$root.start/$root.stop` | Не переносить как есть без отдельного дизайна. | Adapter для virtual fields/stages. | Переписать virtual state на явные observers/computed flows. |
 | Model events / `silent` | Не переносить как core без отдельного решения. | Adapter, если legacy listeners остаются. | Заменять на explicit subscriptions/reactions/domain events. |
 | `root.connection` / `close(callback)` | Возможно оставить в server adapter, не как общий signal API. | Adapter для rich-text/server/worker deps. | Перевести callers на explicit connection/root lifecycle APIs. |
-| `_id/id` compat injection | Не менять base semantics без breaking decision. | Adapter/normalizer для LMS compat expectations. | Переписать callers на `_id`, убрать ожидание `id` там, где возможно. |
+| `_id/id` identity fields | Default не менять: `['_id']`. Для LMS включить runtime `idFields: ['_id', 'id']` как migration bridge. | Единая policy для compat/noncompat без массовой LMS-миграции. | Позже можно постепенно переписать callers на `_id` и убрать `id` из runtime config. |
 
 ## Зоны, где нельзя механически заменить на base API
 

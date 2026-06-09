@@ -144,7 +144,7 @@ Important files:
 
 `teamplay/server` wraps `@teamplay/backend`. If `initModels()` has already registered models and `createBackend()` is called without an explicit `models` option, the wrapper passes the initialized model manifest into the backend.
 
-`initConnection(backend, options)` creates a server-side ShareDB connection through `backend.connect()`, stores it in the ORM singleton connection, sets default transport flags, and returns the server channel.
+`initConnection(backend, options)` creates a server-side ShareDB connection through `backend.connect()`, stores it in the ORM singleton connection, sets default transport flags, applies runtime-wide ORM options such as `idFields`, and returns the server channel.
 
 The backend factory creates a ShareDB backend with:
 
@@ -175,6 +175,8 @@ Important files:
 - [packages/teamplay/src/orm/connection.ts](./packages/teamplay/src/orm/connection.ts)
 
 `connect()` creates a channel socket, wraps it in a ShareDB-compatible connection adapter, and stores it in the ORM singleton connection. If a connection already exists, it returns without replacing it.
+
+Document identity fields are runtime-wide, matching the singleton connection constraint. Effective id fields resolve as `Model.ID_FIELDS`, then configured runtime `idFields`, then the default `['_id']`.
 
 The singleton connection is a current architectural constraint. [packages/teamplay/src/orm/Root.ts](./packages/teamplay/src/orm/Root.ts) has TODOs for spawnable/per-root connections, but the current implementation assumes one active connection per runtime environment.
 

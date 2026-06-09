@@ -1,7 +1,8 @@
-import { it, describe, before, afterEach } from 'mocha'
+import { it, describe, before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { $, sub, aggregation } from '../src/index.ts'
+import { $, sub, aggregation, addModel, Signal } from '../src/index.ts'
 import { getConnection } from '../src/orm/connection.ts'
+import { configureTeamplay, getDefaultIdFields, setDefaultIdFields } from '../src/config.ts'
 import { afterEachTestGc } from './_helpers.js'
 import connect from '../src/connect/test.js'
 import { isMissingShareDoc } from '../src/orm/missingDoc.js'
@@ -18,11 +19,20 @@ describe('Id fields in docs, queries, aggregations', () => {
   afterEachTestGc()
 
   const cleanup = []
+  let previousIdFields
+  beforeEach(() => {
+    previousIdFields = getDefaultIdFields()
+  })
+
   afterEach(async () => {
-    for (const { collection, id } of cleanup.splice(0)) {
-      const doc = getConnection().get(collection, id)
-      if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
-      delete getConnection().collections?.[collection]?.[id]
+    try {
+      for (const { collection, id } of cleanup.splice(0)) {
+        const doc = getConnection().get(collection, id)
+        if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
+        delete getConnection().collections?.[collection]?.[id]
+      }
+    } finally {
+      setDefaultIdFields(previousIdFields)
     }
   })
 
@@ -63,6 +73,81 @@ describe('Id fields in docs, queries, aggregations', () => {
 
     const ids = $query.getIds().slice().sort()
     assert.deepEqual(ids, [id1, id2])
+  })
+
+  it('runtime idFields config injects and protects both _id and id in docs and queries', async () => {
+    configureTeamplay({ idFields: ['_id', 'id'] })
+    const collection = 'idTestRuntimeDual'
+    const id1 = '_runtime_dual_1'
+    const id2 = '_runtime_dual_2'
+    cleanup.push({ collection, id: id1 }, { collection, id: id2 })
+
+    const $doc1 = await sub($[collection][id1])
+    const $doc2 = await sub($[collection][id2])
+    await $doc1.set({ name: 'Runtime Dual One', id: 'wrong-id', _id: 'wrong-_id' })
+    await $doc2.set({ name: 'Runtime Dual Two' })
+
+    assert.equal($doc1.get()._id, id1)
+    assert.equal($doc1.get().id, id1)
+    await $doc1.id.set('another-id')
+    await $doc1._id.set('another-_id')
+    assert.equal($doc1.id.get(), id1)
+    assert.equal($doc1._id.get(), id1)
+
+    const doc = getConnection().get(collection, id1)
+    assert.equal(doc.data._id, id1)
+    assert.equal(doc.data.id, id1)
+
+    const $query = await sub($[collection], {})
+    const results = $query.get()
+    for (const data of results) {
+      assert.equal(data._id, data.id)
+      assert.ok([id1, id2].includes(data.id))
+    }
+    assert.deepEqual($query.getIds().slice().sort(), [id1, id2])
+  })
+
+  it('runtime idFields config injects both _id and id for local add()', async () => {
+    configureTeamplay({ idFields: ['_id', 'id'] })
+    const collection = '_localRuntimeDualIdAdd'
+    try {
+      const createdId = await $[collection].add({ id: 'custom-local-id', name: 'Local' })
+      assert.equal(createdId, 'custom-local-id')
+      const data = $[collection][createdId].get()
+      assert.equal(data._id, createdId)
+      assert.equal(data.id, createdId)
+    } finally {
+      $[collection].del()
+    }
+  })
+
+  it('model ID_FIELDS override runtime idFields config and can resolve add ids', async () => {
+    configureTeamplay({ idFields: ['_id', 'id'] })
+    const collection = 'idTestRuntimeCourseId'
+    class RuntimeCourseIdModel extends Signal {
+      static ID_FIELDS = ['courseId']
+    }
+    addModel(`${collection}.*`, RuntimeCourseIdModel)
+
+    const id = await $[collection].add({ courseId: 'course-custom', name: 'Course' })
+    cleanup.push({ collection, id })
+    assert.equal(id, 'course-custom')
+
+    const data = $[collection][id].get()
+    assert.equal(data.courseId, id)
+    assert.ok(!('_id' in data))
+    assert.ok(!('id' in data))
+  })
+
+  it('validates runtime idFields config', () => {
+    assert.throws(
+      () => configureTeamplay({ idFields: [] }),
+      /at least one field name/
+    )
+    assert.throws(
+      () => configureTeamplay({ idFields: ['_id', ''] }),
+      /non-empty string field names/
+    )
   })
 
   it('aggregation results include _id by default and can be projected out', async () => {

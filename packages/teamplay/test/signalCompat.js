@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before, after } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
-import { $, sub, unsub, addModel, aggregation, getRootSignal } from '../src/index.ts'
+import { $, sub, unsub, addModel, aggregation, getRootSignal, getDefaultIdFields, setDefaultIdFields } from '../src/index.ts'
 import { get as _get, del as _del } from '../src/orm/dataTree.js'
 import { getConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../src/orm/connection.ts'
 import connect from '../src/connect/test.js'
@@ -1596,6 +1596,37 @@ describeCompat('SignalCompat public mutators', () => {
       assert.ok(!('id' in $collection[fromBoth].get()))
     } finally {
       _del([collection])
+    }
+  })
+
+  it('runtime idFields config can expose and protect id in compat docs, queries, and local add()', async () => {
+    const previousIdFields = getDefaultIdFields()
+    const localCollection = '_compatLocalDualIdAdd'
+    setDefaultIdFields(['_id', 'id'])
+    try {
+      const gameId = '_compat_runtime_dual_ids'
+      const $game = await sub($.compatGames[gameId])
+      await $game.set({ name: 'Compat Runtime Dual', runtimeDualIds: true })
+
+      assert.equal($game._id.get(), gameId)
+      assert.equal($game.id.get(), gameId)
+      await $game.id.set('other-id')
+      await $game._id.set('other-_id')
+      assert.equal($game.id.get(), gameId)
+      assert.equal($game._id.get(), gameId)
+
+      const $query = await sub($.compatGames, { runtimeDualIds: true })
+      const result = $query.get().find(doc => doc._id === gameId)
+      assert.equal(result?.id, gameId)
+
+      addModel(`${localCollection}.*`, SignalCompat)
+      const localId = await $[localCollection].add({ id: 'compat-local-dual', name: 'Local Dual' })
+      const localData = $[localCollection][localId].get()
+      assert.equal(localData._id, localId)
+      assert.equal(localData.id, localId)
+    } finally {
+      setDefaultIdFields(previousIdFields)
+      _del([localCollection])
     }
   })
 

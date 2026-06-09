@@ -84,5 +84,5 @@ for (const $user of $activeUsers) {
 
 - Query signals are reactive. Changes to the underlying data or to the query result will automatically update components using the query signal.
 - The documents within a query signal are themselves signals, allowing for nested reactivity.
-- For public documents in query results, `_id` is available in `get()` results and matches the document id.
+- For public documents in query results, configured identity fields are available in `get()` results and match the document id. `idFields` defaults to `['_id']`.
 - `ids` and `extra` are reserved metadata properties on query signals. Use the collection path, such as `$.users['ids']`, when you need a document whose id has one of those names.

@@ -45,7 +45,7 @@ import {
   getRoot
 } from './Root.ts'
 import {
-  DEFAULT_ID_FIELDS,
+  getDefaultIdFields,
   getIdFieldsForSegments,
   isIdFieldPath,
   isPlainObject,
@@ -171,7 +171,10 @@ const SIGNAL_VALUE_MUTATION_CONTEXT = {
 
 export class Signal<TValue = unknown> extends Function {
   /** Fields that are treated as document ids and mirror the document id segment. */
-  static ID_FIELDS = DEFAULT_ID_FIELDS
+  static get ID_FIELDS () {
+    return getDefaultIdFields()
+  }
+
   /** Method names that keep method binding priority over child signal dot access. */
   static [GETTERS] = DEFAULT_GETTERS
   /** Association metadata registered for this model class. */
@@ -693,8 +696,10 @@ export class Signal<TValue = unknown> extends Function {
    */
   async add (value: unknown): Promise<string> {
     if (arguments.length > 1) throw Error('Signal.add() expects a single argument')
-    const id = resolveAddDocId(value, uuid)
-    const idFields = getIdFieldsForSegments([this[SEGMENTS][0], id])
+    const collection = this[SEGMENTS][0]
+    const collectionIdFields = getIdFieldsForSegments([collection, ''])
+    const id = resolveAddDocId(value, collectionIdFields, uuid)
+    const idFields = getIdFieldsForSegments([collection, id])
     await this[id].set(prepareAddPayload(value, idFields, id))
     return id
   }

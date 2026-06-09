@@ -4,8 +4,11 @@
 import ShareDbMingo from '@startupjs/sharedb-mingo-memory'
 import ShareBackend from 'sharedb'
 import { connection, setConnection } from '../orm/connection.ts'
+import { configureTeamplay } from '../config.ts'
 
-export default function connect () {
+export default function connect (options = {}) {
+  const { idFields } = options || {}
+  if (idFields !== undefined) configureTeamplay({ idFields })
   if (connection) return
   const backend = new ShareBackend({ db: new ShareDbMingo() })
   setConnection(backend.connect())

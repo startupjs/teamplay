@@ -3,6 +3,7 @@
 import ShareDbMingo from '@startupjs/sharedb-mingo-memory'
 import ShareBackend from 'sharedb'
 import { connection, setConnection } from '../../orm/connection.ts'
+import { configureTeamplay } from '../../config.ts'
 
 const STORAGE_NAMESPACE = 'teamplay-offline'
 const DOCS_PREFIX = `${STORAGE_NAMESPACE}:docs:`
@@ -10,13 +11,15 @@ const LAST_OP_PREFIX = `${STORAGE_NAMESPACE}:last-op:`
 
 export default function createConnectWithPersistence ({ storage, createPubsub } = {}) {
   if (!storage) throw new Error('[connect-offline] storage is required')
-  return async function connect () {
+  return async function connect (options = {}) {
+    const { idFields } = options || {}
+    if (idFields !== undefined) configureTeamplay({ idFields })
     if (connection) return
     const db = new ShareDbMingo()
-    const options = { db }
+    const backendOptions = { db }
     const { pubsub } = (await init(db, storage, createPubsub)) || {}
-    if (pubsub) options.pubsub = pubsub
-    const backend = new ShareBackend(options)
+    if (pubsub) backendOptions.pubsub = pubsub
+    const backend = new ShareBackend(backendOptions)
     setConnection(backend.connect())
   }
 }

@@ -45,6 +45,7 @@ const { upgrade } = initConnection(backend, options)
 - `backend`: The TeamPlay backend instance created with `createBackend()`.
 - `options` (optional): An object with the following properties:
   - `fetchOnly` (default: `true`): If true, server-side subscriptions are not reactive.
+  - `idFields` (default: `['_id']`): Runtime-wide document identity field names to inject and protect on public documents.
 
 ### Return Value
 
@@ -58,7 +59,9 @@ import { createBackend, initConnection } from 'teamplay/server'
 
 const server = http.createServer()
 const backend = createBackend()
-const { upgrade } = initConnection(backend)
+const { upgrade } = initConnection(backend, {
+  idFields: ['_id', 'id']
+})
 
 server.on('upgrade', upgrade)
 
