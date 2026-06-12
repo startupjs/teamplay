@@ -213,6 +213,13 @@ export {
 export const observer = runtimeObserver as unknown as ObserverFunction
 export { emit, useOn, useEmit } from './orm/Compat/eventsCompat.js'
 export {
+  default as reaction
+} from './orm/reaction.ts'
+export type {
+  ReactionHandle,
+  ReactionOptions
+} from './orm/reaction.ts'
+export {
   useDidUpdate,
   useOnce,
   useSyncEffect

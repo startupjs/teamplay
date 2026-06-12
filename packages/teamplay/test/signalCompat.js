@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before, after } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
-import { $, sub, unsub, addModel, aggregation, getRootSignal, getDefaultIdFields, setDefaultIdFields } from '../src/index.ts'
+import { $, emit, sub, unsub, addModel, aggregation, getRootSignal, getDefaultIdFields, setDefaultIdFields } from '../src/index.ts'
 import { get as _get, del as _del } from '../src/orm/dataTree.js'
 import { getConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../src/orm/connection.ts'
 import connect from '../src/connect/test.js'
@@ -654,48 +654,30 @@ describe('SignalCompat mutators without subpath overloads', () => {
   it('setDiff(value) skips exact-equal primitive writes', async () => {
     setup('setdiff-primitive-noop')
     await $base.set(1)
-    const events = []
-    const handler = (value, prevValue) => events.push([value, prevValue])
-    $root.on('change', $base.path(), handler)
 
     await $base.setDiff(1)
-    assert.deepEqual(events, [])
+    assert.equal($base.get(), 1)
 
     await $base.setDiff(2)
     assert.equal($base.get(), 2)
-    if (process?.env?.TEAMPLAY_COMPAT === '1') {
-      assert.deepEqual(events, [[2, 1]])
-    }
   })
 
-  it('setDiff on child signal emits change for equivalent objects', async () => {
+  it('setDiff on child signal replaces equivalent objects', async () => {
     setup('setdiff-object-change')
     await $base.set({ profile: { name: 'Ann' } })
-    const events = []
-    const handler = (value, prevValue) => events.push([value, prevValue])
-    $root.on('change', `${$base.path()}.profile`, handler)
 
     await $base.profile.setDiff({ name: 'Ann' })
 
     assert.deepEqual($base.profile.get(), { name: 'Ann' })
-    if (process?.env?.TEAMPLAY_COMPAT === '1') {
-      assert.deepEqual(events, [[{ name: 'Ann' }, { name: 'Ann' }]])
-    }
   })
 
-  it('setDiff on child signal emits change for equivalent arrays', async () => {
+  it('setDiff on child signal replaces equivalent arrays', async () => {
     setup('setdiff-array-change')
     await $base.set({ list: [2, 3, 4] })
-    const events = []
-    const handler = (value, prevValue) => events.push([value, prevValue])
-    $root.on('change', `${$base.path()}.list`, handler)
 
     await $base.list.setDiff([2, 3, 4])
 
     assert.deepEqual($base.list.get(), [2, 3, 4])
-    if (process?.env?.TEAMPLAY_COMPAT === '1') {
-      assert.deepEqual(events, [[[2, 3, 4], [2, 3, 4]]])
-    }
   })
 
   it('setDiff on child signal follows racer replace semantics', async () => {
@@ -2258,7 +2240,86 @@ class NonCompatRefUserModel extends BaseSignal {
   })
 })
 
-;(isCompatMode ? describe : describe.skip)('SignalCompat.start()/stop()', () => {
+;(isCompatMode ? describe : describe.skip)('SignalCompat removed virtual compat APIs', () => {
+  let cleanupSegments
+  let $root
+  let $base
+
+  function setup (suffix) {
+    const basePath = `_compatRemovedVirtualApis_${suffix}`
+    cleanupSegments = [[basePath]]
+    $root = getRootSignal({ rootId: `_compat_removed_virtual_apis_${suffix}` })
+    $base = $root[basePath]
+  }
+
+  afterEach(() => {
+    __resetModelEventsForTests()
+    __resetRefLinksForTests()
+    __resetSilentContextForTests()
+    if (!cleanupSegments) return
+    for (const segments of cleanupSegments) _del(segments)
+    cleanupSegments = undefined
+  })
+
+  it('does not expose start/stop as derived-sync methods', async () => {
+    setup('startStop')
+
+    assert.throws(
+      () => $root.start(`${$base.path()}.virtual`, $base.source, source => source),
+      /Method "start" does not exist/
+    )
+    assert.throws(
+      () => $base.start('virtual', $base.source, source => source),
+      /Method "start" does not exist/
+    )
+    assert.throws(
+      () => $root.stop(`${$base.path()}.virtual`),
+      /Method "stop" does not exist/
+    )
+  })
+
+  it('treats start/stop/silent as regular data fields', async () => {
+    setup('fields')
+
+    await $base.doc.set({ start: 'A', stop: 'B', silent: 'C' })
+
+    assert.equal($base.doc.start.get(), 'A')
+    assert.equal($base.doc.stop.get(), 'B')
+    assert.equal($base.doc.silent.get(), 'C')
+  })
+
+  it('does not expose public model change/all events', () => {
+    setup('events')
+
+    assert.throws(
+      () => $root.on('change', `${$base.path()}.value`, () => {}),
+      /model events are not supported/
+    )
+    assert.throws(
+      () => $root.on('all', `${$base.path()}.**`, () => {}),
+      /model events are not supported/
+    )
+    assert.throws(
+      () => $root.once('change', `${$base.path()}.value`, () => {}),
+      /model events are not supported/
+    )
+  })
+
+  it('keeps change/all available as custom event names', () => {
+    setup('customEvents')
+    const events = []
+    const handler = value => events.push(value)
+
+    $root.on('change', handler)
+    emit('change', 'A')
+    $root.removeListener('change', handler)
+    emit('change', 'B')
+
+    assert.deepEqual(events, ['A'])
+  })
+})
+
+describe.skip('SignalCompat.start()/stop() legacy removed', () => {
   const domainCollection = 'compatStartDomain'
   let cleanupSegments
   let cleanupStartPaths
@@ -3004,7 +3065,7 @@ class NonCompatRefUserModel extends BaseSignal {
   })
 })
 
-;(isCompatMode ? describe : describe.skip)('Compat model events', () => {
+describe.skip('Compat model events legacy removed', () => {
   let cleanupSegments
   let $root
 

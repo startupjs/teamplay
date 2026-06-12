@@ -7,6 +7,7 @@ import $, {
   getRootSignal,
   getSubscriptionGcDelay,
   observer,
+  reaction,
   setSubscriptionGcDelay,
   sub,
   useApi,
@@ -30,7 +31,14 @@ import $, {
   type TeamplayShareDoc,
   type RootSignal
 } from 'teamplay'
-import BaseModel, { defineModels, initModels, type ModelManifest } from 'teamplay/orm'
+import BaseModel, {
+  defineModels,
+  initModels,
+  reaction as ormReaction,
+  type ModelManifest,
+  type ReactionHandle,
+  type ReactionOptions
+} from 'teamplay/orm'
 
 type Assert<T extends true> = T
 type IsEqual<TActual, TExpected> =
@@ -95,6 +103,11 @@ const nextGcDelay: number = setSubscriptionGcDelay(gcDelay)
 const activeConnection: TeamplayConnection = getConnection()
 const maybeDoc: TeamplayShareDoc | undefined = activeConnection.collections?.users?.user1
 const fetchedDoc: TeamplayShareDoc = activeConnection.get('users', 'user1')
+const externalReactionHandle = reaction(() => $user.name.get())
+externalReactionHandle.dispose()
+const externalOrmReactionOptions: ReactionOptions = { lazy: true }
+const externalOrmReactionHandle: ReactionHandle = ormReaction(() => $user.age.get(), externalOrmReactionOptions)
+externalOrmReactionHandle.dispose()
 
 function ExternalConsumerComponent () {
   const maybeHookUser = useSub(typedUserSignal)

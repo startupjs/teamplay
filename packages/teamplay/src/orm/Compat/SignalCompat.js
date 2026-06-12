@@ -29,11 +29,11 @@ import {
 } from '../dataTree.js'
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
 import { waitForImperativeQueryReady } from './queryReadiness.js'
-import { isModelEventsEnabled, normalizePattern, onModelEvent, removeModelListener } from './modelEvents.js'
+import { isModelEventsEnabled } from './modelEvents.js'
 import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'
 import { runInBatch } from '../batchScheduler.js'
-import { runInSilentContext, runInModelEventsSilentContext, isSilentContextActive } from './silentContext.js'
+import { runInModelEventsSilentContext, isSilentContextActive } from './silentContext.js'
 import universal$ from '../../react/universal$.ts'
 import { getRootContext } from '../rootContext.ts'
 import {
@@ -96,12 +96,6 @@ class SignalCompat extends Signal {
     if (this[IS_AGGREGATION]) return this.get()
     if (this[IS_QUERY]) return this.extra.get()
     return undefined
-  }
-
-  silent (value) {
-    if (arguments.length > 1) throw Error('Signal.silent() expects zero or one argument')
-    const enabled = value == null ? true : !!value
-    return createSilentSignalWrapper(this, enabled)
   }
 
   get () {
@@ -297,14 +291,8 @@ class SignalCompat extends Signal {
 
   on (eventName, pattern, handler) {
     if (arguments.length < 2) throw Error('Signal.on() expects at least two arguments')
-    if (eventName === 'change' || eventName === 'all') {
-      if (typeof pattern === 'function') {
-        return onCustomEvent(eventName, pattern)
-      }
-      if (typeof handler !== 'function') throw Error('Signal.on() expects a handler function')
-      const normalized = normalizePattern(pattern, 'Signal.on()')
-      const rootId = (getRoot(this) || this)?.[ROOT_ID]
-      return onModelEvent(rootId, eventName, normalized, handler)
+    if ((eventName === 'change' || eventName === 'all') && typeof pattern !== 'function') {
+      throw Error('Signal model events are not supported. Use reaction() for signal changes.')
     }
     if (typeof pattern !== 'function') throw Error('Signal.on() expects a handler function')
     return onCustomEvent(eventName, pattern)
@@ -312,15 +300,8 @@ class SignalCompat extends Signal {
 
   once (eventName, pattern, handler) {
     if (arguments.length < 2) throw Error('Signal.once() expects at least two arguments')
-    const isModelEvent = eventName === 'change' || eventName === 'all'
-    if (isModelEvent && typeof pattern !== 'function') {
-      if (typeof handler !== 'function') throw Error('Signal.once() expects a handler function')
-      const onceHandler = (...args) => {
-        this.removeListener(eventName, onceHandler)
-        handler(...args)
-      }
-      this.on(eventName, pattern, onceHandler)
-      return onceHandler
+    if ((eventName === 'change' || eventName === 'all') && typeof pattern !== 'function') {
+      throw Error('Signal model events are not supported. Use reaction() for signal changes.')
     }
     if (typeof pattern !== 'function') throw Error('Signal.once() expects a handler function')
     const onceHandler = (...args) => {
@@ -333,10 +314,6 @@ class SignalCompat extends Signal {
 
   removeListener (eventName, handler) {
     if (arguments.length !== 2) throw Error('Signal.removeListener() expects two arguments')
-    if (eventName === 'change' || eventName === 'all') {
-      const rootId = (getRoot(this) || this)?.[ROOT_ID]
-      return removeModelListener(rootId, eventName, handler)
-    }
     return removeCustomEventListener(eventName, handler)
   }
 
@@ -422,54 +399,6 @@ class SignalCompat extends Signal {
     }
     if (this[REF_TARGET]) delete this[REF_TARGET]
   }
-}
-
-const SILENT_WRAPPER = Symbol('compat silent wrapper')
-const SILENT_WRAPPER_TARGET = Symbol('compat silent wrapper target')
-const SILENT_WRAPPER_ENABLED = Symbol('compat silent wrapper enabled')
-
-function createSilentSignalWrapper ($signal, enabled = true) {
-  if (!$signal || typeof $signal !== 'function') return $signal
-  if ($signal[SILENT_WRAPPER]) {
-    const target = $signal[SILENT_WRAPPER_TARGET] || $signal
-    return createSilentSignalWrapper(target, enabled)
-  }
-
-  const handler = {
-    get (target, key, receiver) {
-      if (key === SILENT_WRAPPER) return true
-      if (key === SILENT_WRAPPER_TARGET) return target
-      if (key === SILENT_WRAPPER_ENABLED) return enabled
-
-      if (key === 'silent') {
-        return function silentWrapper (value) {
-          if (arguments.length > 1) throw Error('Signal.silent() expects zero or one argument')
-          const nextEnabled = value == null ? true : !!value
-          return createSilentSignalWrapper(target, nextEnabled)
-        }
-      }
-
-      const value = Reflect.get(target, key, receiver)
-      if (isSignalLike(value)) {
-        return createSilentSignalWrapper(value, enabled)
-      }
-
-      if (typeof value === 'function') {
-        return function wrappedMethod (...args) {
-          if (!enabled) return Reflect.apply(value, target, args)
-          return runInSilentContext(() => Reflect.apply(value, target, args))
-        }
-      }
-      return value
-    },
-
-    apply (target, thisArg, args) {
-      if (!enabled) return Reflect.apply(target, thisArg, args)
-      return runInSilentContext(() => Reflect.apply(target, thisArg, args))
-    }
-  }
-
-  return new Proxy($signal, handler)
 }
 
 function getRefStore ($signal) {

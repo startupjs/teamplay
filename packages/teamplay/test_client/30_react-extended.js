@@ -1501,7 +1501,7 @@ describe('useBatchSub', () => {
   })
 })
 
-describe('SignalCompat.start() React bindings', () => {
+describe.skip('SignalCompat.start() React bindings legacy removed', () => {
   itCompat('compat start keeps pre-bound child signals reactive across object syncs', async () => {
     const basePath = '_compatStartReactBinding'
     _del([basePath])

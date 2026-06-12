@@ -68,4 +68,11 @@ export {
   getModels,
   resetModelsForTests
 } from './initModels.ts'
+export {
+  default as reaction
+} from './reaction.ts'
+export type {
+  ReactionHandle,
+  ReactionOptions
+} from './reaction.ts'
 export { defineSchema } from '@teamplay/schema'

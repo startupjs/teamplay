@@ -169,33 +169,24 @@ describeCompat('root-scoped public signals', () => {
     assert.equal(rootB._session.currentUserIdViaRoot.get(), 'b')
   })
 
-  it('public model events are root-scoped even though public data is shared', async () => {
+  it('does not expose public model events even though public data is shared', async () => {
     const rootA = createRoot('events-root-A')
     const rootB = createRoot('events-root-B')
-    const eventsA = []
-    const eventsB = []
 
-    const handlerA = (...args) => eventsA.push(args)
-    const handlerB = (...args) => eventsB.push(args)
-
-    rootA.on('change', `${PUBLIC_COLLECTION}.*.name`, handlerA)
-    rootB.on('change', `${PUBLIC_COLLECTION}.*.name`, handlerB)
+    assert.throws(
+      () => rootA.on('change', `${PUBLIC_COLLECTION}.*.name`, () => {}),
+      /model events are not supported/
+    )
+    assert.throws(
+      () => rootB.on('change', `${PUBLIC_COLLECTION}.*.name`, () => {}),
+      /model events are not supported/
+    )
 
     _set([PUBLIC_COLLECTION, '_1', 'name'], 'before')
-    eventsA.length = 0
-    eventsB.length = 0
 
     _set([PUBLIC_COLLECTION, '_1', 'name'], 'after')
-    assert.equal(eventsA.length, 1)
-    assert.equal(eventsB.length, 1)
-
-    rootA.removeListener('change', handlerA)
-    eventsA.length = 0
-    eventsB.length = 0
-
-    _set([PUBLIC_COLLECTION, '_1', 'name'], 'final')
-    assert.equal(eventsA.length, 0)
-    assert.equal(eventsB.length, 1)
+    assert.equal(rootA[PUBLIC_COLLECTION]._1.name.get(), 'after')
+    assert.equal(rootB[PUBLIC_COLLECTION]._1.name.get(), 'after')
   })
 })
 
