@@ -108,6 +108,44 @@ export class Query {
     })
   }
 
+  // Re-pull current server state for an already-established FETCH transport and
+  // swap it in place. Used to make each fetch-mode sub() a fresh point-in-time
+  // read. Unlike unsubscribe->subscribe, this never detaches the materialized
+  // data, so reactive readers never observe an empty window (no "blink"): the
+  // ids/docs are replaced atomically once the fresh results arrive.
+  async _refetch () {
+    // one-shot fetch; ShareDB removes it from connection.queries via
+    // _handleFetch -> _destroyQuery once results arrive, so it does not leak
+    const freshQuery = await new Promise((resolve, reject) => {
+      const query = getConnection().createFetchQuery(this.collectionName, this.params, {}, err => {
+        if (err) return reject(err)
+        resolve(query)
+      })
+    })
+    this.shareQuery = freshQuery
+    this.activeTransportMode = 'fetch'
+    // authoritative in-place replace from the fresh results (a fetch query emits
+    // no ongoing diffs, so the snapshot is the whole truth — nothing to
+    // reconcile against, and never detaching means no empty-window "blink")
+    this._swapRefetchedDocs(freshQuery)
+    this._syncAllRootsData()
+  }
+
+  // retain the new result docs BEFORE releasing the previous ones, so docs that
+  // survive the refresh never drop to zero retains (no GC churn). Aggregations
+  // override this to a no-op — their rows are projected data, not subscribed docs.
+  _swapRefetchedDocs (freshQuery) {
+    const previousDocSignals = this.docSignals
+    this.docSignals = new Set()
+    maybeMaterializeQueryDocsToCollection(this.collectionName, freshQuery.results)
+    for (const doc of freshQuery.results) {
+      const $doc = getSignal(undefined, [this.collectionName, doc.id])
+      docSubscriptions.retain($doc)
+      this.docSignals.add($doc)
+    }
+    for (const $doc of previousDocSignals) docSubscriptions.release($doc).catch(ignoreDestroyError)
+  }
+
   _initData () {
     // reference fetched docs once per transport query
     maybeMaterializeQueryDocsToCollection(this.collectionName, this.shareQuery.results)
@@ -378,7 +416,15 @@ export class QuerySubscriptions {
         runtime: null,
         owners: new Set(),
         pendingDestroyByOwner: new Map(),
-        reconcilePromise: null
+        reconcilePromise: null,
+        // A fetch is a point-in-time read, not a live transport: every sub() in
+        // fetch mode must re-pull fresh server state. refetchEpoch is bumped per
+        // fetch-mode sub(); the reconcile loop re-fetches in place until
+        // servedRefetchEpoch catches up. reconcileScheduled re-runs the loop when
+        // a sub/unsub/refetch lands mid-transition so the latest intent is served.
+        refetchEpoch: 0,
+        servedRefetchEpoch: 0,
+        reconcileScheduled: false
       }
       this.entries.set(transportHash, entry)
     }
@@ -496,11 +542,22 @@ export class QuerySubscriptions {
     this.incrementOwnerIntent(record, intent)
     this.fr.register($query, { collectionName, params, ownerKey }, $query)
 
+    const desiredMode = this.getDesiredTransportMode(transportHash)
+
+    // Fetch mode is a fresh point-in-time read: never dedup to a cached snapshot.
+    // The ShareDB fetch query is one-shot and self-destroying, so there is no
+    // live transport to reuse — every sub() re-pulls. This is what makes a
+    // fetchOnly (server) root reflect awaited writes: each sub() round-trips.
+    if (desiredMode === 'fetch') {
+      entry.refetchEpoch += 1
+      return this.reconcileTransport(transportHash)
+    }
+
     if (
       previousCount > 0 &&
       entry.runtime &&
       entry.phase === 'stable' &&
-      this.getDesiredTransportMode(transportHash) === entry.mode
+      desiredMode === entry.mode
     ) return
 
     return this.reconcileTransport(transportHash)
@@ -612,10 +669,21 @@ export class QuerySubscriptions {
   async reconcileTransport (transportHash) {
     const entry = this.getOrCreateEntry(transportHash)
     entry.targetMode = this.getDesiredTransportMode(transportHash)
-    if (entry.phase === 'transition' && entry.reconcilePromise) return entry.reconcilePromise
+    if (entry.phase === 'transition' && entry.reconcilePromise) {
+      // a subscribe/unsubscribe/refetch arrived mid-transition; ask the in-flight
+      // loop to run one more pass so the latest desired mode and any pending
+      // refetch are serviced before it settles
+      entry.reconcileScheduled = true
+      return entry.reconcilePromise
+    }
     const next = Promise.resolve()
       .catch(ignoreDestroyError)
-      .then(() => this.reconcileTransportNow(transportHash))
+      .then(async () => {
+        do {
+          entry.reconcileScheduled = false
+          await this.reconcileTransportNow(transportHash)
+        } while (entry.reconcileScheduled)
+      })
     entry.phase = 'transition'
     entry.reconcilePromise = next
     try {
@@ -637,7 +705,22 @@ export class QuerySubscriptions {
       const desiredMode = entry.targetMode = this.getDesiredTransportMode(transportHash)
       const currentMode = query?.activeTransportMode ?? entry.mode
       entry.mode = currentMode
-      if (desiredMode === currentMode) return
+      if (desiredMode === currentMode) {
+        // Already in the desired mode. In fetch mode a pending refetch means a
+        // sub() asked for fresh server state: re-pull in place (no detach -> no
+        // blink) instead of returning the cached snapshot. The fetch query is
+        // one-shot, so this is a fresh round-trip, not a second live transport.
+        if (
+          query && desiredMode === 'fetch' &&
+          entry.refetchEpoch > entry.servedRefetchEpoch
+        ) {
+          const serving = entry.refetchEpoch
+          await query._refetch()
+          entry.servedRefetchEpoch = serving
+          continue
+        }
+        return
+      }
       if (desiredMode === 'idle') {
         if (query && currentMode !== 'idle') {
           await unsubscribeQueryTransport(query, { keepRoots: true })
@@ -654,6 +737,9 @@ export class QuerySubscriptions {
       await subscribeQueryTransport(query, desiredMode)
       entry.runtime = query
       entry.mode = query.activeTransportMode || desiredMode
+      // a fresh subscribe/fetch already reflects current server state, so it
+      // satisfies any refetch requested up to now
+      entry.servedRefetchEpoch = entry.refetchEpoch
       this.syncEntryMirror(entry)
     }
   }

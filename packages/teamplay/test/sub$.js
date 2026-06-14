@@ -659,6 +659,88 @@ describe('$sub() function. Aggregations', () => {
   })
 })
 
+describe('$sub() function. fetchOnly queries re-fetch on every sub()', () => {
+  afterEachTestGc()
+
+  // On a fetchOnly root (the server default) a query has no live subscription —
+  // each sub() must do a fresh point-in-time fetch. This is what gives the
+  // server read-after-write: an awaited write is reflected by the next sub(),
+  // without the meta-mirror workarounds that exist because a live subscribe
+  // query lags an awaited write by a pubsub round-trip.
+  it('re-fetches on every sub() (no dedup to a stale snapshot) and reflects awaited writes', async () => {
+    const collection = 'fetchOnlyRefetchGames'
+    const $root = getRootSignal({ rootId: 'sub-fetchonly-refetch', fetchOnly: true })
+    const previousGcDelay = getSubscriptionGcDelay()
+    setSubscriptionGcDelay(0) // tear subscriptions down eagerly so the test is fast
+    const connection = getConnection()
+    const realCreateFetchQuery = connection.createFetchQuery.bind(connection)
+    const realCreateSubscribeQuery = connection.createSubscribeQuery.bind(connection)
+    let fetchCalls = 0
+    let subscribeCalls = 0
+    connection.createFetchQuery = (...args) => { fetchCalls++; return realCreateFetchQuery(...args) }
+    connection.createSubscribeQuery = (...args) => { subscribeCalls++; return realCreateSubscribeQuery(...args) }
+    let $games1, $games2
+    try {
+      await $root[collection].add({ _id: 'fo1', name: 'One' })
+
+      $games1 = await sub($root[collection], {})
+      assert.equal(fetchCalls, 1, 'first sub() issues a fetch')
+      assert.equal(subscribeCalls, 0, 'fetchOnly root never opens a live subscribe query')
+      assert.deepEqual($games1.getIds().slice().sort(), ['fo1'])
+
+      // read-after-write: a plain sub() after an awaited write sees the new doc
+      await $root[collection].add({ _id: 'fo2', name: 'Two' })
+      $games2 = await sub($root[collection], {})
+      assert.equal(fetchCalls, 2, 'second sub() re-fetches instead of deduping to the stale snapshot')
+      assert.equal($games2, $games1, 'same query signal — a single subscription, not a duplicate')
+      assert.deepEqual($games2.getIds().slice().sort(), ['fo1', 'fo2'], 'reflects the awaited write')
+    } finally {
+      // delete the docs while the query still has them loaded, THEN tear down
+      // (with gcDelay 0 the unsub detaches them from the tree immediately)
+      if ($root[collection].fo1.get()) await $root[collection].fo1.del()
+      if ($root[collection].fo2.get()) await $root[collection].fo2.del()
+      if ($games1) await unsub($games1)
+      if ($games2) await unsub($games2)
+      connection.createFetchQuery = realCreateFetchQuery
+      connection.createSubscribeQuery = realCreateSubscribeQuery
+      setSubscriptionGcDelay(previousGcDelay)
+    }
+  })
+
+  it('re-fetches aggregations on every sub() too (extra is re-synced in place)', async () => {
+    const collection = 'fetchOnlyRefetchAgg'
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const $root = getRootSignal({ rootId: 'sub-fetchonly-refetch-agg', fetchOnly: true })
+    const previousGcDelay = getSubscriptionGcDelay()
+    setSubscriptionGcDelay(0)
+    const connection = getConnection()
+    const realCreateFetchQuery = connection.createFetchQuery.bind(connection)
+    let fetchCalls = 0
+    connection.createFetchQuery = (...args) => { fetchCalls++; return realCreateFetchQuery(...args) }
+    let $agg1, $agg2
+    try {
+      await $root[collection].add({ _id: 'ag1', name: 'A', active: true })
+
+      $agg1 = await sub($root[collection], params)
+      assert.equal(fetchCalls, 1, 'first aggregation sub() fetches')
+      assert.equal($agg1.getExtra().length, 1)
+
+      await $root[collection].add({ _id: 'ag2', name: 'B', active: true })
+      $agg2 = await sub($root[collection], params)
+      assert.equal(fetchCalls, 2, 'second aggregation sub() re-fetches (extra re-synced, rows are not retained docs)')
+      assert.equal($agg2, $agg1, 'same aggregation signal')
+      assert.equal($agg2.getExtra().length, 2, 'reflects the awaited write')
+    } finally {
+      if ($root[collection].ag1.get()) await $root[collection].ag1.del()
+      if ($root[collection].ag2.get()) await $root[collection].ag2.del()
+      if ($agg1) await unsub($agg1)
+      if ($agg2) await unsub($agg2)
+      connection.createFetchQuery = realCreateFetchQuery
+      setSubscriptionGcDelay(previousGcDelay)
+    }
+  })
+})
+
 describe.skip('$sub() function. Async api functions', () => {
   it('async function', async () => {
     const $value = await sub(async () => {

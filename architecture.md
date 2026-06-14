@@ -363,6 +363,15 @@ $queries.<hash>.extra
 
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
+#### Subscribe vs fetch transport, and read-after-write
+
+A query's transport mode is chosen per owning root by `getRootTransportMode`: a fetchOnly root uses `createFetchQuery`, otherwise `createSubscribeQuery`. The two behave fundamentally differently:
+
+- A **subscribe** query is a live transport: it stays open and its membership is maintained incrementally by server-pushed `insert`/`remove`/`move` diffs. Because membership is server-authoritative and arrives over a separate pubsub round-trip, a live subscribe query momentarily *lags* an awaited write (the write resolves on its op-ack; the query diff lands later). So `await write` followed by an immediate read of a subscribe query can miss the write.
+- A **fetch** query is a one-shot point-in-time read: ShareDB self-destroys it (`_handleFetch` → `_destroyQuery`) once results arrive. Accordingly `sub()` in fetch mode never dedups to a cached snapshot — every `sub()` re-pulls (`Query._refetch`, replacing `$queries.<hash>` in place so reactive readers never see an empty window). This is what gives a fetchOnly root **read-after-write**: an awaited write is reflected by the next `sub()`. `initConnection({ fetchOnly })` is the server default, and it propagates the choice to the auto-created global root (which froze the pre-init default at import time).
+
+The reconcile loop (`QuerySubscriptions.reconcileTransport`/`reconcileTransportNow`) serializes these transitions per transport hash and re-runs if a sub/unsub/refetch lands mid-transition. Aggregations reuse this machinery but override `_swapRefetchedDocs` (their rows are projected `extra`, not subscribed docs).
+
 ### Aggregation Subscription Flow
 
 Aggregations reuse the query transport layer but materialize data under `$aggregations`:
