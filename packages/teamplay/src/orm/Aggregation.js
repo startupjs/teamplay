@@ -40,6 +40,10 @@ class Aggregation extends Query {
     setPrivateData(rootId, [AGGREGATIONS, this.hash], extra)
   }
 
+  // aggregation rows live in the query `extra` (projected data), not as
+  // subscribed documents, so a fetch-mode refetch has no result docs to swap
+  _swapRefetchedDocs () {}
+
   _removeRootData (rootId) {
     delPrivateData(rootId, [AGGREGATIONS, this.hash])
   }

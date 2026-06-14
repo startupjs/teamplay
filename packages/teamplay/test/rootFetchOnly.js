@@ -41,6 +41,13 @@ describe('root-level fetchOnly config', () => {
     assert.equal(getRootFetchOnly($rootB), false)
   })
 
+  // A root freezes its fetchOnly at creation; `setDefaultFetchOnly` does NOT
+  // retroactively change existing roots. The one exception is the auto-created
+  // GLOBAL root: it's constructed at import time (before the server can set the
+  // default), so `initConnection({ fetchOnly })` explicitly propagates the
+  // server's choice to it via setFetchOnly() (see server.js). That's a targeted
+  // update of the single special root, not a change to this default-propagation
+  // contract.
   it('does not let later default changes affect existing roots', () => {
     setDefaultFetchOnly(false)
     const $root = getRootSignal({ rootId: 'fetch-root-stable' })

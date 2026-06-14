@@ -363,6 +363,21 @@ $queries.<hash>.extra
 
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
+#### Subscribe vs fetch transport, and read-after-write
+
+A query's transport mode is chosen per owning root by `getRootTransportMode`: a fetchOnly root uses `createFetchQuery`, otherwise `createSubscribeQuery`. The two behave fundamentally differently:
+
+- A **subscribe** query is a live transport: it stays open and its membership is maintained incrementally by server-pushed `insert`/`remove`/`move` diffs. Because membership is server-authoritative and arrives over a separate pubsub round-trip, a live subscribe query momentarily *lags* an awaited write (the write resolves on its op-ack; the query diff lands later). So `await write` followed by an immediate read of a subscribe query can miss the write.
+- A **fetch** query is a one-shot point-in-time read: ShareDB self-destroys it (`_handleFetch` → `_destroyQuery`) once results arrive. Accordingly `sub()` in fetch mode never dedups to a cached snapshot — every `sub()` re-pulls (`Query._refetch`, replacing `$queries.<hash>` in place so reactive readers never see an empty window). This is what gives a fetchOnly root **read-after-write**: an awaited write is reflected by the next `sub()`. `initConnection({ fetchOnly })` is the server default, and it propagates the choice to the auto-created global root (which froze the pre-init default at import time).
+
+This re-pull only applies to **queries and aggregations** (membership is server-authoritative and is what lags). **Documents** are not re-fetched: a doc read goes through the singleton ShareDB `Doc`, which already holds the latest snapshot after an awaited local write, so single-connection doc read-after-write works without a refetch. (A doc written by *another* connection whose op hasn't been pushed to this `Doc` yet would still read stale on a fetchOnly root — the cross-writer analog of query membership lag — but that is out of scope here.)
+
+The reconcile loop (`QuerySubscriptions.reconcileTransport`/`reconcileTransportNow`) serializes these transitions per transport hash and re-runs if a sub/unsub/refetch lands mid-transition. Aggregations reuse this machinery but override `_swapRefetchedDocs` (their rows are projected `extra`, not subscribed docs).
+
+**Mixed fetch + subscribe on the same query.** An explicit `sub($coll, params, { mode: 'fetch' })` can target a query that is *also* live-subscribed by someone else. A separate fetch query cannot safely rewrite a subscribe query's membership (the two share singleton `Doc`s, so a fetch refreshes doc *data*, but the subscribe query's *id list* is maintained by index-based diffs against its own lagging baseline — overwriting it would corrupt the next diff). So instead of running two transports, a fetch-intent sub on a live subscribe transport **overlap-resubscribes** it (`Query._refreshSubscribe`): stand up a fresh `createSubscribeQuery` (a real round-trip with current membership), silence the old query's handlers, swap to the fresh one, replace `$queries.<hash>` in place, then destroy the old query. The transport stays a single live subscribe, the read reflects the awaited write, and there's no blink. The state machine is unchanged — "mixed" is just a *refresh* of the one transport, not two coexisting transports.
+
+Two consequences worth knowing: (1) the transport is shared across all owners of the same query hash, so a `mode:'fetch'` by one owner refreshes (re-subscribes) the live transport that *other* subscribers of the same query are reading — they land on the same fresh server-authoritative baseline atomically (no corruption, no empty window), but it is a real re-subscribe round-trip attributable to an unrelated owner, so `mode:'fetch'` on a hot live-subscribed query is not for tight loops. (2) Because each fetch-intent sub re-pulls, concurrent ones coalesce (the reconcile serializes per hash and serves the latest `refetchEpoch` once) rather than each issuing its own round-trip.
+
 ### Aggregation Subscription Flow
 
 Aggregations reuse the query transport layer but materialize data under `$aggregations`:

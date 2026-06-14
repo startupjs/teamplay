@@ -108,6 +108,74 @@ export class Query {
     })
   }
 
+  // Re-pull current server state for an already-established FETCH transport and
+  // swap it in place. Used to make each fetch-mode sub() a fresh point-in-time
+  // read. Unlike unsubscribe->subscribe, this never detaches the materialized
+  // data, so reactive readers never observe an empty window (no "blink"): the
+  // ids/docs are replaced atomically once the fresh results arrive.
+  async _refetch () {
+    // one-shot fetch; ShareDB removes it from connection.queries via
+    // _handleFetch -> _destroyQuery once results arrive, so it does not leak
+    const freshQuery = await new Promise((resolve, reject) => {
+      const query = getConnection().createFetchQuery(this.collectionName, this.params, {}, err => {
+        if (err) return reject(err)
+        resolve(query)
+      })
+    })
+    this.shareQuery = freshQuery
+    this.activeTransportMode = 'fetch'
+    // authoritative in-place replace from the fresh results (a fetch query emits
+    // no ongoing diffs, so the snapshot is the whole truth — nothing to
+    // reconcile against, and never detaching means no empty-window "blink")
+    this._swapRefetchedDocs(freshQuery)
+    this._syncAllRootsData()
+  }
+
+  // retain the new result docs BEFORE releasing the previous ones, so docs that
+  // survive the refresh never drop to zero retains (no GC churn). Aggregations
+  // override this to a no-op — their rows are projected data, not subscribed docs.
+  _swapRefetchedDocs (freshQuery) {
+    const previousDocSignals = this.docSignals
+    this.docSignals = new Set()
+    maybeMaterializeQueryDocsToCollection(this.collectionName, freshQuery.results)
+    for (const doc of freshQuery.results) {
+      const $doc = getSignal(undefined, [this.collectionName, doc.id])
+      docSubscriptions.retain($doc)
+      this.docSignals.add($doc)
+    }
+    for (const $doc of previousDocSignals) docSubscriptions.release($doc).catch(ignoreDestroyError)
+  }
+
+  // Overlap-refresh a live SUBSCRIBE transport: stand up a fresh subscribe query
+  // (a real round-trip that returns current server membership), swap to it, then
+  // silence and destroy the old one. Never detaches the materialized data, so
+  // reactive readers never see an empty window. This is how a fetch-intent sub()
+  // gets read-after-write on a query that is ALSO live-subscribed — the single
+  // transport is rebuilt fresh in place rather than two transports racing over
+  // the same $queries.<hash>.
+  async _refreshSubscribe () {
+    const oldShareQuery = this.shareQuery
+    const freshQuery = await new Promise((resolve, reject) => {
+      const query = getConnection().createSubscribeQuery(this.collectionName, this.params, {}, err => {
+        if (err) return reject(err)
+        resolve(query)
+      })
+    })
+    // stop the old query from mutating materialized state before swapping
+    this._detachLiveHandlers(oldShareQuery)
+    this.shareQuery = freshQuery
+    this.activeTransportMode = 'subscribe'
+    // retain fresh result docs / release the previous ones, replace ids/docs/extra
+    // from the fresh baseline, and rewire live handlers onto the fresh query
+    this._swapRefetchedDocs(freshQuery)
+    this._syncAllRootsData()
+    this._attachLiveHandlers(freshQuery)
+    // destroy the old (already-silenced) subscribe query
+    if (oldShareQuery) {
+      await new Promise(resolve => { oldShareQuery.destroy(() => resolve()) })
+    }
+  }
+
   _initData () {
     // reference fetched docs once per transport query
     maybeMaterializeQueryDocsToCollection(this.collectionName, this.shareQuery.results)
@@ -118,8 +186,16 @@ export class Query {
       this.docSignals.add($doc)
     }
     this._syncAllRootsData()
+    this._attachLiveHandlers(this.shareQuery)
+  }
 
-    this.shareQuery.on('insert', (shareDocs, index) => {
+  // attach the live insert/move/remove/extra handlers to a subscribe shareQuery.
+  // The handler functions are stored on the shareQuery so a refresh can detach
+  // them from the OLD query before destroying it (see _refreshSubscribe), which
+  // is what lets fetch and subscribe "mix" without two transports fighting over
+  // the same materialized $queries.<hash>.
+  _attachLiveHandlers (shareQuery) {
+    const onInsert = (shareDocs, index) => {
       maybeMaterializeQueryDocsToCollection(this.collectionName, shareDocs)
       const newDocs = this._mapShareDocsToRaw(shareDocs)
       const ids = shareDocs.map(doc => doc.id)
@@ -151,8 +227,8 @@ export class Query {
           })
         }
       })
-    })
-    this.shareQuery.on('move', (shareDocs, from, to) => {
+    }
+    const onMove = (shareDocs, from, to) => {
       const movedDocs = this._mapShareDocsToRaw(shareDocs)
       const movedIds = shareDocs.map(doc => doc.id)
       this._forEachRoot(rootId => {
@@ -181,8 +257,8 @@ export class Query {
           howMany: shareDocs.length
         })
       })
-    })
-    this.shareQuery.on('remove', (shareDocs, index) => {
+    }
+    const onRemove = (shareDocs, index) => {
       const docIds = shareDocs.map(doc => doc.id)
       for (const docId of docIds) {
         const $doc = getSignal(undefined, [this.collectionName, docId])
@@ -215,14 +291,29 @@ export class Query {
           })
         }
       })
-    })
-    this.shareQuery.on('extra', extra => {
+    }
+    const onExtra = extra => {
       extra = raw(extra)
       this._forEachRoot(rootId => {
         if (getPrivateData(rootId, [QUERIES, this.hash]) == null) return
         setPrivateData(rootId, [QUERIES, this.hash, 'extra'], extra)
       })
-    })
+    }
+    shareQuery.on('insert', onInsert)
+    shareQuery.on('move', onMove)
+    shareQuery.on('remove', onRemove)
+    shareQuery.on('extra', onExtra)
+    shareQuery._teamplayHandlers = { onInsert, onMove, onRemove, onExtra }
+  }
+
+  _detachLiveHandlers (shareQuery) {
+    const handlers = shareQuery?._teamplayHandlers
+    if (!handlers) return
+    shareQuery.removeListener('insert', handlers.onInsert)
+    shareQuery.removeListener('move', handlers.onMove)
+    shareQuery.removeListener('remove', handlers.onRemove)
+    shareQuery.removeListener('extra', handlers.onExtra)
+    shareQuery._teamplayHandlers = undefined
   }
 
   _syncAllRootsData () {
@@ -378,7 +469,15 @@ export class QuerySubscriptions {
         runtime: null,
         owners: new Set(),
         pendingDestroyByOwner: new Map(),
-        reconcilePromise: null
+        reconcilePromise: null,
+        // A fetch is a point-in-time read, not a live transport: every sub() in
+        // fetch mode must re-pull fresh server state. refetchEpoch is bumped per
+        // fetch-mode sub(); the reconcile loop re-fetches in place until
+        // servedRefetchEpoch catches up. reconcileScheduled re-runs the loop when
+        // a sub/unsub/refetch lands mid-transition so the latest intent is served.
+        refetchEpoch: 0,
+        servedRefetchEpoch: 0,
+        reconcileScheduled: false
       }
       this.entries.set(transportHash, entry)
     }
@@ -496,11 +595,23 @@ export class QuerySubscriptions {
     this.incrementOwnerIntent(record, intent)
     this.fr.register($query, { collectionName, params, ownerKey }, $query)
 
+    const desiredMode = this.getDesiredTransportMode(transportHash)
+
+    // A fetch is a fresh point-in-time read: never dedup to a cached snapshot.
+    // This fires both when the transport itself is fetch (fetchOnly root, or no
+    // subscribe owners — re-pull via a one-shot createFetchQuery) and when an
+    // explicit `mode:'fetch'` rides a live subscribe transport (the mixed case —
+    // overlap-resubscribe). Either way the next sub() reflects an awaited write.
+    if (desiredMode === 'fetch' || intent === 'fetch') {
+      entry.refetchEpoch += 1
+      return this.reconcileTransport(transportHash)
+    }
+
     if (
       previousCount > 0 &&
       entry.runtime &&
       entry.phase === 'stable' &&
-      this.getDesiredTransportMode(transportHash) === entry.mode
+      desiredMode === entry.mode
     ) return
 
     return this.reconcileTransport(transportHash)
@@ -612,20 +723,49 @@ export class QuerySubscriptions {
   async reconcileTransport (transportHash) {
     const entry = this.getOrCreateEntry(transportHash)
     entry.targetMode = this.getDesiredTransportMode(transportHash)
-    if (entry.phase === 'transition' && entry.reconcilePromise) return entry.reconcilePromise
+    if (entry.phase === 'transition' && entry.reconcilePromise) {
+      // a subscribe/unsubscribe/refetch arrived mid-transition; ask the in-flight
+      // loop to run one more pass so the latest desired mode and any pending
+      // refetch are serviced before it settles
+      entry.reconcileScheduled = true
+      return entry.reconcilePromise
+    }
     const next = Promise.resolve()
       .catch(ignoreDestroyError)
-      .then(() => this.reconcileTransportNow(transportHash))
+      .then(async () => {
+        // Loop until the transport is settled AND nothing new arrived during the
+        // last pass. The exit condition is the actual pending-work (epoch/mode),
+        // not just the boolean: that way a concurrent sub/unsub that bumped the
+        // epoch is never missed even if its `reconcileScheduled` write raced, and
+        // a captured-then-recreated entry can't strand work.
+        do {
+          entry.reconcileScheduled = false
+          await this.reconcileTransportNow(transportHash)
+        } while (
+          entry.reconcileScheduled ||
+          entry.refetchEpoch > entry.servedRefetchEpoch ||
+          this.getDesiredTransportMode(transportHash) !== entry.mode
+        )
+        // CRITICAL: flip phase->stable in the SAME synchronous tick as the final
+        // loop-condition check above (NOT in the outer `finally`, which runs a
+        // microtask after `await next`). Otherwise a concurrent reconcileTransport
+        // could see phase==='transition' in that gap, set reconcileScheduled after
+        // the loop already exited, and resolve a stale read (lost-wakeup). With
+        // the flip here, a concurrent call lands either during an awaited
+        // reconcileTransportNow (caught by the loop) or after phase==='stable'
+        // (starts a fresh reconcile). The identity guard keeps a stale closure
+        // whose entry was deleted+recreated from clobbering the new one.
+        const currentEntry = this.entries.get(transportHash)
+        if (currentEntry?.reconcilePromise === next) {
+          currentEntry.reconcilePromise = null
+          currentEntry.phase = 'stable'
+        }
+      })
     entry.phase = 'transition'
     entry.reconcilePromise = next
     try {
       await next
     } finally {
-      const currentEntry = this.entries.get(transportHash)
-      if (currentEntry?.reconcilePromise === next) {
-        currentEntry.reconcilePromise = null
-        currentEntry.phase = 'stable'
-      }
       this.deleteEntryIfEmpty(transportHash)
     }
   }
@@ -637,7 +777,26 @@ export class QuerySubscriptions {
       const desiredMode = entry.targetMode = this.getDesiredTransportMode(transportHash)
       const currentMode = query?.activeTransportMode ?? entry.mode
       entry.mode = currentMode
-      if (desiredMode === currentMode) return
+      if (desiredMode === currentMode) {
+        // Already in the desired mode, but a fetch-intent sub() asked for fresh
+        // server state (read-after-write). Re-pull in place — no detach, no
+        // blink. How depends on the live transport:
+        //   - fetch transport: a fresh one-shot createFetchQuery (no live query
+        //     to disturb).
+        //   - subscribe transport (the "mixed" case): overlap-resubscribe so the
+        //     query stays live AND reflects the awaited write.
+        if (
+          query && desiredMode !== 'idle' &&
+          entry.refetchEpoch > entry.servedRefetchEpoch
+        ) {
+          const serving = entry.refetchEpoch
+          if (desiredMode === 'fetch') await query._refetch()
+          else await query._refreshSubscribe()
+          entry.servedRefetchEpoch = serving
+          continue
+        }
+        return
+      }
       if (desiredMode === 'idle') {
         if (query && currentMode !== 'idle') {
           await unsubscribeQueryTransport(query, { keepRoots: true })
@@ -654,6 +813,9 @@ export class QuerySubscriptions {
       await subscribeQueryTransport(query, desiredMode)
       entry.runtime = query
       entry.mode = query.activeTransportMode || desiredMode
+      // a fresh subscribe/fetch already reflects current server state, so it
+      // satisfies any refetch requested up to now
+      entry.servedRefetchEpoch = entry.refetchEpoch
       this.syncEntryMirror(entry)
     }
   }
