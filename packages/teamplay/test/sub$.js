@@ -707,6 +707,65 @@ describe('$sub() function. fetchOnly queries re-fetch on every sub()', () => {
     }
   })
 
+  // Regression for a lost-wakeup race: when a burst of fetch-intent sub()s lands
+  // on a transport that is being CREATED by the first sub of the burst, a sub()
+  // issued after an awaited write must still re-pull and see the write. The race
+  // was a concurrent reconcileTransport setting reconcileScheduled in the gap
+  // between the reconcile loop's final while-check and the phase->stable flip,
+  // dropping the bumped refetch and resolving a stale snapshot.
+  it('a sub() after an awaited write sees it even amid a transport-creating burst (no lost-wakeup)', async () => {
+    const collection = 'fetchOnlyRaceGames'
+    const $root = getRootSignal({ rootId: 'sub-fetchonly-race', fetchOnly: true })
+    const previousGcDelay = getSubscriptionGcDelay()
+    setSubscriptionGcDelay(0)
+    let $q
+    try {
+      await $root[collection].add({ _id: 's1' })
+      // p1 (the first sub) CREATES the transport (epoch 1); p2 lands mid-creation
+      // (epoch 2). Both dispatched in the SAME synchronous tick — this is the
+      // precondition that makes the lost-wakeup deterministic.
+      const p1 = sub($root[collection], {})
+      const p2 = sub($root[collection], {})
+      // awaited write; p3 is issued AFTER it, so read-after-write requires s2
+      await $root[collection].add({ _id: 's2' })
+      const p3 = sub($root[collection], {})
+      ;[$q] = await Promise.all([p1, p2, p3])
+      assert.ok($q.getIds().includes('s2'), 'sub() issued after the awaited write must reflect it')
+    } finally {
+      for (const id of ['s1', 's2']) if ($root[collection][id].get()) await $root[collection][id].del()
+      if ($q) await unsub($q)
+      setSubscriptionGcDelay(previousGcDelay)
+    }
+  })
+
+  // The re-pull is queries/aggregations only. Documents are intentionally NOT
+  // re-fetched: the singleton ShareDB Doc already holds the latest snapshot after
+  // an awaited local write, so doc read-after-write works without a refetch.
+  it('documents are not re-fetched on a fetchOnly root, but local read-after-write still works', async () => {
+    const collection = 'fetchOnlyDocs'
+    const $root = getRootSignal({ rootId: 'sub-fetchonly-doc', fetchOnly: true })
+    const previousGcDelay = getSubscriptionGcDelay()
+    setSubscriptionGcDelay(0)
+    const connection = getConnection()
+    const realCreateFetchQuery = connection.createFetchQuery.bind(connection)
+    let queryFetches = 0
+    connection.createFetchQuery = (...args) => { queryFetches++; return realCreateFetchQuery(...args) }
+    let $doc
+    try {
+      $doc = await sub($root[collection].d1)
+      await $root[collection].d1.set({ n: 1 })
+      const $again = await sub($root[collection].d1) // dedups — docs are not re-fetched
+      assert.equal($again, $doc, 'same doc signal (doc sub deduped, not re-fetched)')
+      assert.equal($again.n.get(), 1, 'the awaited local write is visible via the singleton Doc')
+      assert.equal(queryFetches, 0, 'a doc sub never issues a query fetch')
+    } finally {
+      if ($root[collection].d1.get()) await $root[collection].d1.del()
+      if ($doc) await unsub($doc)
+      connection.createFetchQuery = realCreateFetchQuery
+      setSubscriptionGcDelay(previousGcDelay)
+    }
+  })
+
   it('re-fetches aggregations on every sub() too (extra is re-synced in place)', async () => {
     const collection = 'fetchOnlyRefetchAgg'
     const params = { $aggregate: [{ $match: { active: true } }] }

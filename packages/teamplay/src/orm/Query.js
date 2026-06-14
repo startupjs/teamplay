@@ -733,21 +733,39 @@ export class QuerySubscriptions {
     const next = Promise.resolve()
       .catch(ignoreDestroyError)
       .then(async () => {
+        // Loop until the transport is settled AND nothing new arrived during the
+        // last pass. The exit condition is the actual pending-work (epoch/mode),
+        // not just the boolean: that way a concurrent sub/unsub that bumped the
+        // epoch is never missed even if its `reconcileScheduled` write raced, and
+        // a captured-then-recreated entry can't strand work.
         do {
           entry.reconcileScheduled = false
           await this.reconcileTransportNow(transportHash)
-        } while (entry.reconcileScheduled)
+        } while (
+          entry.reconcileScheduled ||
+          entry.refetchEpoch > entry.servedRefetchEpoch ||
+          this.getDesiredTransportMode(transportHash) !== entry.mode
+        )
+        // CRITICAL: flip phase->stable in the SAME synchronous tick as the final
+        // loop-condition check above (NOT in the outer `finally`, which runs a
+        // microtask after `await next`). Otherwise a concurrent reconcileTransport
+        // could see phase==='transition' in that gap, set reconcileScheduled after
+        // the loop already exited, and resolve a stale read (lost-wakeup). With
+        // the flip here, a concurrent call lands either during an awaited
+        // reconcileTransportNow (caught by the loop) or after phase==='stable'
+        // (starts a fresh reconcile). The identity guard keeps a stale closure
+        // whose entry was deleted+recreated from clobbering the new one.
+        const currentEntry = this.entries.get(transportHash)
+        if (currentEntry?.reconcilePromise === next) {
+          currentEntry.reconcilePromise = null
+          currentEntry.phase = 'stable'
+        }
       })
     entry.phase = 'transition'
     entry.reconcilePromise = next
     try {
       await next
     } finally {
-      const currentEntry = this.entries.get(transportHash)
-      if (currentEntry?.reconcilePromise === next) {
-        currentEntry.reconcilePromise = null
-        currentEntry.phase = 'stable'
-      }
       this.deleteEntryIfEmpty(transportHash)
     }
   }

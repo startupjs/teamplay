@@ -6,7 +6,8 @@ import { getConnection } from '../src/orm/connection.ts'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { querySubscriptions } from '../src/orm/Query.js'
 import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
-import { getRoot, ROOT_ID } from '../src/orm/Root.ts'
+import { getRoot, ROOT_ID, GLOBAL_ROOT_ID } from '../src/orm/Root.ts'
+import { getRootContext } from '../src/orm/rootContext.ts'
 import { getScopedSignalHash } from '../src/orm/rootScope.ts'
 import connect from '../src/connect/test.js'
 
@@ -496,6 +497,109 @@ describe('GC Cleanup Tests', () => {
 
       // Cleanup
       await delIfExists(collection, 'qf_1')
+    })
+  })
+
+  // The real usage pattern is sub() WITHOUT an explicit unsub() — cleanup must
+  // happen via the FinalizationRegistry destructor when the signal is GC'd. These
+  // exercise the fetch / mixed-fetch+subscribe paths under GC, and also assert no
+  // ShareDB query objects leak (a refetch / overlap-resubscribe must not leave a
+  // dangling query in connection.queries).
+  describe('fetch / mixed GC cleanup (no explicit unsub)', () => {
+    function withGlobalFetchOnly () {
+      const context = getRootContext(GLOBAL_ROOT_ID, true)
+      const previous = context.getFetchOnly()
+      context.setFetchOnly(true)
+      return () => context.setFetchOnly(previous)
+    }
+    const shareDbQueryCount = () => Object.keys(getConnection().queries || {}).length
+
+    it('fetchOnly query is GC-cleaned without unsub (no transport or ShareDB-query leak)', async () => {
+      const restore = withGlobalFetchOnly()
+      const collection = 'games_gc_fetchonly_q'
+      const transportHash = JSON.stringify({ query: [collection, {}] })
+      try {
+        const doc = getConnection().get(collection, 'fq1')
+        await cbPromise(cb => doc.create({ name: 'A' }, cb))
+        await runGc()
+        const initialShareDbQueries = shareDbQueryCount()
+
+        let ownerKey
+        await (async () => {
+          const $q = await sub($[collection], {}) // fetchOnly root → fetch transport
+          ownerKey = getScopedSignalHash(getRoot($q)?.[ROOT_ID], transportHash, 'queryOwner')
+          assert.equal($q.get().length, 1, 'fetch query returns the doc')
+          assert.ok(querySubscriptions.queries.has(transportHash), 'fetch transport tracked')
+        })()
+        await runGc()
+
+        assert.ok(!querySubscriptions.queries.has(transportHash), 'fetch transport GC-cleaned')
+        assert.ok(!querySubscriptions.subCount.has(ownerKey), 'fetch owner GC-cleaned')
+        assert.equal(shareDbQueryCount(), initialShareDbQueries, 'no ShareDB query leaked')
+
+        await delIfExists(collection, 'fq1')
+      } finally {
+        restore()
+      }
+    })
+
+    it('fetchOnly: repeated re-fetch then GC leaks nothing', async () => {
+      const restore = withGlobalFetchOnly()
+      const collection = 'games_gc_fetchonly_refetch'
+      try {
+        const doc = getConnection().get(collection, 'rf1')
+        await cbPromise(cb => doc.create({ name: 'A' }, cb))
+        await runGc()
+        const initialQueriesSize = querySubscriptions.queries.size
+        const initialShareDbQueries = shareDbQueryCount()
+
+        await (async () => {
+          // several sub() calls on the same query each re-fetch (the fix), all
+          // sharing one signal; then drop the ref
+          let $q
+          for (let i = 0; i < 4; i++) $q = await sub($[collection], {})
+          assert.equal($q.get().length, 1)
+        })()
+        await runGc()
+
+        assert.equal(querySubscriptions.queries.size, initialQueriesSize, 'no transport leaked across re-fetches')
+        assert.equal(shareDbQueryCount(), initialShareDbQueries, 'no ShareDB fetch query leaked across re-fetches')
+
+        await delIfExists(collection, 'rf1')
+      } finally {
+        restore()
+      }
+    })
+
+    it('mixed subscribe + mode:fetch is GC-cleaned without unsub (overlap-resub leaves no dangling query)', async () => {
+      const collection = 'games_gc_mixed_fetch'
+      const transportHash = JSON.stringify({ query: [collection, {}] })
+      const doc1 = getConnection().get(collection, 'mx1')
+      await cbPromise(cb => doc1.create({ name: 'A' }, cb))
+      await runGc()
+      const initialQueriesSize = querySubscriptions.queries.size
+      const initialShareDbQueries = shareDbQueryCount()
+
+      let ownerKey
+      await (async () => {
+        const $subbed = await sub($[collection], {}) // live subscribe
+        ownerKey = getScopedSignalHash(getRoot($subbed)?.[ROOT_ID], transportHash, 'queryOwner')
+        // add a fetch owner -> overlap-resubscribe (mixed). second write proves freshness
+        const doc2 = getConnection().get(collection, 'mx2')
+        await cbPromise(cb => doc2.create({ name: 'B' }, cb))
+        const $fresh = await sub($[collection], {}, { mode: 'fetch' })
+        assert.equal($fresh, $subbed, 'same signal')
+        assert.equal($fresh.get().length, 2, 'mixed refresh reflects the second write')
+      })()
+      await runGc()
+
+      assert.ok(!querySubscriptions.queries.has(transportHash), 'mixed transport GC-cleaned')
+      assert.ok(!querySubscriptions.subCount.has(ownerKey), 'mixed owner GC-cleaned')
+      assert.equal(querySubscriptions.queries.size, initialQueriesSize, 'no transport leaked')
+      assert.equal(shareDbQueryCount(), initialShareDbQueries, 'overlap-resubscribe left no dangling ShareDB query')
+
+      await delIfExists(collection, 'mx1')
+      await delIfExists(collection, 'mx2')
     })
   })
 })
