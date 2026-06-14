@@ -741,6 +741,80 @@ describe('$sub() function. fetchOnly queries re-fetch on every sub()', () => {
   })
 })
 
+describe('$sub() function. fetch/subscribe mixed on the same query', () => {
+  afterEachTestGc()
+
+  // `mode:'fetch'` on a query that is ALSO live-subscribed is the hard "mixed"
+  // case: a separate fetch query can't safely rewrite a subscribe query's
+  // membership, so instead we overlap-resubscribe the single live transport
+  // (fresh round-trip, in place, no blink) — read-after-write while staying live.
+  it('mode:fetch on a live subscribe overlap-resubscribes: fresh read, same signal, still live', async () => {
+    const collection = 'mixedRefreshGames'
+    const previousGcDelay = getSubscriptionGcDelay()
+    setSubscriptionGcDelay(0)
+    const connection = getConnection()
+    const realCreateSubscribeQuery = connection.createSubscribeQuery.bind(connection)
+    const realCreateFetchQuery = connection.createFetchQuery.bind(connection)
+    let subscribeCalls = 0
+    let fetchCalls = 0
+    connection.createSubscribeQuery = (...args) => { subscribeCalls++; return realCreateSubscribeQuery(...args) }
+    connection.createFetchQuery = (...args) => { fetchCalls++; return realCreateFetchQuery(...args) }
+    let $subbed, $fresh
+    try {
+      await $[collection].add({ _id: 'm1', name: 'One' })
+
+      $subbed = await sub($[collection], {}) // global root → live subscribe
+      assert.equal(subscribeCalls, 1, 'opens a live subscribe query')
+      assert.deepEqual($subbed.getIds().slice().sort(), ['m1'])
+
+      await $[collection].add({ _id: 'm2', name: 'Two' })
+      $fresh = await sub($[collection], {}, { mode: 'fetch' }) // mixed
+      assert.equal(subscribeCalls, 2, 'mode:fetch on a live subscribe overlap-resubscribes (a fresh round-trip)')
+      assert.equal(fetchCalls, 0, 'no separate fetch query — the live transport stays a subscribe')
+      assert.equal($fresh, $subbed, 'same query signal — one transport, not a duplicate subscription')
+      assert.deepEqual($fresh.getIds().slice().sort(), ['m1', 'm2'], 'reflects the awaited write')
+
+      // still live: a later write appears reactively, without another fetch
+      await $[collection].add({ _id: 'm3', name: 'Three' })
+      assert.deepEqual($subbed.getIds().slice().sort(), ['m1', 'm2', 'm3'], 'subscription is still live after the refresh')
+    } finally {
+      for (const id of ['m1', 'm2', 'm3']) if ($[collection][id].get()) await $[collection][id].del()
+      if ($subbed) await unsub($subbed)
+      if ($fresh) await unsub($fresh)
+      connection.createSubscribeQuery = realCreateSubscribeQuery
+      connection.createFetchQuery = realCreateFetchQuery
+      setSubscriptionGcDelay(previousGcDelay)
+    }
+  })
+
+  it('concurrent subscribe + mode:fetch settle to a single live subscribe transport', async () => {
+    const collection = 'mixedRaceGames'
+    const previousGcDelay = getSubscriptionGcDelay()
+    setSubscriptionGcDelay(0)
+    let $a, $b
+    try {
+      await $[collection].add({ _id: 'r1', name: 'One' })
+
+      // race both intents on the same query at once
+      ;[$a, $b] = await Promise.all([
+        sub($[collection], {}),
+        sub($[collection], {}, { mode: 'fetch' })
+      ])
+      assert.equal($a, $b, 'both resolve to the same query signal')
+      assert.deepEqual($a.getIds().slice().sort(), ['r1'], 'consistent membership after the race')
+
+      // a subscribe owner is present, so the transport is live: later writes arrive
+      await $[collection].add({ _id: 'r2', name: 'Two' })
+      assert.deepEqual($a.getIds().slice().sort(), ['r1', 'r2'], 'live subscribe transport survived the race')
+    } finally {
+      for (const id of ['r1', 'r2']) if ($[collection][id].get()) await $[collection][id].del()
+      if ($a) await unsub($a)
+      if ($b) await unsub($b)
+      setSubscriptionGcDelay(previousGcDelay)
+    }
+  })
+})
+
 describe.skip('$sub() function. Async api functions', () => {
   it('async function', async () => {
     const $value = await sub(async () => {

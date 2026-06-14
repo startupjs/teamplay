@@ -372,6 +372,8 @@ A query's transport mode is chosen per owning root by `getRootTransportMode`: a 
 
 The reconcile loop (`QuerySubscriptions.reconcileTransport`/`reconcileTransportNow`) serializes these transitions per transport hash and re-runs if a sub/unsub/refetch lands mid-transition. Aggregations reuse this machinery but override `_swapRefetchedDocs` (their rows are projected `extra`, not subscribed docs).
 
+**Mixed fetch + subscribe on the same query.** An explicit `sub($coll, params, { mode: 'fetch' })` can target a query that is *also* live-subscribed by someone else. A separate fetch query cannot safely rewrite a subscribe query's membership (the two share singleton `Doc`s, so a fetch refreshes doc *data*, but the subscribe query's *id list* is maintained by index-based diffs against its own lagging baseline — overwriting it would corrupt the next diff). So instead of running two transports, a fetch-intent sub on a live subscribe transport **overlap-resubscribes** it (`Query._refreshSubscribe`): stand up a fresh `createSubscribeQuery` (a real round-trip with current membership), silence the old query's handlers, swap to the fresh one, replace `$queries.<hash>` in place, then destroy the old query. The transport stays a single live subscribe, the read reflects the awaited write, and there's no blink. The state machine is unchanged — "mixed" is just a *refresh* of the one transport, not two coexisting transports.
+
 ### Aggregation Subscription Flow
 
 Aggregations reuse the query transport layer but materialize data under `$aggregations`:
