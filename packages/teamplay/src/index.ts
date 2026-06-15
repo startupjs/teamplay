@@ -211,7 +211,7 @@ export {
   useSuspendMemoByKey
 } from './react/useSuspendMemo.ts'
 export const observer = runtimeObserver as unknown as ObserverFunction
-export { emit, useOn, useEmit } from './orm/Compat/eventsCompat.js'
+export { emit, useOn, useEmit } from './orm/events.js'
 export {
   default as reaction
 } from './orm/reaction.ts'

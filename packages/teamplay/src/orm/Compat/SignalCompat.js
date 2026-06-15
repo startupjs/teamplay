@@ -27,8 +27,8 @@ import {
   stringInsertPublic as _stringInsertPublic,
   stringRemovePublic as _stringRemovePublic
 } from '../dataTree.js'
-import { on as onCustomEvent, removeListener as removeCustomEventListener } from './eventsCompat.js'
-import { waitForImperativeQueryReady } from './queryReadiness.js'
+import { on as onCustomEvent, removeListener as removeCustomEventListener } from '../events.js'
+import { waitForImperativeQueryReady } from '../queryReadiness.js'
 import { isModelEventsEnabled } from './modelEvents.js'
 import { setRefLink, removeRefLink, getAllRefLinks } from './refRegistry.js'
 import { REF_TARGET, resolveRefSignalSafe, resolveRefSegmentsSafe } from './refFallback.js'

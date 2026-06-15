@@ -626,12 +626,14 @@ General notes:
 
 ### Events
 
-Compatibility mode supports **two layers** of events:
+Teamplay supports custom events in core. Compatibility mode additionally
+supports Racer-style model events:
 
 - **Custom events** (manual `emit`)
 - **Model events** (`change` / `all` with path patterns)
 
-Model events are **only active in compatibility mode**.
+Custom events are available in both modes. Model events are **only active in
+compatibility mode**.
 
 #### Custom Events
 

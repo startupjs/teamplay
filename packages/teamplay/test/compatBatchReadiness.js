@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha'
 import { strictEqual } from 'assert'
-import { isQueryReady } from '../src/orm/Compat/queryReadiness.js'
+import { isQueryReady } from '../src/orm/queryReadiness.js'
 import { hashQuery, QUERIES } from '../src/orm/Query.js'
 import { AGGREGATIONS } from '../src/orm/Aggregation.js'
 import { set as _set, del as _del } from '../src/orm/dataTree.js'

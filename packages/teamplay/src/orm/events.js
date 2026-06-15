@@ -1,7 +1,4 @@
 import { useLayoutEffect } from 'react'
-import {
-  __resetModelEventsForTests
-} from './modelEvents.js'
 
 const listeners = new Map()
 
@@ -50,5 +47,4 @@ export function useEmit () {
 
 export function __resetEventsForTests () {
   listeners.clear()
-  __resetModelEventsForTests()
 }

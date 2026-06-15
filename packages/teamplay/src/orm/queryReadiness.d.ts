@@ -1,4 +1,4 @@
-import type { PathSegment } from '../types/path.ts'
+import type { PathSegment } from './types/path.ts'
 
 export function isDocReady (segments: readonly PathSegment[]): boolean
 

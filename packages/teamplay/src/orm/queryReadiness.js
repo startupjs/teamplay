@@ -1,12 +1,12 @@
-import { getRaw } from '../dataTree.js'
-import { getConnection } from '../connection.ts'
-import { isMissingShareDoc } from '../missingDoc.js'
-import { QUERIES, HASH, PARAMS, COLLECTION_NAME, querySubscriptions } from '../Query.js'
-import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../Aggregation.js'
-import { getPrivateData, setPrivateData } from '../privateData.js'
-import { getRoot, ROOT_ID } from '../Root.ts'
-import { isRootContextClosed } from '../rootContext.ts'
-import { getScopedSignalHash, normalizeRootId } from '../rootScope.ts'
+import { getRaw } from './dataTree.js'
+import { getConnection } from './connection.ts'
+import { isMissingShareDoc } from './missingDoc.js'
+import { QUERIES, HASH, PARAMS, COLLECTION_NAME, querySubscriptions } from './Query.js'
+import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from './Aggregation.js'
+import { getPrivateData, setPrivateData } from './privateData.js'
+import { getRoot, ROOT_ID } from './Root.ts'
+import { isRootContextClosed } from './rootContext.ts'
+import { getScopedSignalHash, normalizeRootId } from './rootScope.ts'
 
 let imperativeQueryReadyTimeoutMs = 1000
 

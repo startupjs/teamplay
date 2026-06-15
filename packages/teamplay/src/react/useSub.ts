@@ -5,7 +5,7 @@ import { useScheduleUpdate, useCache, useDefer } from './helpers.ts'
 import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
 import { getPrivateData } from '../orm/privateData.js'
-import { isDocReady } from '../orm/Compat/queryReadiness.js'
+import { isDocReady } from '../orm/queryReadiness.js'
 import { getRoot, ROOT_ID } from '../orm/Root.ts'
 import {
   COLLECTION_NAME,

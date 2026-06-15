@@ -31,10 +31,10 @@ import { querySubscriptions } from '../src/orm/Query.js'
 import { aggregationSubscriptions, AGGREGATIONS } from '../src/orm/Aggregation.js'
 import { setPrivateData } from '../src/orm/privateData.js'
 import {
-  on as onCompatEvent,
-  removeListener as removeCompatListener,
+  on as onEvent,
+  removeListener as removeEventListener,
   __resetEventsForTests
-} from '../src/orm/Compat/eventsCompat.js'
+} from '../src/orm/events.js'
 
 before(connect)
 beforeEach(() => {
@@ -847,11 +847,11 @@ describe('emit / useOn / useEmit', () => {
     })
     const firstHandler = jest.fn(() => {
       calls.push('first')
-      removeCompatListener('CustomEventSnapshot', firstHandler)
-      onCompatEvent('CustomEventSnapshot', secondHandler)
+      removeEventListener('CustomEventSnapshot', firstHandler)
+      onEvent('CustomEventSnapshot', secondHandler)
     })
 
-    onCompatEvent('CustomEventSnapshot', firstHandler)
+    onEvent('CustomEventSnapshot', firstHandler)
 
     emit('CustomEventSnapshot')
     expect(calls).toEqual(['first'])
