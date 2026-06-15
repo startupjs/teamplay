@@ -86,8 +86,7 @@ class SignalCompat extends Signal {
 
   async set (value) {
     if (arguments.length > 1) throw Error('Signal.set() expects a single argument')
-    if (value === undefined) return Signal.prototype.set.call(this, value)
-    return setReplaceOnSignal(this, value)
+    return Signal.prototype.set.call(this, value)
   }
 
   async setReplace (value) {

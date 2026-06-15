@@ -229,9 +229,7 @@ export {
   setConnection,
   getConnection,
   getDefaultFetchOnly,
-  setDefaultFetchOnly,
-  publicOnly,
-  setPublicOnly
+  setDefaultFetchOnly
 } from './orm/connection.ts'
 export type { TeamplayConnection, TeamplayShareDoc } from './orm/connection.ts'
 export {

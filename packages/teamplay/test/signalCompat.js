@@ -8,7 +8,6 @@ import connect from '../src/connect/test.js'
 import SignalCompat from '../src/orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../src/orm/SignalBase.ts'
 import { scheduleReaction } from '../src/orm/batchScheduler.js'
-import { __resetSilentContextForTests } from '../src/orm/Compat/silentContext.js'
 import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 import { ROOT, ROOT_ID } from '../src/orm/Root.ts'
 import { HASH as QUERY_HASH, QUERIES } from '../src/orm/Query.js'
@@ -517,8 +516,8 @@ describe('SignalCompat mutators without subpath overloads', () => {
     assert.equal($base.arr[2].get(), undefined)
   })
 
-  it('set uses replace semantics for nested objects', async () => {
-    setup('set-replace')
+  it('set uses noncompat deep-diff semantics for nested objects', async () => {
+    setup('set-deep-diff')
     await $base.set({ a: { x: 1, y: 2 } })
     await $base.a.set({ x: 9 })
     assert.deepEqual($base.get(), { a: { x: 9 } })
@@ -1082,8 +1081,8 @@ describeCompat('SignalCompat public mutators', () => {
     assert.equal($game.text.get(), 'hlo')
   })
 
-  it('uses direct replace ops for compat set on public array slots and object subpaths', async () => {
-    const gameId = '_compat_public_set_replace_ops'
+  it('uses noncompat set ops for compat set on public array slots and object subpaths', async () => {
+    const gameId = '_compat_public_set_ops'
     const $game = await sub($.compatGames[gameId])
     await $game.set({
       list: ['one', 'two', 'three'],
@@ -1104,19 +1103,14 @@ describeCompat('SignalCompat public mutators', () => {
     try {
       await $game.list[1].set('TWO')
       assert.deepEqual(submittedOps.at(-1), [
-        { p: ['list', 1], ld: 'two', li: 'TWO' }
+        { p: ['list', 1, 0], sd: 'two' },
+        { p: ['list', 1, 0], si: 'TWO' }
       ])
       assert.deepEqual($game.list.get(), ['one', 'TWO', 'three'])
 
       await $game.profile.set({ name: 'Kate' })
-      assert.deepEqual(submittedOps.at(-1), [
-        {
-          p: ['profile'],
-          od: { name: 'Ann', role: 'student' },
-          oi: { name: 'Kate' }
-        }
-      ])
       assert.deepEqual($game.profile.get(), { name: 'Kate' })
+      assert.deepEqual(doc.data.profile, { name: 'Kate' })
     } finally {
       doc.submitOp = originalSubmitOp
     }
@@ -1877,7 +1871,6 @@ class NonCompatUserModel extends BaseSignal {
   }
 
   afterEach(() => {
-    __resetSilentContextForTests()
     if (!cleanupSegments) return
     for (const segments of cleanupSegments) _del(segments)
     cleanupSegments = undefined
@@ -2562,7 +2555,7 @@ describe.skip('SignalCompat.start()/stop() legacy removed', () => {
     const listener = $root.on('all', `${$base.virtual.path()}.**`, () => {
       clearTimeout(syncTimer)
       syncTimer = setTimeout(() => {
-        $doc.silent().setDiffDeep($base.virtual.getDeepCopy())
+        $doc.setDiffDeep($base.virtual.getDeepCopy())
       }, 10)
     })
 

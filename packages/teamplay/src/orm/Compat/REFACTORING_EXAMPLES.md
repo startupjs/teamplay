@@ -238,19 +238,19 @@ $root.stop($virtualDoc.path())
 
 Это не простой синтаксический refactor. `start` сохраняет child-signal reactivity, sparse arrays и public null normalization.
 
-## Model events / `silent`
+## Model events
 
 ```js
 // Было
 const listener = $root.on('all', `${$virtualDoc.path()}.**`, handler)
 getWritableSignal($doc).setDiffDeep($virtualDoc.getDeepCopy())
-$doc.silent().setDiffDeep(nextValue)
+$doc.setDiffDeep(nextValue)
 
 // Цель
 // Перейти на explicit observe/subscription/domain event.
 ```
 
-`silent()` имеет смысл только вместе с compat model events. Custom events не являются автоматической заменой `change/all`.
+Custom events не являются автоматической заменой `change/all`.
 
 ## `root.connection`
 

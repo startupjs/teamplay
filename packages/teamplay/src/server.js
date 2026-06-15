@@ -1,7 +1,7 @@
 import createChannel from '@teamplay/channel/server'
 import backendCreateBackend from '@teamplay/backend'
 import { getModels } from './orm/initModels.ts'
-import { connection, setConnection, setDefaultFetchOnly, setPublicOnly } from './orm/connection.ts'
+import { connection, setConnection, setDefaultFetchOnly } from './orm/connection.ts'
 import { configureTeamplay } from './config.ts'
 
 export { default as ShareDB } from 'sharedb'
@@ -37,7 +37,6 @@ export default createBackend
 
 export function initConnection (backend, {
   fetchOnly = true,
-  publicOnly = true,
   idFields,
   ...options
 } = {}) {
@@ -46,6 +45,5 @@ export function initConnection (backend, {
   if (idFields !== undefined) configureTeamplay({ idFields })
   setConnection(backend.connect())
   setDefaultFetchOnly(fetchOnly)
-  setPublicOnly(publicOnly)
   return createChannel(backend, options)
 }

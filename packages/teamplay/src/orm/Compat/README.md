@@ -27,8 +27,8 @@ regular TeamPlay code:
 
 `SignalCompat` keeps legacy behavior that still needs compatibility handling:
 - `ref()` / `removeRef()` forwarding and mirror semantics.
-- imperative `query()` / `subscribe()` / `fetch()` lifecycle helpers.
-- model events and `silent()` wrappers.
+- legacy cursor/path overloads and query/readiness adapters.
+- custom events on the signal object.
 - `leaf()`, `parent()` — path helpers.
 - `root()` — owning root signal method for explicit root traversal.
 
@@ -268,9 +268,10 @@ model.close()
 model.close(() => console.log('closed'))
 ```
 
-### fetch(...signals) / unfetch(...signals)
+### Fetch-only subscriptions
 
-Fetch-only helpers remain for direct doc/query signals, but new code should prefer explicit transport mode:
+Racer-like `.fetch()` / `.unfetch()` helpers are not part of the signal API.
+Use explicit transport mode instead:
 
 ```js
 const $active = await sub($.users, { active: true }, { mode: 'fetch' })
@@ -562,7 +563,6 @@ Private collections start with `_` or `$` (e.g. `_session`, `_page`, `$render`).
 Behavior:
 - Public collections use **JSON0 ops** for mutators (`increment`, array/string ops).
 - Private collections are stored in root-scoped private storage.
-- `setPublicOnly()` is a deprecated no-op kept for older bootstrap code.
 - On the server, private writes through the global root log a warning because they create process-global private state.
 - ID fields are normalized and protected for public documents (`_id`/`id`).
 

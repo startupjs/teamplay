@@ -19,8 +19,6 @@ export interface TeamplayConnection {
 
 export let connection: TeamplayConnection | undefined
 let defaultFetchOnly: boolean | undefined
-/** @deprecated Root-scoped private data made the publicOnly write guard obsolete. */
-export const publicOnly = false
 
 export function setConnection (_connection: TeamplayConnection | undefined): void {
   connection = _connection
@@ -37,24 +35,6 @@ export function setDefaultFetchOnly (_fetchOnly: boolean): void {
 
 export function getDefaultFetchOnly (): boolean {
   return !!defaultFetchOnly
-}
-
-// Deprecated alias kept for internal transition.
-export function setFetchOnly (_fetchOnly: boolean): void {
-  setDefaultFetchOnly(_fetchOnly)
-}
-
-/**
- * @deprecated No-op kept for compatibility with older server bootstrap code.
- * Private collections are root-scoped; server safety now relies on avoiding
- * writes to private collections through the global root.
- */
-export function setPublicOnly (_publicOnly: boolean): void {
-}
-
-/** @deprecated publicOnly no longer blocks private writes. */
-export function isPrivateMutationForbidden (): boolean {
-  return false
 }
 
 const ERRORS = {

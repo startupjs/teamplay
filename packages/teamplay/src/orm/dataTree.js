@@ -4,7 +4,6 @@ import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.ts'
 import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.ts'
-import { isSilentContextActive } from './Compat/silentContext.js'
 import { isCompatEnv } from './compatEnv.js'
 import { isMissingShareDoc } from './missingDoc.js'
 import {
@@ -19,7 +18,6 @@ export const dataTreeRaw = {}
 const dataTree = observable(dataTreeRaw)
 
 function getWritableTree (tree) {
-  if (isSilentContextActive()) return getTreeRaw(tree)
   return tree
 }
 
