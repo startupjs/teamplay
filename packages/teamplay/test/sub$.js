@@ -179,6 +179,16 @@ describe('$sub() function. Modifying documents', () => {
     assert.deepEqual(doc.data, {})
   })
 
+  it('.del() on non-existing public document is a no-op', async () => {
+    const gameId = '_7_missing'
+    const $game = await sub($.games[gameId])
+    assert.equal($game.get(), undefined)
+
+    await $game.del()
+    await $game.name.del()
+    assert.equal($game.get(), undefined)
+  })
+
   it('.set(undefined) on document should delete it', async () => {
     const gameId = '_8'
     const doc = getConnection().get('games', gameId)
@@ -231,7 +241,7 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
-  it('compat: allows delayed subpath set after add() without subscribe when doc snapshot is dropped', async () => {
+  it('compat: rejects delayed subpath set after add() without subscribe when doc snapshot is dropped', async () => {
     if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
 
     const gameId = '_compat_add_delayed_subpath_set_after_snapshot_drop'
@@ -243,17 +253,13 @@ describe('$sub() function. Modifying documents', () => {
     delete connection.collections.games[gameId]
     _del(['games', gameId])
 
-    await $game.players.set(2)
-
-    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 2 })
-    const doc = getConnection().get('games', gameId)
-    assert.equal(doc.data.players, 2)
-
-    await sub($game)
-    await $game.del()
+    await assert.rejects(async () => {
+      await $game.players.set(2)
+    }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
+    delete connection.collections.games[gameId]
   })
 
-  it('compat: allows delayed subpath set after add() without subscribe', async () => {
+  it('compat: rejects delayed subpath set after add() without subscribe', async () => {
     if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
 
     const gameId = '_compat_add_delayed_subpath_set'
@@ -264,14 +270,10 @@ describe('$sub() function. Modifying documents', () => {
     delete connection.collections.games[gameId]
     _del(['games', gameId])
 
-    await $game.players.set(3)
-
-    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 3 })
-    const doc = getConnection().get('games', gameId)
-    assert.equal(doc.data.players, 3)
-
-    await sub($game)
-    await $game.del()
+    await assert.rejects(async () => {
+      await $game.players.set(3)
+    }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
+    delete connection.collections.games[gameId]
   })
 
   it('repopulates data tree when doc exists but raw data is missing', async () => {

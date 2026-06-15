@@ -974,11 +974,7 @@ describe('QuerySubscriptions', () => {
     assert.equal(query.activeTransportMode, 'idle')
   })
 
-  it('drops undefined object fields in query params and warns in compat mode', () => {
-    const originalWarn = console.warn
-    const warnings = []
-    console.warn = (...args) => warnings.push(args)
-
+  it('drops undefined object fields in query params without compat warnings', () => {
     const rawParams = {
       $or: [
         { entity: 'group', entityId: undefined },
@@ -992,27 +988,11 @@ describe('QuerySubscriptions', () => {
       ]
     }
 
-    let $query
-    let hash
-    try {
-      $query = getQuerySignal('gamesQuery', rawParams)
-      hash = hashQuery('gamesQuery', rawParams)
-    } finally {
-      console.warn = originalWarn
-    }
+    const $query = getQuerySignal('gamesQuery', rawParams)
+    const hash = hashQuery('gamesQuery', rawParams)
 
     assert.deepEqual($query[QUERY_PARAMS], expectedParams, 'stored params should match normalized shape')
     assert.equal(hash, JSON.stringify({ query: ['gamesQuery', expectedParams] }), 'query hash should match normalized params')
-    if (process.env.TEAMPLAY_COMPAT === '1') {
-      assert.equal(warnings.length, 1, 'compat mode should warn once for this collection/path set')
-      assert.match(warnings[0][0], /undefined values/)
-      assert.deepEqual(warnings[0][1], {
-        collectionName: 'gamesQuery',
-        paths: ['$or[0].entityId']
-      })
-    } else {
-      assert.equal(warnings.length, 0, 'non-compat mode should not warn')
-    }
   })
 
   it('creates distinct query signals per root while keeping transport hash shared', () => {

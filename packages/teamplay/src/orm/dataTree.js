@@ -4,7 +4,6 @@ import diffMatchPatch from 'diff-match-patch'
 import { getConnection } from './connection.ts'
 import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.ts'
-import { isCompatEnv } from './compatEnv.js'
 import { isMissingShareDoc } from './missingDoc.js'
 import {
   getLogicalRootSnapshot as getLogicalRootSnapshotFromTree
@@ -145,7 +144,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
   const doc = getConnection().get(collection, docId)
   let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal: true })
   if (!docState.exists && segments.length > 2) {
-    docState = await resolvePublicDocStateWithFetchFallback({
+    docState = await resolvePublicDocStateWithLocalRecovery({
       collection,
       docId,
       doc,
@@ -153,7 +152,7 @@ export async function setPublicDoc (segments, value, deleteValue = false) {
       hydrateDocDataFromLocal: true
     })
   }
-  if (!docState.exists && deleteValue) throw Error(ERRORS.deleteNonExistentDoc(segments))
+  if (!docState.exists && deleteValue) return
   // make sure that the value is not observable to not trigger extra reads. And clone it
   value = raw(value)
   if (value == null) {
@@ -237,7 +236,7 @@ export async function setPublicDocReplace (segments, value) {
   const doc = getConnection().get(collection, docId)
   let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal: true })
   if (!docState.exists && segments.length > 2) {
-    docState = await resolvePublicDocStateWithFetchFallback({
+    docState = await resolvePublicDocStateWithLocalRecovery({
       collection,
       docId,
       doc,
@@ -379,7 +378,7 @@ function resolvePublicDocState ({
   return { exists: true, snapshot: localSnapshot, source: 'local' }
 }
 
-async function resolvePublicDocStateWithFetchFallback ({
+async function resolvePublicDocStateWithLocalRecovery ({
   collection,
   docId,
   doc,
@@ -389,11 +388,9 @@ async function resolvePublicDocStateWithFetchFallback ({
   let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal })
   if (docState.exists) return docState
 
-  const shouldFetch = isCompatEnv() || (
-    getRaw([collection, docId]) != null &&
+  const shouldFetch = getRaw([collection, docId]) != null &&
     isMissingShareDoc(doc) &&
     doc.version == null
-  )
   if (!shouldFetch) return docState
 
   await new Promise((resolve, reject) => {
@@ -542,7 +539,7 @@ export async function incrementPublic (segments, byNumber) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithFetchFallback({
+  const docState = await resolvePublicDocStateWithLocalRecovery({
     collection,
     docId,
     doc,
@@ -583,7 +580,7 @@ export async function arrayInsertPublic (segments, index, values) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithFetchFallback({
+  const docState = await resolvePublicDocStateWithLocalRecovery({
     collection,
     docId,
     doc,
@@ -638,7 +635,7 @@ export async function arrayRemovePublic (segments, index, howMany = 1) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithFetchFallback({
+  const docState = await resolvePublicDocStateWithLocalRecovery({
     collection,
     docId,
     doc,
@@ -662,7 +659,7 @@ export async function arrayMovePublic (segments, from, to, howMany = 1) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithFetchFallback({
+  const docState = await resolvePublicDocStateWithLocalRecovery({
     collection,
     docId,
     doc,
@@ -731,7 +728,7 @@ export async function stringInsertPublic (segments, index, text) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithFetchFallback({
+  const docState = await resolvePublicDocStateWithLocalRecovery({
     collection,
     docId,
     doc,
@@ -760,7 +757,7 @@ export async function stringRemovePublic (segments, index, howMany) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const doc = getConnection().get(collection, docId)
   const idFields = getIdFieldsForSegments([collection, docId])
-  const docState = await resolvePublicDocStateWithFetchFallback({
+  const docState = await resolvePublicDocStateWithLocalRecovery({
     collection,
     docId,
     doc,
@@ -798,11 +795,6 @@ const ERRORS = {
   `,
   publicDocIdNumber: segments => `
     Public doc id must be a string. Got a number: ${segments}
-  `,
-  deleteNonExistentDoc: segments => `
-    Trying to delete data from a non-existing doc ${segments}.
-    Make sure that the document exists and you are subscribed to it
-    before trying to delete anything from it or the doc itself.
   `,
   publicDocIdUndefined: segments => `
     Trying to modify a public document with the id 'undefined'.

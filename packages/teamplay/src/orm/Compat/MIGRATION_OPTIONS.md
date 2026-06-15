@@ -72,7 +72,7 @@
 | Getters with path | Не добавлять. | `get(path)` / `peek(path)` adapter. | Переписать на child traversal. |
 | Array/string/increment path overloads | Не добавлять. | Path-first adapter для legacy modules. | Переписать на child traversal. |
 | `.at()` / `.scope()` | Не добавлять как target API. | Adapter на время migration. | Переписать на direct child traversal/root traversal. |
-| `query()` / imperative subscribe/fetch | Signal-level helpers are removed; transport-level fetch mode lives in `sub(..., { mode: 'fetch' })`. Readiness/query materialization still require separate migration decisions. | Adapter only for remaining readiness/materialization gaps, not for public `.fetch()` API. | Переписать server/client flows на non-compat query primitives. |
+| `query()` / imperative subscribe/fetch | Signal-level helpers are removed; transport-level fetch mode lives in `sub(..., { mode: 'fetch' })`. Query result materialization is shared between modes. | Adapter only for remaining readiness gaps, not for public `.fetch()` API. | Переписать server/client flows на non-compat query primitives. |
 | `ref/removeRef/refExtra/refIds` | Неочевидно; это отдельная legacy data-binding модель. | Adapter вероятно нужен для LMS/deps на переходный период. | Заменять на явные derived state/subscriptions там, где возможно. |
 | `$root.start/$root.stop` | Не переносить как есть без отдельного дизайна. | Adapter для virtual fields/stages. | Переписать virtual state на явные observers/computed flows. |
 | Model events / `silent` | Не переносить как core без отдельного решения. | Adapter, если legacy listeners остаются. | Заменять на explicit subscriptions/reactions/domain events. |

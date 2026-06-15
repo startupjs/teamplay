@@ -1,7 +1,7 @@
 import { it, describe, afterEach, before, after } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw, observe, unobserve } from '@nx-js/observer-util'
-import { $, emit, sub, unsub, addModel, aggregation, getRootSignal, getDefaultIdFields, setDefaultIdFields } from '../src/index.ts'
+import { $, sub, unsub, addModel, aggregation, getRootSignal, getDefaultIdFields, setDefaultIdFields } from '../src/index.ts'
 import { get as _get, del as _del } from '../src/orm/dataTree.js'
 import { getConnection, getDefaultFetchOnly, setDefaultFetchOnly } from '../src/orm/connection.ts'
 import connect from '../src/connect/test.js'
@@ -843,6 +843,23 @@ describe('SignalCompat mutators without subpath overloads', () => {
     assert.equal($base.count.get(), 3)
   })
 
+  it('increment matches base Signal null handling', async () => {
+    setup('increment-null')
+    await assert.rejects(
+      () => $base.count.increment(null),
+      /Signal\.increment\(\) expects a number argument/
+    )
+
+    await $base.count.increment(undefined)
+    assert.equal($base.count.get(), 1)
+
+    await $base.nullCount.set(null)
+    await assert.rejects(
+      () => $base.nullCount.increment(),
+      /Signal\.increment\(\) tried to increment a non-number value/
+    )
+  })
+
   it('array mutators return values and modify array', async () => {
     setup('array')
     await $base.list.set([1, 2, 3])
@@ -863,12 +880,15 @@ describe('SignalCompat mutators without subpath overloads', () => {
     assert.deepEqual($base.list.get(), [2, 1, 3])
   })
 
-  it('remove with no args removes array element', async () => {
+  it('remove with no args matches base Signal strictness', async () => {
     setup('remove-no-args')
     await $base.list.set([10, 20, 30])
-    const removed = await $base.list[1].remove()
-    assert.deepEqual(removed, [20])
-    assert.deepEqual($base.list.get(), [10, 30])
+
+    await assert.rejects(
+      () => $base.list[1].remove(),
+      /Not enough arguments for remove/
+    )
+    assert.deepEqual($base.list.get(), [10, 20, 30])
   })
 
   it('stringInsert/stringRemove work on strings', async () => {
@@ -1361,21 +1381,6 @@ describeCompat('SignalCompat public mutators', () => {
     )
   })
 
-  it('treats del on non-existing public docs as no-op', async () => {
-    // Ensure the collection exists in the local data tree so this test can run in isolation.
-    const $seed = await sub($.compatGames._compat_public_seed)
-    await $seed.set({ ok: true })
-    await $seed.del()
-
-    const gameId = '_compat_public_missing_del'
-    const $game = await sub($.compatGames[gameId])
-    assert.equal($game.get(), undefined)
-
-    await $game.del()
-    await $game.name.del()
-    assert.equal($game.get(), undefined)
-  })
-
   it('injects only _id into compat docs and protects top-level _id', async () => {
     const gameId = '_compat_public_ids'
     const $game = await sub($.compatGames[gameId])
@@ -1573,7 +1578,7 @@ describeCompat('SignalCompat public mutators', () => {
     )
   })
 
-  it('compat: public increment/array/string mutators work after ShareDB snapshot drop', async () => {
+  it('compat: public mutators reject after ShareDB snapshot drop', async () => {
     if (process.env.TEAMPLAY_COMPAT !== '1') return
 
     const gameId = '_compat_public_snapshot_drop'
@@ -1582,23 +1587,27 @@ describeCompat('SignalCompat public mutators', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
 
     const connection = getConnection()
+    const dropSnapshot = () => {
+      delete connection.collections.compatGames[gameId]
+      _del(['compatGames', gameId])
+    }
+
+    dropSnapshot()
+    await assert.rejects(async () => {
+      await $game.count.increment(1)
+    }, /Trying to modify a non-existing doc/)
+
+    dropSnapshot()
+    await assert.rejects(async () => {
+      await $game.list.push(2)
+    }, /Trying to modify a non-existing doc/)
+
+    dropSnapshot()
+    await assert.rejects(async () => {
+      await $game.text.stringInsert(2, 'c')
+    }, /Trying to modify a non-existing doc/)
+
     delete connection.collections.compatGames[gameId]
-    _del(['compatGames', gameId])
-
-    const nextCount = await $game.count.increment(1)
-    assert.equal(nextCount, 1)
-    assert.equal($game.count.get(), 1)
-
-    const len = await $game.list.push(2)
-    assert.equal(len, 2)
-    assert.deepEqual($game.list.get(), [1, 2])
-
-    const prevText = await $game.text.stringInsert(2, 'c')
-    assert.equal(prevText, 'ab')
-    assert.equal($game.text.get(), 'abc')
-
-    await sub($game)
-    await $game.del()
   })
 })
 
@@ -1903,35 +1912,6 @@ class NonCompatUserModel extends BaseSignal {
     assert.equal($base.doc.silent.get(), 'C')
   })
 
-  it('does not expose public model change/all events', () => {
-    setup('events')
-
-    assert.throws(
-      () => $root.on('change', `${$base.path()}.value`, () => {}),
-      /model events are not supported/
-    )
-    assert.throws(
-      () => $root.on('all', `${$base.path()}.**`, () => {}),
-      /model events are not supported/
-    )
-    assert.throws(
-      () => $root.once('change', `${$base.path()}.value`, () => {}),
-      /model events are not supported/
-    )
-  })
-
-  it('keeps change/all available as custom event names', () => {
-    setup('customEvents')
-    const events = []
-    const handler = value => events.push(value)
-
-    $root.on('change', handler)
-    emit('change', 'A')
-    $root.removeListener('change', handler)
-    emit('change', 'B')
-
-    assert.deepEqual(events, ['A'])
-  })
 })
 
 describe.skip('SignalCompat.start()/stop() legacy removed', () => {

@@ -2,7 +2,6 @@ import { raw } from '@nx-js/observer-util'
 import { set as _set, getRaw } from './dataTree.js'
 import getSignal from './getSignal.ts'
 import { getConnection } from './connection.ts'
-import { isCompatEnv } from './compatEnv.js'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import SubscriptionState from './SubscriptionState.js'
@@ -858,7 +857,6 @@ export class QuerySubscriptions {
 export const querySubscriptions = new QuerySubscriptions()
 
 function maybeMaterializeQueryDocsToCollection (collectionName, shareDocs) {
-  if (!isCompatEnv()) return
   for (const doc of shareDocs) {
     if (!doc?.id || doc.data == null) continue
     const existing = getRaw([collectionName, doc.id])
@@ -958,7 +956,6 @@ function getQueryOwnerKey (rootId, transportHash) {
 }
 
 export function cloneQueryParams (collectionName, params) {
-  warnIfCompatQueryParamsHaveUndefinedFields(collectionName, params)
   return JSON.parse(JSON.stringify(params))
 }
 
@@ -974,61 +971,7 @@ function parseQuerySignalOptions (options) {
 }
 
 function normalizeQueryParamsForHash (collectionName, params) {
-  warnIfCompatQueryParamsHaveUndefinedFields(collectionName, params)
   return params
-}
-
-const warnedUndefinedQueryParamKeys = new Set()
-
-function warnIfCompatQueryParamsHaveUndefinedFields (collectionName, params) {
-  if (!isCompatEnv()) return
-
-  const paths = getUndefinedQueryParamFieldPaths(params)
-  if (paths.length === 0) return
-
-  const key = `${collectionName || '<unknown>'}:${paths.join(',')}`
-  if (warnedUndefinedQueryParamKeys.has(key)) return
-  warnedUndefinedQueryParamKeys.add(key)
-
-  console.warn(
-    '[teamplay] Compat query params contain object fields with undefined values. ' +
-    'TeamPlay now clones query params like non-compat mode, so these fields are dropped ' +
-    'instead of being converted to null. Normalize query params explicitly.',
-    {
-      collectionName,
-      paths
-    },
-    new Error().stack
-  )
-}
-
-function getUndefinedQueryParamFieldPaths (value) {
-  const paths = []
-  collectUndefinedQueryParamFieldPaths(value, '', paths, new WeakSet())
-  return paths
-}
-
-function collectUndefinedQueryParamFieldPaths (value, path, paths, seen) {
-  if (value == null || typeof value !== 'object') return
-  if (seen.has(value)) return
-  seen.add(value)
-
-  if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) {
-      collectUndefinedQueryParamFieldPaths(value[i], `${path}[${i}]`, paths, seen)
-    }
-    return
-  }
-
-  for (const key in value) {
-    if (!Object.prototype.hasOwnProperty.call(value, key)) continue
-    const childPath = path ? `${path}.${key}` : key
-    if (value[key] === undefined) {
-      paths.push(childPath)
-      continue
-    }
-    collectUndefinedQueryParamFieldPaths(value[key], childPath, paths, seen)
-  }
 }
 
 function createPendingDestroyEntry () {

@@ -3,7 +3,7 @@ import { before, beforeEach, afterEach, describe, it } from 'mocha'
 import { addModel, getRootSignal, sub, unsub } from '../src/index.ts'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { getConnection } from '../src/orm/connection.ts'
-import { del as _del, set as _set } from '../src/orm/dataTree.js'
+import { del as _del } from '../src/orm/dataTree.js'
 import { getPrivateData } from '../src/orm/privateData.js'
 import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../src/orm/Query.js'
 import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
@@ -162,25 +162,6 @@ describeCompat('root-scoped public signals', () => {
     assert.equal(rootB._session.currentUserIdViaRoot.get(), 'b')
   })
 
-  it('does not expose public model events even though public data is shared', async () => {
-    const rootA = createRoot('events-root-A')
-    const rootB = createRoot('events-root-B')
-
-    assert.throws(
-      () => rootA.on('change', `${PUBLIC_COLLECTION}.*.name`, () => {}),
-      /model events are not supported/
-    )
-    assert.throws(
-      () => rootB.on('change', `${PUBLIC_COLLECTION}.*.name`, () => {}),
-      /model events are not supported/
-    )
-
-    _set([PUBLIC_COLLECTION, '_1', 'name'], 'before')
-
-    _set([PUBLIC_COLLECTION, '_1', 'name'], 'after')
-    assert.equal(rootA[PUBLIC_COLLECTION]._1.name.get(), 'after')
-    assert.equal(rootB[PUBLIC_COLLECTION]._1.name.get(), 'after')
-  })
 })
 
 async function destroyConnectionCollection (collectionName) {
