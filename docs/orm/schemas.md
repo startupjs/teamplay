@@ -25,7 +25,7 @@ export default defineSchema({
 
 `defineSchema()` currently returns the schema unchanged at runtime. It marks the schema as intentionally defined and gives TypeScript the best literal inference without needing `as const`.
 
-Plain exported schema objects still work for backward compatibility, but `defineSchema()` is the conventional form.
+Plain exported schema objects still work, but `defineSchema()` is the conventional form.
 
 ## Document Type
 
@@ -63,7 +63,7 @@ const backend = createBackend({
 })
 ```
 
-Stored documents should be JSON-compatible: strings, numbers, booleans, nulls, arrays, and plain objects. Prefer `Date.now()` numbers over `Date` instances.
+Stored documents should use JSON values: strings, numbers, booleans, nulls, arrays, and plain objects. Prefer `Date.now()` numbers over `Date` instances.
 
 ## Private Root Schemas
 

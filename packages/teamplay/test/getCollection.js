@@ -3,8 +3,8 @@ import { strict as assert } from 'node:assert'
 import { $, addModel } from '../src/index.ts'
 import Signal from '../src/orm/Signal.ts'
 
-describe('Signal.getCollection() compatibility', () => {
-  it('prefers static collection over path collection for compat-mounted model', () => {
+describe('Signal.getCollection()', () => {
+  it('prefers static collection over path collection for static collection model', () => {
     class VirtualFieldModel extends Signal {
       static collection = 'fields'
     }

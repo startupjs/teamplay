@@ -112,4 +112,4 @@ pass `{ defer: false }` explicitly.
 
 - Subscription hooks should be used within components wrapped with `observer()` to ensure proper reactivity.
 - They follow React's rules of hooks, so they should not be used in conditional statements.
-- Legacy compat hooks such as `useDoc`, `useQuery`, `useBatchDoc`, and `useBatchQuery` are not part of the public object-tree API. Use `useSub`, `useAsyncSub`, or `useBatchSub` instead.
+- Legacy hooks such as `useDoc`, `useQuery`, `useBatchDoc`, and `useBatchQuery` are not part of the public object-tree API. Use `useSub`, `useAsyncSub`, or `useBatchSub` instead.

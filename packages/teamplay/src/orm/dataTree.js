@@ -283,7 +283,7 @@ export async function setPublicDocReplace (segments, value) {
 
   const relativePath = segments.slice(2)
   // json0 direct replace ops require every ancestor container to already exist.
-  // Racer-like compat set, however, materializes missing/primitive parents while
+  // setPublicDoc() materializes missing/primitive parents while
   // descending into the path. Fall back to the older diff-based path when the
   // direct op would target a non-existent/non-object ancestor.
   if (!canApplyDirectReplaceOp(docState.snapshot || {}, relativePath)) {

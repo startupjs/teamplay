@@ -10,15 +10,15 @@ import {
   setReplace
 } from '../src/orm/dataTree.js'
 
-const PUBLIC_COLLECTION = 'compatNullishPublic'
+const PUBLIC_COLLECTION = 'nullishPublic'
 let publicDocCounter = 0
 
 function nextPublicDocId () {
   publicDocCounter += 1
-  return `_compat_nullish_${publicDocCounter}`
+  return `_nullish_${publicDocCounter}`
 }
 
-describe('compat benchmark: dataTree nullish semantics vs racer', () => {
+describe('dataTree nullish semantics', () => {
   before(() => {
     connect()
   })

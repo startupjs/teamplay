@@ -47,9 +47,6 @@ afterEach(() => {
   __resetSuspendMemoForTests()
 })
 
-const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
-const itCompat = isCompatMode ? it : it.skip
-
 describe('observer() options', () => {
   it('observer with forwardRef option - ref should be forwarded', async () => {
     const Component = observer((props, ref) => {
@@ -106,7 +103,7 @@ describe('observer() options', () => {
   })
 })
 
-describe('compat helper hooks', () => {
+describe('helper hooks', () => {
   it('useDidUpdate runs on updates only', async () => {
     let calls = 0
     const Component = observer(() => {
@@ -124,7 +121,7 @@ describe('compat helper hooks', () => {
     expect(calls).toBe(1)
   })
 
-  itCompat('useDidUpdate ignores callback identity changes when deps are unchanged', async () => {
+  it('useDidUpdate ignores callback identity changes when deps are unchanged', async () => {
     let dismissCalls = 0
 
     const Component = observer(() => {
@@ -232,7 +229,7 @@ describe('useSub edge cases', () => {
     })
   })
 
-  it('trapRender keeps legacy immediate destroy for non-compat thrown promises', async () => {
+  it('trapRender keeps immediate destroy for thrown promises', async () => {
     const events = []
     let resolvePromise
     const pending = new Promise(resolve => {
@@ -274,7 +271,7 @@ describe('useSub edge cases', () => {
       resolvePromise = resolve
     })
     const wrapped = trapRender({
-      componentId: 'compatTrapRenderArmed',
+      componentId: 'trapRenderArmed',
       render: () => {
         renderAttemptDestroyer.armSuspenseGate()
         throw pending
@@ -500,7 +497,7 @@ describe('useSub edge cases', () => {
     expect(renders).toBe(3)
   })
 
-  itCompat('useSubClassic with batch keeps update resubscribe in background', async () => {
+  it('useSubClassic with batch keeps update resubscribe in background', async () => {
     const collection = 'classicBatchSwitch'
     const lessonA = 'lesson_classic_batch_switch_1'
     const lessonB = 'lesson_classic_batch_switch_2'
@@ -568,26 +565,26 @@ describe('useSub edge cases', () => {
 
   it('subscribed observer replays updates skipped during execution context', async () => {
     act(() => {
-      $.compatReplayDoc.test1.set({ name: 'John' })
-      $.page.compatReplayFlag.set(false)
+      $.replayDoc.test1.set({ name: 'John' })
+      $.page.replayFlag.set(false)
     })
 
     const Component = observer(() => {
-      const $doc = useSub($.compatReplayDoc.test1, { defer: false })
+      const $doc = useSub($.replayDoc.test1, { defer: false })
       const doc = $doc.get()
-      const flag = $.page.compatReplayFlag.get() || false
-      if (!flag) $.page.compatReplayFlag.set(true)
-      return el('span', { id: 'compatReplay' }, `${doc?.name || 'missing'}:${flag}`)
+      const flag = $.page.replayFlag.get() || false
+      if (!flag) $.page.replayFlag.set(true)
+      return el('span', { id: 'replay' }, `${doc?.name || 'missing'}:${flag}`)
     }, {
       suspenseProps: {
-        fallback: el('span', { id: 'compatReplay' }, 'Loading...')
+        fallback: el('span', { id: 'replay' }, 'Loading...')
       }
     })
 
     const { container } = render(el(Component))
 
     await waitFor(() => {
-      expect(container.querySelector('#compatReplay').textContent).toBe('John:true')
+      expect(container.querySelector('#replay').textContent).toBe('John:true')
     })
   })
 
@@ -860,7 +857,7 @@ describe('emit / useOn / useEmit', () => {
     expect(calls).toEqual(['first', 'second'])
   })
 
-  itCompat('useOn handler that writes page state is called only once per emit', () => {
+  it('useOn handler that writes page state is called only once per emit', () => {
     let calls = 0
 
     const Component = observer(() => {
@@ -1497,130 +1494,6 @@ describe('useBatchSub', () => {
       expect(_get([collection, 'null'])).toBe(undefined)
     } finally {
       queryProto._initData = originalInitData
-    }
-  })
-})
-
-describe.skip('SignalCompat.start() React bindings legacy removed', () => {
-  itCompat('compat start keeps pre-bound child signals reactive across object syncs', async () => {
-    const basePath = '_compatStartReactBinding'
-    _del([basePath])
-
-    await $[basePath].doc.set({
-      name: 'Stage 1',
-      config: {
-        realtimeConfig: {
-          voice: 'alloy'
-        }
-      }
-    })
-
-    const $name = $[basePath].virtual.name
-    const $voice = $[basePath].virtual.config.realtimeConfig.voice
-    $.start(`${basePath}.virtual`, $[basePath].doc, doc => doc)
-
-    try {
-      const Component = observer(() => {
-        return fr(
-          el('span', { id: 'compatStartName' }, $name.get() || 'undefined'),
-          el('span', { id: 'compatStartVoice' }, $voice.get() || 'undefined')
-        )
-      })
-
-      const { container } = render(el(Component))
-
-      expect(container.querySelector('#compatStartName').textContent).toBe('Stage 1')
-      expect(container.querySelector('#compatStartVoice').textContent).toBe('alloy')
-
-      await act(async () => {
-        await $[basePath].doc.name.set('Stage 2')
-      })
-      await wait()
-      expect(container.querySelector('#compatStartName').textContent).toBe('Stage 2')
-
-      await act(async () => {
-        await $[basePath].doc.config.realtimeConfig.voice.set('echo')
-      })
-      await wait()
-      expect(container.querySelector('#compatStartVoice').textContent).toBe('echo')
-
-      await act(async () => {
-        await $name.set('Draft')
-        await $voice.set('nova')
-      })
-      await wait()
-      expect(container.querySelector('#compatStartName').textContent).toBe('Draft')
-      expect(container.querySelector('#compatStartVoice').textContent).toBe('nova')
-
-      await act(async () => {
-        await $[basePath].doc.set({
-          name: 'Stage 3',
-          config: {
-            realtimeConfig: {
-              voice: 'shimmer'
-            }
-          }
-        })
-      })
-      await wait()
-      expect(container.querySelector('#compatStartName').textContent).toBe('Stage 3')
-      expect(container.querySelector('#compatStartVoice').textContent).toBe('shimmer')
-    } finally {
-      $.stop(`${basePath}.virtual`)
-      _del([basePath])
-    }
-  })
-
-  itCompat('compat start keeps pre-bound undefined boolean and text child signals reactive', async () => {
-    const basePath = '_compatStartUndefinedFields'
-    _del([basePath])
-
-    await $[basePath].doc.set({
-      name: 'Stage 1',
-      config: {}
-    })
-
-    const $final = $[basePath].virtual.final
-    const $prompt = $[basePath].virtual.prompt
-    $.start(`${basePath}.virtual`, $[basePath].doc, doc => doc)
-
-    try {
-      const Component = observer(() => {
-        return fr(
-          el('span', { id: 'compatStartFinal' }, String($final.get())),
-          el('span', { id: 'compatStartPrompt' }, $prompt.get() || 'undefined')
-        )
-      })
-
-      const { container } = render(el(Component))
-
-      expect(container.querySelector('#compatStartFinal').textContent).toBe('undefined')
-      expect(container.querySelector('#compatStartPrompt').textContent).toBe('undefined')
-
-      await act(async () => {
-        await $final.set(true)
-        await $prompt.set('Draft prompt')
-      })
-      await wait()
-
-      expect(container.querySelector('#compatStartFinal').textContent).toBe('true')
-      expect(container.querySelector('#compatStartPrompt').textContent).toBe('Draft prompt')
-
-      await act(async () => {
-        await $[basePath].doc.set({
-          name: 'Stage 2',
-          final: true,
-          prompt: 'Saved prompt',
-          config: {}
-        })
-      })
-      await wait()
-
-      expect(container.querySelector('#compatStartFinal').textContent).toBe('true')
-      expect(container.querySelector('#compatStartPrompt').textContent).toBe('Saved prompt')
-    } finally {
-      $.stop(`${basePath}.virtual`)
-      _del([basePath])
     }
   })
 })

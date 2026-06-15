@@ -75,7 +75,7 @@ type User = {
 }
 ```
 
-Plain exported schema objects still work for backward compatibility, but `defineSchema()` is the conventional form and preserves literal inference without `as const`.
+Plain exported schema objects still work, but `defineSchema()` is the conventional form and preserves literal inference without `as const`.
 
 ## Type Model Classes
 

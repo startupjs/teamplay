@@ -222,10 +222,8 @@ describe('$sub() function. Modifying documents', () => {
     }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
   })
 
-  it('compat: allows immediate subpath set after add() without subscribe', async () => {
-    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
-
-    const gameId = '_compat_add_then_subpath_set'
+  it('allows immediate subpath set after add() without subscribe', async () => {
+    const gameId = '_add_then_subpath_set'
     await $.games.add({ _id: gameId, name: 'Added' })
     const $game = $.games[gameId]
 
@@ -241,10 +239,8 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
-  it('compat: rejects delayed subpath set after add() without subscribe when doc snapshot is dropped', async () => {
-    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
-
-    const gameId = '_compat_add_delayed_subpath_set_after_snapshot_drop'
+  it('rejects delayed subpath set after add() without subscribe when doc snapshot is dropped', async () => {
+    const gameId = '_add_delayed_subpath_set_after_snapshot_drop'
     await $.games.add({ _id: gameId, name: 'Added' })
     const $game = $.games[gameId]
 
@@ -259,10 +255,8 @@ describe('$sub() function. Modifying documents', () => {
     delete connection.collections.games[gameId]
   })
 
-  it('compat: rejects delayed subpath set after add() without subscribe', async () => {
-    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
-
-    const gameId = '_compat_add_delayed_subpath_set'
+  it('rejects delayed subpath set after add() without subscribe', async () => {
+    const gameId = '_add_delayed_subpath_set'
     await $.games.add({ _id: gameId, name: 'Added' })
     await new Promise(resolve => setTimeout(resolve, 10))
     const $game = $.games[gameId]
@@ -277,7 +271,7 @@ describe('$sub() function. Modifying documents', () => {
   })
 
   it('repopulates data tree when doc exists but raw data is missing', async () => {
-    const gameId = '_compat_partial_1'
+    const gameId = '_partial_1'
     const $game = await sub($.games[gameId])
     await $game.set({ providers: {} })
     assert.ok(getConnection().get('games', gameId).data, 'doc data exists')
@@ -290,7 +284,7 @@ describe('$sub() function. Modifying documents', () => {
   })
 
   it('supports array mutators and increment on public docs', async () => {
-    const gameId = '_compat_base_1'
+    const gameId = '_base_1'
     const $game = await sub($.games[gameId])
     await $game.set({ count: 0, list: [1, 2, 3] })
 
@@ -335,7 +329,7 @@ describe('$sub() function. Modifying documents', () => {
   })
 
   it('materializes missing public array path on push', async () => {
-    const gameId = '_compat_base_missing_list_1'
+    const gameId = '_base_missing_list_1'
     const $game = await sub($.games[gameId])
     await $game.set({ count: 0 })
 
@@ -346,7 +340,7 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
-  it('keeps racer-like missing-path semantics for public string/array mutators', async () => {
+  it('keeps missing-path semantics for public string/array mutators', async () => {
     const gameId = '_public_missing_string_array_semantics'
     const $game = await sub($.games[gameId])
     await $game.set({ title: 'Game' })
@@ -367,7 +361,7 @@ describe('$sub() function. Modifying documents', () => {
   })
 
   it('supports stringInsert/stringRemove on public docs', async () => {
-    const gameId = '_compat_base_2'
+    const gameId = '_base_2'
     const $game = await sub($.games[gameId])
     await $game.set({ text: 'abc' })
 

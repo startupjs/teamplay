@@ -19,7 +19,6 @@ import { runGc } from './_helpers.js'
 
 before(connect)
 
-const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const QUERY_COLLECTION = 'rootFinalizationQueries'
 const DOC_COLLECTION = 'rootFinalizationDocs'
 
@@ -113,7 +112,7 @@ describe('root finalization', () => {
     await waitForDisposed(rootIdB)
   })
 
-  describeCompat('compat finalization', () => {
+  describe('finalization cleanup', () => {
     it('keeps explicit close idempotent even if GC runs afterwards', async () => {
       const rootId = 'fr-explicit-close-root'
       let $root = getRootSignal({ rootId })

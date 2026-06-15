@@ -4,8 +4,7 @@
 
 - The default Signal implementation has been moved to TypeScript source and is distributed as `.ts` directly. Converted runtime imports use explicit `.ts` extensions so Node and Metro can load the source without a build step.
 - `packages/teamplay/src/orm/SignalBase.ts` contains the runtime class implementation and its directly maintained method typings. We removed the duplicate ambient `interface Signal` shape so method signatures are no longer maintained in two places.
-- `packages/teamplay/src/orm/Signal.ts` is now a small runtime facade that selects `Signal` or `SignalCompat` and re-exports the public type surface.
-- Compatibility mode remains JS-backed and intentionally unchanged except for import paths needed to coexist with the converted TS files.
+- `packages/teamplay/src/orm/Signal.ts` is now a small runtime facade that selects `Signal` or `Signal` and re-exports the public type surface.
 - Type-only logic has been split out of implementation files:
   - `packages/teamplay/src/orm/types/signal.ts` defines the high-level signal graph: `TypedSignal`, `DocumentSignal`, `CollectionSignal`, `QuerySignal`, `AggregationSignal`, model binding, and collection specs.
   - `packages/teamplay/src/orm/types/jsonSchema.ts` maps the supported JSON Schema subset into TypeScript values.
@@ -95,5 +94,5 @@ Expected VS Code behavior:
   - accept a Zod schema for developer typing,
   - convert it to JSON Schema for backend validation,
   - register the generated JSON Schema in the backend `models` object.
-- Continue migrating non-Signal source files from JS to TS in small slices, keeping compatibility mode green.
+- Continue migrating non-Signal source files from JS to TS in small slices.
 - Expand docs/API references as more of the type surface stabilizes.

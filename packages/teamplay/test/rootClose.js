@@ -25,7 +25,6 @@ import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subsc
 
 before(connect)
 
-const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const DOC_COLLECTION = 'rootCloseDocs'
 const QUERY_COLLECTION = 'rootCloseQueries'
 
@@ -97,7 +96,7 @@ describe('root close lifecycle', () => {
   })
 })
 
-describeCompat('root close()', () => {
+describe('root close()', () => {
   let prevSubscriptionGcDelay
 
   beforeEach(() => {

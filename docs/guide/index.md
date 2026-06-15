@@ -11,7 +11,7 @@ TeamPlay is a powerful and easy-to-use ORM (Object-Relational Mapping) that allo
 - **Client-side Querying**: Query your database directly from the client
 - **Versatile**: Works in pure JS, on server (Node.js), and integrates with React
 
-TeamPlay offers functionality similar to Firebase but allows you to use your own MongoDB-compatible database.
+TeamPlay offers functionality similar to Firebase but allows you to use your own MongoDB database.
 
 ## The Big Idea: Deep Signals
 

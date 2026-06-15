@@ -12,12 +12,11 @@ import connect from '../src/connect/test.js'
 
 before(connect)
 
-const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const PUBLIC_COLLECTION = 'rootScopedGamesPublic'
 const PUBLIC_MODEL_COLLECTION = 'rootScopedUsersPublic'
 const PUBLIC_VIEW_COLLECTION = 'rootScopedGamesPublicViews'
 
-describeCompat('root-scoped public signals', () => {
+describe('root-scoped public signals', () => {
   let prevSubscriptionGcDelay
 
   beforeEach(() => {
@@ -161,7 +160,6 @@ describeCompat('root-scoped public signals', () => {
     assert.equal(rootA._session.currentUserIdViaRoot.get(), 'a')
     assert.equal(rootB._session.currentUserIdViaRoot.get(), 'b')
   })
-
 })
 
 async function destroyConnectionCollection (collectionName) {

@@ -1,6 +1,4 @@
 import { Signal } from './SignalBase.ts'
-import SignalCompat from './Compat/SignalCompat.js'
-import { isCompatEnv } from './compatEnv.js'
 import type { SignalConstructor } from './types/signal.ts'
 
 export type {
@@ -90,8 +88,6 @@ export {
   isPrivateCollection
 } from './SignalBase.ts'
 
-export { SignalCompat }
-
-const DefaultSignal = (isCompatEnv() ? SignalCompat : Signal) as unknown as SignalConstructor
+const DefaultSignal = Signal as unknown as SignalConstructor
 
 export default DefaultSignal

@@ -42,7 +42,7 @@ function warnIfSchemaWasNotDefined (pattern: string, schema: unknown): void {
   console.warn(
     `[teamplay] Schema for model "${pattern}" was loaded as a plain object. ` +
     'Wrap it with defineSchema(schema) to enable the conventional schema setup. ' +
-    'Plain schemas still work for backward compatibility.'
+    'Plain schemas still work.'
   )
 }
 

@@ -55,7 +55,7 @@ export default observer(function CourseLessons ({ courseId }) {
 })
 ```
 
-`useBatchSub()` is the public batch subscription API. Legacy compat query hooks
+`useBatchSub()` is the public batch subscription API. Legacy query hooks
 such as `useQuery`, `useQuery$`, `useBatchQuery`, and `useBatchQuery$` are not
 part of the object-tree API.
 

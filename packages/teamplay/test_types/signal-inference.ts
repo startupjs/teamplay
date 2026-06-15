@@ -559,7 +559,7 @@ $games.push({
     maxPlayers: 2
   }
 })
-// @ts-expect-error collection add should require schema-compatible documents
+// @ts-expect-error collection add should require documents matching the schema
 $games.add({ status: 'draft' })
 
 const $game = $.games[gameId]

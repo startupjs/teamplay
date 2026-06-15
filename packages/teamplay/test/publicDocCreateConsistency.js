@@ -7,7 +7,7 @@ import { docSubscriptions } from '../src/orm/Doc.js'
 before(connect)
 
 describe('Public doc create consistency', () => {
-  const collection = 'compatCreateConsistencyCourses'
+  const collection = 'createConsistencyCourses'
   const createdIds = []
 
   afterEach(async () => {

@@ -4,17 +4,15 @@ import { getRootSignal } from '../src/index.ts'
 import { del as _del } from '../src/orm/dataTree.js'
 import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
 
-const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
-
-describeCompat('root-scoped compat signals', () => {
+describe('root-scoped private signals', () => {
   afterEach(() => {
     __resetRootContextsForTests()
     _del(['users'])
   })
 
   it('isolates private data with the same logical path across roots', async () => {
-    const $rootA = getRootSignal({ rootId: '_compat_private_root_A' })
-    const $rootB = getRootSignal({ rootId: '_compat_private_root_B' })
+    const $rootA = getRootSignal({ rootId: '_private_root_A' })
+    const $rootB = getRootSignal({ rootId: '_private_root_B' })
 
     await $rootA._session.user.name.set('Alice')
     await $rootB._session.user.name.set('Bob')
@@ -22,5 +20,4 @@ describeCompat('root-scoped compat signals', () => {
     assert.equal($rootA._session.user.name.get(), 'Alice')
     assert.equal($rootB._session.user.name.get(), 'Bob')
   })
-
 })

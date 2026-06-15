@@ -186,7 +186,7 @@ Adds a new item to a collection signal, automatically generating a unique ID.
 const newId = await $signal.add({ name: 'New Item' })
 ```
 
-`add()` accepts configured identity fields as a provided document ID. It also accepts legacy `id` and `_id` inputs for compatibility.
+`add()` accepts configured identity fields as a provided document ID. It also accepts legacy `id` and `_id` inputs.
 If both are provided, they must be equal, otherwise `add()` throws.
 
 ## getId()
@@ -293,7 +293,7 @@ Returns association metadata registered on the signal's model class.
 const associations = $.users[userId].getAssociations()
 ```
 
-This is mostly useful for model-integration libraries and legacy ORM compatibility helpers.
+This is mostly useful for model-integration libraries and legacy ORM helpers.
 
 ## assign(object)
 

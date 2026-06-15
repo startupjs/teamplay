@@ -75,7 +75,7 @@ The package boundaries mostly follow this layering, but `packages/teamplay` is i
 | `teamplay` | Public runtime package: signals, ORM, React hooks, server/connect facades, model registration, schema/cache re-exports. | [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts), [packages/teamplay/src/orm](./packages/teamplay/src/orm), [packages/teamplay/src/react](./packages/teamplay/src/react), [packages/teamplay/src/server.js](./packages/teamplay/src/server.js), [packages/teamplay/src/connect/index.js](./packages/teamplay/src/connect/index.js) |
 | `babel-plugin-teamplay` | File-based model discovery and code generation for app model folders. Produces model manifests and generated type env files. | [packages/babel-plugin-teamplay](./packages/babel-plugin-teamplay) |
 | `@teamplay/backend` | ShareDB backend factory with database, pubsub, hooks, access control, schema validation, and server aggregation integration. | [packages/backend/index.js](./packages/backend/index.js) |
-| `@teamplay/channel` | WebSocket/SockJS-compatible client/server channel used by the ShareDB connection. | [packages/channel](./packages/channel) |
+| `@teamplay/channel` | WebSocket/SockJS client/server channel used by the ShareDB connection. | [packages/channel](./packages/channel) |
 | `@teamplay/schema` | JSON Schema helpers and TeamPlay schema wrapping. | [packages/schema](./packages/schema) |
 | `@teamplay/server-aggregate` | ShareDB middleware for server-defined aggregation queries. | [packages/server-aggregate](./packages/server-aggregate) |
 | `@teamplay/sharedb-access` | ShareDB access-control middleware. | [packages/sharedb-access](./packages/sharedb-access) |
@@ -91,7 +91,7 @@ Root [package.json](./package.json) defines the workspace layout and the standar
 
 The public `teamplay` package exports multiple surfaces from [packages/teamplay/package.json](./packages/teamplay/package.json):
 
-- `teamplay`: main public API, including `$`, `Signal`, `sub`, React hooks, model helpers, schema helpers, aggregation/access-control helpers, and compatibility exports.
+- `teamplay`: main public API, including `$`, `Signal`, `sub`, React hooks, model helpers, schema helpers, and aggregation/access-control helpers.
 - `teamplay/orm`: lower-level ORM exports for runtime internals and advanced usage.
 - `teamplay/connect`: browser/client connection setup.
 - `teamplay/server`: server-side backend and channel setup.
@@ -174,7 +174,7 @@ Important files:
 - [packages/channel](./packages/channel)
 - [packages/teamplay/src/orm/connection.ts](./packages/teamplay/src/orm/connection.ts)
 
-`connect()` creates a channel socket, wraps it in a ShareDB-compatible connection adapter, and stores it in the ORM singleton connection. If a connection already exists, it returns without replacing it.
+`connect()` creates a channel socket, wraps it in a ShareDB connection adapter, and stores it in the ORM singleton connection. If a connection already exists, it returns without replacing it.
 
 Document identity fields are runtime-wide, matching the singleton connection constraint. Effective id fields resolve as `Model.ID_FIELDS`, then configured runtime `idFields`, then the default `['_id']`.
 
@@ -419,7 +419,7 @@ React integration lives in [packages/teamplay/src/react](./packages/teamplay/src
 - `useSub()`
 - `useAsyncSub()`
 - `useSuspendMemo()`
-- local/session/page/document/query hooks, including compatibility hooks.
+- local/session/page/document/query hooks.
 
 `$` and `sub()` are intentionally universal: the root export in [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts) uses `universal$` so the same public API works in plain JS and React environments.
 
@@ -485,18 +485,6 @@ Changes here often affect both runtime and typing:
 
 Run Babel plugin tests and TeamPlay type tests for changes in this area.
 
-## Compatibility Layer
-
-Compatibility code lives under [packages/teamplay/src/orm/Compat](./packages/teamplay/src/orm/Compat) and related compat entry points.
-
-Compat exists to preserve old Racer/StartupJS-style behavior while TeamPlay moves toward the current object-tree signal API. It is temporary and should not be a target for broad TypeScript conversion or large new abstractions.
-
-The practical rule:
-
-- preserve compat behavior when shared runtime changes touch it,
-- add compat tests when shared behavior can regress,
-- avoid investing in compat-only rewrites unless required to unblock current behavior.
-
 ## Testing Architecture
 
 Standard verification starts from root [package.json](./package.json):
@@ -518,9 +506,6 @@ The `teamplay` package test script runs:
 - `npm run test-types:external`
 - `npm run test-server`
 - `npm run test-client`
-- `npm run test-compat`
-
-Compat tests are part of the standard `teamplay` package test flow and therefore part of the root `npm test` flow.
 
 Focused commands:
 
@@ -529,7 +514,6 @@ cd packages/teamplay && npm run test-types
 cd packages/teamplay && npm run test-types:external
 cd packages/teamplay && npm run test-server
 cd packages/teamplay && npm run test-client
-cd packages/teamplay && npm run test-compat
 yarn workspace babel-plugin-teamplay test
 ```
 
@@ -546,7 +530,7 @@ Use these entry points when deciding where a change belongs.
 | Change | Start here | Also check |
 | --- | --- | --- |
 | Public API export | [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts), [packages/teamplay/package.json](./packages/teamplay/package.json) | Type tests, external consumer tests |
-| Signal property access or method binding | [packages/teamplay/src/orm/SignalBase.ts](./packages/teamplay/src/orm/SignalBase.ts), [packages/teamplay/src/orm/getSignal.ts](./packages/teamplay/src/orm/getSignal.ts) | Proxy/apply tests, compat tests if shared |
+| Signal property access or method binding | [packages/teamplay/src/orm/SignalBase.ts](./packages/teamplay/src/orm/SignalBase.ts), [packages/teamplay/src/orm/getSignal.ts](./packages/teamplay/src/orm/getSignal.ts) | Proxy/apply tests |
 | Signal read behavior | [packages/teamplay/src/orm/signalReads.ts](./packages/teamplay/src/orm/signalReads.ts), [packages/teamplay/src/orm/signalArrayReaders.ts](./packages/teamplay/src/orm/signalArrayReaders.ts) | Query/aggregation/doc read tests |
 | Signal write behavior | [packages/teamplay/src/orm/signalValueMutations.ts](./packages/teamplay/src/orm/signalValueMutations.ts), [packages/teamplay/src/orm/signalStorageMutations.ts](./packages/teamplay/src/orm/signalStorageMutations.ts), [packages/teamplay/src/orm/dataTree.js](./packages/teamplay/src/orm/dataTree.js) | Public/private mutation tests |
 | Document subscription lifecycle | [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) | Server tests, GC/cleanup tests |
@@ -568,5 +552,4 @@ When changing this codebase:
 - Avoid broad rewrites of high-risk proxy behavior without focused tests first.
 - Treat root ownership as part of correctness; query/private state should not leak across roots.
 - Treat backend access control and schema validation as server-authoritative, not client hints.
-- Avoid large investments in Compat implementation files; keep them working until the compatibility layer is removed.
 - Update [architecture.md](./architecture.md), [typing-architecture.md](./typing-architecture.md), and [tasks.md](./tasks.md) when architectural direction changes.

@@ -26,7 +26,7 @@ const DELAY = 5
 const GC_ITERATIONS = 4
 export async function runGc (iterations = GC_ITERATIONS) {
   const prevSubscriptionGcDelay = getSubscriptionGcDelay()
-  // Tests expect eager cleanup after GC regardless of compat defaults.
+  // Tests expect eager cleanup after GC regardless of the configured default delay.
   setSubscriptionGcDelay(0)
   try {
     await delay()

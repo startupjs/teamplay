@@ -163,7 +163,7 @@ function createImperativeQueryReadinessError ($query, timeoutMs) {
   }
 
   return Error(`
-    Compat query did not fully materialize within ${timeoutMs}ms.
+    Query did not fully materialize within ${timeoutMs}ms.
       Collection: ${collection}
       Params: ${JSON.stringify(params)}
       Hash: ${hash}

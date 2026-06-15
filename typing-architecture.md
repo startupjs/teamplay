@@ -343,10 +343,10 @@ Type-level schema inference, AST-based Babel parsing, runtime schema normalizati
 
 | Area | Current risk | Direction |
 | --- | --- | --- |
-| `SignalBase.ts` proxy `apply` | High | Add tests for aggregation row method binding, model-method collisions, and Compat fallback before extraction. |
+| `SignalBase.ts` proxy `apply` | High | Add tests for aggregation row method binding and model-method collisions before extraction. |
 | Generated `teamplay-env.d.ts` policy | Medium | Move interpretation into helper types where editor display stays readable. |
 | Query metadata vs document ids | Medium | Keep special properties precise and preserve object-tree access; investigate only type improvements that do not change UX. |
-| Remaining `.d.ts` shims | Medium | Narrow declarations or convert non-Compat modules to `.ts` when useful. Avoid investing in Compat conversion because Compat is temporary. |
+| Remaining `.d.ts` shims | Medium | Narrow declarations or convert default modules to `.ts` when useful. |
 | Subscription overloads | Medium | Keep shared result helpers authoritative; retain direct overloads where editor display benefits. |
 | Schema parity | Medium | Maintain the shared fixture matrix across runtime, type, Babel/JSDoc, and generated-env tests. |
 
@@ -367,5 +367,3 @@ Standard `npm test` now runs:
 3. strict external consumer type tests,
 4. normal server tests,
 5. normal client tests,
-6. compat server tests,
-7. compat client tests.

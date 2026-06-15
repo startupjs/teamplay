@@ -17,7 +17,7 @@ function checkReady (collection, hash, isAggregate, hasExtraResult = false) {
   )
 }
 
-describe('Compat batch query readiness', () => {
+describe('Query readiness', () => {
   it('aggregate query is ready when $queries.<hash>.docs exists (including empty array)', () => {
     const collection = 'stores'
     const query = { $aggregate: [{ $group: { _id: null, count: { $sum: 1 } } }] }

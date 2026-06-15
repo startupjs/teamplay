@@ -974,7 +974,7 @@ describe('QuerySubscriptions', () => {
     assert.equal(query.activeTransportMode, 'idle')
   })
 
-  it('drops undefined object fields in query params without compat warnings', () => {
+  it('drops undefined object fields in query params without normalization warnings', () => {
     const rawParams = {
       $or: [
         { entity: 'group', entityId: undefined },
@@ -1288,7 +1288,7 @@ describe('Subscription GC grace delay', () => {
     __resetSubscriptionGcDelayForTests()
   })
 
-  it('uses the same non-zero default delay in compat and non-compat modes', () => {
+  it('uses the same non-zero default delay for subscriptions', () => {
     __resetSubscriptionGcDelayForTests()
     assert.equal(getSubscriptionGcDelay(), defaultGcDelay, 'default delay should keep a grace window')
     setSubscriptionGcDelay(gcDelay)

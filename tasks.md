@@ -8,7 +8,6 @@ This file is the active task list for [architecture.md](./architecture.md) and [
 - Preserve the object-tree UX: `$`, `$.collection[id]`, `sub()`, `useSub()`, and `Signal<SchemaType>`.
 - Prefer checked runtime helpers over detached facade types.
 - Keep changes small, add focused tests before moving behavior, and verify frequently.
-- Do not invest in converting Compat implementation files to TypeScript; Compat is temporary. Touch Compat only when needed to preserve behavior or declarations.
 - Keep generated `teamplay-env.d.ts` refactors readable in editors and preserve useful field JSDoc.
 - Update this file, `architecture.md`, and `typing-architecture.md` when the direction changes.
 
@@ -25,7 +24,7 @@ This file is the active task list for [architecture.md](./architecture.md) and [
 - `defineSchema()` and schema-module default-interface augmentation support the `Signal<Game>` schema UX.
 - A shared schema fixture matrix covers runtime, type, Babel/JSDoc, and generated-env behavior.
 - Strict external consumer type tests validate package exports without `allowJs`.
-- Small non-Compat runtime modules have been converted to TypeScript where useful.
+- Small default runtime modules have been converted to TypeScript where useful.
 - `idFields` is checked TypeScript.
 - `SignalBase.ts` delegates the following checked slices:
   - symbols and getter names,
@@ -37,7 +36,7 @@ This file is the active task list for [architecture.md](./architecture.md) and [
   - read dispatch,
   - `set()` / `del()` value mutation routing,
   - shared storage routing for array/string/increment mutators.
-- Standard `npm test` and the pre-commit hook run normal and compat suites.
+- Standard `npm test` and the pre-commit hook run type, server, and client suites.
 - Client tests use numeric filename ordering plus a path-order Jest sequencer instead of an explicit file list.
 
 ## Active Tasks
@@ -62,8 +61,7 @@ Do not extract proxy method binding until tests pin the tricky behavior.
 - [ ] Add focused tests for data-field/model-method name collisions.
 - [ ] Add focused tests for aggregation row method binding back to source documents.
 - [ ] Add focused tests for aggregation setter restrictions.
-- [ ] Add focused tests for non-Compat missing-method behavior.
-- [ ] Add focused tests for Compat fallback method lookup if touching shared proxy code.
+- [ ] Add focused tests for default missing-method behavior.
 - [ ] After tests exist, consider moving small pieces of `extremelyLateBindings.apply()` into checked helpers.
 
 ### 3. Generated Env Cleanup
@@ -89,13 +87,12 @@ The object-tree API stays as `$.collection[id]`.
 
 ### 5. Remaining JavaScript Boundaries
 
-Prefer conversion for non-Compat modules when it removes useful declaration shims or tightens a shared rule.
+Prefer conversion for default modules when it removes useful declaration shims or tightens a shared rule.
 
-- [ ] Review remaining non-Compat `.d.ts` shims for broad `any`.
+- [ ] Review remaining default `.d.ts` shims for broad `any`.
 - [ ] Type the small storage-read boundary (`dataTree.get`, `dataTree.getRaw`, `dataTree.getLogicalRootSnapshot`, `privateData.getPrivateData`) so checked metadata helpers can read current values directly without injected reader callbacks.
-- [ ] Convert small non-Compat `.js` modules to `.ts` only when the boundary is stable and tests are nearby.
+- [ ] Convert small default `.js` modules to `.ts` only when the boundary is stable and tests are nearby.
 - [ ] Keep `Doc.d.ts`, `Query.d.ts`, and `Aggregation.d.ts` aligned with actual JS exports while those modules remain JavaScript.
-- [ ] Avoid Compat implementation conversion.
 
 ### 6. User-Facing Docs
 
@@ -124,7 +121,6 @@ Use the smallest useful verification while iterating, then broaden before commit
   - [ ] Full root `npm test` before commit
 - Client/runtime React change:
   - [ ] Focused or full `npm run test-client` from `packages/teamplay`
-  - [ ] Compat client/server tests if behavior is shared
 
 ## Parking Lot
 
@@ -133,4 +129,3 @@ These are known but not active until there is a concrete product or maintenance 
 - Full `SignalBase.ts` conversion. Continue slices instead.
 - New document accessor APIs such as `$.users.doc(id)`. Do not add solely for TypeScript.
 - Full JSON Schema support. Keep the TeamPlay-supported subset explicit.
-- Compat implementation conversion. Compat is temporary.

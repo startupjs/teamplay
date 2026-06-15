@@ -99,8 +99,7 @@ describe('Signal.setReplace()', () => {
     assert.deepEqual($doc.items.get(), [null])
   })
 
-  it('deletes a public document in non-compat when replacing the whole document with undefined', async () => {
-    if (process.env.TEAMPLAY_COMPAT === '1') return
+  it('deletes a public document in replacing the whole document with undefined', async () => {
     const docId = nextDocId()
     const $doc = createRoot('public-undefined-doc')[PUBLIC_COLLECTION][docId]
     await $doc.setReplace({ title: 'One' })
@@ -129,7 +128,6 @@ describe('Signal.setReplace()', () => {
       /Can't set the root signal data/
     )
 
-    if (process.env.TEAMPLAY_COMPAT === '1') return
     await assert.rejects(
       () => $root._session.value.setReplace('path', 1),
       /Signal\.setReplace\(\) expects a single argument/

@@ -41,7 +41,7 @@ await connect({
 })
 ```
 
-`idFields` defaults to `['_id']`. Legacy applications that still read `doc.id` can opt into dual identity fields with `idFields: ['_id', 'id']`; TeamPlay will inject and protect both top-level fields in both compat and non-compat runtimes.
+`idFields` defaults to `['_id']`. Legacy applications that still read `doc.id` can opt into dual identity fields with `idFields: ['_id', 'id']`; TeamPlay will inject and protect both top-level fields.
 
 On the server, create the TeamPlay backend and attach its WebSocket upgrade handler to your Node HTTP server:
 

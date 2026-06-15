@@ -94,7 +94,7 @@ can also be closed with the lower-level form
 `useSub(undefined, undefined, { batch: true })`, but `useBatchSub()` is the
 recommended spelling in application code.
 
-Avoid legacy compat hook names like `useDoc`, `useQuery`, `useBatchDoc`, and
+Avoid legacy hook names like `useDoc`, `useQuery`, `useBatchDoc`, and
 `useBatchQuery` in new code. The public API is the object-tree subscription API:
 `useSub`, `useAsyncSub`, and `useBatchSub`.
 
