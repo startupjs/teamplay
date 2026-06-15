@@ -33,8 +33,6 @@ async function runDispose (rootId: string): Promise<void> {
   const context = getRootContext(rootId, false)
   if (!context) return
 
-  context.resetModelListeners()
-
   for (const transportHash of Array.from(context.queryRuntimeHashes)) {
     await querySubscriptions.destroyByRuntimeHash(transportHash, { rootId, force: true })
   }

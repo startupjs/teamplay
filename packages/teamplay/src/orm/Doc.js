@@ -5,7 +5,6 @@ import { getConnection } from './connection.ts'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
-import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
 import { getRoot, ROOT_ID, GLOBAL_ROOT_ID, getRootTransportMode } from './Root.ts'
@@ -18,47 +17,6 @@ import {
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 const DOC_FINALIZATION_TOKENS = new WeakMap()
-const RECENT_DOC_OP_CONTEXT_TTL = 100
-const ACTIVE_DOC_OP_CONTEXTS = []
-let recentDocOpContext
-
-export function getActiveDocOpContext () {
-  return ACTIVE_DOC_OP_CONTEXTS[ACTIVE_DOC_OP_CONTEXTS.length - 1] || recentDocOpContext
-}
-
-function pushActiveDocOpContext (collection, docId, source) {
-  const context = { collection, docId, source }
-  ACTIVE_DOC_OP_CONTEXTS.push(context)
-  recentDocOpContext = context
-}
-
-function popActiveDocOpContext (collection, docId, source) {
-  const current = ACTIVE_DOC_OP_CONTEXTS[ACTIVE_DOC_OP_CONTEXTS.length - 1]
-  if (current?.collection === collection && current?.docId === docId && current?.source === source) {
-    ACTIVE_DOC_OP_CONTEXTS.pop()
-    clearRecentDocOpContext(current)
-    return
-  }
-
-  let index = -1
-  for (let i = ACTIVE_DOC_OP_CONTEXTS.length - 1; i >= 0; i--) {
-    const context = ACTIVE_DOC_OP_CONTEXTS[i]
-    if (context.collection === collection && context.docId === docId && context.source === source) {
-      index = i
-      break
-    }
-  }
-  if (index === -1) return
-
-  const [context] = ACTIVE_DOC_OP_CONTEXTS.splice(index, 1)
-  clearRecentDocOpContext(context)
-}
-
-function clearRecentDocOpContext (context) {
-  setTimeout(() => {
-    if (recentDocOpContext === context) recentDocOpContext = undefined
-  }, RECENT_DOC_OP_CONTEXT_TTL)
-}
 
 function getDocFinalizationToken ($doc) {
   let token = DOC_FINALIZATION_TOKENS.get($doc)
@@ -199,16 +157,6 @@ class Doc {
     doc.on('load', () => this._refData())
     doc.on('create', () => this._refData())
     doc.on('del', () => this._refMissingData())
-    if (isModelEventsEnabled()) {
-      doc.on('before op', (_op, source) => pushActiveDocOpContext(this.collection, this.docId, source))
-      doc.on('op', (op, source) => {
-        try {
-          emitDocOp(this.collection, this.docId, op, source)
-        } finally {
-          popActiveDocOpContext(this.collection, this.docId, source)
-        }
-      })
-    }
   }
 
   _refMissingData () {
@@ -922,54 +870,6 @@ function createPendingDestroyEntry () {
     resolve: resolvePending,
     reject: rejectPending
   }
-}
-
-function emitDocOp (collection, docId, op, source) {
-  if (!isModelEventsEnabled()) return
-  const ops = Array.isArray(op) ? op : [op]
-  for (const component of ops) {
-    if (!component || !component.p) continue
-    const baseSegments = [collection, docId]
-    let pathSegments = baseSegments.concat(component.p)
-    const meta = { source }
-    let value
-    let prevValue
-
-    if (has(component, 'si') || has(component, 'sd')) {
-      const index = component.p[component.p.length - 1]
-      meta.op = has(component, 'si') ? 'stringInsert' : 'stringRemove'
-      meta.index = index
-      pathSegments = baseSegments.concat(component.p.slice(0, -1))
-      value = _getRaw(pathSegments)
-      prevValue = component.sd
-    } else if (has(component, 'lm')) {
-      meta.op = 'arrayMove'
-      meta.from = component.p[component.p.length - 1]
-      meta.to = component.lm
-      pathSegments = baseSegments.concat(component.p.slice(0, -1))
-      value = _getRaw(pathSegments)
-    } else if (has(component, 'li') || has(component, 'ld')) {
-      meta.op = has(component, 'li') ? 'arrayInsert' : 'arrayRemove'
-      meta.index = component.p[component.p.length - 1]
-      value = _getRaw(pathSegments)
-      prevValue = component.ld
-    } else if (has(component, 'na')) {
-      meta.op = 'increment'
-      meta.by = component.na
-      value = _getRaw(pathSegments)
-      if (typeof value === 'number') prevValue = value - component.na
-    } else {
-      meta.op = 'set'
-      value = has(component, 'oi') ? component.oi : _getRaw(pathSegments)
-      prevValue = component.od
-    }
-
-    emitModelChange(pathSegments, value, prevValue, meta)
-  }
-}
-
-function has (obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj, key)
 }
 
 const ERRORS = {

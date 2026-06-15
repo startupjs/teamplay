@@ -8,8 +8,7 @@ import connect from '../src/connect/test.js'
 import SignalCompat from '../src/orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../src/orm/SignalBase.ts'
 import { scheduleReaction } from '../src/orm/batchScheduler.js'
-import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
-import { __resetSilentContextForTests, isSilentContextActive } from '../src/orm/Compat/silentContext.js'
+import { __resetSilentContextForTests } from '../src/orm/Compat/silentContext.js'
 import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 import { ROOT, ROOT_ID } from '../src/orm/Root.ts'
 import { HASH as QUERY_HASH, QUERIES } from '../src/orm/Query.js'
@@ -1878,7 +1877,6 @@ class NonCompatUserModel extends BaseSignal {
   }
 
   afterEach(() => {
-    __resetModelEventsForTests()
     __resetSilentContextForTests()
     if (!cleanupSegments) return
     for (const segments of cleanupSegments) _del(segments)
@@ -2678,125 +2676,5 @@ describe.skip('SignalCompat.start()/stop() legacy removed', () => {
     await $doc.stop.set('D')
     assert.equal($doc.start.get(), 'C')
     assert.equal($doc.stop.get(), 'D')
-  })
-})
-
-describe.skip('Compat model events legacy removed', () => {
-  let cleanupSegments
-  let $root
-
-  function setup (suffix) {
-    const basePath = `_compatEvents_${suffix}`
-    cleanupSegments = [[basePath]]
-    $root = createCompatRoot()
-    return $root[basePath]
-  }
-
-  afterEach(() => {
-    __resetModelEventsForTests()
-    __resetSilentContextForTests()
-    if (!cleanupSegments) return
-    for (const segments of cleanupSegments) _del(segments)
-  })
-
-  it('emits change with prevValue for exact path', async () => {
-    const $base = setup('exact')
-    const events = []
-    const handler = (value, prevValue) => events.push([value, prevValue])
-    $root.on('change', `${$base.path()}.count`, handler)
-    await $base.count.set(1)
-    await $base.count.set(2)
-    $root.removeListener('change', handler)
-    await $base.count.set(3)
-    assert.deepEqual(events, [[1, undefined], [2, 1]])
-  })
-
-  it('passes "*" captures to the handler', async () => {
-    const $base = setup('star')
-    const events = []
-    const handler = (key, value, prevValue) => events.push([key, value, prevValue])
-    $root.on('change', `${$base.path()}.items.*`, handler)
-    await $base.items.first.set('a')
-    await $base.items.second.set('b')
-    assert.deepEqual(events, [['first', 'a', undefined], ['second', 'b', undefined]])
-  })
-
-  it('passes "**" capture and eventName for "all"', async () => {
-    const $base = setup('starstar')
-    const events = []
-    const handler = (path, eventName, value) => events.push([path, eventName, value])
-    $root.on('all', `${$base.path()}.**`, handler)
-    await $base.a.b.set(7)
-    assert.deepEqual(events, [['a.b', 'change', 7]])
-  })
-
-  it('supports once() for compat model events', async () => {
-    const $base = setup('once')
-    const events = []
-    $root.once('change', `${$base.path()}.count`, (value, prevValue) => {
-      events.push([value, prevValue])
-    })
-
-    await $base.count.set(1)
-    await $base.count.set(2)
-
-    assert.deepEqual(events, [[1, undefined]])
-  })
-
-  it('silent() suppresses compat model events for direct mutator call', async () => {
-    const $base = setup('silentDirect')
-    const events = []
-    const handler = (value, prevValue) => events.push([value, prevValue])
-    $root.on('change', `${$base.path()}.count`, handler)
-
-    await $base.count.silent().set(1)
-    assert.deepEqual(events, [])
-
-    await $base.count.set(2)
-    assert.deepEqual(events, [[2, 1]])
-  })
-
-  it('silent() suppresses compat model events when mutating through child path', async () => {
-    const $base = setup('silentChild')
-    const events = []
-    const handler = value => events.push(value)
-    $root.on('change', `${$base.path()}.profile.title`, handler)
-
-    await $base.silent().profile.title.set('Kate')
-    assert.deepEqual(events, [])
-
-    await $base.profile.title.set('Ann')
-    assert.deepEqual(events, ['Ann'])
-  })
-
-  it('silent(false) keeps compat model events enabled', async () => {
-    const $base = setup('silentDisabled')
-    const events = []
-    const handler = value => events.push(value)
-    $root.on('change', `${$base.path()}.title`, handler)
-
-    await $base.title.silent(false).set('One')
-    assert.deepEqual(events, ['One'])
-  })
-
-  it('silent() suppresses reactive updates scheduled via observe()', async () => {
-    const $base = setup('silentReaction')
-    await $base.count.set(0)
-    const snapshots = []
-    const reaction = observe(
-      () => $base.count.get(),
-      { lazy: true, scheduler: job => scheduleReaction(() => snapshots.push(job())) }
-    )
-    try {
-      snapshots.push(reaction())
-      await $base.count.silent().set(1)
-      assert.equal(isSilentContextActive(), false)
-      assert.deepEqual(snapshots, [0])
-
-      await $base.count.set(2)
-      assert.deepEqual(snapshots, [0, 2])
-    } finally {
-      unobserve(reaction)
-    }
   })
 })

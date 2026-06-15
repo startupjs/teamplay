@@ -5,14 +5,11 @@ import {
   GETTERS,
   DEFAULT_GETTERS,
   SEGMENTS,
-  isPublicCollection,
-  isPublicCollectionSignal,
-  isPublicDocumentSignal
+  isPublicCollection
 } from '../SignalBase.ts'
 import { getRoot, ROOT, ROOT_ID } from '../Root.ts'
-import { docSubscriptions } from '../Doc.js'
-import { IS_QUERY, querySubscriptions } from '../Query.js'
-import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../Aggregation.js'
+import { IS_QUERY } from '../Query.js'
+import { AGGREGATIONS, IS_AGGREGATION } from '../Aggregation.js'
 import { getIdFieldsForSegments, isIdFieldPath, isPublicDocPath, normalizeIdFields, isPlainObject } from '../idFields.ts'
 import {
   incrementPublic as _incrementPublic,
@@ -28,7 +25,6 @@ import {
   stringRemovePublic as _stringRemovePublic
 } from '../dataTree.js'
 import { on as onCustomEvent, removeListener as removeCustomEventListener } from '../events.js'
-import { waitForImperativeQueryReady } from '../queryReadiness.js'
 import { runInBatch } from '../batchScheduler.js'
 import {
   arrayInsertPrivateData,
@@ -69,16 +65,6 @@ class SignalCompat extends Signal {
   getDeepCopy () {
     if (arguments.length > 0) throw Error('Signal.getDeepCopy() does not accept any arguments')
     return deepCopy(this.get())
-  }
-
-  fetch (...items) {
-    if (items.length > 0) return subscribeMany(items, 'subscribe', 'fetch', 'fetch')
-    return subscribeSelf(this, 'fetch', 'fetch')
-  }
-
-  unfetch (...items) {
-    if (items.length > 0) return subscribeMany(items, 'unsubscribe', 'fetch', 'unfetch')
-    return unsubscribeSelf(this, 'fetch', 'unfetch')
   }
 
   getExtra () {
@@ -618,70 +604,6 @@ function deepCopy (value) {
     } catch {}
   }
   return racerDeepCopy(rawValue)
-}
-
-function subscribeMany (items, action, intent = 'subscribe', methodName = action) {
-  const targets = flattenItems(items)
-  const promises = []
-  for (const target of targets) {
-    if (!target) continue
-    if (!(target instanceof Signal)) {
-      throw Error(`Signal.${methodName}() accepts only Signal instances. Got: ${target}`)
-    }
-    const result = action === 'subscribe'
-      ? subscribeSelf(target, intent, methodName)
-      : unsubscribeSelf(target, intent, methodName)
-    if (result?.then) promises.push(result)
-  }
-  if (promises.length) return Promise.all(promises)
-}
-
-function flattenItems (items, result = []) {
-  for (const item of items) {
-    if (!item) continue
-    if (Array.isArray(item)) {
-      flattenItems(item, result)
-    } else {
-      result.push(item)
-    }
-  }
-  return result
-}
-
-function subscribeSelf ($signal, intent = 'subscribe', methodName = 'subscribe') {
-  if ($signal[IS_QUERY]) {
-    return (async () => {
-      await querySubscriptions.subscribe($signal, { intent })
-      await waitForImperativeQueryReady($signal)
-    })()
-  }
-  if ($signal[IS_AGGREGATION]) {
-    return (async () => {
-      await aggregationSubscriptions.subscribe($signal, { intent })
-      await waitForImperativeQueryReady($signal)
-    })()
-  }
-  if (isPublicDocumentSignal($signal)) return docSubscriptions.subscribe($signal, { intent })
-  if (isPublicCollectionSignal($signal)) {
-    throw Error(`Signal.${methodName}() expects a document or query signal. Use sub($collection, params, { mode: 'fetch' }) for collection fetches.`)
-  }
-  if ($signal[SEGMENTS].length === 0) {
-    throw Error(`Signal.${methodName}() cannot be called on the root signal`)
-  }
-  throw Error(`Signal.${methodName}() expects a document or query signal`)
-}
-
-function unsubscribeSelf ($signal, intent = 'subscribe', methodName = 'unsubscribe') {
-  if ($signal[IS_QUERY]) return querySubscriptions.unsubscribe($signal, { intent })
-  if ($signal[IS_AGGREGATION]) return aggregationSubscriptions.unsubscribe($signal, { intent })
-  if (isPublicDocumentSignal($signal)) return docSubscriptions.unsubscribe($signal, { intent })
-  if (isPublicCollectionSignal($signal)) {
-    throw Error(`Signal.${methodName}() expects a document or query signal`)
-  }
-  if ($signal[SEGMENTS].length === 0) {
-    throw Error(`Signal.${methodName}() cannot be called on the root signal`)
-  }
-  throw Error(`Signal.${methodName}() expects a document or query signal`)
 }
 
 // Racer-style deep copy:

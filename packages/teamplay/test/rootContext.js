@@ -24,12 +24,9 @@ describe('RootContext runtime owner', () => {
     assert.notStrictEqual(rootA1, rootB)
 
     rootA1.setPrivateDataAt(['_session', 'userId'], 'users.a')
-    rootA1.getModelEventStore('change', true).set('_session.user', { handlers: new Set() })
 
     assert.equal(rootA2.getPrivateDataAt(['_session', 'userId']), 'users.a')
-    assert.equal(rootA2.getModelEventStore('change').size, 1)
     assert.equal(rootB.getPrivateDataAt(['_session', 'userId']), undefined)
-    assert.equal(rootB.getModelEventStore('change').size, 0)
   })
 
   it('tracks query and aggregation runtime ownership per root', () => {

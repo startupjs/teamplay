@@ -6,16 +6,9 @@ import type { PathSegment } from './types/path.ts'
 type RootId = string | null | undefined
 type DataTree = Record<string | number, unknown>
 type RuntimeKind = 'query' | 'aggregation'
-type ModelEventStore = Map<string, unknown>
 
 interface RootContextOptions {
   fetchOnly?: boolean
-}
-
-interface ModelListeners {
-  change: ModelEventStore
-  all: ModelEventStore
-  [eventName: string]: ModelEventStore
 }
 
 export interface DirectDocSubscriptionEntry {
@@ -36,10 +29,6 @@ export default class RootContext {
   fetchOnly: boolean
   privateDataRaw: DataTree
   privateData: DataTree
-  readonly modelListeners: ModelListeners = {
-    change: new Map(),
-    all: new Map()
-  }
 
   readonly queryRuntimeHashes = new Set<string>()
   readonly aggregationRuntimeHashes = new Set<string>()
@@ -51,15 +40,6 @@ export default class RootContext {
     this.fetchOnly = fetchOnly == null ? getDefaultFetchOnly() : !!fetchOnly
     this.privateDataRaw = {}
     this.privateData = observable(this.privateDataRaw) as DataTree
-  }
-
-  getModelEventStore (eventName: string, create = false): ModelEventStore {
-    let store = this.modelListeners[eventName]
-    if (!store && create) {
-      store = new Map()
-      this.modelListeners[eventName] = store
-    }
-    return store
   }
 
   getFetchOnly (): boolean {
@@ -159,12 +139,6 @@ export default class RootContext {
     if (entry.count === 0) this.directDocSubscriptions.delete(hash)
   }
 
-  resetModelListeners (): void {
-    for (const store of Object.values(this.modelListeners)) {
-      store.clear()
-    }
-  }
-
   resetRuntimeHashes (): void {
     this.queryRuntimeHashes.clear()
     this.aggregationRuntimeHashes.clear()
@@ -186,7 +160,6 @@ export default class RootContext {
   isRuntimeEmpty (): boolean {
     return (
       isPlainObjectEmpty(this.privateData) &&
-      Object.values(this.modelListeners).every(store => store.size === 0) &&
       this.queryRuntimeHashes.size === 0 &&
       this.aggregationRuntimeHashes.size === 0 &&
       this.signalHashes.size === 0 &&

@@ -894,8 +894,7 @@ export const regularBindings = {
   }
 }
 
-const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds', 'getExtra', 'fetch', 'unfetch']
-const AGGREGATION_ALLOWED_METHODS = ['fetch', 'unfetch']
+const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds', 'getExtra']
 
 // dot syntax always returns a child signal even if such method or property exists.
 // The method is only called when the signal is explicitly called as a function,
@@ -936,7 +935,7 @@ export const extremelyLateBindings = {
             })
           })
         }
-      } else if (!DEFAULT_GETTERS.includes(key) && !AGGREGATION_ALLOWED_METHODS.includes(key)) {
+      } else if (!DEFAULT_GETTERS.includes(key)) {
         throw Error(ERRORS.aggregationSetter(segments, key))
       }
     }

@@ -2,7 +2,6 @@ import { raw } from '@nx-js/observer-util'
 import { set as _set, getRaw } from './dataTree.js'
 import getSignal from './getSignal.ts'
 import { getConnection } from './connection.ts'
-import { emitModelChange, isModelEventsEnabled } from './Compat/modelEvents.js'
 import { isCompatEnv } from './compatEnv.js'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
@@ -134,22 +133,6 @@ export class Query {
         if (!Array.isArray(docs) || !Array.isArray(idsState)) return
         docs.splice(index, 0, ...newDocs)
         idsState.splice(index, 0, ...ids)
-
-        if (!isModelEventsEnabled()) return
-        const docsPath = [QUERIES, this.hash, 'docs']
-        const idsPath = [QUERIES, this.hash, 'ids']
-        for (let i = 0; i < newDocs.length; i++) {
-          emitModelChange(rootId, docsPath.concat(index + i), newDocs[i], undefined, {
-            op: 'queryInsert',
-            index: index + i
-          })
-        }
-        for (let i = 0; i < ids.length; i++) {
-          emitModelChange(rootId, idsPath.concat(index + i), ids[i], undefined, {
-            op: 'queryInsert',
-            index: index + i
-          })
-        }
       })
     })
     this.shareQuery.on('move', (shareDocs, from, to) => {
@@ -159,27 +142,11 @@ export class Query {
         const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
         const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
         if (!Array.isArray(docs) || !Array.isArray(ids)) return
-        const prevDocs = isModelEventsEnabled() ? docs.slice() : undefined
         docs.splice(from, shareDocs.length)
         docs.splice(to, 0, ...movedDocs)
 
-        const prevIds = isModelEventsEnabled() ? ids.slice() : undefined
         ids.splice(from, shareDocs.length)
         ids.splice(to, 0, ...movedIds)
-
-        if (!isModelEventsEnabled()) return
-        emitModelChange(rootId, [QUERIES, this.hash, 'docs'], docs, prevDocs, {
-          op: 'queryMove',
-          from,
-          to,
-          howMany: shareDocs.length
-        })
-        emitModelChange(rootId, [QUERIES, this.hash, 'ids'], ids, prevIds, {
-          op: 'queryMove',
-          from,
-          to,
-          howMany: shareDocs.length
-        })
       })
     })
     this.shareQuery.on('remove', (shareDocs, index) => {
@@ -193,27 +160,9 @@ export class Query {
         const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
         const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
         if (!Array.isArray(docs) || !Array.isArray(ids)) return
-        const removedDocs = isModelEventsEnabled() ? docs.slice(index, index + shareDocs.length) : undefined
         docs.splice(index, shareDocs.length)
 
-        const removedIds = isModelEventsEnabled() ? ids.slice(index, index + docIds.length) : undefined
         ids.splice(index, docIds.length)
-
-        if (!isModelEventsEnabled()) return
-        const docsPath = [QUERIES, this.hash, 'docs']
-        const idsPath = [QUERIES, this.hash, 'ids']
-        for (let i = 0; i < removedDocs.length; i++) {
-          emitModelChange(rootId, docsPath.concat(index + i), undefined, removedDocs[i], {
-            op: 'queryRemove',
-            index: index + i
-          })
-        }
-        for (let i = 0; i < removedIds.length; i++) {
-          emitModelChange(rootId, idsPath.concat(index + i), undefined, removedIds[i], {
-            op: 'queryRemove',
-            index: index + i
-          })
-        }
       })
     })
     this.shareQuery.on('extra', extra => {

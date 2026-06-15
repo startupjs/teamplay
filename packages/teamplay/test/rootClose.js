@@ -11,7 +11,6 @@ import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { del as _del } from '../src/orm/dataTree.js'
-import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
 import { getPrivateData, getPrivateDataRawRoot } from '../src/orm/privateData.js'
 import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../src/orm/Query.js'
 import { __resetPendingRootDisposesForTests } from '../src/orm/disposeRootContext.ts'
@@ -43,7 +42,6 @@ describe('root close lifecycle', () => {
     await querySubscriptions.clear()
     await aggregationSubscriptions.clear()
     assertGlobalSubscriptionManagersConsistent()
-    __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
     __resetRootContextsForTests()
   })
@@ -117,7 +115,6 @@ describeCompat('root close()', () => {
     _del([QUERY_COLLECTION])
     await destroyConnectionCollection(DOC_COLLECTION)
     await destroyConnectionCollection(QUERY_COLLECTION)
-    __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
     __resetRootContextsForTests()
     setSubscriptionGcDelay(prevSubscriptionGcDelay)

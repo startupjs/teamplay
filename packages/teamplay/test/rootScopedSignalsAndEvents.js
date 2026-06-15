@@ -2,7 +2,6 @@ import { describe, it, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { getRootSignal } from '../src/index.ts'
 import { del as _del, set as _set } from '../src/orm/dataTree.js'
-import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
 import { __resetSilentContextForTests } from '../src/orm/Compat/silentContext.js'
 import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
 
@@ -10,7 +9,6 @@ const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe
 
 describeCompat('root-scoped signals without public model events', () => {
   afterEach(() => {
-    __resetModelEventsForTests()
     __resetSilentContextForTests()
     __resetRootContextsForTests()
     _del(['users'])
