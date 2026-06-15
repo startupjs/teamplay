@@ -9,7 +9,6 @@ import SignalCompat from '../src/orm/Compat/SignalCompat.js'
 import { Signal as BaseSignal } from '../src/orm/SignalBase.ts'
 import { scheduleReaction } from '../src/orm/batchScheduler.js'
 import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
-import { __resetRefLinksForTests } from '../src/orm/Compat/refRegistry.js'
 import { __resetSilentContextForTests, isSilentContextActive } from '../src/orm/Compat/silentContext.js'
 import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 import { ROOT, ROOT_ID } from '../src/orm/Root.ts'
@@ -1046,7 +1045,6 @@ describeCompat('SignalCompat public mutators', () => {
       if (doc?.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
       delete getConnection().collections?.compatGames?.[id]
     }
-    __resetRefLinksForTests()
     _del(['_session'])
     assert.deepEqual(_get(['compatGames']), {}, 'compatGames collection is empty in signal\'s data tree')
     assert.equal(Object.keys(getConnection().collections?.compatGames || {}).length, 0, 'no games in ShareDB connection')
@@ -1449,73 +1447,6 @@ describeCompat('SignalCompat public mutators', () => {
     })
   })
 
-  it('ref forwards nested id/_id writes while preserving public doc identity', async () => {
-    if (process.env.TEAMPLAY_COMPAT !== '1') return
-    const gameId = '_compat_public_ref_ids'
-    const $game = await sub($.compatGames[gameId])
-    await $game.set({
-      name: 'Compat Ref',
-      profile: { id: 'profile-1', _id: 'profile-1' }
-    })
-
-    $._session.activeGame.ref($game)
-
-    await $._session.activeGame.id.set('other')
-    await $._session.activeGame._id.set('other2')
-    await $._session.activeGame.profile.id.set('profile-2')
-    await $._session.activeGame.profile._id.set('profile-3')
-
-    assert.equal($game.id.get(), 'other')
-    assert.equal($game._id.get(), gameId)
-    assert.equal($game.profile.id.get(), 'profile-2')
-    assert.equal($game.profile._id.get(), 'profile-3')
-    assert.equal($._session.activeGame.profile.id.get(), 'profile-2')
-    assert.equal($._session.activeGame.profile._id.get(), 'profile-3')
-  })
-
-  it('public ref child set materializes missing nested object parents', async () => {
-    if (process.env.TEAMPLAY_COMPAT !== '1') return
-
-    const gameId = '_compat_public_ref_missing_object_parent'
-    const $game = await sub($.compatGames[gameId])
-    await $game.set({ name: 'Compat Ref Missing Object' })
-
-    $._session.activeGame.ref($game)
-    await $._session.activeGame.__dummyField.test.set('123')
-
-    assert.equal($._session.activeGame.__dummyField.test.get(), '123')
-    assert.equal($game.__dummyField.test.get(), '123')
-    assert.deepEqual($game.get(), {
-      _id: gameId,
-      name: 'Compat Ref Missing Object',
-      __dummyField: {
-        test: '123'
-      }
-    })
-  })
-
-  it('public ref child push materializes missing nested arrays', async () => {
-    if (process.env.TEAMPLAY_COMPAT !== '1') return
-
-    const gameId = '_compat_public_ref_missing_array'
-    const $game = await sub($.compatGames[gameId])
-    await $game.set({ name: 'Compat Ref Missing Array' })
-
-    $._session.activeGame.ref($game)
-    const len = await $._session.activeGame.stats.tags.push('tag-1')
-
-    assert.equal(len, 1)
-    assert.deepEqual($._session.activeGame.stats.tags.get(), ['tag-1'])
-    assert.deepEqual($game.stats.tags.get(), ['tag-1'])
-    assert.deepEqual($game.get(), {
-      _id: gameId,
-      name: 'Compat Ref Missing Array',
-      stats: {
-        tags: ['tag-1']
-      }
-    })
-  })
-
   it('injects only _id in compat queries', async () => {
     const id1 = '_compat_query_1'
     const id2 = '_compat_query_2'
@@ -1680,12 +1611,6 @@ describeCompat('SignalCompat public mutators', () => {
 
 const isCompatMode = process.env.TEAMPLAY_COMPAT === '1'
 
-class CompatRefUserModel extends SignalCompat {
-  joinCourse (courseId) {
-    return `${this.path()}:${courseId}`
-  }
-}
-
 class CompatDomainStartModel extends SignalCompat {
   start (type, id) {
     return `domain:${this.path()}:${type}:${id}`
@@ -1696,92 +1621,20 @@ class CompatDomainStartModel extends SignalCompat {
   }
 }
 
-class NonCompatRefUserModel extends BaseSignal {
+class NonCompatUserModel extends BaseSignal {
   joinCourse (courseId) {
     return `${this.path()}:${courseId}`
   }
 }
 
-;(isCompatMode ? describe : describe.skip)('SignalCompat ref model method fallback', () => {
-  const collection = 'compatRefUsers'
-  let $root
-
-  before(() => {
-    connect()
-    addModel(`${collection}.*`, CompatRefUserModel)
-    $root = getRootSignal({ rootId: '_compat_ref_method_root' })
-  })
-
-  afterEach(() => {
-    __resetRefLinksForTests()
-    _del(['_session'])
-    _del([collection])
-  })
-
-  it('calls model method via ref target in compat mode', () => {
-    const $sessionUser = $root._session.user
-    $root._session.user.ref(`${collection}.123`)
-    assert.equal($sessionUser.path(), '_session.user')
-    assert.equal($sessionUser.joinCourse('course_1'), `${collection}.123:course_1`)
-  })
-
-  it('session alias resolves ref target methods when ref is created via canonical _session path', () => {
-    const $aliasSessionUser = $root.session.user
-    const $canonicalSessionUser = $root._session.user
-
-    assert.equal($aliasSessionUser, $canonicalSessionUser)
-    assert.equal($aliasSessionUser.path(), '_session.user')
-
-    $root._session.user.ref(`${collection}.123`)
-
-    assert.equal($aliasSessionUser.joinCourse('course_alias_1'), `${collection}.123:course_alias_1`)
-    assert.equal($canonicalSessionUser.joinCourse('course_alias_2'), `${collection}.123:course_alias_2`)
-  })
-
-  it('session alias resolves ref target methods when ref is created via alias path', () => {
-    const $aliasSessionUser = $root.session.user
-    const $canonicalSessionUser = $root._session.user
-
-    assert.equal($aliasSessionUser, $canonicalSessionUser)
-    assert.equal($aliasSessionUser.path(), '_session.user')
-
-    $root.session.user.ref(`${collection}.xyz`)
-
-    assert.equal($aliasSessionUser.joinCourse('course_alias_3'), `${collection}.xyz:course_alias_3`)
-    assert.equal($canonicalSessionUser.joinCourse('course_alias_4'), `${collection}.xyz:course_alias_4`)
-  })
-
-  it('non-ref model method still works', () => {
-    const $user = $root[collection].abc
-    assert.equal($user.joinCourse('course_2'), `${collection}.abc:course_2`)
-  })
-
-  it('ref cycle does not loop infinitely and fails gracefully', () => {
-    $root._session.a.ref('_session.b')
-    $root._session.b.ref('_session.a')
-    assert.throws(() => {
-      $root._session.a.joinCourse('course_3')
-    }, /Method "joinCourse" does not exist on signal "_session.a"/)
-  })
-
-  it('keeps raw signal identity and path unchanged', () => {
-    const $before = $root._session.user
-    $root._session.user.ref(`${collection}.xyz`)
-    const $after = $root._session.user
-    assert.equal($before, $after)
-    assert.equal($after.path(), '_session.user')
-    assert.equal($after.joinCourse('course_4'), `${collection}.xyz:course_4`)
-  })
-})
-
 ;(!isCompatMode ? describe : describe.skip)('Non-compat model method behavior', () => {
-  const collection = 'nonCompatRefUsers'
+  const collection = 'nonCompatUsers'
   let $root
 
   before(() => {
     connect()
-    addModel(`${collection}.*`, NonCompatRefUserModel)
-    $root = getRootSignal({ rootId: '_non_compat_ref_method_root' })
+    addModel(`${collection}.*`, NonCompatUserModel)
+    $root = getRootSignal({ rootId: '_non_compat_method_root' })
   })
 
   afterEach(() => {
@@ -1911,6 +1764,55 @@ class NonCompatRefUserModel extends BaseSignal {
     assert.deepEqual($agg.getIds(), ['course-row-1'])
   })
 
+  it('child access on aggregation rows is synchronous and returns a signal', () => {
+    const $agg = getAggregationSignal('courses', {
+      $aggregate: [
+        { $match: { kind: 'template' } },
+        { $sort: { createdAt: -1, name: 1 } },
+        { $limit: 5 },
+        { $project: { _id: 1, description: 1 } }
+      ]
+    }, { root: $compatRoot })
+    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
+    cleanupAggregationRuntimeHashes.push(aggregationRuntimeHash)
+
+    setAggregationRuntime($agg, [
+      {
+        _id: 'row-sync-at',
+        description: { text: 'hello' }
+      }
+    ])
+
+    const $fromChild = $agg[0].description.text
+    assert.equal(typeof $fromChild, 'function')
+    assert.equal(typeof $fromChild.get, 'function')
+    assert.equal($fromChild.get(), 'hello')
+    assert.equal($fromChild.path(), `${AGGREGATIONS}.${aggregationRuntimeHash}.0.description.text`)
+  })
+
+  it('root() on aggregation rows is synchronous and does not return a promise', () => {
+    const $agg = getAggregationSignal('courses', {
+      $aggregate: [
+        { $match: { kind: 'template' } },
+        { $limit: 1 }
+      ]
+    }, { root: $compatRoot })
+    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
+    cleanupAggregationRuntimeHashes.push(aggregationRuntimeHash)
+
+    setAggregationRuntime($agg, [
+      {
+        _id: 'row-sync-scope',
+        description: { text: 'world' }
+      }
+    ])
+
+    const $fromRoot = $agg[0].root()
+    assert.equal(typeof $fromRoot, 'function')
+    assert.equal(typeof $fromRoot.get, 'function')
+    assert.equal($fromRoot instanceof Promise, false)
+  })
+
   it('sub fetch mode does not toggle the global fetchOnly default', async () => {
     const previousDefaultFetchOnly = getDefaultFetchOnly()
     setDefaultFetchOnly(false)
@@ -1963,283 +1865,6 @@ class NonCompatRefUserModel extends BaseSignal {
   })
 })
 
-;(isCompatMode ? describe : describe.skip)('SignalCompat ref/removeRef', () => {
-  let cleanupSegments
-  let cleanupAggregationRuntimeHashes
-  let $root
-
-  function setup (suffix) {
-    const basePath = `_compatRef_${suffix}`
-    cleanupSegments = [[basePath]]
-    cleanupAggregationRuntimeHashes = []
-    $root = createCompatRoot()
-    return $root[basePath]
-  }
-
-  afterEach(() => {
-    if (!cleanupSegments) return
-    for (const segments of cleanupSegments) _del(segments)
-    for (const hash of cleanupAggregationRuntimeHashes || []) {
-      delPrivateData($root?.[ROOT_ID], [AGGREGATIONS, hash])
-    }
-  })
-
-  it('syncs values both ways for direct signals', async () => {
-    const $base = setup('direct')
-    const $from = $base.from
-    const $to = $base.to
-    $from.ref($to)
-
-    await $to.set({ name: 'Alice' })
-    assert.deepEqual($from.get(), { name: 'Alice' })
-
-    await $from.set({ name: 'Bob' })
-    assert.deepEqual($to.get(), { name: 'Bob' })
-  })
-
-  it('allows refs only from private source paths', async () => {
-    const $base = setup('privateSourceOnly')
-    cleanupSegments.push(['users'])
-    await $root.users.u1.set({ title: 'Alice' })
-
-    assert.throws(
-      () => $root.users.alias.ref($root.users.u1),
-      /source path must be in a private collection/
-    )
-
-    $base.user.ref($root.users.u1)
-    assert.equal($base.user.title.get(), 'Alice')
-  })
-
-  it('routes ref syncing through scheduler in batch mode (no intermediate alias snapshots)', async () => {
-    const $base = setup('batch')
-    const $from = $base.from
-    const $to = $base.to
-
-    $from.ref($to)
-    await $to.set({ a: 0, b: 0 })
-
-    const snapshots = []
-    const reaction = observe(
-      () => deepCopyCompat($from.get()),
-      { lazy: true, scheduler: job => scheduleReaction(() => snapshots.push(job())) }
-    )
-    snapshots.push(reaction())
-    await $root.batch(async () => {
-      await $to.set({ a: 1, b: 0 })
-      await $to.set({ a: 1, b: 2 })
-    })
-
-    unobserve(reaction)
-
-    assert.deepEqual($from.get(), { a: 1, b: 2 })
-    assert.deepEqual(snapshots[snapshots.length - 1], { a: 1, b: 2 })
-    assert.equal(snapshots.some(s => s && s.a === 1 && s.b === 0), false)
-  })
-
-  it('does not mirror local target updates twice', async () => {
-    const $base = setup('noDoubleMirror')
-    const $from = $base.from
-    const $to = $base.to
-    await $base.set({ from: {}, to: {} })
-    $from.ref($to)
-
-    const updates = []
-    const reaction = observe(
-      () => deepCopyCompat($from.get()),
-      { lazy: true, scheduler: job => updates.push(job()) }
-    )
-
-    reaction()
-    updates.length = 0
-
-    await $to.set({ name: 'Alice' })
-    assert.equal(updates.length, 1)
-    assert.deepEqual(updates[0], { name: 'Alice' })
-
-    unobserve(reaction)
-  })
-
-  it('supports refs from child signals', async () => {
-    const $base = setup('subpath')
-    const $session = $base.session
-    const $target = $base.target
-    $session.tutoringSession.ref($target)
-
-    await $target.set({ active: true })
-    assert.deepEqual($session.tutoringSession.get(), { active: true })
-
-    await $session.tutoringSession.set({ active: false })
-    assert.deepEqual($target.get(), { active: false })
-  })
-
-  it('set(value) on child signal resolves refs inside the path', async () => {
-    const $base = setup('setPathRef')
-    const $session = $base.session
-    const $target = $base.target
-    $session.user.ref($target)
-
-    await $session.user.superField.set('superValue')
-
-    assert.equal($target.superField.get(), 'superValue')
-    assert.equal($session.user.superField.get(), 'superValue')
-  })
-
-  it('set(value) on local child signals works when root pointer is raw', async () => {
-    setup('rawRootPathSet')
-    const localId = '_raw_local_0'
-    const cache = new Map()
-    const $local = createCompatSignal(['$local', localId], raw($root), cache)
-    cleanupSegments.push(['$local', localId])
-
-    await $local.set({ nodes: {} })
-    await $local.nodes.dropdown.set({ open: true })
-
-    assert.deepEqual($local.nodes.dropdown.get(), { open: true })
-  })
-
-  it('removeRef stops syncing', async () => {
-    const $base = setup('remove')
-    const $session = $base.session
-    const $target = $base.target
-    $session.tutoringSession.ref($target)
-
-    await $target.set({ value: 1 })
-    assert.deepEqual($session.tutoringSession.get(), { value: 1 })
-
-    $session.tutoringSession.removeRef()
-
-    await $target.set({ value: 2 })
-    assert.deepEqual($session.tutoringSession.get(), { value: 1 })
-
-    await $session.tutoringSession.set({ value: 3 })
-    assert.deepEqual($target.get(), { value: 2 })
-  })
-
-  it('refExtra from aggregation keeps target readable for hash paths with dots', async () => {
-    const $base = setup('refExtraAggReadable')
-    const query = {
-      $aggregate: [
-        {
-          $match: {
-            kind: 'template',
-            forceUpdate: { $ne: 0 }
-          }
-        },
-        {
-          $lookup: {
-            from: 'courses',
-            let: { courseId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$nodeRefs.courseTemplateNodeId', '$$courseId'] }
-                    ]
-                  }
-                }
-              }
-            ],
-            as: 'courses'
-          }
-        },
-        { $sort: { createdAt: -1, name: 1 } },
-        { $limit: 15 }
-      ]
-    }
-    const $agg = getAggregationSignal('courses', query, { root: $root })
-    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
-    cleanupAggregationRuntimeHashes.push(aggregationRuntimeHash)
-
-    const rows1 = [{ _id: 'row1', name: 'First' }, { _id: 'row2', name: 'Second' }]
-    setAggregationRuntime($agg, rows1)
-    $agg.refExtra(`${$base.path()}.dataSource`)
-
-    assert.deepEqual($base.dataSource.get(), rows1)
-
-    const rows2 = [{ _id: 'row3', name: 'Third' }]
-    setAggregationRuntime($agg, rows2)
-
-    assert.deepEqual($base.dataSource.get(), rows2)
-  })
-
-  it('child access on aggregation rows is synchronous and returns a signal', () => {
-    setup('aggRowAtSync')
-    const $agg = getAggregationSignal('courses', {
-      $aggregate: [
-        { $match: { kind: 'template' } },
-        { $sort: { createdAt: -1, name: 1 } },
-        { $limit: 5 },
-        { $project: { _id: 1, description: 1 } }
-      ]
-    }, { root: $root })
-    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
-    cleanupAggregationRuntimeHashes.push(aggregationRuntimeHash)
-
-    setAggregationRuntime($agg, [
-      {
-        _id: 'row-sync-at',
-        description: { text: 'hello' }
-      }
-    ])
-
-    const $fromChild = $agg[0].description.text
-    assert.equal(typeof $fromChild, 'function')
-    assert.equal(typeof $fromChild.get, 'function')
-    assert.equal($fromChild.get(), 'hello')
-    assert.equal($fromChild.path(), `${AGGREGATIONS}.${aggregationRuntimeHash}.0.description.text`)
-  })
-
-  it('root() on aggregation rows is synchronous and does not return a promise', () => {
-    setup('aggRowScopeSync')
-    const $agg = getAggregationSignal('courses', {
-      $aggregate: [
-        { $match: { kind: 'template' } },
-        { $limit: 1 }
-      ]
-    }, { root: $root })
-    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
-    cleanupAggregationRuntimeHashes.push(aggregationRuntimeHash)
-
-    setAggregationRuntime($agg, [
-      {
-        _id: 'row-sync-scope',
-        description: { text: 'world' }
-      }
-    ])
-
-    const $fromRoot = $agg[0].root()
-    assert.equal(typeof $fromRoot, 'function')
-    assert.equal(typeof $fromRoot.get, 'function')
-    assert.equal($fromRoot instanceof Promise, false)
-  })
-
-  it('refExtra from aggregation is mirror-only and does not mutate source on target writes', async () => {
-    const $base = setup('refExtraAggMirrorOnly')
-    const $agg = getAggregationSignal('courses', {
-      $aggregate: [
-        { $match: { kind: 'template' } },
-        { $sort: { createdAt: -1, name: 1 } },
-        { $limit: 5 }
-      ]
-    }, { root: $root })
-    const aggregationRuntimeHash = getAggregationRuntimeHash($agg)
-    cleanupAggregationRuntimeHashes.push(aggregationRuntimeHash)
-
-    const sourceRows = [{ _id: 's1', name: 'Source' }]
-    setAggregationRuntime($agg, sourceRows)
-    $agg.refExtra(`${$base.path()}.dataSource`)
-    assert.deepEqual($base.dataSource.get(), sourceRows)
-
-    const localRows = [{ _id: 'l1', name: 'Local' }]
-    await $base.dataSource.set(localRows)
-
-    assert.deepEqual($base.dataSource.get(), localRows)
-    assert.deepEqual($agg.get(), sourceRows)
-  })
-})
-
 ;(isCompatMode ? describe : describe.skip)('SignalCompat removed virtual compat APIs', () => {
   let cleanupSegments
   let $root
@@ -2254,7 +1879,6 @@ class NonCompatRefUserModel extends BaseSignal {
 
   afterEach(() => {
     __resetModelEventsForTests()
-    __resetRefLinksForTests()
     __resetSilentContextForTests()
     if (!cleanupSegments) return
     for (const segments of cleanupSegments) _del(segments)
@@ -2964,14 +2588,6 @@ describe.skip('SignalCompat.start()/stop() legacy removed', () => {
     assert.equal($session.start('chat', 'u1'), `domain:${domainCollection}.session1:chat:u1`)
   })
 
-  it('priority: deref model method start() wins over compat fallback', () => {
-    $root._session.activeUser.ref(`${domainCollection}.user2`)
-    assert.equal(
-      $root._session.activeUser.start('chat', 'u2'),
-      `domain:${domainCollection}.user2:chat:u2`
-    )
-  })
-
   it('throws a clear error when getter is not a function', () => {
     const $base = setup('getter')
     const targetPath = `${$base.path()}.virtual`
@@ -3078,7 +2694,6 @@ describe.skip('Compat model events legacy removed', () => {
 
   afterEach(() => {
     __resetModelEventsForTests()
-    __resetRefLinksForTests()
     __resetSilentContextForTests()
     if (!cleanupSegments) return
     for (const segments of cleanupSegments) _del(segments)
@@ -3126,18 +2741,6 @@ describe.skip('Compat model events legacy removed', () => {
     await $base.count.set(2)
 
     assert.deepEqual(events, [[1, undefined]])
-  })
-
-  it('propagates events through refs', async () => {
-    const $base = setup('ref')
-    const $from = $base.alias
-    const $to = $base.source
-    $from.ref($to)
-    const events = []
-    const handler = value => events.push(value)
-    $root.on('change', `${$from.path()}.title`, handler)
-    await $to.title.set('One')
-    assert.deepEqual(events, ['One'])
   })
 
   it('silent() suppresses compat model events for direct mutator call', async () => {

@@ -5,8 +5,6 @@ import { LOCAL } from './$.js'
 import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.ts'
 import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
-import { isCompatEnv } from './compatEnv.js'
-import { resolveRefSegmentsSafe } from './Compat/refFallback.js'
 import { getSignalIdentityHash } from './rootScope.ts'
 import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.ts'
 import type { PathSegment } from './types/path.ts'
@@ -106,16 +104,10 @@ function getDefaultProxyHandlers ({
 
 export function getSignalClass (
   segments: PathSegment[],
-  rootId = GLOBAL_ROOT_ID
+  _rootId = GLOBAL_ROOT_ID
 ): SignalModelConstructor {
-  let Model = findModel(segments)
+  const Model = findModel(segments)
   if (Model) return Model
-  if (!isCompatEnv()) return Signal as unknown as SignalModelConstructor
-  const dereferencedSegments = resolveRefSegmentsSafe(segments, rootId)
-  if (dereferencedSegments) {
-    Model = findModel(dereferencedSegments)
-    if (Model) return Model
-  }
   return Signal as unknown as SignalModelConstructor
 }
 

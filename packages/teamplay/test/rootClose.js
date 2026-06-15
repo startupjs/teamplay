@@ -12,7 +12,6 @@ import { docSubscriptions } from '../src/orm/Doc.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { del as _del } from '../src/orm/dataTree.js'
 import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
-import { __resetRefLinksForTests } from '../src/orm/Compat/refRegistry.js'
 import { getPrivateData, getPrivateDataRawRoot } from '../src/orm/privateData.js'
 import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../src/orm/Query.js'
 import { __resetPendingRootDisposesForTests } from '../src/orm/disposeRootContext.ts'
@@ -30,7 +29,6 @@ before(connect)
 const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const DOC_COLLECTION = 'rootCloseDocs'
 const QUERY_COLLECTION = 'rootCloseQueries'
-const REFS_COLLECTION = 'rootCloseRefs'
 
 function assertGlobalSubscriptionManagersConsistent () {
   assertDocSubscriptionsConsistent(docSubscriptions)
@@ -45,7 +43,6 @@ describe('root close lifecycle', () => {
     await querySubscriptions.clear()
     await aggregationSubscriptions.clear()
     assertGlobalSubscriptionManagersConsistent()
-    __resetRefLinksForTests()
     __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
     __resetRootContextsForTests()
@@ -118,11 +115,8 @@ describeCompat('root close()', () => {
     assertGlobalSubscriptionManagersConsistent()
     _del([DOC_COLLECTION])
     _del([QUERY_COLLECTION])
-    _del([REFS_COLLECTION])
     await destroyConnectionCollection(DOC_COLLECTION)
     await destroyConnectionCollection(QUERY_COLLECTION)
-    await destroyConnectionCollection(REFS_COLLECTION)
-    __resetRefLinksForTests()
     __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
     __resetRootContextsForTests()
@@ -270,20 +264,6 @@ describeCompat('root close()', () => {
     assert.equal(__getRootContextForTests(rootId), undefined)
     assert.equal(querySubscriptions.transportSubCount.get(transportHash), undefined)
     assert.equal(querySubscriptions.ownerMeta.get(ownerKey), undefined)
-  })
-
-  it('stops active refs and removes root-owned runtime state', async () => {
-    const $root = getRootSignal({ rootId: 'close-ref-root' })
-
-    await $root[REFS_COLLECTION].u1.set({ name: 'Alice' })
-    $root._session.currentUser.ref(`${REFS_COLLECTION}.u1`)
-    assert.equal($root._session.currentUser.name.get(), 'Alice')
-
-    await closeSignal($root)
-
-    assert.equal(__getRootContextForTests('close-ref-root'), undefined)
-    await $root[REFS_COLLECTION].u1.name.set('Bob')
-    assert.equal($root._session.currentUser.get(), undefined)
   })
 
   it('purges root-owned signal cache entries and is idempotent', async () => {

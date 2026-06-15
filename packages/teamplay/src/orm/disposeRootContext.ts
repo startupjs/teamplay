@@ -7,7 +7,6 @@ import {
   getRootContext
 } from './rootContext.ts'
 import { isGlobalRootId, normalizeRootId } from './rootScope.ts'
-import type RootContext from './rootContext.ts'
 
 type RootId = string | null | undefined
 
@@ -34,8 +33,6 @@ async function runDispose (rootId: string): Promise<void> {
   const context = getRootContext(rootId, false)
   if (!context) return
 
-  stopActiveRefs(context)
-  context.resetRefs()
   context.resetModelListeners()
 
   for (const transportHash of Array.from(context.queryRuntimeHashes)) {
@@ -53,17 +50,6 @@ async function runDispose (rootId: string): Promise<void> {
   context.resetSignalHashes()
   context.resetDirectDocSubscriptions()
   deleteRootContext(rootId)
-}
-
-function stopActiveRefs (context: RootContext): void {
-  for (const entry of context.activeRefs.values()) {
-    try {
-      entry?.stop?.()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-  context.resetActiveRefs()
 }
 
 export function __resetPendingRootDisposesForTests (): void {

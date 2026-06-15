@@ -8,7 +8,6 @@ import { docSubscriptions } from '../src/orm/Doc.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { del as _del } from '../src/orm/dataTree.js'
 import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
-import { __resetRefLinksForTests } from '../src/orm/Compat/refRegistry.js'
 import { getPrivateDataRawRoot } from '../src/orm/privateData.js'
 import { HASH as QUERY_HASH, querySubscriptions } from '../src/orm/Query.js'
 import { __resetPendingRootDisposesForTests } from '../src/orm/disposeRootContext.ts'
@@ -49,7 +48,6 @@ describe('root finalization', () => {
     _del([DOC_COLLECTION])
     await destroyConnectionCollection(QUERY_COLLECTION)
     await destroyConnectionCollection(DOC_COLLECTION)
-    __resetRefLinksForTests()
     __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
     __resetRootContextsForTests()

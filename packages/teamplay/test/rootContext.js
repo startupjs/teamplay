@@ -23,12 +23,12 @@ describe('RootContext runtime owner', () => {
     assert.strictEqual(rootA1, rootA2)
     assert.notStrictEqual(rootA1, rootB)
 
-    rootA1.refLinks.set('_session.user', { toPath: 'users.a' })
+    rootA1.setPrivateDataAt(['_session', 'userId'], 'users.a')
     rootA1.getModelEventStore('change', true).set('_session.user', { handlers: new Set() })
 
-    assert.equal(rootA2.refLinks.size, 1)
+    assert.equal(rootA2.getPrivateDataAt(['_session', 'userId']), 'users.a')
     assert.equal(rootA2.getModelEventStore('change').size, 1)
-    assert.equal(rootB.refLinks.size, 0)
+    assert.equal(rootB.getPrivateDataAt(['_session', 'userId']), undefined)
     assert.equal(rootB.getModelEventStore('change').size, 0)
   })
 
@@ -56,7 +56,7 @@ describe('RootContext runtime owner', () => {
   })
 
   it('exposes contexts for future cleanup and test reset', () => {
-    getRootContext('root-A').refLinks.set('_session.user', { toPath: 'users.a' })
+    getRootContext('root-A').setPrivateDataAt(['_session', 'userId'], 'users.a')
     registerRootOwnedRuntime('root-A', 'query', 'query-runtime-a')
 
     assert.ok(__getRootContextForTests('root-A'))

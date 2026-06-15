@@ -7,7 +7,6 @@ type RootId = string | null | undefined
 type DataTree = Record<string | number, unknown>
 type RuntimeKind = 'query' | 'aggregation'
 type ModelEventStore = Map<string, unknown>
-type ActiveRefEntry = { stop?: () => void }
 
 interface RootContextOptions {
   fetchOnly?: boolean
@@ -37,8 +36,6 @@ export default class RootContext {
   fetchOnly: boolean
   privateDataRaw: DataTree
   privateData: DataTree
-  readonly refLinks = new Map<string, unknown>()
-  readonly activeRefs = new Map<string, ActiveRefEntry>()
   readonly modelListeners: ModelListeners = {
     change: new Map(),
     all: new Map()
@@ -162,14 +159,6 @@ export default class RootContext {
     if (entry.count === 0) this.directDocSubscriptions.delete(hash)
   }
 
-  resetRefs (): void {
-    this.refLinks.clear()
-  }
-
-  resetActiveRefs (): void {
-    this.activeRefs.clear()
-  }
-
   resetModelListeners (): void {
     for (const store of Object.values(this.modelListeners)) {
       store.clear()
@@ -197,8 +186,6 @@ export default class RootContext {
   isRuntimeEmpty (): boolean {
     return (
       isPlainObjectEmpty(this.privateData) &&
-      this.refLinks.size === 0 &&
-      this.activeRefs.size === 0 &&
       Object.values(this.modelListeners).every(store => store.size === 0) &&
       this.queryRuntimeHashes.size === 0 &&
       this.aggregationRuntimeHashes.size === 0 &&

@@ -54,8 +54,6 @@ import {
   prepareAddPayload,
   resolveAddDocId
 } from './idFields.ts'
-import { isCompatEnv } from './compatEnv.js'
-import { resolveRefSegmentsSafe, resolveRefSignalSafe } from './Compat/refFallback.js'
 import { runInBatch } from './batchScheduler.js'
 import { isPublicCollection } from './signalPathKind.ts'
 import {
@@ -897,7 +895,7 @@ export const regularBindings = {
 }
 
 const QUERY_METHODS = ['map', 'reduce', 'find', 'get', 'getIds', 'getExtra', 'fetch', 'unfetch']
-const AGGREGATION_ALLOWED_METHODS = ['fetch', 'unfetch', 'ref', 'removeRef', 'refExtra', 'refIds']
+const AGGREGATION_ALLOWED_METHODS = ['fetch', 'unfetch']
 
 // dot syntax always returns a child signal even if such method or property exists.
 // The method is only called when the signal is explicitly called as a function,
@@ -945,28 +943,6 @@ export const extremelyLateBindings = {
     const $parent = getSignal(getRoot(signal), segments)
     const rawParent = rawSignal($parent)
     if (key in rawParent) return Reflect.apply(rawParent[key], $parent, argumentsList)
-
-    if (isCompatEnv()) {
-      const $resolvedParent = resolveRefSignalSafe($parent)
-      if ($resolvedParent && $resolvedParent !== $parent) {
-        const rawResolvedParent = rawSignal($resolvedParent)
-        if (rawResolvedParent && key in rawResolvedParent) {
-          return Reflect.apply(rawResolvedParent[key], $resolvedParent, argumentsList)
-        }
-      } else {
-        const resolvedSegments = resolveRefSegmentsSafe(
-          segments,
-          (getRoot(signal) || signal)?.[ROOT_ID]
-        )
-        if (resolvedSegments) {
-          const $resolvedByPath = getSignal(getRoot(signal), resolvedSegments)
-          const rawResolvedByPath = rawSignal($resolvedByPath)
-          if (rawResolvedByPath && key in rawResolvedByPath) {
-            return Reflect.apply(rawResolvedByPath[key], $resolvedByPath, argumentsList)
-          }
-        }
-      }
-    }
 
     throw Error(ERRORS.noSignalKey($parent, key))
   },

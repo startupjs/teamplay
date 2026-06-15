@@ -1,10 +1,7 @@
-import { getRefLinks, getRefRootIds } from './refRegistry.js'
 import { isCompatEnv } from '../compatEnv.js'
-import { isSilentContextActive, isModelEventsSilentContextActive, runInModelEventsSilentContext } from './silentContext.js'
+import { isSilentContextActive, isModelEventsSilentContextActive } from './silentContext.js'
 import { normalizeRootId } from '../rootScope.ts'
 import { getRootContext, getRootContexts } from '../rootContext.ts'
-import { setReplace as setReplaceInDataTree, del as delFromDataTree } from '../dataTree.js'
-import { setReplacePrivateData, delPrivateData } from '../privateData.js'
 
 const MODEL_EVENT_NAMES = ['change', 'all']
 
@@ -56,31 +53,8 @@ export function emitModelChange (path, value, prevValue, meta) {
   const rootIds = getTargetRootIds(meta?.rootId)
 
   for (const rootId of rootIds) {
-    const visited = new Set()
-    const queue = [initialSegments]
-
-    while (queue.length) {
-      const segments = queue.shift()
-      const key = segments.join('.')
-      if (visited.has(key)) continue
-      visited.add(key)
-
-      emitForEvent(rootId, 'change', segments, value, prevValue, meta)
-      emitForEvent(rootId, 'all', segments, value, prevValue, meta, eventName)
-
-      for (const link of getRefLinks(rootId).values()) {
-        if (!isPathPrefix(link.toSegments, segments)) continue
-        if (link.mirrorOnly && typeof link.onChange === 'function') {
-          link.onChange()
-        } else if (!link.mirrorOnly) {
-          mirrorRefAliasFromTargetSegments(rootId, link, segments, value, meta)
-        }
-        const suffix = segments.slice(link.toSegments.length)
-        const nextSegments = link.fromSegments.concat(suffix)
-        const nextKey = nextSegments.join('.')
-        if (!visited.has(nextKey)) queue.push(nextSegments)
-      }
-    }
+    emitForEvent(rootId, 'change', initialSegments, value, prevValue, meta)
+    emitForEvent(rootId, 'all', initialSegments, value, prevValue, meta, eventName)
   }
 }
 
@@ -111,49 +85,6 @@ function splitPattern (pattern) {
   return pattern.split('.').filter(Boolean)
 }
 
-function mirrorRefAliasFromTargetSegments (rootId, link, targetSegments, value, meta) {
-  const suffix = targetSegments.slice(link.toSegments.length)
-  const fromSegments = link.fromSegments.concat(suffix)
-  const fromRootId = normalizeRootId(link.fromRootId ?? rootId)
-  const shouldDelete = shouldDeleteMirroredPath(value, meta)
-  runInModelEventsSilentContext(() => {
-    if (isPrivateSegments(fromSegments)) {
-      if (shouldDelete) {
-        delPrivateData(fromRootId, fromSegments)
-      } else {
-        setReplacePrivateData(fromRootId, fromSegments, cloneValue(value))
-      }
-      return
-    }
-    if (shouldDelete) {
-      delFromDataTree(fromSegments)
-      return
-    }
-    setReplaceInDataTree(fromSegments, cloneValue(value))
-  })
-}
-
-function isPrivateSegments (segments) {
-  if (!Array.isArray(segments) || !segments.length) return false
-  return /^[_$]/.test(String(segments[0]))
-}
-
-function shouldDeleteMirroredPath (value, meta) {
-  if (meta?.op === 'setReplace') return false
-  if (meta?.op === 'del') return true
-  return value === undefined
-}
-
-function cloneValue (value) {
-  if (Array.isArray(value)) return value.map(cloneValue)
-  if (value && typeof value === 'object') {
-    const cloned = {}
-    for (const key of Object.keys(value)) cloned[key] = cloneValue(value[key])
-    return cloned
-  }
-  return value
-}
-
 function getModelEventRootStore (eventName, rootId, create = false) {
   return getRootContext(normalizeRootId(rootId), create)?.getModelEventStore(eventName, create)
 }
@@ -170,25 +101,13 @@ function getModelEventRootIds () {
 
 function getTargetRootIds (rootId) {
   if (rootId != null) return [normalizeRootId(rootId)]
-  const rootIds = new Set([
-    ...getModelEventRootIds(),
-    ...getRefRootIds()
-  ])
-  return rootIds
+  return getModelEventRootIds()
 }
 
 function splitPath (path) {
   if (Array.isArray(path)) return path.map(segment => String(segment))
   if (!path) return []
   return String(path).split('.').filter(Boolean)
-}
-
-function isPathPrefix (prefixSegments, fullSegments) {
-  if (prefixSegments.length > fullSegments.length) return false
-  for (let i = 0; i < prefixSegments.length; i++) {
-    if (prefixSegments[i] !== fullSegments[i]) return false
-  }
-  return true
 }
 
 function matchPattern (patternSegments, pathSegments) {

@@ -4,7 +4,6 @@ import { addModel, getRootSignal, sub, unsub } from '../src/index.ts'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { del as _del, set as _set } from '../src/orm/dataTree.js'
-import { __resetRefLinksForTests } from '../src/orm/Compat/refRegistry.js'
 import { __resetModelEventsForTests } from '../src/orm/Compat/modelEvents.js'
 import { getPrivateData } from '../src/orm/privateData.js'
 import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../src/orm/Query.js'
@@ -28,7 +27,6 @@ describeCompat('root-scoped public signals', () => {
   })
 
   beforeEach(() => {
-    __resetRefLinksForTests()
     __resetModelEventsForTests()
   })
 
