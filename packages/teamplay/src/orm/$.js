@@ -4,7 +4,7 @@
 import getSignal from './getSignal.ts'
 import Signal from './Signal.ts'
 import { LOCAL, valueSubscriptions } from './Value.js'
-import { reactionSubscriptions } from './Reaction.js'
+import { reactionSubscriptions } from './reactionSubscriptions.js'
 
 export { LOCAL } from './Value.js'
 
