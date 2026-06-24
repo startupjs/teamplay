@@ -23,10 +23,10 @@ The `observer()` function does two important things for your component:
 
 ## Using `useSub()` for Data Subscriptions
 
-When you want to subscribe to data from the server in a React component, use the `useSub()` hook:
+When you want to subscribe to data from the server in a React component, use the `useSub()` hook with an object-tree signal:
 
 ```javascript
-import { observer, useSub } from 'teamplay'
+import { $, observer, useSub } from 'teamplay'
 
 const UserProfile = observer(({ userId }) => {
   const $user = useSub($.users[userId])
@@ -42,6 +42,61 @@ const UserProfile = observer(({ userId }) => {
 2. While fetching, it "suspends" the component.
 3. The `observer()` wrapper shows a loading state.
 4. Once the data is ready, the component renders with the data.
+
+### Async subscriptions
+
+If the component should render its own loading state instead of suspending, use
+`useAsyncSub()`:
+
+```javascript
+import { $, observer, useAsyncSub } from 'teamplay'
+
+const UserProfile = observer(({ userId }) => {
+  const $user = useAsyncSub($.users[userId])
+  if (!$user) return <div>Loading...</div>
+  return <div>{$user.name.get()}</div>
+})
+```
+
+### Batch subscriptions
+
+Use `useBatchSub()` when several subscriptions should become ready together.
+Each batch subscription is declared first, then a final no-argument
+`useBatchSub()` closes the Suspense barrier:
+
+```javascript
+import { $, observer, useBatchSub } from 'teamplay'
+
+const CoursePage = observer(({ courseId }) => {
+  const $course = useBatchSub($.courses[courseId], { defer: false })
+  const $lessons = useBatchSub($.lessons, { courseId }, { defer: false })
+
+  useBatchSub()
+
+  return (
+    <section>
+      <h1>{$course.title.get()}</h1>
+      {$lessons.map($lesson => (
+        <div key={$lesson.getId()}>{$lesson.title.get()}</div>
+      ))}
+    </section>
+  )
+})
+```
+
+`useBatchSub()` keeps TeamPlay's normal `defer` default. Pass `{ defer: false }`
+only when the component needs immediate resubscription timing, such as when
+migrating legacy synchronous batch screens.
+
+`useBatchSub(signal, params, options)` is syntax sugar for
+`useSub(signal, params, { ...options, batch: true, async: false })`. The barrier
+can also be closed with the lower-level form
+`useSub(undefined, undefined, { batch: true })`, but `useBatchSub()` is the
+recommended spelling in application code.
+
+Avoid legacy hook names like `useDoc`, `useQuery`, `useBatchDoc`, and
+`useBatchQuery` in new code. The public API is the object-tree subscription API:
+`useSub`, `useAsyncSub`, and `useBatchSub`.
 
 ## Creating and Waiting for Documents
 

@@ -9,37 +9,39 @@
   ],
   "scripts": {
     "start": "cd example && npm run start",
-    "test": "cd packages/teamplay && npm run test",
+    "build": "yarn workspace @teamplay/utils build && yarn workspace @teamplay/schema build && yarn workspace teamplay build",
+    "clean": "rm -rf packages/utils/dist packages/schema/dist packages/teamplay/dist",
+    "lint": "eslint .",
+    "test": "yarn workspace babel-plugin-teamplay test && cd packages/teamplay && npm run test",
+    "test-types:dist": "yarn build && yarn workspace teamplay test-types:dist",
     "test-client": "cd packages/teamplay && npm run test-client",
     "test-server": "cd packages/teamplay && npm run test-server",
     "test-server-only": "cd packages/teamplay && npm run test-server-only",
-    "publish-patch": "dotenv -- npx lerna publish patch --conventional-commits --create-release=github",
-    "publish-patch-force": "dotenv -- npx lerna publish patch --force-publish --conventional-commits --create-release=github",
-    "publish-breaking-minor": "dotenv -- npx lerna publish minor --conventional-commits --create-release=github",
-    "publish-alpha-breaking-minor": "dotenv -- npx lerna publish preminor --force-publish --preid alpha --dist-tag alpha --no-push",
-    "publish-alpha-patch": "dotenv -- npx lerna publish prerelease --preid alpha --dist-tag alpha --no-push",
+    "publish-patch": "yarn build && dotenv -- npx lerna publish patch --conventional-commits --create-release=github",
+    "publish-patch-force": "yarn build && dotenv -- npx lerna publish patch --force-publish --conventional-commits --create-release=github",
+    "publish-breaking-minor": "yarn build && dotenv -- npx lerna publish minor --conventional-commits --create-release=github",
+    "publish-alpha-breaking-minor": "yarn build && dotenv -- npx lerna publish preminor --force-publish --preid alpha --dist-tag alpha",
+    "publish-alpha-patch": "yarn build && dotenv -- npx lerna publish prerelease --preid alpha --dist-tag alpha",
     "docs": "rspress dev --port 3010",
     "docs-build": "rspress build",
     "docs-preview": "rspress preview --port 3010"
   },
   "devDependencies": {
     "@rspress/core": "^2.0.0",
-    "@types/react": "~18.2.45",
+    "@types/node": "^25.6.0",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
     "dotenv-cli": "^11.0.0",
-    "eslint": "^8.56.0",
-    "eslint-config-startupjs": "^0.56.0-alpha.29",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "husky": "^4.3.0",
     "lerna": "^9.0.3",
     "lint-staged": "^15.2.2",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
+    "neostandard": "^0.13.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.1.3"
-  },
-  "eslintConfig": {
-    "extends": [
-      "startupjs"
-    ]
+    "typescript": "^6.0.3"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs}": [
@@ -51,5 +53,5 @@
       "pre-commit": "! grep -q '\"resolutions\":' ./package.json || (echo '\\033[0;31mError: \"resolutions\" found in package.json. Remove \"resolutions\" to proceed with commit.\\033[0m' && exit 1) && lint-staged && npm test"
     }
   },
-  "packageManager": "yarn@4.12.0+sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8"
+  "packageManager": "yarn@4.14.1+sha512.64df448055b2d37ba269d7db535a469b8da93f8ef1140c25fd7a83c00a8fbaacb214ca0e02553b92a2c54cef78bb67d0b4817fab02001df0e24fac0faccc3b42"
 }

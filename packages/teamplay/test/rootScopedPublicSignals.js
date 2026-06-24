@@ -1,35 +1,27 @@
 import assert from 'assert'
 import { before, beforeEach, afterEach, describe, it } from 'mocha'
-import { addModel, getRootSignal } from '../index.js'
-import { docSubscriptions } from '../orm/Doc.js'
-import { getConnection } from '../orm/connection.js'
-import { del as _del, set as _set } from '../orm/dataTree.js'
-import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
-import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
-import { getPrivateData } from '../orm/privateData.js'
-import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../orm/Query.js'
-import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
-import { getRootOwnedRuntimeHashes } from '../orm/rootContext.js'
-import connect from '../connect/test.js'
+import { addModel, getRootSignal, sub, unsub } from '../src/index.ts'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { getConnection } from '../src/orm/connection.ts'
+import { del as _del } from '../src/orm/dataTree.js'
+import { getPrivateData } from '../src/orm/privateData.js'
+import { querySubscriptions, QUERIES, HASH as QUERY_HASH } from '../src/orm/Query.js'
+import { setSubscriptionGcDelay, getSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
+import { getRootOwnedRuntimeHashes } from '../src/orm/rootContext.ts'
+import connect from '../src/connect/test.js'
 
 before(connect)
 
-const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const PUBLIC_COLLECTION = 'rootScopedGamesPublic'
 const PUBLIC_MODEL_COLLECTION = 'rootScopedUsersPublic'
 const PUBLIC_VIEW_COLLECTION = 'rootScopedGamesPublicViews'
 
-describeCompat('root-scoped public signals', () => {
+describe('root-scoped public signals', () => {
   let prevSubscriptionGcDelay
 
   beforeEach(() => {
     prevSubscriptionGcDelay = getSubscriptionGcDelay()
     setSubscriptionGcDelay(0)
-  })
-
-  beforeEach(() => {
-    __resetRefLinksForTests()
-    __resetModelEventsForTests()
   })
 
   afterEach(async () => {
@@ -72,11 +64,8 @@ describeCompat('root-scoped public signals', () => {
     await rootA[PUBLIC_COLLECTION]._1.set({ name: 'Game 1', active: true })
     await rootA[PUBLIC_COLLECTION]._2.set({ name: 'Game 2', active: true })
 
-    const $queryA = rootA.query(PUBLIC_COLLECTION, { active: true })
-    const $queryB = rootB.query(PUBLIC_COLLECTION, { active: true })
-
-    await $queryA.subscribe()
-    await $queryB.subscribe()
+    const $queryA = await sub(rootA[PUBLIC_COLLECTION], { active: true })
+    const $queryB = await sub(rootB[PUBLIC_COLLECTION], { active: true })
 
     assert.notStrictEqual($queryA, $queryB)
     assert.equal($queryA[QUERY_HASH], $queryB[QUERY_HASH])
@@ -85,8 +74,8 @@ describeCompat('root-scoped public signals', () => {
     assert.ok(getPrivateData('query-public-root-A', [QUERIES, $queryA[QUERY_HASH], 'ids']))
     assert.ok(getPrivateData('query-public-root-B', [QUERIES, $queryB[QUERY_HASH], 'ids']))
 
-    await $queryA.unsubscribe()
-    await $queryB.unsubscribe()
+    await unsub($queryA)
+    await unsub($queryB)
   })
 
   it('tracks query runtime ownership inside root contexts while transport stays shared', async () => {
@@ -95,11 +84,8 @@ describeCompat('root-scoped public signals', () => {
 
     await rootA[PUBLIC_VIEW_COLLECTION]._1.set({ name: 'Game 1', active: true })
 
-    const $queryA = rootA.query(PUBLIC_VIEW_COLLECTION, { active: true })
-    const $queryB = rootB.query(PUBLIC_VIEW_COLLECTION, { active: true })
-
-    await $queryA.subscribe()
-    await $queryB.subscribe()
+    const $queryA = await sub(rootA[PUBLIC_VIEW_COLLECTION], { active: true })
+    const $queryB = await sub(rootB[PUBLIC_VIEW_COLLECTION], { active: true })
 
     assert.deepEqual(
       Array.from(getRootOwnedRuntimeHashes('query-view-root-A', 'query')),
@@ -110,14 +96,14 @@ describeCompat('root-scoped public signals', () => {
       [$queryB[QUERY_HASH]]
     )
 
-    await $queryA.unsubscribe()
+    await unsub($queryA)
     assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('query-view-root-A', 'query')), [])
     assert.deepEqual(
       Array.from(getRootOwnedRuntimeHashes('query-view-root-B', 'query')),
       [$queryB[QUERY_HASH]]
     )
 
-    await $queryB.unsubscribe()
+    await unsub($queryB)
     assert.deepEqual(Array.from(getRootOwnedRuntimeHashes('query-view-root-B', 'query')), [])
   })
 
@@ -148,12 +134,12 @@ describeCompat('root-scoped public signals', () => {
   it('public model methods use owning root when touching private state', async () => {
     class RootScopedUserModel extends getRootSignal({ rootId: 'temp-root-for-model-class' }).constructor {
       static collection = PUBLIC_MODEL_COLLECTION
-      markCurrentViaScope () {
-        return this.scope('_session.currentUserId').set(this.getId())
+      markCurrentViaRootChild () {
+        return this.root()._session.currentUserId.set(this.getId())
       }
 
       markCurrentViaRoot () {
-        return this.root.scope('_session.currentUserIdViaRoot').set(this.getId())
+        return this.root()._session.currentUserIdViaRoot.set(this.getId())
       }
     }
     try { addModel(`${PUBLIC_MODEL_COLLECTION}.*`, RootScopedUserModel) } catch {}
@@ -164,8 +150,8 @@ describeCompat('root-scoped public signals', () => {
     await rootA[PUBLIC_MODEL_COLLECTION].a.set({ name: 'Alice' })
     await rootB[PUBLIC_MODEL_COLLECTION].b.set({ name: 'Bob' })
 
-    await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaScope()
-    await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaScope()
+    await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaRootChild()
+    await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaRootChild()
     await rootA[PUBLIC_MODEL_COLLECTION].a.markCurrentViaRoot()
     await rootB[PUBLIC_MODEL_COLLECTION].b.markCurrentViaRoot()
 
@@ -173,35 +159,6 @@ describeCompat('root-scoped public signals', () => {
     assert.equal(rootB._session.currentUserId.get(), 'b')
     assert.equal(rootA._session.currentUserIdViaRoot.get(), 'a')
     assert.equal(rootB._session.currentUserIdViaRoot.get(), 'b')
-  })
-
-  it('public model events are root-scoped even though public data is shared', async () => {
-    const rootA = createRoot('events-root-A')
-    const rootB = createRoot('events-root-B')
-    const eventsA = []
-    const eventsB = []
-
-    const handlerA = (...args) => eventsA.push(args)
-    const handlerB = (...args) => eventsB.push(args)
-
-    rootA.on('change', `${PUBLIC_COLLECTION}.*.name`, handlerA)
-    rootB.on('change', `${PUBLIC_COLLECTION}.*.name`, handlerB)
-
-    _set([PUBLIC_COLLECTION, '_1', 'name'], 'before')
-    eventsA.length = 0
-    eventsB.length = 0
-
-    _set([PUBLIC_COLLECTION, '_1', 'name'], 'after')
-    assert.equal(eventsA.length, 1)
-    assert.equal(eventsB.length, 1)
-
-    rootA.removeListener('change', handlerA)
-    eventsA.length = 0
-    eventsB.length = 0
-
-    _set([PUBLIC_COLLECTION, '_1', 'name'], 'final')
-    assert.equal(eventsA.length, 0)
-    assert.equal(eventsB.length, 1)
   })
 })
 

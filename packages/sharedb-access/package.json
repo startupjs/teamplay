@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/sharedb-access",
-  "version": "0.4.0",
+  "version": "0.5.0-alpha.38",
   "description": "ShareDB access-control middleware",
   "publishConfig": {
     "access": "public"
@@ -22,8 +22,6 @@
     "lodash": "^4.17.20"
   },
   "devDependencies": {
-    "mocha": "^8.1.3",
-    "racer": "1.0.1",
-    "sharedb": "^5.0.0"
+    "mocha": "^11.7.5"
   }
 }

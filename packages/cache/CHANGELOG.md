@@ -8,7 +8,6 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 
 ### Features
 
-* Add compatibility mode with the old APIs of `react-sharedb` ([#41](https://github.com/startupjs/teamplay/issues/41)) ([d14b49e](https://github.com/startupjs/teamplay/commit/d14b49edd9d74e33cd2efb26374a6a4aff541dba)), closes [#29](https://github.com/startupjs/teamplay/issues/29) [#30](https://github.com/startupjs/teamplay/issues/30) [#31](https://github.com/startupjs/teamplay/issues/31) [#32](https://github.com/startupjs/teamplay/issues/32) [#33](https://github.com/startupjs/teamplay/issues/33) [#34](https://github.com/startupjs/teamplay/issues/34) [#35](https://github.com/startupjs/teamplay/issues/35) [#36](https://github.com/startupjs/teamplay/issues/36)
 
 
 

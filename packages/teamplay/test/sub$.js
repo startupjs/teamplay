@@ -1,13 +1,15 @@
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub, aggregation } from '../index.js'
-import { get as _get, del as _del } from '../orm/dataTree.js'
-import { getConnection } from '../orm/connection.js'
-import { hashQuery } from '../orm/Query.js'
-import { getPrivateData } from '../orm/privateData.js'
-import { getRoot, ROOT_ID } from '../orm/Root.js'
-import connect from '../connect/test.js'
+import { $, sub, unsub, aggregation } from '../src/index.ts'
+import { get as _get, del as _del } from '../src/orm/dataTree.js'
+import { getConnection } from '../src/orm/connection.ts'
+import { hashQuery, querySubscriptions } from '../src/orm/Query.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { getPrivateData } from '../src/orm/privateData.js'
+import { getRoot, getRootSignal, ROOT_ID } from '../src/orm/Root.ts'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
+import connect from '../src/connect/test.js'
 
 before(connect)
 
@@ -89,6 +91,31 @@ describe('$sub() function', () => {
     await cbPromise(cb => doc4.del(cb))
   })
 
+  it('supports Promise.all for parallel subscriptions', async () => {
+    const gameId1 = '_promise_all_1'
+    const gameId2 = '_promise_all_2'
+    const doc1 = getConnection().get('games', gameId1)
+    const doc2 = getConnection().get('games', gameId2)
+    await cbPromise(cb => doc1.create({ name: 'Parallel 1', active: true }, cb))
+    await cbPromise(cb => doc2.create({ name: 'Parallel 2', active: true }, cb))
+
+    const [$game1, $game2, $activeGames] = await Promise.all([
+      sub($.games[gameId1]),
+      sub($.games[gameId2]),
+      sub($.games, { active: true })
+    ])
+
+    assert.equal($game1.name.get(), 'Parallel 1')
+    assert.equal($game2.name.get(), 'Parallel 2')
+    assert.deepEqual($activeGames.getIds().filter(id => id === gameId1 || id === gameId2).sort(), [gameId1, gameId2])
+
+    await cbPromise(cb => doc1.del(cb))
+    await cbPromise(cb => doc2.del(cb))
+    await unsub($activeGames)
+    await unsub($game1)
+    await unsub($game2)
+  })
+
   it.skip('doc: deep data also observable after .get()', async () => {
     const gameId = '_20'
     const $game = await sub($.games[gameId])
@@ -152,6 +179,16 @@ describe('$sub() function. Modifying documents', () => {
     assert.deepEqual(doc.data, {})
   })
 
+  it('.del() on non-existing public document is a no-op', async () => {
+    const gameId = '_7_missing'
+    const $game = await sub($.games[gameId])
+    assert.equal($game.get(), undefined)
+
+    await $game.del()
+    await $game.name.del()
+    assert.equal($game.get(), undefined)
+  })
+
   it('.set(undefined) on document should delete it', async () => {
     const gameId = '_8'
     const doc = getConnection().get('games', gameId)
@@ -185,16 +222,14 @@ describe('$sub() function. Modifying documents', () => {
     }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
   })
 
-  it('compat: allows immediate subpath set after create() without subscribe', async () => {
-    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
-
-    const gameId = '_compat_create_then_subpath_set'
+  it('allows immediate subpath set after add() without subscribe', async () => {
+    const gameId = '_add_then_subpath_set'
+    await $.games.add({ _id: gameId, name: 'Added' })
     const $game = $.games[gameId]
 
-    await $game.create({ name: 'Created' })
     await $game.players.set(1)
 
-    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 1 })
+    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 1 })
     const doc = getConnection().get('games', gameId)
     assert.equal(doc.data.players, 1)
 
@@ -204,32 +239,24 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
-  it('compat: allows delayed subpath set after create() without subscribe', async () => {
-    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
-
-    const gameId = '_compat_create_delayed_subpath_set'
+  it('rejects delayed subpath set after add() without subscribe when doc snapshot is dropped', async () => {
+    const gameId = '_add_delayed_subpath_set_after_snapshot_drop'
+    await $.games.add({ _id: gameId, name: 'Added' })
     const $game = $.games[gameId]
 
-    await $game.create({ name: 'Created' })
     await new Promise(resolve => setTimeout(resolve, 10))
     const connection = getConnection()
     delete connection.collections.games[gameId]
     _del(['games', gameId])
 
-    await $game.players.set(2)
-
-    assert.deepEqual($game.get(), { _id: gameId, name: 'Created', players: 2 })
-    const doc = getConnection().get('games', gameId)
-    assert.equal(doc.data.players, 2)
-
-    await sub($game)
-    await $game.del()
+    await assert.rejects(async () => {
+      await $game.players.set(2)
+    }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
+    delete connection.collections.games[gameId]
   })
 
-  it('compat: allows delayed subpath set after add() without subscribe', async () => {
-    if (!(typeof process !== 'undefined' && process?.env?.TEAMPLAY_COMPAT === '1')) return
-
-    const gameId = '_compat_add_delayed_subpath_set'
+  it('rejects delayed subpath set after add() without subscribe', async () => {
+    const gameId = '_add_delayed_subpath_set'
     await $.games.add({ _id: gameId, name: 'Added' })
     await new Promise(resolve => setTimeout(resolve, 10))
     const $game = $.games[gameId]
@@ -237,18 +264,14 @@ describe('$sub() function. Modifying documents', () => {
     delete connection.collections.games[gameId]
     _del(['games', gameId])
 
-    await $game.players.set(3)
-
-    assert.deepEqual($game.get(), { _id: gameId, name: 'Added', players: 3 })
-    const doc = getConnection().get('games', gameId)
-    assert.equal(doc.data.players, 3)
-
-    await sub($game)
-    await $game.del()
+    await assert.rejects(async () => {
+      await $game.players.set(3)
+    }, { message: /Can't set a value to a subpath of a document which doesn't exist/ })
+    delete connection.collections.games[gameId]
   })
 
   it('repopulates data tree when doc exists but raw data is missing', async () => {
-    const gameId = '_compat_partial_1'
+    const gameId = '_partial_1'
     const $game = await sub($.games[gameId])
     await $game.set({ providers: {} })
     assert.ok(getConnection().get('games', gameId).data, 'doc data exists')
@@ -261,7 +284,7 @@ describe('$sub() function. Modifying documents', () => {
   })
 
   it('supports array mutators and increment on public docs', async () => {
-    const gameId = '_compat_base_1'
+    const gameId = '_base_1'
     const $game = await sub($.games[gameId])
     await $game.set({ count: 0, list: [1, 2, 3] })
 
@@ -306,7 +329,7 @@ describe('$sub() function. Modifying documents', () => {
   })
 
   it('materializes missing public array path on push', async () => {
-    const gameId = '_compat_base_missing_list_1'
+    const gameId = '_base_missing_list_1'
     const $game = await sub($.games[gameId])
     await $game.set({ count: 0 })
 
@@ -317,7 +340,7 @@ describe('$sub() function. Modifying documents', () => {
     await $game.del()
   })
 
-  it('keeps racer-like missing-path semantics for public string/array mutators', async () => {
+  it('keeps missing-path semantics for public string/array mutators', async () => {
     const gameId = '_public_missing_string_array_semantics'
     const $game = await sub($.games[gameId])
     await $game.set({ title: 'Game' })
@@ -338,7 +361,7 @@ describe('$sub() function. Modifying documents', () => {
   })
 
   it('supports stringInsert/stringRemove on public docs', async () => {
-    const gameId = '_compat_base_2'
+    const gameId = '_base_2'
     const $game = await sub($.games[gameId])
     await $game.set({ text: 'abc' })
 
@@ -392,6 +415,37 @@ describe('$sub() function. Queries', () => {
     ], 'query signal has updated data')
   })
 
+  it('supports explicit fetch and subscribe modes for queries', async () => {
+    const connection = getConnection()
+    const originalCreateFetchQuery = connection.createFetchQuery.bind(connection)
+    const originalCreateSubscribeQuery = connection.createSubscribeQuery.bind(connection)
+    const calls = []
+
+    connection.createFetchQuery = function (...args) {
+      calls.push('fetch')
+      return originalCreateFetchQuery(...args)
+    }
+    connection.createSubscribeQuery = function (...args) {
+      calls.push('subscribe')
+      return originalCreateSubscribeQuery(...args)
+    }
+
+    try {
+      const $fetchQuery = await sub($.games, { active: true }, { mode: 'fetch' })
+      assert.deepEqual($fetchQuery.getIds().slice().sort(), ['_1', '_2'])
+      await unsub($fetchQuery)
+
+      const $liveQuery = await sub($.games, { active: false }, { mode: 'subscribe' })
+      assert.deepEqual($liveQuery.getIds(), ['_3'])
+      await unsub($liveQuery)
+
+      assert.deepEqual(calls, ['fetch', 'subscribe'])
+    } finally {
+      connection.createFetchQuery = originalCreateFetchQuery
+      connection.createSubscribeQuery = originalCreateSubscribeQuery
+    }
+  })
+
   it('query should be iterable', async () => {
     const $activeGames = await sub($.games, { active: true })
     assert.equal([...$activeGames].length, 2)
@@ -400,6 +454,21 @@ describe('$sub() function. Queries', () => {
   it('query should support .map()', async () => {
     const $activeGames = await sub($.games, { active: true })
     assert.deepEqual($activeGames.map($game => $game.name.get()).sort(), ['Game 1', 'Game 2'])
+  })
+
+  it('query forwards optional array method arguments', async () => {
+    const $activeGames = await sub($.games, { active: true })
+    const labels = $activeGames.map(function ($game) {
+      return `${this.prefix}${$game.name.get()}`
+    }, { prefix: '#' })
+    const $firstGame = $activeGames.reduce(($firstGame, $secondGame) => $firstGame)
+    const found = $activeGames.find(function ($game) {
+      return $game.name.get() === this.name
+    }, { name: 'Game 2' })
+
+    assert.deepEqual(labels.sort(), ['#Game 1', '#Game 2'])
+    assert.equal($firstGame.name.get(), 'Game 1')
+    assert.equal(found.name.get(), 'Game 2')
   })
 
   it('query ids should support .map()', async () => {
@@ -425,10 +494,10 @@ describe('$sub() function. Aggregations', () => {
   afterEachTestGc()
 
   it('subscribe to aggregation, modify it', async () => {
-    const $$activeGames = aggregation(({ active }) => {
+    const _activeGames = aggregation(({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { $collection: gamesCollection, active: true })
+    const $activeGames = await sub(_activeGames, { $collection: gamesCollection, active: true })
     const rootId = getRoot($activeGames)?.[ROOT_ID]
     assert.equal($activeGames.get().length, 2)
     assert.deepEqual(
@@ -453,29 +522,136 @@ describe('$sub() function. Aggregations', () => {
     ], 'query signal has updated data')
   })
 
+  it('subscribes to raw collection $aggregate query and exposes rows through getExtra()', async () => {
+    const collection = 'gamesRawAggregations'
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const $root = getRootSignal({ rootId: 'sub-raw-aggregation' })
+    const $game1 = $root[collection].raw_1
+    const $game2 = $root[collection].raw_2
+    const $game3 = $root[collection].raw_3
+    const prevSubscriptionGcDelay = getSubscriptionGcDelay()
+    let $activeGames
+
+    await Promise.all([
+      $game1.set({ name: 'Raw Game 1', active: true }),
+      $game2.set({ name: 'Raw Game 2', active: true }),
+      $game3.set({ name: 'Raw Game 3', active: false })
+    ])
+
+    setSubscriptionGcDelay(0)
+    try {
+      $activeGames = await sub($root[collection], params)
+      const rootId = getRoot($activeGames)?.[ROOT_ID]
+      const expectedRows = [
+        { _id: 'raw_1', name: 'Raw Game 1', active: true },
+        { _id: 'raw_2', name: 'Raw Game 2', active: true }
+      ]
+
+      assert.deepEqual(
+        sanitizeAggregationResult($activeGames.get()).sort(sortById),
+        expectedRows,
+        'raw $aggregate result is available through .get()'
+      )
+      assert.deepEqual(
+        sanitizeAggregationResult($activeGames.getExtra()).sort(sortById),
+        expectedRows,
+        'raw $aggregate result is available through .getExtra()'
+      )
+      assert.deepEqual(
+        $activeGames.getIds().slice().sort(),
+        ['raw_1', 'raw_2'],
+        '.getIds() reads ids from raw $aggregate rows'
+      )
+      assert.deepEqual(
+        sanitizeAggregations(getPrivateData(rootId, ['$aggregations']) || {}),
+        {
+          [hashQuery(collection, params)]: expectedRows
+        },
+        'raw $aggregate data is stored in aggregation private data'
+      )
+    } finally {
+      if ($activeGames) await unsub($activeGames)
+      setSubscriptionGcDelay(prevSubscriptionGcDelay)
+      await Promise.all([
+        $game1.del(),
+        $game2.del(),
+        $game3.del()
+      ])
+    }
+  })
+
+  it('unsubscribes raw collection $aggregate queries through aggregation subscriptions', async () => {
+    const collection = 'gamesRawAggregationUnsub'
+    const params = { $aggregate: [{ $match: { active: true } }] }
+    const hash = hashQuery(collection, params)
+    const $root = getRootSignal({ rootId: 'sub-raw-aggregation-unsub' })
+    const $game = $root[collection].raw_unsub_1
+    const prevSubscriptionGcDelay = getSubscriptionGcDelay()
+    let $activeGames
+
+    await $game.set({ name: 'Raw Unsub Game', active: true })
+
+    setSubscriptionGcDelay(0)
+    try {
+      $activeGames = await sub($root[collection], params)
+
+      assert.equal($activeGames.getExtra().length, 1)
+      assert.equal(aggregationSubscriptions.queries.has(hash), true, 'aggregation runtime is tracked')
+      assert.equal(querySubscriptions.queries.has(hash), false, 'raw $aggregate is not tracked as an ordinary query')
+
+      await unsub($activeGames)
+      $activeGames = undefined
+
+      assert.equal(aggregationSubscriptions.queries.has(hash), false, 'aggregation runtime is cleaned up')
+      assert.equal(querySubscriptions.queries.has(hash), false, 'ordinary query runtime was never created')
+    } finally {
+      if ($activeGames) await unsub($activeGames)
+      setSubscriptionGcDelay(prevSubscriptionGcDelay)
+      await $game.del()
+    }
+  })
+
   it('.getId() on a signal from aggregation should return the id of the document', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub(_activeGames, { active: true })
     assert.equal($activeGames[0].getId(), '_1')
     assert.equal($activeGames[1].getId(), '_2')
   })
 
   it('aggregation should be iterable', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub(_activeGames, { active: true })
     assert.equal([...$activeGames].length, 2)
   })
 
   it('aggregation should support .map()', async () => {
-    const $$activeGames = aggregation(gamesCollection, ({ active }) => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
       return [{ $match: { active } }]
     })
-    const $activeGames = await sub($$activeGames, { active: true })
+    const $activeGames = await sub(_activeGames, { active: true })
     assert.deepEqual($activeGames.map($game => $game.name.get()).sort(), ['Game 1', 'Game 2'])
+  })
+
+  it('aggregation forwards optional array method arguments', async () => {
+    const _activeGames = aggregation(gamesCollection, ({ active }) => {
+      return [{ $match: { active } }]
+    })
+    const $activeGames = await sub(_activeGames, { active: true })
+    const labels = $activeGames.map(function ($game) {
+      return `${this.prefix}${$game.name.get()}`
+    }, { prefix: '#' })
+    const $firstGame = $activeGames.reduce(($firstGame, $secondGame) => $firstGame)
+    const found = $activeGames.find(function ($game) {
+      return $game.name.get() === this.name
+    }, { name: 'Game 2' })
+
+    assert.deepEqual(labels.sort(), ['#Game 1', '#Game 2'])
+    assert.equal($firstGame.name.get(), 'Game 1')
+    assert.equal(found.name.get(), 'Game 2')
   })
 })
 
@@ -504,4 +680,8 @@ function sanitizeAggregations (aggregations) {
 function sanitizeAggregationResult (results) {
   if (Array.isArray(results)) return results.map(dropSharedbMetaFields)
   return dropSharedbMetaFields(results)
+}
+
+function sortById (left, right) {
+  return String(left._id).localeCompare(String(right._id))
 }

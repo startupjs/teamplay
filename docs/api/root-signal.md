@@ -44,9 +44,33 @@ For convenience, TeamPlay allows you to access the private '_session' collection
 // These are equivalent:
 const $sessionData1 = $._session
 const $sessionData2 = $.session
+const $sessionData3 = $.$session
 ```
 
 This simplification makes it easier to work with session data without constantly typing the underscore.
+
+Private collections are client-local values, not database collections. They do not need `sub()` or `useSub()`, and they are not collection signals with `.add()`.
+
+If a private root collection has a schema, the schema describes the whole private value:
+
+```ts
+// models/_session/schema.ts
+import { defineSchema } from 'teamplay'
+
+export default defineSchema({
+  userId: { type: 'string' }
+})
+```
+
+After `teamplay-env.d.ts` is generated, all aliases share the same field types:
+
+```ts
+$._session.userId.get()
+$.session.userId.get()
+$.$session.userId.get()
+
+const { $userId } = $.session
+```
 
 ### Destructuring Assignment Simplification
 

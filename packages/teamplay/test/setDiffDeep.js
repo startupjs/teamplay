@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import setDiffDeep from '../utils/setDiffDeep.js'
+import setDiffDeep from '../src/utils/setDiffDeep.js'
 
 describe('setDiffDeep()', () => {
   it('updates plain nested objects in place when mutation is safe', () => {

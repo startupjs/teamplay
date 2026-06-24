@@ -62,6 +62,12 @@ export default async function runServer () {
 where `options` are:
 
 - `pollDebounce`: the minimum delay between subsequent database polls. It is used individually for each collection in the database. This is used to batch updates and reduce load on the database.
+- `validateSchema`: enable JSON-schema validation for public collections that have registered schemas.
+- `accessControl`: enable access-control checks for all collections. Collections without rules are denied by default. You can also pass an options object for the underlying access middleware.
+- `serverAggregate`: enable server-side aggregations.
+- `serverOnlyCollections`: collection names that clients may not read or write through ShareDB.
+
+`serverOnlyCollections` and forced access rules initialize the access middleware even when global `accessControl` is off. In that mode, only explicitly protected collections are checked and other collections keep their normal open behavior.
 
 ## License
 

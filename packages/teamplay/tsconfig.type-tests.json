@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "checkJs": false,
+    "customConditions": [
+      "teamplay-ts"
+    ],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "types": [
+      "react"
+    ]
+  },
+  "include": [
+    "src/index.ts",
+    "src/orm/**/*.ts",
+    "src/react/**/*.ts",
+    "../schema/src/index.ts",
+    "../utils/src/aggregation.ts",
+    "../utils/src/accessControl.ts",
+    "test_types/**/*.ts"
+  ]
+}

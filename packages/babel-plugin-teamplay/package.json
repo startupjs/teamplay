@@ -1,0 +1,36 @@
+{
+  "name": "babel-plugin-teamplay",
+  "version": "0.5.0-alpha.38",
+  "description": "Babel plugin for TeamPlay file-based models",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./loader": "./loader.js",
+    "./file-based-models": {
+      "node": "./file-based-models.node.js",
+      "default": "./file-based-models.js"
+    }
+  },
+  "scripts": {
+    "test": "NODE_OPTIONS=\"${NODE_OPTIONS:-} -C teamplay-ts\" mocha --require mocha-expect-snapshot 'test/**/*.test.mjs'"
+  },
+  "dependencies": {
+    "@babel/helper-module-imports": "^7.0.0",
+    "@babel/parser": "^7.0.0",
+    "@babel/traverse": "^7.0.0",
+    "@startupjs/babel-plugin-eliminator": "^0.62.0-alpha.0",
+    "@teamplay/schema": "^0.5.0-alpha.38",
+    "pluralize": "^8.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.9.0",
+    "expect": "^30.3.0",
+    "mocha": "^11.7.5",
+    "mocha-expect-snapshot": "8.0.0",
+    "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

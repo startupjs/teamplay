@@ -1,4 +1,4 @@
-import sockjs from 'sockjs'
+import sockjs from '@teamplay/sockjs'
 import crypto from 'crypto'
 import createSockjsStream from './sockjsStream.js'
 

@@ -9,7 +9,8 @@ export interface BackendOptions {
   flushRedis?: boolean
   extraDbs?: any // Replace 'any' with actual type
   hooks?: (backend: any) => void // Replace 'any' with Backend class type
-  accessControl?: boolean
+  accessControl?: boolean | Record<string, any>
+  serverOnlyCollections?: string[]
   serverAggregate?: boolean | { customCheck: () => any } // TODO: remove customCheck support
   validateSchema?: boolean
   silentLogs?: boolean
@@ -39,6 +40,7 @@ export interface DbExports {
 export function createBackend (options?: BackendOptions): any // Replace 'any' with Backend class type
 
 // Exports instances and constructors for Redis and database connections
+export function getRedis (options?: any): Redis
 export const redis: RedisExports['redis']
 export const redlock: RedisExports['redlock']
 export const Redlock: RedisExports['Redlock']

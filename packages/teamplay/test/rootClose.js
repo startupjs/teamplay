@@ -2,34 +2,31 @@ import { afterEach, before, beforeEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
 import {
   __DEBUG_SIGNALS_CACHE__ as signalsCache,
-  getRootSignal
-} from '../index.js'
+  getRootSignal,
+  sub
+} from '../src/index.ts'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
-import connect from '../connect/test.js'
-import { aggregationSubscriptions } from '../orm/Aggregation.js'
-import { docSubscriptions } from '../orm/Doc.js'
-import { getConnection } from '../orm/connection.js'
-import { del as _del } from '../orm/dataTree.js'
-import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
-import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
-import { getPrivateData, getPrivateDataRawRoot } from '../orm/privateData.js'
-import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../orm/Query.js'
-import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.js'
+import connect from '../src/connect/test.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { getConnection } from '../src/orm/connection.ts'
+import { del as _del } from '../src/orm/dataTree.js'
+import { getPrivateData, getPrivateDataRawRoot } from '../src/orm/privateData.js'
+import { HASH as QUERY_HASH, QUERIES, querySubscriptions } from '../src/orm/Query.js'
+import { __resetPendingRootDisposesForTests } from '../src/orm/disposeRootContext.ts'
 import {
   __getRootContextForTests,
   __resetRootContextsForTests,
   getRootOwnedSignalHashes,
   getRootOwnedRuntimeHashes
-} from '../orm/rootContext.js'
-import { getScopedSignalHash } from '../orm/rootScope.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+} from '../src/orm/rootContext.ts'
+import { getScopedSignalHash } from '../src/orm/rootScope.ts'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 
 before(connect)
 
-const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const DOC_COLLECTION = 'rootCloseDocs'
 const QUERY_COLLECTION = 'rootCloseQueries'
-const REFS_COLLECTION = 'rootCloseRefs'
 
 function assertGlobalSubscriptionManagersConsistent () {
   assertDocSubscriptionsConsistent(docSubscriptions)
@@ -37,7 +34,69 @@ function assertGlobalSubscriptionManagersConsistent () {
   assertQuerySubscriptionsConsistent(aggregationSubscriptions)
 }
 
-describeCompat('root close()', () => {
+describe('root close lifecycle', () => {
+  afterEach(async () => {
+    assertGlobalSubscriptionManagersConsistent()
+    await docSubscriptions.clear()
+    await querySubscriptions.clear()
+    await aggregationSubscriptions.clear()
+    assertGlobalSubscriptionManagersConsistent()
+    __resetPendingRootDisposesForTests()
+    __resetRootContextsForTests()
+  })
+
+  it('close returns a promise and cleans private storage for owning root', async () => {
+    const $rootA = getRootSignal({ rootId: 'close-async-private-A' })
+    const $rootB = getRootSignal({ rootId: 'close-async-private-B' })
+
+    await $rootA._session.userId.set('user-a')
+    await $rootA._page.lang.set('en')
+    await $rootB._session.userId.set('user-b')
+
+    const result = $rootA.close()
+    assert.equal(typeof result?.then, 'function')
+    await result
+
+    assert.equal($rootA._session.userId.get(), undefined)
+    assert.equal($rootA._page.lang.get(), undefined)
+    assert.equal($rootB._session.userId.get(), 'user-b')
+    assert.equal(getPrivateDataRawRoot('close-async-private-A'), undefined)
+    assert.ok(getPrivateDataRawRoot('close-async-private-B'))
+  })
+
+  it('close remains fire-and-forget and supports a completion callback', async () => {
+    const $root = getRootSignal({ rootId: 'close-callback-root' })
+
+    await $root._session.userId.set('user-a')
+    await closeSignal($root)
+
+    assert.equal(__getRootContextForTests('close-callback-root'), undefined)
+    assert.equal(getPrivateDataRawRoot('close-callback-root'), undefined)
+  })
+
+  it('close promise closes owning root even when called on a child signal', async () => {
+    const $root = getRootSignal({ rootId: 'close-async-child-root' })
+    const $child = $root._session.userId
+
+    await $child.set('child-user')
+    await $child.close()
+
+    assert.equal(__getRootContextForTests('close-async-child-root'), undefined)
+    assert.equal(getPrivateDataRawRoot('close-async-child-root'), undefined)
+    assert.equal($root._session.userId.get(), undefined)
+  })
+
+  it('validates close arguments', async () => {
+    const $root = getRootSignal({ rootId: 'close-validation-root' })
+
+    assert.throws(() => $root.close('bad'), /Signal\.close\(\) expects callback to be a function/)
+    assert.throws(() => $root.close(() => {}, () => {}), /Signal\.close\(\) expects zero or one argument/)
+
+    await $root.close()
+  })
+})
+
+describe('root close()', () => {
   let prevSubscriptionGcDelay
 
   beforeEach(() => {
@@ -53,12 +112,8 @@ describeCompat('root close()', () => {
     assertGlobalSubscriptionManagersConsistent()
     _del([DOC_COLLECTION])
     _del([QUERY_COLLECTION])
-    _del([REFS_COLLECTION])
     await destroyConnectionCollection(DOC_COLLECTION)
     await destroyConnectionCollection(QUERY_COLLECTION)
-    await destroyConnectionCollection(REFS_COLLECTION)
-    __resetRefLinksForTests()
-    __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
     __resetRootContextsForTests()
     setSubscriptionGcDelay(prevSubscriptionGcDelay)
@@ -113,8 +168,8 @@ describeCompat('root close()', () => {
     const hash = JSON.stringify([DOC_COLLECTION, '_1'])
 
     await $docA.set({ title: 'Doc 1' })
-    await $docA.subscribe()
-    await $docB.subscribe()
+    await sub($docA)
+    await sub($docB)
 
     assert.equal(docSubscriptions.subCount.get(hash), 2)
 
@@ -138,8 +193,8 @@ describeCompat('root close()', () => {
     const ownerKeyA = JSON.stringify({ owner: [rootIdA, hash] })
 
     await $docA.set({ title: 'Doc stale' })
-    await $docA.subscribe()
-    await $docB.subscribe()
+    await sub($docA)
+    await sub($docB)
 
     docSubscriptions.ownerRecords.delete(ownerKeyA)
     docSubscriptions.entries.get(hash)?.owners.delete(ownerKeyA)
@@ -149,7 +204,7 @@ describeCompat('root close()', () => {
     assert.equal(__getRootContextForTests(rootIdA), undefined)
     assert.equal(docSubscriptions.subCount.get(hash), 1)
     assert.equal(docSubscriptions.docs.get(hash)?.activeTransportMode, 'subscribe')
-    assert.equal($docB.get('title'), 'Doc stale')
+    assert.equal($docB.title.get(), 'Doc stale')
 
     await closeSignal($rootB)
   })
@@ -161,19 +216,14 @@ describeCompat('root close()', () => {
     await $rootA[QUERY_COLLECTION]._1.set({ title: 'One', active: true })
     await $rootA[QUERY_COLLECTION]._2.set({ title: 'Two', active: true })
 
-    const $queryA = $rootA.query(QUERY_COLLECTION, { active: true })
-    const $queryB = $rootB.query(QUERY_COLLECTION, { active: true })
-    const $aggA = $rootA.query(QUERY_COLLECTION, {
+    const $queryA = await sub($rootA[QUERY_COLLECTION], { active: true })
+    const $queryB = await sub($rootB[QUERY_COLLECTION], { active: true })
+    const $aggA = await sub($rootA[QUERY_COLLECTION], {
       $aggregate: [{ $match: { active: true } }]
     })
-    const $aggB = $rootB.query(QUERY_COLLECTION, {
+    const $aggB = await sub($rootB[QUERY_COLLECTION], {
       $aggregate: [{ $match: { active: true } }]
     })
-
-    await $queryA.subscribe()
-    await $queryB.subscribe()
-    await $aggA.subscribe()
-    await $aggB.subscribe()
 
     await closeSignal($rootA)
 
@@ -196,8 +246,7 @@ describeCompat('root close()', () => {
     const $root = getRootSignal({ rootId })
 
     await $root[QUERY_COLLECTION]._stale1.set({ title: 'One', active: true })
-    const $query = $root.query(QUERY_COLLECTION, { active: true })
-    await $query.subscribe()
+    const $query = await sub($root[QUERY_COLLECTION], { active: true })
 
     const transportHash = $query[QUERY_HASH]
     const ownerKey = getScopedSignalHash(rootId, transportHash, 'queryOwner')
@@ -213,20 +262,6 @@ describeCompat('root close()', () => {
     assert.equal(querySubscriptions.ownerMeta.get(ownerKey), undefined)
   })
 
-  it('stops active refs and removes root-owned runtime state', async () => {
-    const $root = getRootSignal({ rootId: 'close-ref-root' })
-
-    await $root[REFS_COLLECTION].u1.set({ name: 'Alice' })
-    $root._session.currentUser.ref(`${REFS_COLLECTION}.u1`)
-    assert.equal($root._session.currentUser.name.get(), 'Alice')
-
-    await closeSignal($root)
-
-    assert.equal(__getRootContextForTests('close-ref-root'), undefined)
-    await $root[REFS_COLLECTION].u1.name.set('Bob')
-    assert.equal($root._session.currentUser.get(), undefined)
-  })
-
   it('purges root-owned signal cache entries and is idempotent', async () => {
     const rootId = 'close-cache-root'
     const $root = getRootSignal({ rootId })
@@ -240,7 +275,8 @@ describeCompat('root close()', () => {
     assert.ok(ownedSignalHashes.every(hash => signalsCache.get(hash)))
 
     const result = $root.close()
-    assert.equal(result, undefined)
+    assert.equal(typeof result?.then, 'function')
+    await result
     await closeSignal($root)
 
     assert.ok(ownedSignalHashes.every(hash => !signalsCache.get(hash)))

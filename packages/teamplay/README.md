@@ -13,16 +13,16 @@ Features:
 
 > __*__ deep signals -- with support for objects and arrays\
 > __**__ concurrent changes to the same data are auto-merged using [OT](https://en.wikipedia.org/wiki/Operational_transformation)\
-> __***__ similar to Firebase but with your own MongoDB-compatible database
+> __***__ similar to Firebase but with your own MongoDB database
 
 ## Installation
 
 For installation and documentation see [teamplay.dev](https://teamplay.dev)
 
-## ORM Compat Helpers
+## ORM Helpers
 
 For legacy Racer-style model mixins (for example versioning libraries which call
-`getAssociations()`), use ORM compat helpers from the `teamplay/orm` subpath:
+`getAssociations()`), use ORM helpers from the `teamplay/orm` subpath:
 
 ```js
 import BaseModel, { hasMany, hasOne, belongsTo } from 'teamplay/orm'

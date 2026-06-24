@@ -1,27 +1,24 @@
 import { before, beforeEach, afterEach, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { getRootSignal } from '../index.js'
+import { getRootSignal, sub } from '../src/index.ts'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
-import connect from '../connect/test.js'
-import { aggregationSubscriptions } from '../orm/Aggregation.js'
-import { docSubscriptions } from '../orm/Doc.js'
-import { getConnection } from '../orm/connection.js'
-import { del as _del } from '../orm/dataTree.js'
-import { __resetModelEventsForTests } from '../orm/Compat/modelEvents.js'
-import { __resetRefLinksForTests } from '../orm/Compat/refRegistry.js'
-import { getPrivateDataRawRoot } from '../orm/privateData.js'
-import { HASH as QUERY_HASH, querySubscriptions } from '../orm/Query.js'
-import { __resetPendingRootDisposesForTests } from '../orm/disposeRootContext.js'
+import connect from '../src/connect/test.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { docSubscriptions } from '../src/orm/Doc.js'
+import { getConnection } from '../src/orm/connection.ts'
+import { del as _del } from '../src/orm/dataTree.js'
+import { getPrivateDataRawRoot } from '../src/orm/privateData.js'
+import { HASH as QUERY_HASH, querySubscriptions } from '../src/orm/Query.js'
+import { __resetPendingRootDisposesForTests } from '../src/orm/disposeRootContext.ts'
 import {
   __getRootContextForTests,
   __resetRootContextsForTests
-} from '../orm/rootContext.js'
-import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../orm/subscriptionGcDelay.js'
+} from '../src/orm/rootContext.ts'
+import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 import { runGc } from './_helpers.js'
 
 before(connect)
 
-const describeCompat = process.env.TEAMPLAY_COMPAT === '1' ? describe : describe.skip
 const QUERY_COLLECTION = 'rootFinalizationQueries'
 const DOC_COLLECTION = 'rootFinalizationDocs'
 
@@ -49,8 +46,6 @@ describe('root finalization', () => {
     _del([DOC_COLLECTION])
     await destroyConnectionCollection(QUERY_COLLECTION)
     await destroyConnectionCollection(DOC_COLLECTION)
-    __resetRefLinksForTests()
-    __resetModelEventsForTests()
     __resetPendingRootDisposesForTests()
     __resetRootContextsForTests()
     setSubscriptionGcDelay(prevSubscriptionGcDelay)
@@ -117,7 +112,7 @@ describe('root finalization', () => {
     await waitForDisposed(rootIdB)
   })
 
-  describeCompat('compat finalization', () => {
+  describe('finalization cleanup', () => {
     it('keeps explicit close idempotent even if GC runs afterwards', async () => {
       const rootId = 'fr-explicit-close-root'
       let $root = getRootSignal({ rootId })
@@ -143,11 +138,8 @@ describe('root finalization', () => {
       await $rootA[QUERY_COLLECTION]._1.set({ name: 'One', active: true })
       await $rootA._session.marker.set('root-a')
 
-      let $queryA = $rootA.query(QUERY_COLLECTION, { active: true })
-      const $queryB = $rootB.query(QUERY_COLLECTION, { active: true })
-
-      await $queryA.subscribe()
-      await $queryB.subscribe()
+      let $queryA = await sub($rootA[QUERY_COLLECTION], { active: true })
+      const $queryB = await sub($rootB[QUERY_COLLECTION], { active: true })
 
       const transportHash = $queryA[QUERY_HASH]
       assert.equal(querySubscriptions.transportSubCount.get(transportHash), 2)
@@ -176,11 +168,8 @@ describe('root finalization', () => {
 
       await $rootA[QUERY_COLLECTION][docId].set({ name: 'One', marker })
 
-      let $queryA = $rootA.query(QUERY_COLLECTION, { marker })
-      const $queryB = $rootB.query(QUERY_COLLECTION, { marker })
-
-      await $queryA.subscribe()
-      await $queryB.subscribe()
+      let $queryA = await sub($rootA[QUERY_COLLECTION], { marker })
+      const $queryB = await sub($rootB[QUERY_COLLECTION], { marker })
 
       const transportHash = $queryA[QUERY_HASH]
       assert.equal(querySubscriptions.transportSubCount.get(transportHash), 2)
@@ -212,8 +201,8 @@ describe('root finalization', () => {
       let $docA = $rootA[DOC_COLLECTION][docId]
       const $docB = $rootB[DOC_COLLECTION][docId]
 
-      await $docA.subscribe()
-      await $docB.subscribe()
+      await sub($docA)
+      await sub($docB)
 
       assert.equal(docSubscriptions.subCount.get(docHash), 2)
       assert.equal(docSubscriptions.docs.get(docHash)?.activeTransportMode, 'subscribe')
@@ -226,7 +215,7 @@ describe('root finalization', () => {
       assert.equal(__getRootContextForTests(rootIdA), undefined)
       assert.equal(docSubscriptions.subCount.get(docHash), 1)
       assert.equal(docSubscriptions.docs.get(docHash)?.activeTransportMode, 'subscribe')
-      assert.equal($docB.get('name'), 'One')
+      assert.equal($docB.name.get(), 'One')
 
       await closeSignal($rootB)
     })

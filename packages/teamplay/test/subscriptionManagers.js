@@ -14,9 +14,9 @@ import { it, describe, before, beforeEach, afterEach } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
-import { $, sub } from '../index.js'
-import { docSubscriptions, DocSubscriptions } from '../orm/Doc.js'
-import { isMissingShareDoc } from '../orm/missingDoc.js'
+import { $, sub, unsub } from '../src/index.ts'
+import { docSubscriptions, DocSubscriptions } from '../src/orm/Doc.js'
+import { isMissingShareDoc } from '../src/orm/missingDoc.js'
 import {
   querySubscriptions,
   QuerySubscriptions,
@@ -27,20 +27,20 @@ import {
   QUERIES,
   getQuerySignal,
   hashQuery
-} from '../orm/Query.js'
-import { getAggregationSignal, AGGREGATIONS, aggregationSubscriptions } from '../orm/Aggregation.js'
-import { SEGMENTS } from '../orm/Signal.js'
-import { getConnection } from '../orm/connection.js'
-import { get as _get } from '../orm/dataTree.js'
-import { getRootSignal, ROOT_ID } from '../orm/Root.js'
-import { getPrivateData } from '../orm/privateData.js'
-import { getScopedSignalHash } from '../orm/rootScope.js'
-import connect from '../connect/test.js'
+} from '../src/orm/Query.js'
+import { getAggregationSignal, AGGREGATIONS, aggregationSubscriptions } from '../src/orm/Aggregation.js'
+import { SEGMENTS } from '../src/orm/Signal.ts'
+import { getConnection } from '../src/orm/connection.ts'
+import { get as _get } from '../src/orm/dataTree.js'
+import { getRootSignal, ROOT_ID } from '../src/orm/Root.ts'
+import { getPrivateData } from '../src/orm/privateData.js'
+import { getScopedSignalHash } from '../src/orm/rootScope.ts'
+import connect from '../src/connect/test.js'
 import {
   getSubscriptionGcDelay,
   setSubscriptionGcDelay,
   __resetSubscriptionGcDelayForTests
-} from '../orm/subscriptionGcDelay.js'
+} from '../src/orm/subscriptionGcDelay.ts'
 
 before(connect)
 
@@ -974,26 +974,19 @@ describe('QuerySubscriptions', () => {
     assert.equal(query.activeTransportMode, 'idle')
   })
 
-  it('normalizes undefined values in query params the same way as Racer in compat mode', () => {
+  it('drops undefined object fields in query params without normalization warnings', () => {
     const rawParams = {
       $or: [
         { entity: 'group', entityId: undefined },
         { entity: 'lesson', entityId: 'lesson-1' }
       ]
     }
-    const expectedParams = process.env.TEAMPLAY_COMPAT === '1'
-      ? {
-          $or: [
-            { entity: 'group', entityId: null },
-            { entity: 'lesson', entityId: 'lesson-1' }
-          ]
-        }
-      : {
-          $or: [
-            { entity: 'group' },
-            { entity: 'lesson', entityId: 'lesson-1' }
-          ]
-        }
+    const expectedParams = {
+      $or: [
+        { entity: 'group' },
+        { entity: 'lesson', entityId: 'lesson-1' }
+      ]
+    }
 
     const $query = getQuerySignal('gamesQuery', rawParams)
     const hash = hashQuery('gamesQuery', rawParams)
@@ -1284,7 +1277,7 @@ describe('QuerySubscriptions', () => {
 describe('Subscription GC grace delay', () => {
   afterEach(assertTrackedManagersAndReset)
   const gcDelay = 30
-  const defaultCompatGcDelay = 3000
+  const defaultGcDelay = 3000
 
   beforeEach(() => {
     setSubscriptionGcDelay(gcDelay)
@@ -1295,14 +1288,9 @@ describe('Subscription GC grace delay', () => {
     __resetSubscriptionGcDelayForTests()
   })
 
-  it('uses non-zero default delay in compat mode and zero in non-compat', () => {
+  it('uses the same non-zero default delay for subscriptions', () => {
     __resetSubscriptionGcDelayForTests()
-    const expectedCompat = process.env.TEAMPLAY_COMPAT === '1'
-    if (expectedCompat) {
-      assert.equal(getSubscriptionGcDelay(), defaultCompatGcDelay, 'compat default delay should match racer-like grace window')
-    } else {
-      assert.equal(getSubscriptionGcDelay(), 0, 'non-compat default delay should be zero')
-    }
+    assert.equal(getSubscriptionGcDelay(), defaultGcDelay, 'default delay should keep a grace window')
     setSubscriptionGcDelay(gcDelay)
   })
 
@@ -1528,6 +1516,58 @@ describe('sub() function - error handling and edge cases', () => {
     await docSubscriptions.unsubscribe($game)
     const doc = getConnection().get('games', gameId)
     if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
+  })
+
+  it('unsub() uses the mode recorded by sub()', async () => {
+    const gameId = '_sub_unsub_mode'
+    const $game = $.games[gameId]
+    const doc = getConnection().get('games', gameId)
+    const originalFetch = doc.fetch.bind(doc)
+    const originalUnfetch = doc.unfetch?.bind(doc)
+    const originalSubscribe = doc.subscribe.bind(doc)
+    const originalUnsubscribe = doc.unsubscribe.bind(doc)
+    const calls = []
+
+    doc.fetch = function (...args) {
+      calls.push('fetch')
+      return originalFetch(...args)
+    }
+    if (originalUnfetch) {
+      doc.unfetch = function (...args) {
+        calls.push('unfetch')
+        return originalUnfetch(...args)
+      }
+    }
+    doc.subscribe = function (...args) {
+      calls.push('subscribe')
+      return originalSubscribe(...args)
+    }
+    doc.unsubscribe = function (...args) {
+      calls.push('unsubscribe')
+      return originalUnsubscribe(...args)
+    }
+
+    try {
+      await sub($game, { mode: 'fetch' })
+      await sub($game, { mode: 'subscribe' })
+      await unsub($game)
+      await unsub($game)
+
+      assert.deepEqual(calls, [
+        'fetch',
+        originalUnfetch ? 'unfetch' : 'unsubscribe',
+        'subscribe',
+        'unsubscribe',
+        'fetch',
+        originalUnfetch ? 'unfetch' : 'unsubscribe'
+      ])
+    } finally {
+      doc.fetch = originalFetch
+      if (originalUnfetch) doc.unfetch = originalUnfetch
+      doc.subscribe = originalSubscribe
+      doc.unsubscribe = originalUnsubscribe
+      if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
+    }
   })
 })
 

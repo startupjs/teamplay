@@ -1,16 +1,33 @@
 {
   "name": "@teamplay/schema",
   "type": "module",
-  "version": "0.4.0",
+  "version": "0.5.0-alpha.38",
   "description": "Utils to work with json-schema",
-  "main": "index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./index.js"
+    ".": {
+      "teamplay-ts": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./json-schema-keywords": {
+      "teamplay-ts": "./src/jsonSchemaKeywords.ts",
+      "types": "./dist/jsonSchemaKeywords.d.ts",
+      "default": "./dist/jsonSchemaKeywords.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node ../../scripts/rewrite-dts-extensions.cjs dist",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "ajv": "^8.12.0",
+    "ajv": "^8.20.0",
     "ajv-errors": "^3.0.0",
     "lodash": "^4.17.20"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   },
   "publishConfig": {
     "access": "public"

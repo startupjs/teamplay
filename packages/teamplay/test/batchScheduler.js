@@ -4,7 +4,7 @@ import {
   runInBatch,
   scheduleReaction,
   __resetBatchSchedulerForTests
-} from '../orm/batchScheduler.js'
+} from '../src/orm/batchScheduler.js'
 
 describe('batchScheduler', () => {
   beforeEach(() => {

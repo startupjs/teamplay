@@ -2,12 +2,12 @@ import React from 'react'
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../index.js'
-import { GLOBAL_ROOT_ID } from '../orm/Root.js'
-import { LOCAL } from '../orm/$.js'
-import { delPrivateData, getPrivateData } from '../orm/privateData.js'
-import { del as _del, set as _set } from '../orm/dataTree.js'
-import connect from '../connect/test.js'
+import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../src/index.ts'
+import { GLOBAL_ROOT_ID } from '../src/orm/Root.ts'
+import { LOCAL } from '../src/orm/$.js'
+import { delPrivateData, getPrivateData } from '../src/orm/privateData.js'
+import { del as _del, set as _set } from '../src/orm/dataTree.js'
+import connect from '../src/connect/test.js'
 
 before(connect)
 
@@ -183,6 +183,23 @@ describe('Signal array mutators (local)', () => {
     const prev2 = await $text.stringRemove(1, 2)
     assert.equal(prev2, 'Xabc')
     assert.equal($text.get(), 'Xc')
+  })
+
+  it('forwards optional array method arguments on local signals', () => {
+    const $players = $([{ name: 'A', score: 1 }, { name: 'B', score: 2 }])
+    const labels = $players.map(function ($player) {
+      return `${this.prefix}${$player.name.get()}`
+    }, { prefix: '#' })
+    const total = $players.reduce(($firstPlayer, $secondPlayer) => {
+      return $firstPlayer.score.get() + $secondPlayer.score.get()
+    })
+    const found = $players.find(function ($player) {
+      return $player.score.get() === this.score
+    }, { score: 2 })
+
+    assert.deepEqual(labels, ['#A', '#B'])
+    assert.equal(total, 3)
+    assert.equal(found.name.get(), 'B')
   })
 
   it('initializes missing nested array paths for local signals', async () => {

@@ -12,6 +12,24 @@ import { createBackend } from 'teamplay/server'
 const backend = createBackend()
 ```
 
+Common options:
+
+```ts
+const backend = createBackend({
+  validateSchema: true,
+  accessControl: true,
+  serverAggregate: true,
+  serverOnlyCollections: ['service']
+})
+```
+
+- `validateSchema`: validate public collection writes with registered schemas.
+- `accessControl`: enable access-control middleware for all collections. Collections without rules are denied by default.
+- `serverAggregate`: enable server-side aggregations.
+- `serverOnlyCollections`: collections that clients may not read or write through ShareDB.
+
+`serverOnlyCollections` forces the access middleware to initialize even when global `accessControl` is off. In that mode, only server-only collections and collections marked with `accessControl(..., { force: true })` are protected; all other collections keep the normal open behavior.
+
 ## initConnection(backend, options)
 
 Initializes the connection handler for WebSocket connections.
@@ -27,6 +45,7 @@ const { upgrade } = initConnection(backend, options)
 - `backend`: The TeamPlay backend instance created with `createBackend()`.
 - `options` (optional): An object with the following properties:
   - `fetchOnly` (default: `true`): If true, server-side subscriptions are not reactive.
+  - `idFields` (default: `['_id']`): Runtime-wide document identity field names to inject and protect on public documents.
 
 ### Return Value
 
@@ -40,7 +59,9 @@ import { createBackend, initConnection } from 'teamplay/server'
 
 const server = http.createServer()
 const backend = createBackend()
-const { upgrade } = initConnection(backend)
+const { upgrade } = initConnection(backend, {
+  idFields: ['_id', 'id']
+})
 
 server.on('upgrade', upgrade)
 

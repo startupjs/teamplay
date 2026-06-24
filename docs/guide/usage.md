@@ -49,7 +49,7 @@ $.users[userId].profilePicture.del()
 
 ### `_id` in Public Documents
 
-For public documents, the `_id` field is available in `get()` results and matches the document id. Attempts to set or modify `_id` are ignored.
+For public documents, the `_id` field is available in `get()` results and matches the document id. Attempts to set or modify configured identity fields are ignored. `idFields` defaults to `['_id']`; applications can configure additional top-level identity fields such as `id`.
 
 ## The `$()` Function: Creating Local Signals
 
@@ -85,16 +85,19 @@ The `sub()` function is used to subscribe to data from the server:
 1. Subscribing to a single document:
 
 ```javascript
-import { $, sub } from 'teamplay'
+import { $, sub, unsub } from 'teamplay'
 
 const $user = await sub($.users[userId])
 console.log($user.name.get())
+
+await unsub($user)
 ```
 
 2. Subscribing to a query (multiple documents):
 
 ```javascript
 const $activeUsers = await sub($.users, { status: 'active' })
+await unsub($activeUsers)
 ```
 
 ### Working with Query Signals
