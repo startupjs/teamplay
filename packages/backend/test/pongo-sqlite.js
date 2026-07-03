@@ -109,6 +109,21 @@ describe('pongo-sqlite specifics', function () {
     })
   })
 
+  it('supports a ShareDB collection named "files" (remapped table, no clash with the raw blob table)', done => {
+    const db = createPongoDb()
+    const backend = new Backend({ db })
+    const connection = backend.connect()
+    const doc = connection.get('files', 'file1')
+    doc.create({ name: 'photo.jpg', storageType: 'sqlite' }, err => {
+      if (err) return done(err)
+      db.query('files', { storageType: 'sqlite' }, null, null, (err, snapshots) => {
+        if (err) return done(err)
+        expect(snapshots.map(s => s.id)).to.eql(['file1'])
+        done()
+      })
+    })
+  })
+
   it('refuses a commit with a stale version (concurrency arbiter)', done => {
     const db = createPongoDb()
     const backend = new Backend({ db })

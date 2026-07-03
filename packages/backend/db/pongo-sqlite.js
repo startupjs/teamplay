@@ -1,7 +1,7 @@
 import { existsSync } from 'fs'
 import { resolve } from 'path'
 import sqlite3 from 'sqlite3'
-import ShareDbPongoSqlite from './sharedb-pongo-sqlite.js'
+import ShareDbPongoSqlite, { docTableName } from './sharedb-pongo-sqlite.js'
 
 const DEFAULT_DB_PATH = './local.db'
 const OPS_TTL_MS = 24 * 60 * 60 * 1000
@@ -56,7 +56,7 @@ async function deleteExpiredOps (sqliteDb) {
   `)
   const cutoff = Date.now() - OPS_TTL_MS
   for (const { name } of tables) {
-    const snapshots = name.slice(0, -'__ops'.length)
+    const snapshots = docTableName(name.slice(0, -'__ops'.length))
     await run(sqliteDb, `
       DELETE FROM "${name.replaceAll('"', '""')}"
       WHERE

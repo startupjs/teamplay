@@ -54,9 +54,17 @@ const STRIPPED_QUERY_KEYS = {
 }
 
 const OPS_SUFFIX = '__ops'
-// tables in the same SQLite file owned by other parts of the stack
-// (raw `sqlite` export consumers: express sessions, file uploads)
-const RESERVED_COLLECTIONS = ['files', 'sessions']
+// table names in the same SQLite file owned by other parts of the stack
+// (raw `sqlite` export consumers: express sessions store, file-upload blobs).
+// A ShareDB collection with one of these names gets a remapped table so both
+// can coexist (e.g. the startupjs files plugin keeps blobs in the raw `files`
+// table AND file metadata docs in a `files` ShareDB collection).
+const RESERVED_TABLE_NAMES = { files: 'files__docs', sessions: 'sessions__docs' }
+
+// resolve the snapshots table name for a ShareDB collection
+export function docTableName (collection) {
+  return RESERVED_TABLE_NAMES[collection] || collection
+}
 
 // sentinel: a filter/sort that can't be translated to Pongo SQL
 const FALLBACK = Symbol('fallback')
@@ -108,7 +116,7 @@ export default class ShareDbPongoSqlite extends DB {
   }
 
   async _snaps (collection) {
-    return await this._collection(collection)
+    return await this._collection(docTableName(collection))
   }
 
   async _ops (collection) {
@@ -118,9 +126,6 @@ export default class ShareDbPongoSqlite extends DB {
   async _collection (name) {
     let entry = this._collections.get(name)
     if (!entry) {
-      if (RESERVED_COLLECTIONS.includes(name)) {
-        throw Error(`[sharedb-pongo-sqlite] Collection name "${name}" is reserved`)
-      }
       const col = this.pongo.collection(name)
       // gate every first use behind an awaited CREATE TABLE: pongo's lazy
       // auto-migration clears its "should migrate" flag before the CREATE
