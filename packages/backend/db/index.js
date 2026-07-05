@@ -7,16 +7,20 @@ export const {
 } = await getDb({
   mongoUrl: process.env.MONGO_URL,
   disableMongo: process.env.NO_MONGO,
-  isReadonly: process.env.DB_READONLY
+  isReadonly: process.env.DB_READONLY,
+  adapter: process.env.DB_ADAPTER
 })
 
-async function getDb ({ mongoUrl, disableMongo, isReadonly }) {
+async function getDb ({ mongoUrl, disableMongo, isReadonly, adapter }) {
   if (mongoUrl && !disableMongo) {
     console.log('Database: mongo')
     return await import('./mongo.js')
   } else if (isReadonly) {
     console.log('Database: mingo-memory (no data persistency)')
     return await import('./mingo-memory.js')
+  } else if (adapter === 'pongo' || adapter === 'pongo-sqlite') {
+    console.log('Database: pongo-sqlite (mongo queries run as SQL over a local SQLite file)')
+    return await import('./pongo-sqlite.js')
   } else {
     console.log('Database: mingo-sqlite (persist data to a local SQLite file)')
     return await import('./mingo-sqlite.js')
