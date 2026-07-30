@@ -157,6 +157,31 @@ describe('Signal convenience methods', () => {
     })
   })
 
+  it('setDiffDeep applies private mutations synchronously before its promise settles', async () => {
+    const $root = createRoot('set-diff-deep-sync')
+    const $query = $root.$render.query
+    await $query.setReplace({
+      tab: 'people',
+      stale: true,
+      nested: { keep: 'old', remove: true },
+      list: [1, 2, 4]
+    })
+    const query = raw($query.get())
+    const nextQuery = {
+      userId: 'participant-1',
+      courseId: 'course-1',
+      classId: 'class-1',
+      nested: { keep: 'new', add: true },
+      list: [2, 3]
+    }
+
+    const persistence = $query.setDiffDeep(nextQuery)
+
+    assert.equal(raw($query.get()), query)
+    assert.deepEqual($query.get(), nextQuery)
+    await persistence
+  })
+
   it('setDiffDeep preserves public empty target objects', async () => {
     const $root = createRoot('set-diff-deep-public')
     const $doc = $root[PUBLIC_COLLECTION].publicSetDiffDeep

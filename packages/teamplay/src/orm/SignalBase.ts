@@ -465,7 +465,7 @@ export class Signal<TValue = unknown> extends Function {
     await this.setReplace(value)
   }
 
-  /** Recursively diff objects and arrays at the current signal path. */
+  /** Recursively diff objects and arrays. Local mutations are applied synchronously. */
   async setDiffDeep (value: TValue): Promise<void> {
     if (arguments.length > 1) throw Error('Signal.setDiffDeep() expects a single argument')
     await runInBatch(() => setDiffDeepOnSignal(this, value))
@@ -712,12 +712,14 @@ export class Signal<TValue = unknown> extends Function {
   // async splice () {}
 }
 
-async function setDiffDeepOnSignal ($target, value) {
+function setDiffDeepOnSignal ($target, value) {
   if ($target[SEGMENTS].length === 0) throw Error('Can\'t set the root signal data')
-  await diffDeepOnSignal($target, $target.peek(), value)
+  const pending = []
+  diffDeepOnSignal($target, $target.peek(), value, pending)
+  return Promise.all(pending)
 }
 
-async function diffDeepOnSignal ($signal, before, after) {
+function diffDeepOnSignal ($signal, before, after, pending) {
   if (before === after) return
 
   if (Array.isArray(before) && Array.isArray(after)) {
@@ -725,10 +727,10 @@ async function diffDeepOnSignal ($signal, before, after) {
     if (!diff.length) return
     const index = getSingleArrayReplacementIndex(diff)
     if (index != null) {
-      await diffDeepOnSignal(getChildSignal($signal, index), before[index], after[index])
+      diffDeepOnSignal(getChildSignal($signal, index), before[index], after[index], pending)
       return
     }
-    await applyArrayDiff($signal, diff)
+    applyArrayDiff($signal, diff, pending)
     return
   }
 
@@ -736,15 +738,15 @@ async function diffDeepOnSignal ($signal, before, after) {
     const preservePath = $signal[SEGMENTS]
     for (const key of Object.keys(before)) {
       if (Object.prototype.hasOwnProperty.call(after, key)) continue
-      await deleteForDiffDeep(getChildSignal($signal, key), preservePath)
+      pending.push(deleteForDiffDeep(getChildSignal($signal, key), preservePath))
     }
     for (const key of Object.keys(after)) {
-      await diffDeepOnSignal(getChildSignal($signal, key), before[key], after[key])
+      diffDeepOnSignal(getChildSignal($signal, key), before[key], after[key], pending)
     }
     return
   }
 
-  await $signal.setReplace(after)
+  pending.push($signal.setReplace(after))
 }
 
 function isDiffableObject (before, after) {
@@ -773,18 +775,18 @@ function getSingleArrayReplacementIndex (diff) {
   return null
 }
 
-async function applyArrayDiff ($signal, diff) {
+function applyArrayDiff ($signal, diff, pending) {
   for (const item of diff) {
     if (item instanceof arrayDiff.InsertDiff) {
-      await $signal.insert(item.index, item.values)
+      pending.push($signal.insert(item.index, item.values))
       continue
     }
     if (item instanceof arrayDiff.RemoveDiff) {
-      await $signal.remove(item.index, item.howMany)
+      pending.push($signal.remove(item.index, item.howMany))
       continue
     }
     if (item instanceof arrayDiff.MoveDiff) {
-      await $signal.move(item.from, item.to, item.howMany)
+      pending.push($signal.move(item.from, item.to, item.howMany))
     }
   }
 }
