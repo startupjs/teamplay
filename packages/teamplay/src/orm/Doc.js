@@ -405,10 +405,12 @@ export class DocSubscriptions {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
     const entry = this.getOrCreateEntry(hash, segments)
+    const hadPendingDestroy = !!entry.pendingDestroy
     this.cancelDestroy(hash)
     entry.retainCount += 1
     this.ensureRuntime(hash, segments)
     this.syncEntryMirror(entry)
+    if (hadPendingDestroy) this.reconcileTransport(hash).catch(ignoreDestroyError)
   }
 
   async unsubscribe ($doc, { intent = 'subscribe' } = {}) {
@@ -523,7 +525,7 @@ export class DocSubscriptions {
 
   async reconcileTransport (hash) {
     const entry = this.getOrCreateEntry(hash)
-    entry.targetMode = this.getDesiredTransportMode(hash)
+    entry.targetMode = this.getTargetTransportMode(hash)
     if (entry.phase === 'transition' && entry.reconcilePromise) return entry.reconcilePromise
     const next = Promise.resolve()
       .catch(ignoreDestroyError)
@@ -546,7 +548,7 @@ export class DocSubscriptions {
     const entry = this.getOrCreateEntry(hash)
     while (true) {
       let doc = entry.runtime
-      const desiredMode = entry.targetMode = this.getDesiredTransportMode(hash)
+      const desiredMode = entry.targetMode = this.getTargetTransportMode(hash)
       const currentMode = doc?.activeTransportMode ?? entry.mode
       entry.mode = currentMode
       if (desiredMode === currentMode) return
@@ -724,6 +726,18 @@ export class DocSubscriptions {
       }
     }
     return hasFetchBackedOwner ? 'fetch' : 'idle'
+  }
+
+  getTargetTransportMode (hash) {
+    const desiredMode = this.getDesiredTransportMode(hash)
+    if (desiredMode !== 'idle') return desiredMode
+    const entry = this.entries.get(hash)
+    const activeMode = entry?.runtime?.activeTransportMode ?? entry?.mode
+    const canReuseLiveTransport =
+      entry?.pendingDestroy &&
+      this.getEntryTotalCount(entry) === 0 &&
+      activeMode === 'subscribe'
+    return canReuseLiveTransport ? 'subscribe' : 'idle'
   }
 
   removeAllOwnersFromEntry (hash) {

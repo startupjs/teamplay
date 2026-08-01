@@ -103,6 +103,21 @@ Docs should reinforce the intended object-tree mental model.
 - [ ] Keep query metadata docs clear about `ids`, `extra`, and document-id collisions.
 - [ ] Keep TypeScript support docs clear about generated env setup, schema default interfaces, and known module-resolution requirements.
 
+### 7. Direct Document Transport Grace
+
+Keep the existing GC delay useful for short-lived direct live-document
+handoffs without retaining fetch, query, or aggregation transports.
+
+- [x] Capture the `subscribe -> unsubscribe -> subscribe` wire churn in a failing characterization test.
+- [x] Keep an ownerless direct live transport only while its pending destroy exists.
+- [x] Preserve eager fetch behavior and immediate mixed-mode reconciliation.
+- [x] Prevent query retain from adopting an ownerless direct live transport.
+- [x] Cover in-flight transitions, force cleanup, root ownership, pending operations, failures, and bounded retention.
+- [x] Verify the public `sub()` / `unsub()` path against a real test ShareDB connection.
+- [x] Pass full server, client, type, Babel, lint, and build gates independently.
+- [ ] Obtain a clean combined `yarn test`; the current failure is reproduced unchanged on clean `origin/master` in the query root-finalization afterEach.
+- [ ] Repeat the measured downstream LMS route trace and smoke after package integration.
+
 ## Verification Checklist
 
 Use the smallest useful verification while iterating, then broaden before committing runtime changes.

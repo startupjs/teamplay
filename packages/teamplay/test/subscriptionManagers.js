@@ -112,6 +112,16 @@ function wait (ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+function createDeferred () {
+  let resolveDeferred
+  let rejectDeferred
+  const promise = new Promise((resolve, reject) => {
+    resolveDeferred = resolve
+    rejectDeferred = reject
+  })
+  return { promise, resolve: resolveDeferred, reject: rejectDeferred }
+}
+
 function createDocSignal (collection, docId) {
   return {
     [SEGMENTS]: [collection, docId],
@@ -195,6 +205,60 @@ class PendingMockDoc extends MockDoc {
 
   dispose () {
     this.initialized = false
+  }
+}
+
+class LifecycleMockDoc extends MockDoc {
+  destroyCount = 0
+  disposeCount = 0
+
+  async destroy () {
+    this.destroyCount += 1
+  }
+
+  dispose () {
+    this.disposeCount += 1
+    this.initialized = false
+  }
+}
+
+class GatedSubscribeMockDoc extends LifecycleMockDoc {
+  subscribeGate = createDeferred()
+
+  async subscribe ({ mode } = {}) {
+    const nextMode = mode || 'subscribe'
+    this.events.push(`subscribe:${nextMode}:start`)
+    await this.subscribeGate.promise
+    this.requestedTransportMode = nextMode
+    this.activeTransportMode = nextMode
+    this.subscribed = nextMode === 'subscribe'
+    this.events.push(`subscribe:${nextMode}:done`)
+  }
+}
+
+class GatedUnsubscribeMockDoc extends LifecycleMockDoc {
+  unsubscribeGate = createDeferred()
+
+  async unsubscribe () {
+    const activeMode = this.activeTransportMode
+    this.events.push(`unsubscribe:${activeMode}:start`)
+    await this.unsubscribeGate.promise
+    this.activeTransportMode = 'idle'
+    this.subscribed = false
+    this.events.push(`unsubscribe:${activeMode}:done`)
+  }
+}
+
+class FailOnceUnsubscribeMockDoc extends LifecycleMockDoc {
+  shouldFailUnsubscribe = true
+
+  async unsubscribe () {
+    if (this.shouldFailUnsubscribe) {
+      this.shouldFailUnsubscribe = false
+      this.events.push(`unsubscribe:${this.activeTransportMode}:failed`)
+      throw new Error('mock unsubscribe failure')
+    }
+    await super.unsubscribe()
   }
 }
 
@@ -1459,6 +1523,520 @@ describe('Subscription GC grace delay', () => {
     await wait(gcDelay + 10)
     assert.equal(docManager.docs.get(docHash), undefined, 'no late timer side effects for docs')
     assert.equal(queryManager.queries.get(queryHash), undefined, 'no late timer side effects for queries')
+  })
+})
+
+describe('Direct document transport grace', () => {
+  afterEach(assertTrackedManagersAndReset)
+  const gcDelay = 60_000
+
+  beforeEach(() => {
+    setSubscriptionGcDelay(gcDelay)
+  })
+
+  afterEach(() => {
+    __resetSubscriptionGcDelayForTests()
+  })
+
+  it('keeps the final live transport subscribed while destroy is pending', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $doc = createDocSignal('gamesTransportGrace', 'live-pending')
+    const hash = JSON.stringify($doc[SEGMENTS])
+    let unsubscribePromise
+
+    try {
+      await manager.subscribe($doc)
+      const doc = manager.docs.get(hash)
+      unsubscribePromise = manager.unsubscribe($doc)
+      await wait(0)
+
+      const entry = manager.entries.get(hash)
+      assert.ok(entry?.pendingDestroy, 'destroy should be pending during grace')
+      assert.equal(entry.owners.size, 0, 'the transport has no active owners')
+      assert.equal(manager.subCount.get(hash), 0, 'the pending transport is tracked with zero owners')
+      assert.equal(doc.activeTransportMode, 'subscribe', 'the live transport should remain subscribed')
+      assert.deepEqual(doc.events, ['subscribe:subscribe'], 'wire unsubscribe should be deferred')
+    } finally {
+      await manager.flushPendingDestroys().catch(() => {})
+      await unsubscribePromise?.catch(() => {})
+      await manager.clear()
+    }
+  })
+
+  it('lets a quick live owner adopt the same wire subscription', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $docA = createDocSignal('gamesTransportGrace', 'live-adopt')
+    const $docB = createDocSignal('gamesTransportGrace', 'live-adopt')
+    const hash = JSON.stringify($docA[SEGMENTS])
+    let firstUnsubscribePromise
+
+    try {
+      await manager.subscribe($docA)
+      const doc = manager.docs.get(hash)
+      firstUnsubscribePromise = manager.unsubscribe($docA)
+      await wait(0)
+
+      await manager.subscribe($docB)
+      await firstUnsubscribePromise
+
+      assert.equal(manager.docs.get(hash), doc, 'the runtime instance should be reused')
+      assert.equal(manager.pendingDestroyTimers.has(hash), false, 'adoption should cancel pending destroy')
+      assert.equal(doc.activeTransportMode, 'subscribe')
+      const events = [...doc.events]
+      assert.deepEqual(events, ['subscribe:subscribe'], 'adoption should not churn the wire transport')
+    } finally {
+      setSubscriptionGcDelay(0)
+      await manager.unsubscribe($docB).catch(() => {})
+      await firstUnsubscribePromise?.catch(() => {})
+      await manager.clear()
+    }
+  })
+
+  it('tears down the live transport exactly once when grace expires', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $doc = createDocSignal('gamesTransportGrace', 'live-expire')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    const doc = manager.docs.get(hash)
+    const unsubscribePromise = manager.unsubscribe($doc)
+    await wait(0)
+
+    await manager.flushPendingDestroys()
+    await unsubscribePromise
+
+    assert.deepEqual(doc.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(doc.destroyCount, 1)
+    assert.equal(doc.disposeCount, 1)
+    assert.equal(manager.entries.has(hash), false)
+    assert.equal(manager.docs.has(hash), false)
+    assert.equal(manager.subCount.has(hash), false)
+    assert.equal(manager.pendingDestroyTimers.has(hash), false)
+  })
+
+  it('keeps zero-delay live cleanup eager', async () => {
+    setSubscriptionGcDelay(0)
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $doc = createDocSignal('gamesTransportGrace', 'live-zero-delay')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    const doc = manager.docs.get(hash)
+    await manager.unsubscribe($doc)
+
+    assert.deepEqual(doc.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(doc.destroyCount, 1)
+    assert.equal(doc.disposeCount, 1)
+    assert.equal(manager.entries.has(hash), false)
+  })
+
+  it('keeps fetch transport eager and refetches on a quick new owner', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $rootA = getRootSignal({ rootId: '_doc_grace_fetch_a', fetchOnly: true })
+    const $rootB = getRootSignal({ rootId: '_doc_grace_fetch_b', fetchOnly: true })
+    const $docA = $rootA.games._fetchGraceDoc
+    const $docB = $rootB.games._fetchGraceDoc
+    const hash = JSON.stringify(['games', '_fetchGraceDoc'])
+    let firstUnsubscribePromise
+
+    try {
+      await manager.subscribe($docA)
+      const doc = manager.docs.get(hash)
+      firstUnsubscribePromise = manager.unsubscribe($docA)
+      await wait(0)
+
+      assert.equal(doc.activeTransportMode, 'idle', 'fetch transport should close before runtime GC')
+      assert.deepEqual(doc.events, ['subscribe:fetch', 'unsubscribe:fetch'])
+
+      await manager.subscribe($docB)
+      await firstUnsubscribePromise
+
+      assert.equal(manager.docs.get(hash), doc, 'the runtime may still be reused')
+      assert.deepEqual(doc.events, [
+        'subscribe:fetch',
+        'unsubscribe:fetch',
+        'subscribe:fetch'
+      ], 'a new fetch owner must perform a fresh fetch')
+    } finally {
+      setSubscriptionGcDelay(0)
+      await manager.unsubscribe($docB).catch(() => {})
+      await firstUnsubscribePromise?.catch(() => {})
+      await manager.clear()
+    }
+  })
+
+  it('switches a grace-retained live transport to fetch for a fetch-only owner', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $liveRoot = getRootSignal({ rootId: '_doc_grace_live_handoff', fetchOnly: false })
+    const $fetchRoot = getRootSignal({ rootId: '_doc_grace_fetch_handoff', fetchOnly: true })
+    const $liveDoc = $liveRoot.games._liveToFetchGraceDoc
+    const $fetchDoc = $fetchRoot.games._liveToFetchGraceDoc
+    const hash = JSON.stringify(['games', '_liveToFetchGraceDoc'])
+    let liveUnsubscribePromise
+
+    try {
+      await manager.subscribe($liveDoc)
+      const doc = manager.docs.get(hash)
+      liveUnsubscribePromise = manager.unsubscribe($liveDoc)
+      await wait(0)
+
+      assert.equal(doc.activeTransportMode, 'subscribe')
+      await manager.subscribe($fetchDoc)
+      await liveUnsubscribePromise
+
+      assert.equal(manager.docs.get(hash), doc)
+      assert.equal(doc.activeTransportMode, 'fetch')
+      assert.deepEqual(doc.events, [
+        'subscribe:subscribe',
+        'unsubscribe:subscribe',
+        'subscribe:fetch'
+      ])
+    } finally {
+      setSubscriptionGcDelay(0)
+      await manager.unsubscribe($fetchDoc).catch(() => {})
+      await liveUnsubscribePromise?.catch(() => {})
+      await manager.clear()
+    }
+  })
+
+  it('downgrades mixed live and fetch owners immediately', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $fetchRoot = getRootSignal({ rootId: '_doc_grace_mixed_fetch', fetchOnly: true })
+    const $liveRoot = getRootSignal({ rootId: '_doc_grace_mixed_live', fetchOnly: false })
+    const $fetchDoc = $fetchRoot.games._mixedGraceDoc
+    const $liveDoc = $liveRoot.games._mixedGraceDoc
+    const hash = JSON.stringify(['games', '_mixedGraceDoc'])
+
+    await manager.subscribe($fetchDoc)
+    await manager.subscribe($liveDoc)
+    const doc = manager.docs.get(hash)
+
+    await manager.unsubscribe($liveDoc)
+
+    assert.equal(doc.activeTransportMode, 'fetch')
+    assert.equal(manager.pendingDestroyTimers.has(hash), false, 'a real fetch owner prevents GC')
+    assert.deepEqual(doc.events, [
+      'subscribe:fetch',
+      'unsubscribe:fetch',
+      'subscribe:subscribe',
+      'unsubscribe:subscribe',
+      'subscribe:fetch'
+    ])
+
+    const fetchUnsubscribePromise = manager.unsubscribe($fetchDoc)
+    await wait(0)
+    assert.equal(doc.activeTransportMode, 'idle', 'final fetch transport should close eagerly')
+    assert.ok(manager.pendingDestroyTimers.has(hash), 'only runtime GC remains delayed')
+    await manager.flushPendingDestroys()
+    await fetchUnsubscribePromise
+  })
+
+  it('does not let a query retain adopt an ownerless live transport', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $doc = createDocSignal('gamesTransportGrace', 'query-retain-handoff')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    const doc = manager.docs.get(hash)
+    const unsubscribePromise = manager.unsubscribe($doc)
+    await wait(0)
+    assert.equal(doc.activeTransportMode, 'subscribe')
+
+    manager.retain($doc)
+    await unsubscribePromise
+    await wait(0)
+
+    const entry = manager.entries.get(hash)
+    assert.equal(entry.retainCount, 1)
+    assert.equal(entry.owners.size, 0)
+    assert.equal(entry.pendingDestroy, null)
+    assert.equal(doc.activeTransportMode, 'idle', 'query retain keeps data, not direct live transport')
+    assert.deepEqual(doc.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+
+    setSubscriptionGcDelay(0)
+    await manager.release($doc)
+  })
+
+  it('retains an in-flight live subscribe when the final owner leaves', async () => {
+    const manager = createTrackedDocManager(GatedSubscribeMockDoc)
+    const $docA = createDocSignal('gamesTransportGrace', 'subscribe-in-flight')
+    const $docB = createDocSignal('gamesTransportGrace', 'subscribe-in-flight')
+    const hash = JSON.stringify($docA[SEGMENTS])
+    let firstUnsubscribePromise
+
+    try {
+      const subscribePromise = manager.subscribe($docA)
+      await wait(0)
+      const doc = manager.docs.get(hash)
+      firstUnsubscribePromise = manager.unsubscribe($docA)
+      await wait(0)
+
+      doc.subscribeGate.resolve()
+      await subscribePromise
+      assert.equal(doc.activeTransportMode, 'subscribe')
+      assert.ok(manager.pendingDestroyTimers.has(hash))
+
+      await manager.subscribe($docB)
+      await firstUnsubscribePromise
+
+      assert.equal(manager.docs.get(hash), doc)
+      assert.deepEqual(doc.events, [
+        'subscribe:subscribe:start',
+        'subscribe:subscribe:done'
+      ], 'adoption should reuse the completed in-flight subscription')
+    } finally {
+      setSubscriptionGcDelay(0)
+      await manager.unsubscribe($docB).catch(() => {})
+      await firstUnsubscribePromise?.catch(() => {})
+      await manager.clear()
+    }
+  })
+
+  it('resubscribes once when a new owner arrives during teardown', async () => {
+    const manager = createTrackedDocManager(GatedUnsubscribeMockDoc)
+    const $docA = createDocSignal('gamesTransportGrace', 'teardown-in-flight')
+    const $docB = createDocSignal('gamesTransportGrace', 'teardown-in-flight')
+    const hash = JSON.stringify($docA[SEGMENTS])
+
+    await manager.subscribe($docA)
+    const doc = manager.docs.get(hash)
+    const firstUnsubscribePromise = manager.unsubscribe($docA)
+    await wait(0)
+    const flushPromise = manager.flushPendingDestroys()
+    await wait(0)
+
+    assert.deepEqual(doc.events, [
+      'subscribe:subscribe',
+      'unsubscribe:subscribe:start'
+    ])
+
+    const secondSubscribePromise = manager.subscribe($docB)
+    doc.unsubscribeGate.resolve()
+    await Promise.all([firstUnsubscribePromise, flushPromise, secondSubscribePromise])
+
+    assert.equal(manager.docs.get(hash), doc)
+    assert.equal(doc.activeTransportMode, 'subscribe')
+    assert.equal(doc.destroyCount, 0)
+    assert.deepEqual(doc.events, [
+      'subscribe:subscribe',
+      'unsubscribe:subscribe:start',
+      'unsubscribe:subscribe:done',
+      'subscribe:subscribe'
+    ])
+
+    setSubscriptionGcDelay(0)
+    await manager.unsubscribe($docB)
+  })
+
+  it('closes the wire at expiry but waits for pending operations before destroy', async () => {
+    const manager = createTrackedDocManager(PendingMockDoc)
+    const $doc = createDocSignal('gamesTransportGrace', 'pending-operation')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    const doc = manager.docs.get(hash)
+    doc.setPending(true)
+    const unsubscribePromise = manager.unsubscribe($doc)
+    await wait(0)
+
+    assert.equal(doc.activeTransportMode, 'subscribe')
+    await manager.flushPendingDestroys()
+
+    assert.equal(doc.activeTransportMode, 'idle', 'wire closes when grace expires')
+    assert.equal(doc.destroyed, false, 'runtime waits for pending operations')
+    assert.ok(manager.docs.has(hash))
+
+    doc.setPending(false)
+    await unsubscribePromise
+    assert.equal(doc.destroyed, true)
+    assert.equal(manager.entries.has(hash), false)
+  })
+
+  it('clear bypasses grace and leaves no late cleanup work', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $doc = createDocSignal('gamesTransportGrace', 'clear-during-grace')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    const doc = manager.docs.get(hash)
+    const unsubscribePromise = manager.unsubscribe($doc)
+    await wait(0)
+    assert.ok(manager.pendingDestroyTimers.has(hash))
+
+    await manager.clear()
+    await unsubscribePromise
+
+    assert.deepEqual(doc.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(doc.destroyCount, 1)
+    assert.equal(doc.disposeCount, 1)
+    assert.equal(manager.entries.size, 0)
+    assert.equal(manager.ownerRecords.size, 0)
+    assert.equal(manager.pendingDestroyTimers.size, 0)
+  })
+
+  it('root cleanup keeps shared ownership and eagerly destroys the final owner', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const $rootA = getRootSignal({ rootId: '_doc_grace_root_a', fetchOnly: false })
+    const $rootB = getRootSignal({ rootId: '_doc_grace_root_b', fetchOnly: false })
+    const $docA = $rootA.games._rootCleanupGraceDoc
+    const $docB = $rootB.games._rootCleanupGraceDoc
+    const hash = JSON.stringify(['games', '_rootCleanupGraceDoc'])
+
+    await manager.subscribe($docA)
+    await manager.subscribe($docB)
+    const doc = manager.docs.get(hash)
+
+    await manager.releaseRootOwnedSubscriptions($rootA[ROOT_ID])
+    assert.equal(doc.activeTransportMode, 'subscribe')
+    assert.equal(doc.destroyCount, 0)
+    assert.equal(manager.subCount.get(hash), 1)
+
+    await manager.releaseRootOwnedSubscriptions($rootB[ROOT_ID])
+    assert.deepEqual(doc.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(doc.destroyCount, 1)
+    assert.equal(doc.disposeCount, 1)
+    assert.equal(manager.entries.has(hash), false)
+    assert.equal(manager.pendingDestroyTimers.has(hash), false)
+  })
+
+  it('keeps failed expiry cleanup observable and retryable', async () => {
+    const manager = createTrackedDocManager(FailOnceUnsubscribeMockDoc)
+    const $doc = createDocSignal('gamesTransportGrace', 'unsubscribe-failure')
+    const hash = JSON.stringify($doc[SEGMENTS])
+
+    await manager.subscribe($doc)
+    const doc = manager.docs.get(hash)
+    const unsubscribePromise = manager.unsubscribe($doc)
+    const unsubscribeRejection = assert.rejects(unsubscribePromise, /mock unsubscribe failure/)
+    await wait(0)
+
+    await assert.rejects(manager.flushPendingDestroys(), /mock unsubscribe failure/)
+    await unsubscribeRejection
+
+    assert.equal(doc.activeTransportMode, 'subscribe')
+    assert.ok(manager.docs.has(hash), 'failed runtime remains tracked for retry')
+    assert.equal(manager.pendingDestroyTimers.has(hash), false, 'failed timer is settled once')
+
+    await manager.clear()
+    assert.deepEqual(doc.events, [
+      'subscribe:subscribe',
+      'unsubscribe:subscribe:failed',
+      'unsubscribe:subscribe'
+    ])
+    assert.equal(manager.entries.size, 0)
+  })
+
+  it('keeps one live transport through repeated same-hash churn', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const hash = JSON.stringify(['gamesTransportGrace', 'same-hash-stress'])
+    let $activeDoc = createDocSignal('gamesTransportGrace', 'same-hash-stress')
+
+    await manager.subscribe($activeDoc)
+    const runtime = manager.docs.get(hash)
+
+    for (let i = 0; i < 50; i++) {
+      const unsubscribePromise = manager.unsubscribe($activeDoc)
+      await wait(0)
+      assert.equal(manager.pendingDestroyTimers.size, 1)
+
+      const $nextDoc = createDocSignal('gamesTransportGrace', 'same-hash-stress')
+      await manager.subscribe($nextDoc)
+      await unsubscribePromise
+      $activeDoc = $nextDoc
+      assert.equal(manager.docs.get(hash), runtime)
+      assert.equal(manager.pendingDestroyTimers.size, 0)
+    }
+
+    assert.deepEqual(runtime.events, ['subscribe:subscribe'])
+    assert.equal(manager.docs.size, 1)
+    assert.equal(manager.entries.size, 1)
+
+    const unsubscribePromise = manager.unsubscribe($activeDoc)
+    await manager.flushPendingDestroys()
+    await unsubscribePromise
+    assert.equal(manager.entries.size, 0)
+  })
+
+  it('bounds abandoned unique live transports by pending GC and flushes all of them', async () => {
+    const manager = createTrackedDocManager(LifecycleMockDoc)
+    const unsubscribePromises = []
+    const abandonedCount = 30
+
+    for (let i = 0; i < abandonedCount; i++) {
+      const $doc = createDocSignal('gamesTransportGraceUnique', `abandoned-${i}`)
+      await manager.subscribe($doc)
+      unsubscribePromises.push(manager.unsubscribe($doc))
+    }
+    await wait(0)
+
+    assert.equal(manager.docs.size, abandonedCount)
+    assert.equal(manager.pendingDestroyTimers.size, abandonedCount)
+    assert.equal(manager.entries.size, abandonedCount)
+
+    await manager.flushPendingDestroys()
+    await Promise.all(unsubscribePromises)
+
+    assert.equal(manager.docs.size, 0)
+    assert.equal(manager.pendingDestroyTimers.size, 0)
+    assert.equal(manager.entries.size, 0)
+    assert.equal(manager.ownerRecords.size, 0)
+  })
+})
+
+describe('Transport grace non-goals', () => {
+  afterEach(assertTrackedManagersAndReset)
+  const gcDelay = 60_000
+
+  beforeEach(() => {
+    setSubscriptionGcDelay(gcDelay)
+  })
+
+  afterEach(() => {
+    __resetSubscriptionGcDelayForTests()
+  })
+
+  it('keeps query transport teardown eager while retaining its runtime for GC', async () => {
+    const manager = createTrackedQueryManager(MockQuery)
+    const $query = createMockQuerySignal('gamesQueryGrace', { active: true })
+    const hash = $query[QUERY_HASH]
+
+    await manager.subscribe($query)
+    const query = manager.queries.get(hash)
+    const unsubscribePromise = manager.unsubscribe($query)
+    await wait(0)
+
+    assert.deepEqual(query.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(query.activeTransportMode, 'idle')
+    assert.ok(manager.queries.has(hash), 'only materialized query runtime remains until GC')
+    assert.equal(manager.pendingDestroyTimers.size, 1)
+
+    await manager.flushPendingDestroys()
+    await unsubscribePromise
+  })
+
+  it('keeps aggregation transport teardown eager while retaining its runtime for GC', async () => {
+    const manager = createTrackedQueryManager(MockQuery)
+    manager.runtimeKind = 'aggregation'
+    const $root = getRootSignal({ rootId: '_aggregation_transport_grace_non_goal' })
+    const $aggregation = getAggregationSignal(
+      'gamesAggregationGrace',
+      { $aggregate: [{ $match: { active: true } }] },
+      { root: $root }
+    )
+    const hash = $aggregation[QUERY_HASH]
+
+    await manager.subscribe($aggregation)
+    const aggregation = manager.queries.get(hash)
+    const unsubscribePromise = manager.unsubscribe($aggregation)
+    await wait(0)
+
+    assert.deepEqual(aggregation.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(aggregation.activeTransportMode, 'idle')
+    assert.ok(manager.queries.has(hash), 'only materialized aggregation runtime remains until GC')
+    assert.equal(manager.pendingDestroyTimers.size, 1)
+
+    await manager.flushPendingDestroys()
+    await unsubscribePromise
   })
 })
 

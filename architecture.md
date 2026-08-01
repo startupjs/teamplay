@@ -340,6 +340,16 @@ sub($.users[id])
 
 [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
 
+The cleanup grace has transport-specific semantics:
+
+- an already-live direct document keeps its runtime, materialized data, and
+  ShareDB subscription through `subscriptionGcDelay`; a matching owner can
+  adopt all three without a wire unsubscribe/resubscribe cycle;
+- a direct fetch keeps only its runtime and materialized data through the grace;
+  its transport is unfetched eagerly, and a later owner performs a fresh fetch;
+- forced cleanup (`clear()`, root disposal, explicit destroy, or finalization)
+  bypasses the grace and closes the transport immediately.
+
 ### Query Subscription Flow
 
 ```txt
@@ -363,6 +373,10 @@ $queries.<hash>.extra
 
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
+Query GC does not share the direct-live transport grace. Its runtime/private
+materialization may remain until delayed cleanup, but the ShareDB query
+transport closes as soon as its final owner leaves.
+
 ### Aggregation Subscription Flow
 
 Aggregations reuse the query transport layer but materialize data under `$aggregations`:
@@ -378,6 +392,9 @@ sub(aggregationHeader, params)
 ```
 
 [packages/teamplay/src/orm/Aggregation.js](./packages/teamplay/src/orm/Aggregation.js) extends query behavior. Aggregation output comes from query `extra`, not from normal query `results`. If aggregation rows include `_id` or `id`, the runtime can inject configured id fields and route model method calls back to source documents.
+
+Aggregations reuse query transport teardown semantics: materialized runtime
+state may wait for GC, while the server aggregation transport closes eagerly.
 
 ## Writes And Mutations
 

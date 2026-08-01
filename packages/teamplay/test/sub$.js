@@ -5,6 +5,7 @@ import { $, sub, unsub, aggregation } from '../src/index.ts'
 import { get as _get, del as _del } from '../src/orm/dataTree.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { hashQuery, querySubscriptions } from '../src/orm/Query.js'
+import { docSubscriptions } from '../src/orm/Doc.js'
 import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
 import { getPrivateData } from '../src/orm/privateData.js'
 import { getRoot, getRootSignal, ROOT_ID } from '../src/orm/Root.ts'
@@ -17,6 +18,10 @@ function cbPromise (fn) {
   return new Promise((resolve, reject) => {
     fn((err, result) => err ? reject(err) : resolve(result))
   })
+}
+
+function wait (ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function afterEachTestGcShareDb () {
@@ -122,6 +127,51 @@ describe('$sub() function', () => {
     const game = $game.get()
     assert.equal(game.id, gameId)
     // TODO: When returning data from .get(), it should be wrapped into Proxy too
+  })
+})
+
+describe('$sub() direct document transport grace', () => {
+  afterEachTestGc()
+  afterEachTestGcShareDb()
+
+  it('reuses the real ShareDB live subscription across quick unsub/sub', async () => {
+    const previousGcDelay = getSubscriptionGcDelay()
+    const gameId = '_public_transport_grace'
+    const hash = JSON.stringify(['games', gameId])
+    let $resubscribedGame
+    let firstUnsubscribePromise
+
+    try {
+      setSubscriptionGcDelay(60_000)
+      const $game = await sub($.games[gameId])
+      const shareDoc = getConnection().get('games', gameId)
+      await cbPromise(cb => shareDoc.create({ name: 'Transport Grace' }, cb))
+      const runtime = docSubscriptions.docs.get(hash)
+
+      firstUnsubscribePromise = unsub($game)
+      await wait(0)
+
+      assert.equal(shareDoc.subscribed, true, 'ShareDB wire stays live during grace')
+      assert.equal(docSubscriptions.docs.get(hash), runtime)
+
+      $resubscribedGame = await sub($.games[gameId])
+      await firstUnsubscribePromise
+
+      assert.equal($resubscribedGame.name.get(), 'Transport Grace')
+      assert.equal(shareDoc.subscribed, true)
+      assert.equal(docSubscriptions.docs.get(hash), runtime, 'public sub() adopts the same runtime')
+
+      await cbPromise(cb => shareDoc.del(cb))
+    } finally {
+      setSubscriptionGcDelay(0)
+      if ($resubscribedGame) await unsub($resubscribedGame)
+      await firstUnsubscribePromise?.catch(() => {})
+      await docSubscriptions.flushPendingDestroys()
+      setSubscriptionGcDelay(previousGcDelay)
+    }
+
+    assert.equal(docSubscriptions.docs.has(hash), false)
+    assert.equal(Object.keys(getConnection().collections?.games || {}).length, 0)
   })
 })
 
