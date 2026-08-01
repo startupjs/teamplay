@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.2](https://github.com/startupjs/teamplay/compare/v0.5.1...v0.5.2) (2026-08-01)
+
+
+### Bug Fixes
+
+* preserve direct doc transport during grace ([48c881a](https://github.com/startupjs/teamplay/commit/48c881a2ac8a58314d594ac3464ef3339ebb6def))
+
+
+
+
+
 ## [0.5.1](https://github.com/startupjs/teamplay/compare/v0.5.0...v0.5.1) (2026-07-30)
 
 
