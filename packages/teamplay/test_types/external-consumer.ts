@@ -9,6 +9,7 @@ import $, {
   observer,
   reaction,
   setSubscriptionGcDelay,
+  SuspenseGroup,
   sub,
   useApi,
   useDidUpdate,
@@ -20,6 +21,7 @@ import $, {
   useSub,
   useSyncEffect,
   useSuspendMemo,
+  useSuspenseGroupScheduleUpdate,
   useTriggerUpdate,
   type FromJsonSchema,
   type JsonSchemaSpec,
@@ -110,6 +112,9 @@ const externalOrmReactionHandle: ReactionHandle = ormReaction(() => $user.age.ge
 externalOrmReactionHandle.dispose()
 
 function ExternalConsumerComponent () {
+  const suspenseGroupScheduleUpdate = useSuspenseGroupScheduleUpdate()
+  const optionalSuspenseGroupScheduleUpdate:
+    ((promise: PromiseLike<unknown>) => void) | undefined = suspenseGroupScheduleUpdate
   const maybeHookUser = useSub(typedUserSignal)
   type _useSubResult = Assert<IsEqual<typeof maybeHookUser, Signal<UserDoc>>>
 
@@ -152,7 +157,14 @@ function ExternalConsumerComponent () {
     nextGcDelay
   ])
 
+  optionalSuspenseGroupScheduleUpdate?.(Promise.resolve())
+
   return React.createElement(ObservedUser, { name: 'Ada' })
 }
 
 React.createElement(ExternalConsumerComponent)
+React.createElement(
+  SuspenseGroup,
+  { fallback: React.createElement('span', null, 'Loading') },
+  React.createElement(ExternalConsumerComponent)
+)
