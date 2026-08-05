@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.3](https://github.com/startupjs/teamplay/compare/v0.5.2...v0.5.3) (2026-08-05)
+
+
+### Bug Fixes
+
+* **teamplay:** collapse grouped Suspense retries ([e00844a](https://github.com/startupjs/teamplay/commit/e00844a582001c9e2054ff34062a6d3d8140dca9))
+
+
+
+
+
 ## [0.5.2](https://github.com/startupjs/teamplay/compare/v0.5.1...v0.5.2) (2026-08-01)
 
 
