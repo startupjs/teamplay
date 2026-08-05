@@ -45,6 +45,17 @@ Why:
 ### `useSuspendMemo(factory, deps)`
 
 Use it when the suspend gate is local to one observer component instance.
+Think of it as a render gate, not as an asynchronous version of `useMemo()`:
+
+1. The factory runs synchronously during render.
+2. A normal return value is cached until the dependencies change.
+3. If the factory throws a thenable, the same pending thenable is rethrown on
+   every retry for that hook slot.
+4. After the thenable settles, the factory runs again. It must observe that the
+   external signal or state is now ready, or surface a stored error.
+
+Do not pass an `async` factory or return a Promise. A returned Promise is treated
+as an ordinary completed value and does not suspend; the factory must throw it.
 
 ```js
 import { observer, useSuspendMemo } from 'teamplay'
@@ -54,14 +65,15 @@ const Component = observer(({ $stage, userId, stageUserStore }) => {
     if (!stageUserStore?.startedAt) {
       throw $stage.join(userId)
     }
-  }, [$stage.getId()])
+  }, [$stage.getId(), userId, !!stageUserStore?.startedAt])
 
   return <span>Ready</span>
 })
 ```
 
 This keeps the same pending thenable for the same hook slot while the component
-instance is alive.
+instance is alive. Dependencies identify the gate inputs; changing them can
+start a new operation and does not cancel the previous one.
 
 ### `useSuspendMemoByKey(key, factory, deps)`
 
@@ -91,6 +103,10 @@ This is the right choice when:
 - the component may remount while the promise is still pending;
 - two different components may trigger the same async operation;
 - the operation should behave like a single in-flight business task.
+
+`useSuspendMemoByKey()` deduplicates only the in-flight operation. It does not
+cache a completed result; the external signal or state remains the source of
+truth after the Promise settles.
 
 ## License
 

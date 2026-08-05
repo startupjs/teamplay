@@ -210,6 +210,10 @@ export {
   default as useSuspendMemo,
   useSuspendMemoByKey
 } from './react/useSuspendMemo.ts'
+export {
+  SuspenseGroup,
+  useSuspenseGroupScheduleUpdate
+} from './react/wrapIntoSuspense.js'
 export const observer = runtimeObserver as unknown as ObserverFunction
 export { emit, useOn, useEmit } from './orm/events.js'
 export {

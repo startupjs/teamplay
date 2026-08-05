@@ -1,7 +1,64 @@
 // useSyncExternalStore is used to trigger an update same as in MobX
 // ref: https://github.com/mobxjs/mobx/blob/94bc4997c14152ff5aefcaac64d982d5c21ba51a/packages/mobx-react-lite/src/useObserver.ts
-import { useSyncExternalStore, forwardRef as _forwardRef, memo, createElement as el, Suspense, useId, useRef } from 'react'
+import {
+  useSyncExternalStore,
+  forwardRef as _forwardRef,
+  memo,
+  createContext,
+  createElement as el,
+  Suspense,
+  useContext,
+  useId,
+  useRef
+} from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
+
+const SuspenseGroupContext = createContext()
+
+export function SuspenseGroup ({ children, fallback = null }) {
+  const storeRef = useRef()
+  if (!storeRef.current) storeRef.current = createSuspenseGroupStore()
+  const store = storeRef.current
+
+  useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
+
+  return el(
+    SuspenseGroupContext.Provider,
+    { value: store.scheduleUpdate },
+    el(Suspense, { fallback }, children)
+  )
+}
+
+export function useSuspenseGroupScheduleUpdate () {
+  return useContext(SuspenseGroupContext)
+}
+
+function createSuspenseGroupStore () {
+  let version = 0
+  const listeners = new Set()
+  const scheduled = new WeakSet()
+
+  return {
+    subscribe (listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    getSnapshot () {
+      return version
+    },
+    scheduleUpdate (promise) {
+      if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
+      if (scheduled.has(promise)) return
+      scheduled.add(promise)
+
+      const retry = () => {
+        version++
+        for (const listener of listeners) listener()
+      }
+      promise.then(retry, retry)
+    }
+  }
+}
 
 // TODO: probably add FinalizationRegistry to handle destruction of observer() before it ever mounted.
 //       In such case we might have a memory leak because subscribe() would never fire and would never
@@ -23,6 +80,7 @@ export default function wrapIntoSuspense ({
   if (!suspenseProps?.fallback) throw Error(ERRORS.noFallback)
 
   let SuspenseWrapper = (props, ref) => {
+    const inheritsSuspense = !!useContext(SuspenseGroupContext)
     const componentId = useId()
     const componentMetaRef = useRef()
     const admRef = useRef()
@@ -90,13 +148,15 @@ export default function wrapIntoSuspense ({
 
     if (forwardRef) props = { ...props, ref }
 
-    return (
-      el(ComponentMetaContext.Provider, { value: componentMetaRef.current },
-        el(Suspense, suspenseProps,
-          el(Component, props)
-        )
-      )
+    const contents = el(
+      ComponentMetaContext.Provider,
+      { value: componentMetaRef.current },
+      el(Component, props)
     )
+    const hasCustomFallback = suspenseProps !== DEFAULT_SUSPENSE_PROPS
+    return inheritsSuspense && !hasCustomFallback
+      ? contents
+      : el(Suspense, suspenseProps, contents)
   }
 
   // pipe only displayName because forwardRef render function

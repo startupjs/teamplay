@@ -98,6 +98,56 @@ Avoid legacy hook names like `useDoc`, `useQuery`, `useBatchDoc`, and
 `useBatchQuery` in new code. The public API is the object-tree subscription API:
 `useSub`, `useAsyncSub`, and `useBatchSub`.
 
+### Grouping Suspense retries
+
+Use `SuspenseGroup` around an application subtree that should share one loading
+boundary. This is useful for route shells where nested `observer()` components
+discover several subscription waves in sequence:
+
+```javascript
+import { SuspenseGroup } from 'teamplay'
+
+function PlayerRoute ({ children }) {
+  return (
+    <SuspenseGroup fallback={<PlayerSkeleton />}>
+      {children}
+    </SuspenseGroup>
+  )
+}
+```
+
+Inside the group, default Suspense boundaries added by `observer()` are
+consolidated into the group boundary. TeamPlay automatically schedules retries
+for initial `useSub()`, `useBatchSub()`, and `useSuspendMemo()` promises. An
+observer with an explicit `suspenseProps.fallback` keeps its own boundary.
+Outside `SuspenseGroup`, observer behavior is unchanged.
+
+For a stable promise that TeamPlay does not create, such as a memoized
+`React.lazy()` loader, register it explicitly:
+
+```javascript
+import React from 'react'
+import { useSuspenseGroupScheduleUpdate } from 'teamplay'
+
+let viewPromise
+const loadView = () => {
+  if (!viewPromise) viewPromise = import('./LoadedView.js')
+  return viewPromise
+}
+const LoadedView = React.lazy(loadView)
+
+function LazyView (props) {
+  const scheduleUpdate = useSuspenseGroupScheduleUpdate()
+  const promise = loadView()
+  scheduleUpdate?.(promise)
+  return <LoadedView {...props} />
+}
+```
+
+The loader must return the same in-flight promise on repeated renders. The hook
+returns `undefined` outside a group, so the component can retain its normal
+local Suspense fallback there.
+
 ## Creating and Waiting for Documents
 
 Sometimes, you might need to create a document if it doesn't exist yet. Here's how to do it:

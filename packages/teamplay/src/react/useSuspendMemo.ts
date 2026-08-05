@@ -1,6 +1,7 @@
 import executionContextTracker from './executionContextTracker.ts'
 import { useCache } from './helpers.ts'
 import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
+import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 
 const IN_FLIGHT_BY_KEY = new Map<unknown, Promise<unknown>>()
 
@@ -19,6 +20,7 @@ export default function useSuspendMemo<TValue> (
   deps = normalizeDeps(deps)
 
   const cache = useCache(undefined)
+  const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   const hookId = executionContextTracker.newHookId()
   const cacheKey = `suspendMemo:${hookId}`
 
@@ -36,6 +38,7 @@ export default function useSuspendMemo<TValue> (
   if (entry.status === 'done') return entry.value as TValue
   if (entry.status === 'pending') {
     renderAttemptDestroyer.armSuspenseGate()
+    scheduleGroupUpdate?.(entry.promise as Promise<unknown>)
     throw entry.promise
   }
 
@@ -54,6 +57,7 @@ export default function useSuspendMemo<TValue> (
     entry.status = 'pending'
     entry.promise = promise
     renderAttemptDestroyer.armSuspenseGate()
+    scheduleGroupUpdate?.(promise)
     throw promise
   }
 }

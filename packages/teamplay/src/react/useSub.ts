@@ -2,6 +2,7 @@ import { useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import sub from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer } from './helpers.ts'
+import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
 import { getPrivateData } from '../orm/privateData.js'
@@ -168,7 +169,7 @@ export function useAsyncSub<TOutput = unknown, TCollection extends string = stri
 
 export function useAsyncSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
   const normalized = normalizeUseSubArgs(signal, params, options)
-  return runUseSub(normalized.signal, normalized.params, { ...normalized.options, async: true })
+  return useNormalizedSub(normalized.signal, normalized.params, { ...normalized.options, async: true })
 }
 
 /**
@@ -419,7 +420,7 @@ export default function useSub<TOutput = unknown, TCollection extends string = s
 
 export default function useSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
   const normalized = normalizeUseSubArgs(signal, params, options)
-  return runUseSub(normalized.signal, normalized.params, normalized.options)
+  return useNormalizedSub(normalized.signal, normalized.params, normalized.options)
 }
 
 function normalizeUseSubArgs (
@@ -442,8 +443,9 @@ function isUseSubOptions (value: unknown): value is UseSubOptions {
   return Object.keys(value).every(key => USE_SUB_OPTION_KEYS.has(key))
 }
 
-function runUseSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
-  if (isBatchBarrierCall(signal, params, options)) return closeBatchBarrier()
+function useNormalizedSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
+  const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
+  if (isBatchBarrierCall(signal, params, options)) return closeBatchBarrier(scheduleGroupUpdate)
   if (USE_DEFERRED_VALUE) {
     return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
   } else {
@@ -455,9 +457,14 @@ function isBatchBarrierCall (signal: unknown, params: unknown, options?: UseSubO
   return signal === undefined && params === undefined && !!options?.batch
 }
 
-function closeBatchBarrier (): void {
+function closeBatchBarrier (
+  scheduleGroupUpdate: ((promise: PromiseLike<unknown>) => void) | undefined
+): void {
   const promise = promiseBatcher.getPromiseAll()
-  if (promise) throw promise
+  if (promise) {
+    scheduleGroupUpdate?.(promise)
+    throw promise
+  }
 }
 
 // version of sub() which works as a react hook and throws promise for Suspense
@@ -468,6 +475,7 @@ export function useSubDeferred (
 ): unknown {
   const $signalRef = useRef<unknown>()
   const scheduleUpdate = useScheduleUpdate()
+  const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   const observerDefer = useDefer()
   if (batch) promiseBatcher.activate()
   defer ??= observerDefer ?? DEFAULT_DEFER
@@ -503,6 +511,7 @@ export function useSubDeferred (
       scheduleUpdate(promise)
       return $signalRef.current
     }
+    scheduleGroupUpdate?.(promise)
     throw promise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
@@ -523,6 +532,7 @@ export function useSubClassic (
   const id = executionContextTracker.newHookId()
   const cache = useCache(undefined)
   const scheduleUpdate = useScheduleUpdate()
+  const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   if (batch) promiseBatcher.activate()
   const promiseOrSignal = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
@@ -556,6 +566,7 @@ export function useSubClassic (
       // in regular mode we throw the promise to be caught by Suspense
       // this way we guarantee that the signal with all the data
       // will always be there when component is rendered
+      scheduleGroupUpdate?.(promise)
       throw promise
     }
     // if we already have a previous signal, we return it and wait for new promise to resolve
