@@ -453,9 +453,12 @@ When changing React behavior, check both runtime correctness and end-user ergono
 signal/query arguments. The component metadata cache preserves that lease across
 Suspense retries, committed effects release it on unmount, and a replacement
 lease keeps the previous snapshot alive until the replacement is ready.
-Uncommitted render attempts receive a bounded cleanup grace after their
-readiness promise settles, so abandoned Suspense work cannot retain owners
-indefinitely.
+The outer observer cache also owns pending leases, so unmounting a Suspense
+fallback can cancel subscription ownership before the transport becomes ready.
+For batches, abandoned-render cleanup waits for the complete batch barrier
+rather than an individual query; incomplete render attempts fall back to the
+individual readiness promise. Cleanup is deferred by one task so React
+StrictMode subscription replay does not look like a real unmount.
 
 ## Backend Features
 

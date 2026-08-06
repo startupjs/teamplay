@@ -1,6 +1,7 @@
 let active = false
 let promises: Array<PromiseLike<unknown>> = []
 let checks = new Map<unknown, BatchReadinessCheck>()
+let renderAttemptCleanups: RenderAttemptCleanup[] = []
 
 const READINESS_POLL_INTERVAL_MS = 16
 const READINESS_WARN_AFTER_MS = 1000
@@ -12,6 +13,8 @@ export interface BatchReadinessCheck {
   isReady: () => boolean
   getState?: () => unknown
 }
+
+type RenderAttemptCleanup = (barrier: PromiseLike<void> | null) => void
 
 export function activate (): void {
   active = true
@@ -28,9 +31,14 @@ export function addCheck (check: BatchReadinessCheck | null | undefined): void {
   checks.set(key, { ...check, key })
 }
 
+export function addRenderAttemptCleanup (cleanup: RenderAttemptCleanup): void {
+  renderAttemptCleanups.push(cleanup)
+}
+
 export function getPromiseAll (): Promise<void> | null {
   const pendingPromises = promises
   const pendingChecks = Array.from(checks.values())
+  const pendingCleanups = renderAttemptCleanups
   const hasPromises = pendingPromises.length > 0
   // Checks are a materialization barrier for initial batch subscriptions.
   // If there were no subscription promises in this render, we are in update mode
@@ -39,6 +47,7 @@ export function getPromiseAll (): Promise<void> | null {
     ? waitForBatchReady(pendingPromises, pendingChecks)
     : null
   reset()
+  runRenderAttemptCleanups(pendingCleanups, result)
   return result
 }
 
@@ -50,6 +59,20 @@ export function reset (): void {
   active = false
   promises = []
   checks = new Map()
+  renderAttemptCleanups = []
+}
+
+export function abort (): void {
+  const pendingCleanups = renderAttemptCleanups
+  reset()
+  runRenderAttemptCleanups(pendingCleanups, null)
+}
+
+function runRenderAttemptCleanups (
+  cleanups: RenderAttemptCleanup[],
+  barrier: PromiseLike<void> | null
+): void {
+  for (const cleanup of cleanups) cleanup(barrier)
 }
 
 async function waitForBatchReady (

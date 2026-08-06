@@ -131,6 +131,42 @@ describe('useSub subscription ownership', () => {
       expect(querySubscriptions.queries.size).toBe(0)
     })
   })
+
+  it('keeps ready batch ownership while a sibling subscription is pending', async () => {
+    const subscription = pauseQuerySubscription('slow-batch')
+    try {
+      const view = render(el(StaggeredBatchPage))
+      await waitForContent(view.container, 'Loading')
+      await wait(100)
+
+      expect(getQueryOwnerCount('slow-batch')).toBe(1)
+      expect(getQueryOwnerCount('fast-batch')).toBe(1)
+
+      await subscription.resume()
+      await waitForContent(view.container, 'Ready')
+    } finally {
+      await subscription.resume()
+      subscription.restore()
+      await waitForLeaseCleanup()
+    }
+  })
+
+  it('releases pending query ownership when a suspended page unmounts', async () => {
+    const subscription = pauseQuerySubscription('pending-unmount')
+    try {
+      const view = render(el(PendingSubscriptionPage))
+      await waitFor(() => expect(getQueryOwnerCount('pending-unmount')).toBe(1))
+
+      view.unmount()
+      await wait(100)
+
+      expect(getQueryOwnerCount('pending-unmount')).toBe(0)
+    } finally {
+      await subscription.resume()
+      subscription.restore()
+      await waitForLeaseCleanup()
+    }
+  })
 })
 
 function createQueryComponent (marker) {
@@ -160,6 +196,59 @@ const BatchedAggregationPage = observer(function BatchedAggregationPage ({ mount
   useBatchSub()
   return el('span', {}, `page-${mountId}`)
 })
+
+const StaggeredBatchPage = observer(function StaggeredBatchPage () {
+  useBatchSub($testRoot.useSubLeaseStaggered, { marker: 'fast-batch' }, { defer: false })
+  useBatchSub($testRoot.useSubLeaseStaggered, { marker: 'slow-batch' }, { defer: false })
+  useBatchSub()
+  return el('span', {}, 'Ready')
+}, { suspenseProps: { fallback: el('span', {}, 'Loading') } })
+
+const PendingSubscriptionPage = observer(function PendingSubscriptionPage () {
+  useBatchSub($testRoot.useSubLeasePending, { marker: 'pending-unmount' }, { defer: false })
+  useBatchSub()
+  return el('span', {}, 'Ready')
+})
+
+function pauseQuerySubscription (marker) {
+  const queryProto = querySubscriptions.QueryClass.prototype
+  const originalSubscribe = queryProto._subscribe
+  let pendingPromise
+  let resume
+
+  queryProto._subscribe = function (...args) {
+    if (this.params?.marker !== marker) return originalSubscribe.apply(this, args)
+    if (pendingPromise) return pendingPromise
+
+    let resumed = false
+    pendingPromise = new Promise((resolve, reject) => {
+      resume = () => {
+        if (resumed) return
+        resumed = true
+        Promise.resolve(originalSubscribe.apply(this, args)).then(resolve, reject)
+      }
+    })
+    return pendingPromise
+  }
+
+  return {
+    async resume () {
+      resume?.()
+      await pendingPromise
+    },
+    restore () {
+      queryProto._subscribe = originalSubscribe
+    }
+  }
+}
+
+function getQueryOwnerCount (marker) {
+  for (const ownerKey of querySubscriptions.ownerMeta.keys()) {
+    if (querySubscriptions.ownerMeta.get(ownerKey)?.params?.marker !== marker) continue
+    return querySubscriptions.ownerSubscribeCount.get(ownerKey) || 0
+  }
+  return 0
+}
 
 async function waitForContent (container, content) {
   await waitFor(() => expect(container.textContent).toBe(content))
