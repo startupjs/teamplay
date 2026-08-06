@@ -1,7 +1,7 @@
 import { createElement as el, StrictMode, Suspense } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
-import { getRootSignal, observer, useBatchSub } from '../src/index.ts'
+import { getRootSignal, observer, useBatchSub, useSub } from '../src/index.ts'
 import { querySubscriptions } from '../src/orm/Query.js'
 import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
 import {
@@ -167,7 +167,73 @@ describe('useSub subscription ownership', () => {
       await waitForLeaseCleanup()
     }
   })
+
+  it('keeps earlier query data through a chain of suspended subscriptions', async () => {
+    setTestThrottling(80)
+    const renderStates = []
+
+    const Component = observer(function ChainedSubscriptionsPage () {
+      const $firstQuery = useChainedQuery(0)
+      useChainedQuery(1)
+      useChainedQuery(2)
+      useChainedQuery(3)
+      useChainedQuery(4)
+      useChainedQuery(5)
+      const state = Array.isArray($firstQuery.get()) ? 'Ready' : 'Premature'
+      renderStates.push(state)
+      return el('span', {}, state)
+    }, { suspenseProps: { fallback: el('span', {}, 'Loading') } })
+
+    const view = render(el(Component))
+    for (let index = 0; index < 7; index++) await wait(100)
+
+    expect(renderStates).not.toContain('Premature')
+    expect(view.container.textContent).toBe('Ready')
+  })
+
+  it.each([
+    ['useSub', false],
+    ['useBatchSub', true]
+  ])('keeps %s suspended until query data is materialized', async (_name, batch) => {
+    const collection = `useSubMaterialization_${batch ? 'batch' : 'plain'}`
+    const marker = `materialization-${batch ? 'batch' : 'plain'}`
+    const materialization = delayQueryMaterialization(collection, marker)
+
+    try {
+      const PlainComponent = observer(function PlainMaterializationPage () {
+        const $query = useSub($testRoot[collection], { marker }, { defer: false })
+        const docs = $query.get()
+        return el('span', {}, Array.isArray(docs) ? 'Ready' : 'Premature')
+      }, { suspenseProps: { fallback: el('span', {}, 'Loading') } })
+      const BatchComponent = observer(function BatchMaterializationPage () {
+        const $query = useBatchSub($testRoot[collection], { marker }, { defer: false })
+        useBatchSub()
+        const docs = $query.get()
+        return el('span', {}, Array.isArray(docs) ? 'Ready' : 'Premature')
+      }, { suspenseProps: { fallback: el('span', {}, 'Loading') } })
+      const Component = batch ? BatchComponent : PlainComponent
+
+      const view = render(el(Component))
+      await waitForContent(view.container, 'Loading')
+      await wait(20)
+      expect(view.container.textContent).toBe('Loading')
+
+      await materialization.resume()
+      await waitForContent(view.container, 'Ready')
+    } finally {
+      await materialization.resume()
+      materialization.restore()
+    }
+  })
 })
+
+function useChainedQuery (index) {
+  return useSub(
+    $testRoot.useSubLeaseChainedAttempts,
+    { marker: `chained-subscription-${index}` },
+    { defer: false }
+  )
+}
 
 function createQueryComponent (marker) {
   return observer(function QueryComponent ({ renderId }) {
@@ -238,6 +304,37 @@ function pauseQuerySubscription (marker) {
     },
     restore () {
       queryProto._subscribe = originalSubscribe
+    }
+  }
+}
+
+function delayQueryMaterialization (collection, marker) {
+  const queryProto = querySubscriptions.QueryClass.prototype
+  const originalSyncRootData = queryProto._syncRootData
+  let pendingPromise
+  let resume
+
+  queryProto._syncRootData = function (...args) {
+    if (this.collectionName !== collection || this.params?.marker !== marker) {
+      return originalSyncRootData.apply(this, args)
+    }
+    if (!pendingPromise) {
+      pendingPromise = new Promise(resolve => {
+        resume = () => {
+          originalSyncRootData.apply(this, args)
+          resolve()
+        }
+      })
+    }
+  }
+
+  return {
+    async resume () {
+      resume?.()
+      await pendingPromise
+    },
+    restore () {
+      queryProto._syncRootData = originalSyncRootData
     }
   }
 }

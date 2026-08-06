@@ -491,7 +491,7 @@ export function useSubDeferred (
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
-    const readyPromise = batch ? getBatchReadyPromise(promise) : promise
+    const readyPromise = getSubscriptionReadyPromise(promise, subscriptionLease)
     scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
     const hasPreviousSignal = !!$signalRef.current
     if (batch) {
@@ -499,7 +499,7 @@ export function useSubDeferred (
       // On resubscribe we keep rendering previous signal and refresh in background.
       if (!hasPreviousSignal) {
         promiseBatcher.add(promise)
-        addBatchReadinessCheck(promise)
+        addBatchReadinessCheck(promise, subscriptionLease)
       } else {
         scheduleUpdate(readyPromise)
       }
@@ -507,21 +507,20 @@ export function useSubDeferred (
       return $signalRef.current
     }
     if (async) {
-      scheduleUpdate(promise)
+      scheduleUpdate(readyPromise)
       return
     }
     // Keep previous snapshot during update re-subscribe and refresh in background.
     if (hasPreviousSignal) {
-      scheduleUpdate(promise)
+      scheduleUpdate(readyPromise)
       return $signalRef.current
     }
-    scheduleGroupUpdate?.(promise)
-    throw promise
+    scheduleGroupUpdate?.(readyPromise)
+    throw readyPromise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
-    scheduleRenderAttemptLeaseCleanup(subscriptionLease, Promise.resolve(), batch)
-    if (batch && !$signalRef.current) addBatchReadinessCheckForSignal($signal)
+    if (batch && !$signalRef.current) addBatchReadinessCheckForSignal($signal, subscriptionLease)
     if ($signalRef.current !== $signal) $signalRef.current = $signal
     return $signal
   }
@@ -544,7 +543,7 @@ export function useSubClassic (
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
-    const readyPromise = batch ? getBatchReadyPromise(promise) : promise
+    const readyPromise = getSubscriptionReadyPromise(promise, subscriptionLease)
     scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
     if (batch) {
       const hasPreviousSignal = cache.has(id)
@@ -552,7 +551,7 @@ export function useSubClassic (
       // On resubscribe we keep rendering previous signal and refresh in background.
       if (!hasPreviousSignal) {
         promiseBatcher.add(promise)
-        addBatchReadinessCheck(promise)
+        addBatchReadinessCheck(promise, subscriptionLease)
       } else {
         scheduleUpdate(readyPromise)
       }
@@ -567,23 +566,22 @@ export function useSubClassic (
       // We manually schedule an update when promise resolves since we can't
       // rely on Suspense in this case to automatically trigger component's re-render
       if (async) {
-        scheduleUpdate(promise)
+        scheduleUpdate(readyPromise)
         return
       }
       // in regular mode we throw the promise to be caught by Suspense
       // this way we guarantee that the signal with all the data
       // will always be there when component is rendered
-      scheduleGroupUpdate?.(promise)
-      throw promise
+      scheduleGroupUpdate?.(readyPromise)
+      throw readyPromise
     }
     // if we already have a previous signal, we return it and wait for new promise to resolve
-    scheduleUpdate(promise)
+    scheduleUpdate(readyPromise)
     return cache.get(id)
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
-    scheduleRenderAttemptLeaseCleanup(subscriptionLease, Promise.resolve(), batch)
-    if (batch && !cache.has(id)) addBatchReadinessCheckForSignal($signal)
+    if (batch && !cache.has(id)) addBatchReadinessCheckForSignal($signal, subscriptionLease)
     if (cache.get(id) !== $signal) {
       cache.set(id, $signal)
     }
@@ -636,6 +634,9 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
     nextLease.unregisterCacheDestroy = cache.onDestroy(() => releaseSubscriptionLease(nextLease))
     lease = nextLease
     cache.set(cacheKey, nextLease)
+  } else {
+    clearTimeout(lease.cleanupTimer)
+    lease.cleanupTimer = undefined
   }
 
   useEffect(() => {
@@ -774,7 +775,10 @@ function maybeThrottle<TValue> (promise: Promise<TValue>): Promise<TValue> {
   })
 }
 
-function addBatchReadinessCheck (promise: PromiseLike<unknown>): void {
+function addBatchReadinessCheck (
+  promise: PromiseLike<unknown>,
+  lease?: SubscriptionLease
+): void {
   let resolvedSignal: unknown
   let resolved = false
   promise.then(signal => {
@@ -786,41 +790,50 @@ function addBatchReadinessCheck (promise: PromiseLike<unknown>): void {
   promiseBatcher.addCheck({
     key: promise,
     type: 'subscription',
-    isReady: () => resolved && isBatchSignalReady(resolvedSignal),
+    isReady: () => !!lease?.released || (resolved && isSubscriptionSignalReady(resolvedSignal)),
     getState: () => getBatchSignalState(resolvedSignal)
   })
 }
 
-function getBatchReadyPromise (promise: PromiseLike<unknown>): Promise<unknown> {
+function getSubscriptionReadyPromise (
+  promise: PromiseLike<unknown>,
+  lease?: SubscriptionLease
+): Promise<unknown> {
   return Promise.resolve(promise).then(async signal => {
-    await waitForBatchSignalReady(signal)
+    await waitForSubscriptionSignalReady(signal, lease)
     return signal
   })
 }
 
-async function waitForBatchSignalReady (signal: unknown): Promise<void> {
-  while (!isBatchSignalReady(signal)) {
+async function waitForSubscriptionSignalReady (
+  signal: unknown,
+  lease?: SubscriptionLease
+): Promise<void> {
+  while (!lease?.released && !isSubscriptionSignalReady(signal)) {
     await new Promise(resolve => setTimeout(resolve, 16))
   }
 }
 
-function addBatchReadinessCheckForSignal (signal: unknown): void {
-  if (isBatchSignalReady(signal)) return
+function addBatchReadinessCheckForSignal (
+  signal: unknown,
+  lease?: SubscriptionLease
+): void {
+  if (isSubscriptionSignalReady(signal)) return
   const promise = Promise.resolve(signal)
   promiseBatcher.add(promise)
-  addBatchReadinessCheck(promise)
+  addBatchReadinessCheck(promise, lease)
 }
 
-function isBatchSignalReady (signal: unknown): boolean {
+function isSubscriptionSignalReady (signal: unknown): boolean {
   if (isPublicDocumentSignal(signal)) {
     const $doc = signal as SignalBaseInstance
     return isDocReady($doc[SEGMENTS])
   }
-  if (isQuerySignal(signal)) return isBatchQueryReady(signal)
+  if (isQuerySignal(signal)) return isSubscriptionQueryReady(signal)
   return true
 }
 
-function isBatchQueryReady (signal: BatchQuerySignal): boolean {
+function isSubscriptionQueryReady (signal: BatchQuerySignal): boolean {
   const collection = signal[COLLECTION_NAME]
   const params = signal[PARAMS]
   if (!isBatchQueryTransportStable(signal)) return false
