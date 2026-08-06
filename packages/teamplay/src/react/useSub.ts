@@ -1,6 +1,6 @@
-import { useRef, useDeferredValue } from 'react'
+import { useEffect, useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
-import sub from '../orm/sub.ts'
+import sub, { getSubResultSignal, unsub } from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer } from './helpers.ts'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import executionContextTracker from './executionContextTracker.ts'
@@ -19,6 +19,7 @@ import {
 } from '../orm/Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { SEGMENTS } from '../orm/signalSymbols.ts'
+import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 import {
   isPublicDocumentSignal,
   type CollectionSignal,
@@ -47,6 +48,7 @@ export interface UseSubOptions {
 }
 
 const USE_SUB_OPTION_KEYS = new Set<string>(['async', 'defer', 'batch'] satisfies Array<keyof UseSubOptions>)
+const MAX_UNCOMMITTED_LEASE_GRACE_MS = 50
 
 let TEST_THROTTLING: false | number = false
 
@@ -484,11 +486,13 @@ export function useSubDeferred (
     const serializedParams = useDeferredValue(params ? JSON.stringify(params) : undefined) // eslint-disable-line react-hooks/rules-of-hooks
     params = serializedParams != null ? JSON.parse(serializedParams) : undefined
   }
-  const promiseOrSignal = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
+  const subscriptionLease = useSubscriptionLease(signal, params)
+  const promiseOrSignal = subscriptionLease.value
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
     const readyPromise = batch ? getBatchReadyPromise(promise) : promise
+    scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
     const hasPreviousSignal = !!$signalRef.current
     if (batch) {
       // Batch suspense must block only on initial load.
@@ -516,6 +520,7 @@ export function useSubDeferred (
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
+    scheduleRenderAttemptLeaseCleanup(subscriptionLease, Promise.resolve(), batch)
     if (batch && !$signalRef.current) addBatchReadinessCheckForSignal($signal)
     if ($signalRef.current !== $signal) $signalRef.current = $signal
     return $signal
@@ -534,11 +539,13 @@ export function useSubClassic (
   const scheduleUpdate = useScheduleUpdate()
   const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   if (batch) promiseBatcher.activate()
-  const promiseOrSignal = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
+  const subscriptionLease = useSubscriptionLease(signal, params)
+  const promiseOrSignal = subscriptionLease.value
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
     const readyPromise = batch ? getBatchReadyPromise(promise) : promise
+    scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
     if (batch) {
       const hasPreviousSignal = cache.has(id)
       // Batch suspense must block only on initial load.
@@ -575,6 +582,7 @@ export function useSubClassic (
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
+    scheduleRenderAttemptLeaseCleanup(subscriptionLease, Promise.resolve(), batch)
     if (batch && !cache.has(id)) addBatchReadinessCheckForSignal($signal)
     if (cache.get(id) !== $signal) {
       cache.set(id, $signal)
@@ -598,6 +606,162 @@ export function setUseDeferredValue (value: boolean): void {
 export function setDefaultDefer (value: boolean): void {
   DEFAULT_DEFER = value
 }
+
+interface SubscriptionLease {
+  value: unknown
+  signal?: unknown
+  inputSignal?: unknown
+  serializedParams?: string
+  previousLease?: SubscriptionLease
+  committed: boolean
+  released: boolean
+  cleanupTimer?: ReturnType<typeof setTimeout>
+  releaseTimer?: ReturnType<typeof setTimeout>
+  unregisterCacheDestroy?: () => void
+}
+
+function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionLease {
+  const cache = useCache(undefined)
+  const hookId = executionContextTracker.newHookId()
+  const cacheKey = `subscriptionLease:${hookId}`
+  const serializedParams = params != null ? JSON.stringify(params) : undefined
+  let lease = cache.get(cacheKey) as SubscriptionLease | undefined
+  if (
+    !lease ||
+    lease.released ||
+    lease.inputSignal !== signal ||
+    lease.serializedParams !== serializedParams
+  ) {
+    const nextLease = createSubscriptionLease(signal, params, serializedParams, lease)
+    nextLease.unregisterCacheDestroy = cache.onDestroy(() => releaseSubscriptionLease(nextLease))
+    lease = nextLease
+    cache.set(cacheKey, nextLease)
+  }
+
+  useEffect(() => {
+    lease.committed = true
+    clearTimeout(lease.cleanupTimer)
+    lease.cleanupTimer = undefined
+    clearTimeout(lease.releaseTimer)
+    lease.releaseTimer = undefined
+    if (lease.previousLease) {
+      clearTimeout(lease.previousLease.releaseTimer)
+      lease.previousLease.releaseTimer = undefined
+    }
+    return () => scheduleSubscriptionLeaseRelease(lease)
+  }, [lease])
+
+  useEffect(() => {
+    if (isThenable(lease.value)) return
+    releasePreviousSubscriptionLease(lease)
+  })
+
+  return lease
+}
+
+function createSubscriptionLease (
+  signal: unknown,
+  params: unknown,
+  serializedParams?: string,
+  previousLease?: SubscriptionLease
+): SubscriptionLease {
+  const value = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
+  const lease: SubscriptionLease = {
+    value,
+    signal: getSubResultSignal(value),
+    inputSignal: signal,
+    serializedParams,
+    previousLease: previousLease?.released ? undefined : previousLease,
+    committed: false,
+    released: false
+  }
+
+  if (isThenable(value)) {
+    Promise.resolve(value).then($signal => {
+      lease.signal = $signal
+      lease.value = $signal
+      if (lease.released) {
+        disposeSubscriptionLeaseSignal(lease)
+      }
+    }, ignoreSubscriptionCleanupError)
+  }
+
+  return lease
+}
+
+function scheduleUncommittedLeaseCleanupAfter (
+  lease: SubscriptionLease,
+  promise: PromiseLike<unknown>
+): void {
+  Promise.resolve(promise).then(
+    () => scheduleUncommittedLeaseCleanup(lease),
+    () => scheduleUncommittedLeaseCleanup(lease)
+  )
+}
+
+function scheduleRenderAttemptLeaseCleanup (
+  lease: SubscriptionLease,
+  readyPromise: PromiseLike<unknown>,
+  batch: boolean
+): void {
+  if (!batch) {
+    scheduleUncommittedLeaseCleanupAfter(lease, readyPromise)
+    return
+  }
+  promiseBatcher.addRenderAttemptCleanup(barrier => {
+    scheduleUncommittedLeaseCleanupAfter(lease, barrier ?? readyPromise)
+  })
+}
+
+function scheduleUncommittedLeaseCleanup (lease: SubscriptionLease): void {
+  if (lease.committed || lease.released || lease.cleanupTimer) return
+  lease.cleanupTimer = setTimeout(() => {
+    lease.cleanupTimer = undefined
+    if (!lease.committed) releaseSubscriptionLease(lease)
+  }, Math.min(getSubscriptionGcDelay(), MAX_UNCOMMITTED_LEASE_GRACE_MS))
+}
+
+function releaseSubscriptionLease (lease: SubscriptionLease): void {
+  if (lease.released) return
+  const previousLease = lease.previousLease
+  lease.previousLease = undefined
+  lease.released = true
+  lease.unregisterCacheDestroy?.()
+  lease.unregisterCacheDestroy = undefined
+  clearTimeout(lease.cleanupTimer)
+  lease.cleanupTimer = undefined
+  clearTimeout(lease.releaseTimer)
+  lease.releaseTimer = undefined
+  disposeSubscriptionLeaseSignal(lease)
+  if (lease.committed && previousLease) releaseSubscriptionLease(previousLease)
+}
+
+function releasePreviousSubscriptionLease (lease: SubscriptionLease): void {
+  const previousLease = lease.previousLease
+  if (!previousLease) return
+  lease.previousLease = undefined
+  releaseSubscriptionLease(previousLease)
+}
+
+function scheduleSubscriptionLeaseRelease (lease: SubscriptionLease): void {
+  if (lease.released || lease.releaseTimer) return
+  lease.releaseTimer = setTimeout(() => {
+    lease.releaseTimer = undefined
+    releaseSubscriptionLease(lease)
+  })
+}
+
+function disposeSubscriptionLeaseSignal (lease: SubscriptionLease): void {
+  const signal = lease.signal
+  lease.signal = undefined
+  lease.inputSignal = undefined
+  lease.serializedParams = undefined
+  lease.value = undefined
+  if (!signal) return
+  Promise.resolve(unsub(signal)).catch(ignoreSubscriptionCleanupError)
+}
+
+function ignoreSubscriptionCleanupError (): void {}
 
 // throttle to simulate slow network
 function maybeThrottle<TValue> (promise: Promise<TValue>): Promise<TValue> {

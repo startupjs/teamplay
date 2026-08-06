@@ -64,11 +64,21 @@ function createSuspenseGroupStore () {
 //       In such case we might have a memory leak because subscribe() would never fire and would never
 //       clean up the cache
 function destroyAdm (adm) {
+  clearTimeout(adm.destroyTimer)
+  adm.destroyTimer = undefined
+  for (const cleanup of Array.from(adm.cacheDestroyCallbacks || [])) cleanup()
+  adm.cacheDestroyCallbacks?.clear()
   adm.onStoreChange = undefined
   adm.scheduledUpdatePromise = undefined
   adm.scheduleUpdate = undefined
   adm.cache?.clear()
+  adm.cacheDestroyCallbacks = undefined
   adm.cache = undefined
+}
+
+function scheduleDestroyAdm (adm) {
+  if (adm.destroyTimer) return
+  adm.destroyTimer = setTimeout(() => destroyAdm(adm))
 }
 
 export default function wrapIntoSuspense ({
@@ -89,8 +99,10 @@ export default function wrapIntoSuspense ({
         stateVersion: Symbol(), // eslint-disable-line symbol-description
         onStoreChange: undefined,
         scheduledUpdatePromise: undefined,
+        destroyTimer: undefined,
         hasPendingUpdate: false,
         cache: new Map(),
+        cacheDestroyCallbacks: new Set(),
         scheduleUpdate: promise => {
           if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
           if (adm.scheduledUpdatePromise === promise) return
@@ -102,6 +114,8 @@ export default function wrapIntoSuspense ({
           })
         },
         subscribe (onStoreChange) {
+          clearTimeout(adm.destroyTimer)
+          adm.destroyTimer = undefined
           adm.onStoreChange = () => {
             adm.stateVersion = Symbol() // eslint-disable-line symbol-description
             onStoreChange()
@@ -112,7 +126,7 @@ export default function wrapIntoSuspense ({
             adm.hasPendingUpdate = false
             queueMicrotask(() => adm.onStoreChange?.())
           }
-          return () => destroyAdm(adm)
+          return () => scheduleDestroyAdm(adm)
         },
         getSnapshot () {
           return adm.stateVersion
@@ -141,7 +155,13 @@ export default function wrapIntoSuspense ({
         cache: {
           get: key => adm.cache?.get(key),
           set: (key, value) => adm.cache?.set(key, value),
-          has: key => adm.cache?.has(key)
+          has: key => adm.cache?.has(key),
+          onDestroy: cleanup => {
+            adm.cacheDestroyCallbacks?.add(cleanup)
+            return () => {
+              adm.cacheDestroyCallbacks?.delete(cleanup)
+            }
+          }
         }
       }
     }

@@ -40,6 +40,11 @@ interface SubRecord {
 }
 
 const SUB_RECORDS = new WeakMap<SignalBaseInstance, SubRecord[]>()
+const SUB_RESULT_SIGNAL = Symbol('sub result signal')
+
+interface PendingSubResult extends Promise<SignalBaseInstance> {
+  [SUB_RESULT_SIGNAL]?: SignalBaseInstance
+}
 
 /**
  * Subscribe to an aggregation with explicit output typing outside React.
@@ -183,6 +188,18 @@ export function unsub ($signal: unknown): Promise<void> | void {
   if (!($signal instanceof Signal)) return
   const record = takeSubRecord($signal)
   if (!record) return
+  return disposeSubRecord($signal, record)
+}
+
+// React leases must be able to release ownership while the transport promise is still pending.
+export function getSubResultSignal (result: unknown): SignalBaseInstance | undefined {
+  if (result instanceof Signal) return result
+  if (!result || (typeof result !== 'object' && typeof result !== 'function')) return
+  return (result as PendingSubResult)[SUB_RESULT_SIGNAL]
+}
+
+function disposeSubRecord ($signal: SignalBaseInstance, record: SubRecord): Promise<void> | void {
+  if (record.disposed) return
   record.disposed = true
 
   const $root = getRoot($signal)
@@ -306,23 +323,33 @@ function returnSubscribedSignal (
   intent: SubIntent,
   promise?: Promise<void> | void
 ): SignalBaseInstance | Promise<SignalBaseInstance> {
+  const record = addSubRecord($signal, kind, intent)
   if (!promise) {
-    addSubRecord($signal, kind, intent)
     return $signal
   }
-  return promise.then(() => {
-    addSubRecord($signal, kind, intent)
-    return $signal
-  })
+  const result = Promise.resolve(promise).then(
+    () => $signal,
+    err => {
+      const pendingCleanup = takeSpecificSubRecord($signal, record)
+      if (pendingCleanup) {
+        Promise.resolve(disposeSubRecord($signal, pendingCleanup)).catch(ignoreSubCleanupError)
+      }
+      throw err
+    }
+  ) as PendingSubResult
+  Object.defineProperty(result, SUB_RESULT_SIGNAL, { value: $signal })
+  return result
 }
 
-function addSubRecord ($signal: SignalBaseInstance, kind: SubRecordKind, intent: SubIntent): void {
+function addSubRecord ($signal: SignalBaseInstance, kind: SubRecordKind, intent: SubIntent): SubRecord {
   let records = SUB_RECORDS.get($signal)
   if (!records) {
     records = []
     SUB_RECORDS.set($signal, records)
   }
-  records.push({ kind, intent, disposed: false })
+  const record = { kind, intent, disposed: false }
+  records.push(record)
+  return record
 }
 
 function takeSubRecord ($signal: SignalBaseInstance): SubRecord | undefined {
@@ -337,6 +364,21 @@ function takeSubRecord ($signal: SignalBaseInstance): SubRecord | undefined {
   }
   SUB_RECORDS.delete($signal)
 }
+
+function takeSpecificSubRecord (
+  $signal: SignalBaseInstance,
+  target: SubRecord
+): SubRecord | undefined {
+  const records = SUB_RECORDS.get($signal)
+  if (!records) return
+  const index = records.lastIndexOf(target)
+  if (index === -1) return
+  records.splice(index, 1)
+  if (records.length === 0) SUB_RECORDS.delete($signal)
+  return target
+}
+
+function ignoreSubCleanupError (): void {}
 
 const ERRORS = {
   subDocArguments: ($signal: SignalBaseInstance, ...args: unknown[]) => `

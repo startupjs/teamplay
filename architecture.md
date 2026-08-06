@@ -449,6 +449,17 @@ React subscriptions must preserve the same runtime signal shapes as `sub()`:
 
 When changing React behavior, check both runtime correctness and end-user ergonomics: suspense timing, stable signal identity, cleanup, and editor-visible result types.
 
+`useSub()` keeps one component-owned subscription lease per hook and stable
+signal/query arguments. The component metadata cache preserves that lease across
+Suspense retries, committed effects release it on unmount, and a replacement
+lease keeps the previous snapshot alive until the replacement is ready.
+The outer observer cache also owns pending leases, so unmounting a Suspense
+fallback can cancel subscription ownership before the transport becomes ready.
+For batches, abandoned-render cleanup waits for the complete batch barrier
+rather than an individual query; incomplete render attempts fall back to the
+individual readiness promise. Cleanup is deferred by one task so React
+StrictMode subscription replay does not look like a real unmount.
+
 ## Backend Features
 
 The backend layer starts in [packages/backend/index.js](./packages/backend/index.js). It composes ShareDB with TeamPlay-specific server features.

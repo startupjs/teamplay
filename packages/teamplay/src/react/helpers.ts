@@ -5,6 +5,8 @@ export interface ComponentMetaCache {
   get: (key: unknown) => unknown
   set: (key: unknown, value: unknown) => unknown
   has: (key: unknown) => boolean
+  /** Register cleanup owned by the observer wrapper, including suspended children. */
+  onDestroy: (cleanup: () => void) => () => void
 }
 
 export interface ComponentMeta {

@@ -18,7 +18,7 @@ export default function trapRender ({ render, cache, destroy, componentId }) {
       }
       return res
     } catch (err) {
-      promiseBatcher.reset()
+      promiseBatcher.abort()
       if (!err.then) {
         destroy('trapRender.js')
         destroyed = true
