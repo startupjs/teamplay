@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert'
 import { __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../src/index.ts'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { querySubscriptions } from '../src/orm/Query.js'
+import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 
 // the cache is not getting cleared if we just call global.gc()
@@ -35,6 +36,7 @@ export async function runGc (iterations = GC_ITERATIONS) {
       await delay()
       await docSubscriptions.flushPendingDestroys()
       await querySubscriptions.flushPendingDestroys()
+      await aggregationSubscriptions.flushPendingDestroys()
     }
     // Finalizers are not guaranteed to run in the same turn. Do two extra settle cycles
     // while delay=0 so late GC callbacks don't leave pending destroy timers.
@@ -44,6 +46,7 @@ export async function runGc (iterations = GC_ITERATIONS) {
       await delay()
       await docSubscriptions.flushPendingDestroys()
       await querySubscriptions.flushPendingDestroys()
+      await aggregationSubscriptions.flushPendingDestroys()
     }
   } finally {
     setSubscriptionGcDelay(prevSubscriptionGcDelay)
