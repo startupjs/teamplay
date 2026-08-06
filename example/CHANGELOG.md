@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.5](https://github.com/startupjs/teamplay/compare/v0.5.4...v0.5.5) (2026-08-06)
+
+**Note:** Version bump only for package example
+
+
+
+
+
 ## [0.5.4](https://github.com/startupjs/teamplay/compare/v0.5.3...v0.5.4) (2026-08-06)
 
 **Note:** Version bump only for package example
