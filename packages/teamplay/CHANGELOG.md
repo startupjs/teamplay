@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.4](https://github.com/startupjs/teamplay/compare/v0.5.3...v0.5.4) (2026-08-06)
+
+
+### Bug Fixes
+
+* **teamplay:** harden pending subscription cleanup ([17dedcf](https://github.com/startupjs/teamplay/commit/17dedcf31338cfc6bc0509cfa33261f18f61f773))
+* **teamplay:** release React subscription leases ([ad8fdf5](https://github.com/startupjs/teamplay/commit/ad8fdf52d7f674471ff3114bb8b79d2487960316))
+
+
+
+
+
 ## [0.5.3](https://github.com/startupjs/teamplay/compare/v0.5.2...v0.5.3) (2026-08-05)
 
 
