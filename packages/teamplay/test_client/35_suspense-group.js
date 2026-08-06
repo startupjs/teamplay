@@ -6,6 +6,7 @@ import {
   observer,
   SuspenseGroup,
   useBatchSub,
+  useNow,
   useSub,
   useSuspendMemo,
   useSuspenseGroupScheduleUpdate
@@ -32,6 +33,28 @@ describe('SuspenseGroup', () => {
 
     expect(container.querySelector('[data-testid="outer-fallback"]')).toBeFalsy()
     expect(container.textContent).toBe('')
+  })
+
+  it('keeps a query keyed by useNow stable outside a group', async () => {
+    const timestamps = new Set()
+
+    const Child = observer(() => {
+      const now = useNow()
+      timestamps.add(now)
+      if (timestamps.size > 1) {
+        throw Error('useNow changed before the observer subscription committed')
+      }
+      useBatchSub($.observerStableNow, { marker: now }, { defer: false })
+      useBatchSub()
+      return el('div', { 'data-testid': 'observer-query-content' }, 'Ready')
+    })
+
+    const { container } = render(el(Child))
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="observer-query-content"]')).toBeTruthy()
+    })
+    expect(timestamps.size).toBe(1)
   })
 
   it('retries suspended children when a registered promise settles', async () => {
@@ -105,6 +128,63 @@ describe('SuspenseGroup', () => {
       expect(container.querySelector('[data-testid="batch-content"]')).toBeTruthy()
     })
     expect(container.querySelector('[data-testid="group-fallback"]')).toBeFalsy()
+  })
+
+  it('keeps useNow stable across uncommitted group retries', async () => {
+    const wake = deferred()
+    const timestamps = new Set()
+    let ready = false
+
+    const Child = observer(() => {
+      timestamps.add(useNow())
+      const scheduleUpdate = useSuspenseGroupScheduleUpdate()
+      scheduleUpdate(wake.promise)
+      if (!ready) throw wake.promise
+      return el('div', { 'data-testid': 'stable-now-content' }, 'Ready')
+    })
+
+    const { container } = render(
+      el(SuspenseGroup, {
+        fallback: el('div', { 'data-testid': 'group-fallback' }, 'Loading')
+      }, el(Child))
+    )
+
+    await act(async () => {
+      ready = true
+      wake.resolve()
+      await wake.promise
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="stable-now-content"]')).toBeTruthy()
+    })
+    expect(timestamps.size).toBe(1)
+  })
+
+  it('keeps a query keyed by useNow stable while the group is suspended', async () => {
+    const timestamps = new Set()
+
+    const Child = observer(() => {
+      const now = useNow()
+      timestamps.add(now)
+      if (timestamps.size > 1) {
+        throw Error('useNow changed before the grouped subscription committed')
+      }
+      useBatchSub($.suspenseGroupStableNow, { marker: now }, { defer: false })
+      useBatchSub()
+      return el('div', { 'data-testid': 'stable-query-content' }, 'Ready')
+    })
+
+    const { container } = render(
+      el(SuspenseGroup, {
+        fallback: el('div', { 'data-testid': 'group-fallback' }, 'Loading')
+      }, el(Child))
+    )
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="stable-query-content"]')).toBeTruthy()
+    })
+    expect(timestamps.size).toBe(1)
   })
 
   it('groups useSuspendMemo under the shared fallback', async () => {

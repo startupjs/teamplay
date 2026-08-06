@@ -185,7 +185,7 @@ describe('useSub subscription ownership', () => {
     }, { suspenseProps: { fallback: el('span', {}, 'Loading') } })
 
     const view = render(el(Component))
-    for (let index = 0; index < 7; index++) await wait(100)
+    await waitForContent(view.container, 'Ready', { timeout: 5000 })
 
     expect(renderStates).not.toContain('Premature')
     expect(view.container.textContent).toBe('Ready')
@@ -347,8 +347,8 @@ function getQueryOwnerCount (marker) {
   return 0
 }
 
-async function waitForContent (container, content) {
-  await waitFor(() => expect(container.textContent).toBe(content))
+async function waitForContent (container, content, options) {
+  await waitFor(() => expect(container.textContent).toBe(content), options)
 }
 
 async function waitForLeaseCleanup () {

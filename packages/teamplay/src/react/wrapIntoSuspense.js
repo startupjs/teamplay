@@ -24,13 +24,13 @@ export function SuspenseGroup ({ children, fallback = null }) {
 
   return el(
     SuspenseGroupContext.Provider,
-    { value: store.scheduleUpdate },
+    { value: store },
     el(Suspense, { fallback }, children)
   )
 }
 
 export function useSuspenseGroupScheduleUpdate () {
-  return useContext(SuspenseGroupContext)
+  return useContext(SuspenseGroupContext)?.scheduleUpdate
 }
 
 function createSuspenseGroupStore () {
@@ -39,6 +39,7 @@ function createSuspenseGroupStore () {
   const scheduled = new WeakSet()
 
   return {
+    createdAt: Date.now(),
     subscribe (listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -90,7 +91,8 @@ export default function wrapIntoSuspense ({
   if (!suspenseProps?.fallback) throw Error(ERRORS.noFallback)
 
   let SuspenseWrapper = (props, ref) => {
-    const inheritsSuspense = !!useContext(SuspenseGroupContext)
+    const suspenseGroup = useContext(SuspenseGroupContext)
+    const inheritsSuspense = !!suspenseGroup
     const componentId = useId()
     const componentMetaRef = useRef()
     const admRef = useRef()
@@ -141,7 +143,7 @@ export default function wrapIntoSuspense ({
     if (!componentMetaRef.current) {
       componentMetaRef.current = {
         componentId,
-        createdAt: Date.now(),
+        createdAt: suspenseGroup?.createdAt ?? Date.now(),
         defer,
         triggerUpdate: () => {
           if (adm.onStoreChange) {
