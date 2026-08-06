@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.6](https://github.com/startupjs/teamplay/compare/v0.5.5...v0.5.6) (2026-08-06)
+
+
+### Bug Fixes
+
+* **teamplay:** stabilize useNow in suspense groups ([c298ff2](https://github.com/startupjs/teamplay/commit/c298ff29a8924e1f15411ec78b20fcc6afcb7b8c))
+
+
+
+
+
 ## [0.5.5](https://github.com/startupjs/teamplay/compare/v0.5.4...v0.5.5) (2026-08-06)
 
 
