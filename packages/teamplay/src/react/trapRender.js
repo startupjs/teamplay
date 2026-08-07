@@ -4,7 +4,13 @@ import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
 import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
 
-export default function trapRender ({ render, cache, destroy, componentId }) {
+export default function trapRender ({
+  render,
+  cache,
+  destroy,
+  componentId,
+  scheduleGroupUpdate
+}) {
   return (...args) => {
     executionContextTracker._start(componentId)
     cache.activate()
@@ -24,6 +30,7 @@ export default function trapRender ({ render, cache, destroy, componentId }) {
         destroyed = true
         throw err
       }
+      scheduleGroupUpdate?.(err)
       const {
         shouldKeepShellAlive
       } = renderAttemptDestroyer.consumeThenableHandling()
