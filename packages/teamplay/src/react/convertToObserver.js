@@ -6,6 +6,7 @@ import { __increment, __decrement } from '@teamplay/debug'
 import executionContextTracker from './executionContextTracker.ts'
 import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helpers.ts'
 import trapRender from './trapRender.js'
+import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
@@ -27,6 +28,7 @@ export default function convertToObserver (BaseComponent, {
     const [cache, destroyCache] = useCreateCacheRef(enableCache)
     const componentId = useId()
     const triggerUpdate = useTriggerUpdate()
+    const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
 
     // wrap the BaseComponent into an observe decorator once.
     // This way it will track any observable changes and will trigger rerender
@@ -63,7 +65,8 @@ export default function convertToObserver (BaseComponent, {
         render: BaseComponent,
         cache,
         destroy: destroyRef.current,
-        componentId
+        componentId,
+        scheduleGroupUpdate
       })
       reactionRef.current = observe(trappedRender, {
         scheduler: () => scheduleReaction(update),

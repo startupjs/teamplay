@@ -19,6 +19,40 @@ afterEach(cleanup)
 afterEach(runGc)
 
 describe('SuspenseGroup', () => {
+  it('registers any observer thenable with the group retry coordinator', async () => {
+    const retries = []
+    const thenable = {
+      then (onFulfilled) {
+        retries.push(onFulfilled)
+      }
+    }
+    let ready = false
+
+    const Child = observer(() => {
+      if (!ready) throw thenable
+      return el('div', { 'data-testid': 'arbitrary-content' }, 'Ready')
+    })
+
+    const { container } = render(
+      el(SuspenseGroup, {
+        fallback: el('div', { 'data-testid': 'group-fallback' }, 'Loading')
+      }, el(Child))
+    )
+
+    expect(container.querySelector('[data-testid="group-fallback"]')).toBeTruthy()
+    expect(retries.length).toBeGreaterThanOrEqual(2)
+
+    await act(async () => {
+      ready = true
+      retries[0]()
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="arbitrary-content"]')).toBeTruthy()
+    })
+  })
+
   it('keeps the default observer boundary unchanged outside a group', () => {
     const blocker = new Promise(() => {})
     const Child = observer(() => {
