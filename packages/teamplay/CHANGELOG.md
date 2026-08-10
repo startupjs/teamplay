@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.8](https://github.com/startupjs/teamplay/compare/v0.5.7...v0.5.8) (2026-08-10)
+
+
+### Bug Fixes
+
+* **teamplay:** prevent pending lease double unsubscribe ([28c8956](https://github.com/startupjs/teamplay/commit/28c89567f23c795b32c5b73b0173c347a3b292d8))
+
+
+
+
+
 ## [0.5.7](https://github.com/startupjs/teamplay/compare/v0.5.6...v0.5.7) (2026-08-07)
 
 
