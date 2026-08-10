@@ -168,6 +168,40 @@ describe('useSub subscription ownership', () => {
     }
   })
 
+  it('does not let a released pending lease unsubscribe a later owner when it resolves', async () => {
+    const marker = 'pending-owner-handoff'
+    const subscription = pauseQuerySubscription(marker)
+    const Component = createPlainQueryComponent(marker)
+    let firstView
+    let secondView
+
+    try {
+      firstView = render(el(Component))
+      await waitFor(() => expect(getQueryOwnerCount(marker)).toBe(1))
+
+      secondView = render(el(Component))
+      await waitFor(() => expect(getQueryOwnerCount(marker)).toBe(2))
+
+      firstView.unmount()
+      await waitFor(() => expect(getQueryOwnerCount(marker)).toBe(1))
+
+      await act(async () => {
+        await subscription.resume()
+      })
+      await waitForLeaseCleanup()
+
+      expect(getQueryOwnerCount(marker)).toBe(1)
+      await waitForContent(secondView.container, 'Ready')
+      expect(secondView.container.textContent).toBe('Ready')
+    } finally {
+      firstView?.unmount()
+      secondView?.unmount()
+      await subscription.resume()
+      subscription.restore()
+      await waitForLeaseCleanup()
+    }
+  })
+
   it('keeps earlier query data through a chain of suspended subscriptions', async () => {
     setTestThrottling(80)
     const renderStates = []
@@ -241,6 +275,17 @@ function createQueryComponent (marker) {
     useBatchSub()
     return el('span', {}, `render-${renderId}`)
   })
+}
+
+function createPlainQueryComponent (marker) {
+  return observer(function PlainQueryComponent () {
+    const $query = useSub(
+      $testRoot[`useSubLease_${marker}`],
+      { marker },
+      { defer: false }
+    )
+    return el('span', {}, Array.isArray($query.get()) ? 'Ready' : 'Premature')
+  }, { suspenseProps: { fallback: el('span', {}, 'Loading') } })
 }
 
 function SharedQueries ({ QueryComponent, second }) {

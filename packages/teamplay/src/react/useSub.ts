@@ -608,6 +608,7 @@ export function setDefaultDefer (value: boolean): void {
 interface SubscriptionLease {
   value: unknown
   signal?: unknown
+  signalDisposed: boolean
   inputSignal?: unknown
   serializedParams?: string
   previousLease?: SubscriptionLease
@@ -674,7 +675,8 @@ function createSubscriptionLease (
     serializedParams,
     previousLease: previousLease?.released ? undefined : previousLease,
     committed: false,
-    released: false
+    released: false,
+    signalDisposed: false
   }
 
   if (isThenable(value)) {
@@ -758,7 +760,11 @@ function disposeSubscriptionLeaseSignal (lease: SubscriptionLease): void {
   lease.inputSignal = undefined
   lease.serializedParams = undefined
   lease.value = undefined
-  if (!signal) return
+  // A pending sub result exposes its signal before its promise settles. If this
+  // lease was released while pending, the resolution callback sees the same
+  // acquisition again and must not unsubscribe another owner's matching record.
+  if (!signal || lease.signalDisposed) return
+  lease.signalDisposed = true
   Promise.resolve(unsub(signal)).catch(ignoreSubscriptionCleanupError)
 }
 
