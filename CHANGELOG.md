@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.9](/compare/v0.5.8...v0.5.9) (2026-08-13)
+
+
+### Features
+
+* **server-aggregate:** support reactive aggregation policies 0a5a825
+
+
+
+
+
 ## [0.5.8](https://github.com/startupjs/teamplay/compare/v0.5.7...v0.5.8) (2026-08-10)
 
 
