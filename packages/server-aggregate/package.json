@@ -6,5 +6,8 @@
     "access": "public"
   },
   "type": "module",
-  "main": "server.js"
+  "main": "server.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
 }
