@@ -116,12 +116,15 @@ function PlayerRoute ({ children }) {
 }
 ```
 
-Inside the group, default Suspense boundaries added by `observer()` are
-consolidated into the group boundary. TeamPlay automatically schedules retries
-for initial `useSub()`, `useBatchSub()`, and `useSuspendMemo()` promises, as well
-as any other thenable thrown directly while rendering an `observer()` component.
-An observer with an explicit `suspenseProps.fallback` keeps its own boundary.
-Outside `SuspenseGroup`, observer behavior is unchanged.
+Until the group reveals its content for the first time, default Suspense
+boundaries added by `observer()` are consolidated into the group boundary.
+TeamPlay automatically schedules retries for initial `useSub()`,
+`useBatchSub()`, and `useSuspendMemo()` promises, as well as any other thenable
+thrown directly while rendering an `observer()` component. After the initial
+content commits, observer boundaries become local again so a later suspended
+interaction does not hide the whole revealed group. An observer with an
+explicit `suspenseProps.fallback` always keeps its own boundary. Outside
+`SuspenseGroup`, observer behavior is unchanged.
 
 TeamPlay cannot intercept a promise thrown later by an arbitrary non-observer
 descendant because React evaluates that descendant in a separate fiber. For a
