@@ -460,6 +460,12 @@ rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React
 StrictMode subscription replay does not look like a real unmount.
 
+`SuspenseGroup` consolidates default observer boundaries only until its content
+is revealed for the first time. Once that initial content commits, observer
+boundaries become local again. This preserves the shared startup fallback while
+preventing a later interaction that mounts a suspending observer from hiding or
+restarting the entire committed group.
+
 ## Backend Features
 
 The backend layer starts in [packages/backend/index.js](./packages/backend/index.js). It composes ShareDB with TeamPlay-specific server features.

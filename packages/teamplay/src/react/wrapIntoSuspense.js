@@ -6,12 +6,14 @@ import {
   memo,
   createContext,
   createElement as el,
+  Fragment,
   Suspense,
   useContext,
   useId,
   useRef
 } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
+import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
 
 const SuspenseGroupContext = createContext()
 
@@ -25,8 +27,20 @@ export function SuspenseGroup ({ children, fallback = null }) {
   return el(
     SuspenseGroupContext.Provider,
     { value: store },
-    el(Suspense, { fallback }, children)
+    el(Suspense, { fallback },
+      el(Fragment, null,
+        children,
+        el(GroupCommitMarker, { store })
+      )
+    )
   )
+}
+
+function GroupCommitMarker ({ store }) {
+  useIsomorphicLayoutEffect(() => {
+    store.hasRevealedContent = true
+  }, [store])
+  return null
 }
 
 export function useSuspenseGroupScheduleUpdate () {
@@ -40,6 +54,7 @@ function createSuspenseGroupStore () {
 
   return {
     createdAt: Date.now(),
+    hasRevealedContent: false,
     subscribe (listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -92,7 +107,9 @@ export default function wrapIntoSuspense ({
 
   let SuspenseWrapper = (props, ref) => {
     const suspenseGroup = useContext(SuspenseGroupContext)
-    const inheritsSuspense = !!suspenseGroup
+    const inheritsSuspense = (
+      !!suspenseGroup && !suspenseGroup.hasRevealedContent
+    )
     const componentId = useId()
     const componentMetaRef = useRef()
     const admRef = useRef()
