@@ -8,6 +8,9 @@
     ".": "./index.js",
     "./server": "./server/index.js"
   },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "dependencies": {
     "@teamplay/sockjs": "^0.4.0-rc.1",
     "sockjs-client": "^1.6.1",

@@ -18,7 +18,12 @@ export default class Socket {
     this._reconnect = reconnect
     this._timeout = timeout
     this._timeoutIncrement = timeoutIncrement
-    this._url = getConnectionUrl({ baseUrl, path, getDefaultConnectionUrl })
+    // Resolve the connection URL lazily on every open() rather than once here,
+    // so each (re)connect attempt can pick up fresh connection params - most
+    // importantly a rotated/reissued auth token carried in the URL. Otherwise a
+    // socket created with a token that the server later rejects would retry the
+    // same dead URL forever.
+    this._getConnectionUrl = () => getConnectionUrl({ baseUrl, path, getDefaultConnectionUrl })
     this._allowXhrFallback = forceXhrFallback || allowXhrFallback
     this._useXhrFallback = forceXhrFallback
 
@@ -37,6 +42,7 @@ export default class Socket {
   }
 
   open () {
+    this._url = this._getConnectionUrl()
     if (this._useXhrFallback) {
       this._type = 'xhr'
       this._url = this._url.replace(/^ws/, 'http')
