@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.11](/compare/v0.5.10...v0.5.11) (2026-09-08)
+
+
+### Bug Fixes
+
+* **channel:** re-resolve connection URL on each reconnect 7a77c84
+
+
+
+
+
 # [0.5.0](https://github.com/startupjs/teamplay/compare/v0.5.0-alpha.38...v0.5.0) (2026-06-24)
 
 **Note:** Version bump only for package @teamplay/channel

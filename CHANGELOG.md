@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.11](/compare/v0.5.10...v0.5.11) (2026-09-08)
+
+
+### Bug Fixes
+
+* **channel:** re-resolve connection URL on each reconnect 7a77c84
+
+
+
+
+
 ## [0.5.10](/compare/v0.5.9...v0.5.10) (2026-08-20)
 
 
