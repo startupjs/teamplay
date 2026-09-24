@@ -129,7 +129,12 @@ export default function wrapIntoSuspense ({
           promise.then(() => {
             if (adm.scheduledUpdatePromise !== promise) return
             adm.scheduledUpdatePromise = undefined
-            adm.onStoreChange?.()
+            if (adm.onStoreChange) {
+              adm.onStoreChange()
+            } else {
+              // A fast subscription may settle before useSyncExternalStore subscribes.
+              adm.hasPendingUpdate = true
+            }
           })
         },
         subscribe (onStoreChange) {

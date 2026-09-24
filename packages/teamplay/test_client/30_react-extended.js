@@ -20,7 +20,7 @@ import {
 } from '../src/index.ts'
 import { setTestThrottling, resetTestThrottling, useSubClassic } from '../src/react/useSub.ts'
 import { __resetSuspendMemoForTests } from '../src/react/useSuspendMemo.ts'
-import { useId, useNow, useTriggerUpdate, useUnmount } from '../src/react/helpers.ts'
+import { useId, useNow, useTriggerUpdate, useUnmount, useScheduleUpdate } from '../src/react/helpers.ts'
 import trapRender from '../src/react/trapRender.js'
 import renderAttemptDestroyer from '../src/react/renderAttemptDestroyer.ts'
 import { runGc, cache } from '../test/_helpers.js'
@@ -660,6 +660,101 @@ describe('useSub edge cases', () => {
 })
 
 describe('useAsyncSub', () => {
+  it('replays a completed subscription update when it resolves before the observer subscribes', async () => {
+    let ready = false
+    let scheduled = false
+    const Component = observer(() => {
+      const scheduleUpdate = useScheduleUpdate()
+      const text = ready ? 'ready' : 'waiting'
+      if (!scheduled) {
+        scheduled = true
+        scheduleUpdate({
+          then (onReady) {
+            ready = true
+            onReady()
+          }
+        })
+      }
+      return el('span', {}, text)
+    })
+
+    const { container } = render(el(Component))
+    await waitFor(() => expect(container.textContent).toBe('ready'))
+  })
+
+  it('resolves the Plans shared-list aggregation after opening a batched parent', async () => {
+    const userId = 'asyncPlansUser'
+    const classId = 'asyncPlansClass'
+    const $class = await sub($.classes[classId])
+    await $class.set({ scope: 'course', studentIds: [userId], name: 'Shared plan' })
+
+    const aggregateBase = [
+      { $match: { scope: 'course', studentIds: userId, dummy: { $exists: false } } }
+    ]
+
+    const SharedPlansList = observer(() => {
+      const $courses = useAsyncSub($.classes, {
+        $aggregate: [
+          ...aggregateBase,
+          { $sort: { updatedAt: -1 } }, { $skip: 0 }, { $limit: 9 },
+          { $project: { id: '$_id', name: 1, createdAt: 1, updatedAt: 1, description: 1, legacy: 1 } }
+        ]
+      }, { defer: false })
+      return el('span', { id: 'shared-plans' }, $courses ? $courses.get()[0]?.name : 'waiting')
+    })
+    const Plans = observer(() => {
+      const $count = useBatchSub($.classes, {
+        $aggregate: [...aggregateBase, { $count: 'count' }]
+      }, { defer: false })
+      useBatchSub()
+      const count = $count.get()[0]?.count
+      const $open = $(false)
+      return el('div', {},
+        el('button', { onClick: () => $open.setReplace(true) }, `open:${count || 0}`),
+        $open.get() && count ? el(SharedPlansList) : null
+      )
+    })
+
+    const { container } = render(el(Plans))
+    await waitFor(() => expect(container.querySelector('button').textContent).toBe('open:1'))
+    fireEvent.click(container.querySelector('button'))
+    await waitFor(() => expect(container.querySelector('#shared-plans').textContent).toBe('Shared plan'))
+  })
+
+  it('resolves the Plans shared-list aggregation when initially expanded from the count', async () => {
+    const userId = 'asyncPlansAutoOpenUser'
+    const $class = await sub($.classes.asyncPlansAutoOpenClass)
+    await $class.set({ scope: 'course', studentIds: [userId], name: 'Shared plan' })
+
+    const aggregateBase = [
+      { $match: { scope: 'course', studentIds: userId, dummy: { $exists: false } } }
+    ]
+
+    const SharedPlansList = observer(() => {
+      const $courses = useAsyncSub($.classes, {
+        $aggregate: [
+          ...aggregateBase,
+          { $sort: { updatedAt: -1 } }, { $skip: 0 }, { $limit: 9 },
+          { $project: { id: '$_id', name: 1, createdAt: 1, updatedAt: 1, description: 1, legacy: 1 } }
+        ]
+      }, { defer: false })
+      return el('span', { id: 'shared-plans' }, $courses ? $courses.get()[0]?.name : 'waiting')
+    })
+
+    const Plans = observer(() => {
+      const $count = useBatchSub($.classes, {
+        $aggregate: [...aggregateBase, { $count: 'count' }]
+      }, { defer: false })
+      useBatchSub()
+      const count = $count.get()[0]?.count
+      const $open = $(count)
+      return el('div', {}, count && $open.get() ? el(SharedPlansList) : null)
+    })
+
+    const { container } = render(el(Plans))
+    await waitFor(() => expect(container.querySelector('#shared-plans').textContent).toBe('Shared plan'))
+  })
+
   it('useAsyncSub returns undefined initially for doc subscriptions', async () => {
     let renders = 0
     const Component = observer(() => {
