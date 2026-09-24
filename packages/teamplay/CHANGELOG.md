@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.5.12](/compare/v0.5.11...v0.5.12) (2026-09-24)
+
+
+### Bug Fixes
+
+* **teamplay:** replay async subscription updates after subscribe 51bfd6f
+
+
+
+
+
 ## [0.5.11](/compare/v0.5.10...v0.5.11) (2026-09-08)
 
 **Note:** Version bump only for package teamplay
