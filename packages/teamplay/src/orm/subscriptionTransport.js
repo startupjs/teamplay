@@ -15,6 +15,7 @@
 // Fetch transports never linger: a completed fetch has no update stream, so
 // reusing it would serve stale data.
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
+import unrefTimer from '../utils/unrefTimer.ts'
 
 const SETTLED = Promise.resolve()
 
@@ -39,11 +40,11 @@ export function scheduleDowngradeGrace (manager, key, entry, delay = getSubscrip
   if (manager.getDesiredTransportMode(key) === 'subscribe') return
   if (getActiveTransportMode(entry) !== 'subscribe') return
   const grace = { timer: undefined }
-  grace.timer = setTimeout(() => {
+  grace.timer = unrefTimer(setTimeout(() => {
     if (manager.entries.get(key)?.downgradeGrace !== grace) return
     entry.downgradeGrace = null
     manager.reconcileTransport(key).catch(ignoreReconcileError)
-  }, delay)
+  }, delay))
   entry.downgradeGrace = grace
 }
 

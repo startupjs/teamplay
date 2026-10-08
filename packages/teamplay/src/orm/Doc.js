@@ -7,6 +7,7 @@ import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
+import unrefTimer from '../utils/unrefTimer.ts'
 import {
   addOwnerToken,
   canJoinTransport,
@@ -576,9 +577,9 @@ export class DocSubscriptions {
     }
     const pendingDestroy = createPendingDestroyEntry()
     if (options.force) pendingDestroy.force = true
-    pendingDestroy.timer = setTimeout(() => {
+    pendingDestroy.timer = unrefTimer(setTimeout(() => {
       this.destroyByHash(hash, { force: pendingDestroy.force }).catch(ignoreDestroyError)
-    }, delay)
+    }, delay))
     entry.pendingDestroy = pendingDestroy
     this.trackLingeringRoot(pendingDestroy, hash, options.rootId)
     return pendingDestroy.promise

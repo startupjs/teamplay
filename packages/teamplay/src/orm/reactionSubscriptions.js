@@ -5,6 +5,7 @@ import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import { scheduleReaction } from './batchScheduler.js'
 import { getRoot, ROOT_ID } from './Root.ts'
 import { delPrivateData, setPrivateData } from './privateData.js'
+import unrefTimer from '../utils/unrefTimer.ts'
 
 // this is `let` to be able to directly change it if needed in tests or in the app
 export let DELETION_DELAY = 0
@@ -32,7 +33,7 @@ class ReactionSubscriptions {
     unobserve(reaction)
     // don't delete data right away to prevent dependent reactions which are also going to be GC'ed
     // from triggering unnecessarily
-    setTimeout(() => delPrivateData(rootId, [LOCAL, id]), DELETION_DELAY)
+    unrefTimer(setTimeout(() => delPrivateData(rootId, [LOCAL, id]), DELETION_DELAY))
   }
 }
 

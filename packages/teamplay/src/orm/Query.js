@@ -11,6 +11,7 @@ import { getScopedSignalHash, normalizeRootId } from './rootScope.ts'
 import { getRoot, ROOT_ID, getRootTransportMode } from './Root.ts'
 import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.ts'
 import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
+import unrefTimer from '../utils/unrefTimer.ts'
 import {
   addOwnerToken,
   canJoinTransport,
@@ -598,7 +599,7 @@ export class QuerySubscriptions {
     pendingDestroy.collectionName = collectionName
     pendingDestroy.params = params
     pendingDestroy.transportHash = transportHash
-    pendingDestroy.timer = setTimeout(() => {
+    pendingDestroy.timer = unrefTimer(setTimeout(() => {
       this.destroyByOwnerKey(fallbackOwnerKey, {
         collectionName,
         params,
@@ -606,7 +607,7 @@ export class QuerySubscriptions {
         force: pendingDestroy.force
       })
         .catch(ignoreDestroyError)
-    }, delay)
+    }, delay))
     entry.pendingDestroyByOwner.set(fallbackOwnerKey, pendingDestroy)
     return pendingDestroy.promise
   }

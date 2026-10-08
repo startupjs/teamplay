@@ -1,4 +1,5 @@
 import { diag, record } from '../diagnostics/state.ts'
+import unrefTimer from './unrefTimer.ts'
 
 export const REGISTRY_SWEEP_INTERVAL = 10000
 
@@ -96,7 +97,7 @@ export class WeakRefBasedFinalizationRegistry<TValue = unknown> {
 
   scheduleSweep (): void {
     if (this.sweepTimeout) return
-    this.sweepTimeout = setTimeout(this.sweep, REGISTRY_SWEEP_INTERVAL)
+    this.sweepTimeout = unrefTimer(setTimeout(this.sweep, REGISTRY_SWEEP_INTERVAL))
   }
 }
 

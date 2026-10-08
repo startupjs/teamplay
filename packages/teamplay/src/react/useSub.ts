@@ -20,6 +20,7 @@ import {
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { SEGMENTS } from '../orm/signalSymbols.ts'
 import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import unrefTimer from '../utils/unrefTimer.ts'
 import { diag, addIncident, describeSubTarget, noteLeaseCreated, noteLeaseCommitted, noteLeaseReleased, pollerStart, pollerEnd } from '../diagnostics/state.ts'
 import {
   isPublicDocumentSignal,
@@ -767,12 +768,12 @@ function scheduleUncommittedLeaseCleanup (lease: SubscriptionLease): void {
   if (lease.committed || lease.released || lease.cleanupTimer || lease.sticky) return
   const gcDelay = getSubscriptionGcDelay()
   const holdMs = Math.min(gcDelay, MAX_UNCOMMITTED_LEASE_GRACE_MS)
-  lease.cleanupTimer = setTimeout(() => {
+  lease.cleanupTimer = unrefTimer(setTimeout(() => {
     lease.cleanupTimer = undefined
     if (lease.committed) return
     lease.releasedUncommitted = true
     releaseSubscriptionLease(lease, { minGraceMs: MAX_UNCOMMITTED_LEASE_GRACE_MS })
-  }, holdMs)
+  }, holdMs))
 }
 
 function releaseSubscriptionLease (lease: SubscriptionLease, options?: SubReleaseOptions): void {

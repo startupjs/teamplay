@@ -363,6 +363,8 @@ aggregations ([packages/teamplay/src/orm/subscriptionTransport.js](./packages/te
   what that root released last;
 - a garbage-collected signal that still held subscriptions releases only the
   counts it acquired (per-signal token), then goes through the normal grace.
+- on Node the grace and destroy timers are `unref()`'d (`utils/unrefTimer.ts`):
+  they never keep a process alive once its own work is done.
 
 ### Query Subscription Flow
 
