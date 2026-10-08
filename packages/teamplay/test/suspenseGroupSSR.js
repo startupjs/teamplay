@@ -5,7 +5,7 @@ import { strict as assert } from 'node:assert'
 import { SuspenseGroup, observer } from '../src/index.ts'
 
 describe('SuspenseGroup server rendering', () => {
-  it('renders revealed content without a layout-effect warning', () => {
+  it('renders revealed content without any warning', () => {
     const errors = []
     const originalConsoleError = console.error
     console.error = (...args) => errors.push(args.join(' '))
@@ -24,10 +24,8 @@ describe('SuspenseGroup server rendering', () => {
       )
 
       assert.equal(html, '<div data-testid="ssr-content">Ready</div>')
-      assert.equal(
-        errors.some(message => message.includes('useLayoutEffect does nothing on the server')),
-        false
-      )
+      // including React 18's 'useLayoutEffect does nothing on the server'
+      assert.deepEqual(errors, [])
     } finally {
       console.error = originalConsoleError
     }

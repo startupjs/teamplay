@@ -10,10 +10,10 @@ import {
   Suspense,
   useContext,
   useId,
+  useLayoutEffect,
   useRef
 } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
-import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import { diag, objectId, noteAdmCreated, noteAdmSubscribed, noteAdmDestroyed, noteAdmCollected } from '../diagnostics/state.ts'
 
@@ -39,7 +39,8 @@ export function SuspenseGroup ({ children, fallback = null }) {
 }
 
 function GroupCommitMarker ({ store }) {
-  useIsomorphicLayoutEffect(() => {
+  // React 19 runs no layout effect on the server and no longer warns about it
+  useLayoutEffect(() => {
     store.hasRevealedContent = true
   }, [store])
   return null
