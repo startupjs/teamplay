@@ -20,6 +20,7 @@ import {
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { SEGMENTS } from '../orm/signalSymbols.ts'
 import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import { diag, describeSubTarget, noteLeaseCreated, noteLeaseCommitted, noteLeaseReleased, pollerStart, pollerEnd } from '../diagnostics/state.ts'
 import {
   isPublicDocumentSignal,
   type CollectionSignal,
@@ -638,6 +639,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
   ) {
     const nextLease = createSubscriptionLease(signal, params, serializedParams, lease)
     nextLease.unregisterCacheDestroy = cache.onDestroy(() => releaseSubscriptionLease(nextLease))
+    if (diag.on) noteLeaseCreated(nextLease, describeSubTarget(signal, serializedParams), cacheKey, executionContextTracker.getComponentId())
     lease = nextLease
     cache.set(cacheKey, nextLease)
   } else {
@@ -652,6 +654,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
       return
     }
     lease.committed = true
+    if (diag.on) noteLeaseCommitted(lease)
     clearTimeout(lease.cleanupTimer)
     lease.cleanupTimer = undefined
     clearTimeout(lease.releaseTimer)
@@ -739,6 +742,7 @@ function releaseSubscriptionLease (lease: SubscriptionLease): void {
   const previousLease = lease.previousLease
   lease.previousLease = undefined
   lease.released = true
+  if (diag.on) noteLeaseReleased(lease, lease.committed)
   lease.unregisterCacheDestroy?.()
   lease.unregisterCacheDestroy = undefined
   clearTimeout(lease.cleanupTimer)
@@ -825,9 +829,12 @@ async function waitForSubscriptionSignalReady (
   signal: unknown,
   lease?: SubscriptionLease
 ): Promise<void> {
+  let poller: number | undefined
   while (!lease?.released && !isSubscriptionSignalReady(signal)) {
+    if (diag.on && poller == null) poller = pollerStart('react.readinessPoll', describeSubTarget(signal))
     await new Promise(resolve => setTimeout(resolve, 16))
   }
+  pollerEnd(poller)
 }
 
 function addBatchReadinessCheckForSignal (

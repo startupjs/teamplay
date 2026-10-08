@@ -8,6 +8,7 @@ import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helper
 import trapRender from './trapRender.js'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
+import { diag, noteObserverCreated, noteObserverDestroyed } from '../diagnostics/state.ts'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
 
@@ -57,6 +58,7 @@ export default function convertToObserver (BaseComponent, {
       destroyRef.current = (where) => {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
         destroyRef.current = undefined
+        if (diag.on) noteObserverDestroyed(reactionRef.current, where)
         unobserve(reactionRef.current)
         reactionRef.current = undefined
         destroyCache(where)
@@ -72,6 +74,7 @@ export default function convertToObserver (BaseComponent, {
         scheduler: () => scheduleReaction(update),
         lazy: true
       })
+      if (diag.on) noteObserverCreated(reactionRef.current, Component.displayName || 'Anonymous', componentId)
     }
 
     // clean up observer on unmount

@@ -14,6 +14,7 @@ import {
 } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
 import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
+import { diag, noteAdmCreated, noteAdmSubscribed, noteAdmDestroyed } from '../diagnostics/state.ts'
 
 const SuspenseGroupContext = createContext()
 
@@ -80,6 +81,7 @@ function createSuspenseGroupStore () {
 //       In such case we might have a memory leak because subscribe() would never fire and would never
 //       clean up the cache
 function destroyAdm (adm) {
+  if (diag.on) noteAdmDestroyed(adm)
   clearTimeout(adm.destroyTimer)
   adm.destroyTimer = undefined
   for (const cleanup of Array.from(adm.cacheDestroyCallbacks || [])) cleanup()
@@ -138,6 +140,7 @@ export default function wrapIntoSuspense ({
           })
         },
         subscribe (onStoreChange) {
+          if (diag.on) noteAdmSubscribed(adm)
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
           adm.onStoreChange = () => {
@@ -157,6 +160,7 @@ export default function wrapIntoSuspense ({
         }
       }
       admRef.current = adm
+      if (diag.on) noteAdmCreated(adm, Component.displayName || Component.name || 'Anonymous', componentId)
     }
     const adm = admRef.current
 
