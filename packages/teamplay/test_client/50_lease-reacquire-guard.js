@@ -3,7 +3,6 @@
 // released transport synchronously), it stops releasing its uncommitted lease
 // and reports react.lease.reacquireLoop, so the component still commits.
 import { createElement as el, Suspense } from 'react'
-import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { getRootSignal, observer, useSub, diagnostics } from '../src/index.ts'
 import { docSubscriptions } from '../src/orm/Doc.js'
@@ -14,7 +13,23 @@ import connect from '../src/connect/test.js'
 const baselineGcDelay = getSubscriptionGcDelay()
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-beforeAll(connect)
+let createRoot
+
+beforeAll(async () => {
+  connect()
+  // Make React's scheduler use setTimeout (as when neither setImmediate nor
+  // MessageChannel exists): a Suspense retry then runs after the 0 ms release
+  // of the uncommitted lease that was scheduled first, every time, which is
+  // the order a busy page produces. React DOM is loaded only for this file.
+  const saved = { setImmediate: globalThis.setImmediate, MessageChannel: globalThis.MessageChannel }
+  globalThis.setImmediate = undefined
+  globalThis.MessageChannel = undefined
+  try {
+    ;({ createRoot } = await import('react-dom/client'))
+  } finally {
+    Object.assign(globalThis, saved)
+  }
+})
 afterEach(async () => {
   diagnostics.disable()
   setSubscriptionGcDelay(0)
