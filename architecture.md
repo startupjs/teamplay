@@ -352,6 +352,10 @@ aggregations ([packages/teamplay/src/orm/subscriptionTransport.js](./packages/te
   promise) with no wire traffic;
 - a fetch keeps only its runtime and materialized data through the grace; its
   transport is unfetched eagerly, and a later owner performs a fresh fetch;
+- the same grace covers a downgrade: when the last subscribe owner leaves but
+  fetch owners remain, a live transport keeps subscribing through the delay
+  (a subscriber arriving meanwhile joins synchronously) and is then downgraded
+  to a fetch (racer delayed every unsubscribe the same way);
 - a release that changes nothing on the wire leaves the entry `stable`, so a
   following `sub()` of the same target in the same render stays synchronous;
 - forced cleanup (`clear()`, root disposal, explicit destroy) bypasses the grace
@@ -465,6 +469,11 @@ Suspense retries, committed effects release it on unmount, and a replacement
 lease keeps the previous snapshot alive until the replacement is ready.
 The outer observer cache also owns pending leases, so unmounting a Suspense
 fallback can cancel subscription ownership before the transport becomes ready.
+A lease releases exactly its own acquisition (`acquireSub()`), never another
+`sub()` record of the same signal. A render attempt that never commits releases
+its lease on the next task after the subscription is ready, with a minimum
+transport grace (`UNCOMMITTED_LEASE_GRACE_MS`, also when the GC delay is 0), so
+a retry or a commit that React holds re-acquires it synchronously.
 For batches, abandoned-render cleanup waits for the complete batch barrier
 rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React

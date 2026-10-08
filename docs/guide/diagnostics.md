@@ -60,7 +60,7 @@ diagnostics.getIncidents()  // recorded anomalies (see findings below)
 diagnostics.resetCounters() // counters, timings, incidents, churn maps
 diagnostics.clearTrace()
 await diagnostics.forceGc()      // runs globalThis.gc() when exposed, lets finalizers run
-await diagnostics.waitForIdle()  // no transitions, pending destroys, pending owner releases or pollers
+await diagnostics.waitForIdle()  // no transitions, pending destroys or downgrade graces, pending owner releases or pollers
 diagnostics.disable()            // removes instrumentation and clears collected state
 ```
 
@@ -85,7 +85,7 @@ Every snapshot has a flat `metrics` map (`'docs.entries': 3`, `'connection.docs.
 | Section | What it shows |
 | --- | --- |
 | `signals.cache` | Cached signal proxies: `total`, `live`, `dead` (collected but not yet evicted by the registry), `byKind` (`root`, `collection`, `doc`, `field`, `query`, `queryData`, `aggregation`, `aggregationRow`, `local`, `private`), `byCollection`, `byRoot`. |
-| `docs` | Doc subscription manager. `categories`: `owned` (has owners), `retainedOnly` (held only by query results, including a query lingering in its grace), `graceLive` (no owners, transport still subscribed during `gcDelay`; the next owner adopts it synchronously), `graceStale` (no owners, released fetch: data kept, transport closed), `ownerless` (no owners and nothing will clean it up), `transition`. Also `pendingDestroys`, `stalePendingDestroys`, `oldestPendingDestroyMs`, `divergent`, `graceTransportNotLive`, `byMode`, `byPhase`, `ownerRecords` (by root, closed or missing roots). |
+| `docs` | Doc subscription manager. `categories`: `owned` (has owners), `retainedOnly` (held only by query results, including a query lingering in its grace), `graceLive` (no owners, transport still subscribed during `gcDelay`; the next owner adopts it synchronously), `graceStale` (no owners, released fetch: data kept, transport closed), `ownerless` (no owners and nothing will clean it up), `transition`. Also `pendingDestroys`, `stalePendingDestroys`, `oldestPendingDestroyMs`, `downgradeGraces` (owned entries whose last subscriber left: the live transport stays subscribed for `gcDelay` before it is downgraded to a fetch), `divergent`, `graceTransportNotLive`, `byMode`, `byPhase`, `ownerRecords` (by root, closed or missing roots). |
 | `queries`, `aggregations` | Same for queries and aggregations. In the grace (`graceLive`, `graceStale`) the last owner left, but its root stays attached (its `$queries` / `$aggregations` data stays) and the owner record waits for its per-owner timer; a live transport stays subscribed, a released fetch is closed. `materializedDocSignals` is the number of result docs retained by query runtimes. |
 | `roots` | Root contexts: `count`, `closedRemembered` (closed roots whose root signal is still referenced; their ids stay closed until it is collected), `pendingDisposes`, `signalHashes` / `staleSignalHashes` (hashes of collected signals a root has not forgotten yet; the signal cache finalizer removes them), `privateQueries`, `privateAggregations`, `localValues`, and the `largest` roots. |
 | `finalization` | Every TeamPlay FinalizationRegistry with `registered`, `unregistered`, `finalized`, `liveEstimate` (exact only when enabled before load). |

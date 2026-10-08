@@ -367,8 +367,10 @@ function collectDocs (ctx: Ctx): AnyRecord {
   let oldestPendingDestroyMs: number | undefined
   let divergent = 0
   let graceTransportNotLive = 0
+  let downgradeGraces = 0
   for (const [hash, entry] of manager.entries as Map<string, AnyRecord>) {
     const mode = entryMode(entry)
+    if (entry.downgradeGrace) downgradeGraces++
     inc(byMode, mode)
     inc(byPhase, entry.phase)
     const segments = entry.segments ?? safeParse(hash)
@@ -446,6 +448,7 @@ function collectDocs (ctx: Ctx): AnyRecord {
     pendingDestroys,
     stalePendingDestroys,
     oldestPendingDestroyMs,
+    downgradeGraces,
     divergent,
     graceTransportNotLive,
     categories,
@@ -539,8 +542,10 @@ function collectQueries (ctx: Ctx, manager: AnyRecord, kind: string): AnyRecord 
   let results = 0
   let divergent = 0
   let graceTransportNotLive = 0
+  let downgradeGraces = 0
   for (const [transportHash, entry] of manager.entries as Map<string, AnyRecord>) {
     const mode = entryMode(entry)
+    if (entry.downgradeGrace) downgradeGraces++
     inc(byMode, mode)
     inc(byPhase, entry.phase)
     const runtime = entry.runtime
@@ -616,6 +621,7 @@ function collectQueries (ctx: Ctx, manager: AnyRecord, kind: string): AnyRecord 
     pendingDestroys,
     stalePendingDestroys,
     oldestPendingDestroyMs,
+    downgradeGraces,
     divergent,
     graceTransportNotLive,
     categories,

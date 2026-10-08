@@ -59,6 +59,14 @@ interface Acquired {
   record: SubRecord
 }
 
+export interface SubReleaseOptions {
+  /**
+   * Keep a transport this release leaves without owners lingering for at least
+   * this long, even when the subscription GC delay is shorter.
+   */
+  minGraceMs?: number
+}
+
 /**
  * An acquisition made by acquireSub(): what sub() returns plus a disposer
  * that releases exactly this acquisition.
@@ -66,7 +74,7 @@ interface Acquired {
 export interface SubAcquisition {
   value: SubValue
   signal: SignalBaseInstance
-  release: () => Promise<void> | void
+  release: (options?: SubReleaseOptions) => Promise<void> | void
 }
 
 /**
@@ -175,10 +183,10 @@ export function acquireSub (...args: unknown[]): SubAcquisition {
   return {
     value,
     signal,
-    release () {
+    release (options?: SubReleaseOptions) {
       if (released) return
       released = true
-      return releaseSubRecord(signal, record)
+      return releaseSubRecord(signal, record, options)
     }
   }
 }
@@ -246,7 +254,11 @@ export function getSubResultSignal (result: unknown): SignalBaseInstance | undef
   return (result as PendingSubResult)[SUB_RESULT_SIGNAL]
 }
 
-function disposeSubRecord ($signal: SignalBaseInstance, record: SubRecord): Promise<void> | void {
+function disposeSubRecord (
+  $signal: SignalBaseInstance,
+  record: SubRecord,
+  releaseOptions?: SubReleaseOptions
+): Promise<void> | void {
   if (record.disposed) return
   record.disposed = true
 
@@ -256,7 +268,7 @@ function disposeSubRecord ($signal: SignalBaseInstance, record: SubRecord): Prom
 
   // Resolve once ownership is released; a deferred GC destroy of the runtime
   // (transport grace) is not awaited.
-  const options = { intent: record.intent, awaitDestroy: false }
+  const options = { intent: record.intent, awaitDestroy: false, minGraceMs: releaseOptions?.minGraceMs }
   if (record.kind === 'doc') return docSubscriptions.unsubscribe($signal, options)
   if (record.kind === 'query') return querySubscriptions.unsubscribe($signal, options)
   if (record.kind === 'aggregation') return aggregationSubscriptions.unsubscribe($signal, options)
@@ -396,13 +408,17 @@ function returnSubscribedSignal (
 // record (unsub() picks by recency, so it may have meant another acquisition
 // of the same signal), the record that call left behind is released instead,
 // so every acquisition and every unsub() releases exactly one record.
-function releaseSubRecord ($signal: SignalBaseInstance, record: SubRecord): Promise<void> | void {
+function releaseSubRecord (
+  $signal: SignalBaseInstance,
+  record: SubRecord,
+  options?: SubReleaseOptions
+): Promise<void> | void {
   let target = takeSpecificSubRecord($signal, record, 'release')
   if (!target && record.takenBy === 'unsub') {
     target = takeSubRecord($signal, { kind: record.kind, intent: record.intent }, 'release')
   }
   if (!target) return
-  return disposeSubRecord($signal, target)
+  return disposeSubRecord($signal, target, options)
 }
 
 function addSubRecord ($signal: SignalBaseInstance, kind: SubRecordKind, intent: SubIntent): SubRecord {

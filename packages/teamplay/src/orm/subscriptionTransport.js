@@ -8,8 +8,13 @@
 // arriving in that window adopts it synchronously with no wire traffic. When
 // the pending destroy fires it reconciles the transport to 'idle'.
 //
+// The same grace applies to a downgrade: when the last subscribe owner leaves
+// but fetch owners remain, the live transport keeps subscribing for the GC
+// delay before it is downgraded to a fetch (see scheduleDowngradeGrace()).
+//
 // Fetch transports never linger: a completed fetch has no update stream, so
 // reusing it would serve stale data.
+import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 
 const SETTLED = Promise.resolve()
 
@@ -17,12 +22,49 @@ export function getActiveTransportMode (entry) {
   return entry?.runtime?.activeTransportMode ?? entry?.mode ?? 'idle'
 }
 
-// `desiredMode` comes from the real owners. `lingering` means the entry has no
-// owners but a pending GC destroy.
+// `desiredMode` comes from the real owners. `lingering` means a released live
+// owner is in its grace: an ownerless entry with a pending GC destroy, or a
+// downgrade grace. A lingering live transport keeps subscribing.
 export function getTransportTargetMode (desiredMode, entry, lingering) {
-  if (desiredMode !== 'idle') return desiredMode
-  return lingering && getActiveTransportMode(entry) === 'subscribe' ? 'subscribe' : 'idle'
+  if (lingering && getActiveTransportMode(entry) === 'subscribe') return 'subscribe'
+  return desiredMode
 }
+
+// Called after a release that left owners on the entry: if no remaining owner
+// wants a live subscription but the transport is live, keep it live for the
+// GC delay (a subscriber arriving meanwhile joins synchronously), then
+// reconcile, which downgrades it to a fetch.
+export function scheduleDowngradeGrace (manager, key, entry, delay = getSubscriptionGcDelay()) {
+  if (delay <= 0 || entry.downgradeGrace) return
+  if (manager.getDesiredTransportMode(key) === 'subscribe') return
+  if (getActiveTransportMode(entry) !== 'subscribe') return
+  const grace = { timer: undefined }
+  grace.timer = setTimeout(() => {
+    if (manager.entries.get(key)?.downgradeGrace !== grace) return
+    entry.downgradeGrace = null
+    manager.reconcileTransport(key).catch(ignoreReconcileError)
+  }, delay)
+  entry.downgradeGrace = grace
+}
+
+export function clearDowngradeGrace (entry) {
+  if (!entry?.downgradeGrace) return
+  clearTimeout(entry.downgradeGrace.timer)
+  entry.downgradeGrace = null
+}
+
+// Ends every downgrade grace now (part of flushPendingDestroys()).
+export async function flushDowngradeGraces (manager) {
+  const keys = []
+  for (const [key, entry] of manager.entries) {
+    if (!entry.downgradeGrace) continue
+    clearDowngradeGrace(entry)
+    keys.push(key)
+  }
+  for (const key of keys) await manager.reconcileTransport(key)
+}
+
+function ignoreReconcileError () {}
 
 // Nothing is in flight and the active transport already matches the target.
 export function isTransportSettled (entry, targetMode) {

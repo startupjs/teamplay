@@ -1699,7 +1699,7 @@ describe('Direct document transport grace', () => {
     }
   })
 
-  it('downgrades mixed live and fetch owners immediately', async () => {
+  it('keeps mixed live and fetch owners live through the grace, then downgrades', async () => {
     const manager = createTrackedDocManager(LifecycleMockDoc)
     const $fetchRoot = getRootSignal({ rootId: '_doc_grace_mixed_fetch', fetchOnly: true })
     const $liveRoot = getRootSignal({ rootId: '_doc_grace_mixed_live', fetchOnly: false })
@@ -1713,6 +1713,11 @@ describe('Direct document transport grace', () => {
 
     await manager.unsubscribe($liveDoc)
 
+    // the live transport lingers in a downgrade grace (a subscriber arriving
+    // now would join it synchronously), like an ownerless one would
+    assert.equal(doc.activeTransportMode, 'subscribe')
+    assert.ok(manager.entries.get(hash).downgradeGrace)
+    await manager.flushPendingDestroys()
     assert.equal(doc.activeTransportMode, 'fetch')
     assert.equal(manager.pendingDestroyTimers.has(hash), false, 'a real fetch owner prevents GC')
     assert.deepEqual(doc.events, [

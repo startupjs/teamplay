@@ -158,13 +158,14 @@ export interface IdleState {
   waitedMs: number
   transitions: number
   pendingDestroys: number
+  downgradeGraces: number
   pendingUnsubs: number
   pollers: number
 }
 
 /**
- * Wait until no subscription entry is in transition, no destroy is pending,
- * no unsub() promise is pending and no readiness poller runs. Use it before a
+ * Wait until no subscription entry is in transition, no destroy or downgrade
+ * grace is pending, no unsub() promise is pending and no readiness poller runs. Use it before a
  * snapshot that should describe a settled page.
  */
 export async function waitForIdle ({ timeoutMs, intervalMs = 50 }: WaitForIdleOptions = {}): Promise<IdleState> {
@@ -180,22 +181,26 @@ export async function waitForIdle ({ timeoutMs, intervalMs = 50 }: WaitForIdleOp
 function getIdleState (startedAt: number): IdleState {
   let transitions = 0
   let pendingDestroys = 0
+  let downgradeGraces = 0
   for (const entry of (docSubscriptions as any).entries.values()) {
     if (entry.phase === 'transition') transitions++
     if (entry.pendingDestroy) pendingDestroys++
+    if (entry.downgradeGrace) downgradeGraces++
   }
   for (const manager of [querySubscriptions, aggregationSubscriptions] as any[]) {
     for (const entry of manager.entries.values()) {
       if (entry.phase === 'transition') transitions++
       pendingDestroys += entry.pendingDestroyByOwner.size
+      if (entry.downgradeGrace) downgradeGraces++
     }
   }
   const counts = snapshotCounts()
   return {
-    idle: transitions === 0 && pendingDestroys === 0 && counts.pendingUnsubs === 0 && counts.pollers === 0,
+    idle: transitions === 0 && pendingDestroys === 0 && downgradeGraces === 0 && counts.pendingUnsubs === 0 && counts.pollers === 0,
     waitedMs: now() - startedAt,
     transitions,
     pendingDestroys,
+    downgradeGraces,
     pendingUnsubs: counts.pendingUnsubs,
     pollers: counts.pollers
   }

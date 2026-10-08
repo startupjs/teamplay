@@ -1,6 +1,6 @@
 import { useEffect, useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
-import sub, { getSubResultSignal, unsub } from '../orm/sub.ts'
+import { acquireSub, type SubReleaseOptions } from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer, useTriggerUpdate } from './helpers.ts'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import executionContextTracker from './executionContextTracker.ts'
@@ -19,7 +19,6 @@ import {
 } from '../orm/Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { SEGMENTS } from '../orm/signalSymbols.ts'
-import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 import { diag, describeSubTarget, noteLeaseCreated, noteLeaseCommitted, noteLeaseReleased, pollerStart, pollerEnd } from '../diagnostics/state.ts'
 import {
   isPublicDocumentSignal,
@@ -36,9 +35,6 @@ import {
   type WildcardSignalPath
 } from '../orm/Signal.ts'
 
-type RuntimeSub = (signal: unknown, params?: unknown) => unknown
-const runtimeSub = sub as RuntimeSub
-
 export interface UseSubOptions {
   /** Return `undefined` while loading instead of throwing a Suspense promise. */
   async?: boolean
@@ -49,11 +45,15 @@ export interface UseSubOptions {
 }
 
 const USE_SUB_OPTION_KEYS = new Set<string>(['async', 'defer', 'batch'] satisfies Array<keyof UseSubOptions>)
-// Experimental: transport grace keeps a released subscription live for the
-// subscription GC delay, so an uncommitted render attempt's lease can be
-// released on the next task; a render that commits a released lease
-// re-acquires it (synchronously, from the grace).
-const MAX_UNCOMMITTED_LEASE_GRACE_MS = 0
+// React cannot tell us that it abandoned a render attempt, and it may hold a
+// finished one before committing it (React 19 holds a Suspense retry for up to
+// 300 ms after the last fallback). An uncommitted lease is released on the
+// next task after its subscription is ready, and its transport lingers for at
+// least this long (the subscription GC delay, if longer), so a retry or a
+// held commit re-acquires it synchronously, also with
+// setSubscriptionGcDelay(0). A render that commits a released lease
+// re-acquires it.
+const UNCOMMITTED_LEASE_GRACE_MS = 1000
 
 let TEST_THROTTLING: false | number = false
 
@@ -613,6 +613,8 @@ export function setDefaultDefer (value: boolean): void {
 interface SubscriptionLease {
   value: unknown
   signal?: unknown
+  // releases exactly this lease's acquisition (not another sub() of the signal)
+  release?: (options?: SubReleaseOptions) => Promise<void> | void
   signalDisposed: boolean
   inputSignal?: unknown
   serializedParams?: string
@@ -680,10 +682,12 @@ function createSubscriptionLease (
   serializedParams?: string,
   previousLease?: SubscriptionLease
 ): SubscriptionLease {
-  const value = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
+  const acquisition = params != null ? acquireSub(signal, params) : acquireSub(signal)
+  const value = acquisition.value
   const lease: SubscriptionLease = {
     value,
-    signal: getSubResultSignal(value),
+    signal: acquisition.signal,
+    release: acquisition.release,
     inputSignal: signal,
     serializedParams,
     previousLease: previousLease?.released ? undefined : previousLease,
@@ -733,11 +737,11 @@ function scheduleUncommittedLeaseCleanup (lease: SubscriptionLease): void {
   if (lease.committed || lease.released || lease.cleanupTimer) return
   lease.cleanupTimer = setTimeout(() => {
     lease.cleanupTimer = undefined
-    if (!lease.committed) releaseSubscriptionLease(lease)
-  }, Math.min(getSubscriptionGcDelay(), MAX_UNCOMMITTED_LEASE_GRACE_MS))
+    if (!lease.committed) releaseSubscriptionLease(lease, { minGraceMs: UNCOMMITTED_LEASE_GRACE_MS })
+  })
 }
 
-function releaseSubscriptionLease (lease: SubscriptionLease): void {
+function releaseSubscriptionLease (lease: SubscriptionLease, options?: SubReleaseOptions): void {
   if (lease.released) return
   const previousLease = lease.previousLease
   lease.previousLease = undefined
@@ -749,7 +753,7 @@ function releaseSubscriptionLease (lease: SubscriptionLease): void {
   lease.cleanupTimer = undefined
   clearTimeout(lease.releaseTimer)
   lease.releaseTimer = undefined
-  disposeSubscriptionLeaseSignal(lease)
+  disposeSubscriptionLeaseSignal(lease, options)
   if (lease.committed && previousLease) releaseSubscriptionLease(previousLease)
 }
 
@@ -768,18 +772,18 @@ function scheduleSubscriptionLeaseRelease (lease: SubscriptionLease): void {
   })
 }
 
-function disposeSubscriptionLeaseSignal (lease: SubscriptionLease): void {
-  const signal = lease.signal
+function disposeSubscriptionLeaseSignal (lease: SubscriptionLease, options?: SubReleaseOptions): void {
+  const release = lease.release
+  lease.release = undefined
   lease.signal = undefined
   lease.inputSignal = undefined
   lease.serializedParams = undefined
   lease.value = undefined
-  // A pending sub result exposes its signal before its promise settles. If this
-  // lease was released while pending, the resolution callback sees the same
-  // acquisition again and must not unsubscribe another owner's matching record.
-  if (!signal || lease.signalDisposed) return
+  // A lease released while its sub result was pending is disposed again when
+  // the result settles; the acquisition is released once.
+  if (!release || lease.signalDisposed) return
   lease.signalDisposed = true
-  Promise.resolve(unsub(signal)).catch(ignoreSubscriptionCleanupError)
+  Promise.resolve(release(options)).catch(ignoreSubscriptionCleanupError)
 }
 
 function ignoreSubscriptionCleanupError (): void {}

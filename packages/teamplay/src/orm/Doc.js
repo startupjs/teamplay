@@ -10,10 +10,13 @@ import { isMissingShareDoc } from './missingDoc.js'
 import {
   addOwnerToken,
   canJoinTransport,
+  clearDowngradeGrace,
   createOwnerTokenCounts,
+  flushDowngradeGraces,
   getTransportTargetMode,
   reconcileEntryTransport,
-  removeOwnerToken
+  removeOwnerToken,
+  scheduleDowngradeGrace
 } from './subscriptionTransport.js'
 import { getRoot, ROOT_ID, GLOBAL_ROOT_ID, getRootTransportMode } from './Root.ts'
 import {
@@ -304,6 +307,7 @@ export class DocSubscriptions {
         owners: new Set(),
         retainCount: 0,
         pendingDestroy: null,
+        downgradeGrace: null,
         reconcilePromise: null
       }
       this.entries.set(hash, entry)
@@ -404,6 +408,8 @@ export class DocSubscriptions {
       this.fr.register($doc, { hash, ownerKey, token }, token)
     }
     this.ensureRuntime(hash, segments)
+    // A subscriber arriving in a downgrade grace keeps the transport live.
+    if (this.getDesiredTransportMode(hash) === 'subscribe') clearDowngradeGrace(entry)
     // Join a settled transport synchronously, including one lingering ownerless
     // in its GC grace: its runtime already holds the data.
     const targetMode = this.getTargetTransportMode(hash)
@@ -429,7 +435,7 @@ export class DocSubscriptions {
   // Releases one owner count. The returned promise settles once the release is
   // applied; with `awaitDestroy` (the default) it also waits for a deferred GC
   // destroy of the runtime, which public unsub() does not.
-  async unsubscribe ($doc, { intent = 'subscribe', awaitDestroy = true } = {}) {
+  async unsubscribe ($doc, { intent = 'subscribe', awaitDestroy = true, minGraceMs } = {}) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
     const rootId = getOwningRootId($doc)
@@ -447,11 +453,13 @@ export class DocSubscriptions {
     if (rootId) {
       unregisterRootOwnedDirectDocSubscription(rootId, hash, charged.token ?? token)
     }
-    await this.applyOwnerRelease(record, { awaitDestroy })
+    await this.applyOwnerRelease(record, { awaitDestroy, minGraceMs })
   }
 
   // Shared tail of an owner release (unsubscribe and finalized signals).
-  async applyOwnerRelease (record, { awaitDestroy = true } = {}) {
+  // `minGraceMs` extends the grace of what this release leaves behind beyond
+  // the GC delay (React render attempts that were not committed).
+  async applyOwnerRelease (record, { awaitDestroy = true, minGraceMs = 0 } = {}) {
     const { hash, segments, rootId } = record
     const entry = this.getOrCreateEntry(hash, segments)
     if (this.getOwnerTotalCount(record) === 0) {
@@ -459,8 +467,11 @@ export class DocSubscriptions {
       this.deleteOwnerRecord(record)
     }
     const count = this.getEntryTotalCount(entry)
-    const deferred = getSubscriptionGcDelay() > 0
-    const destroyPromise = count === 0 ? this.scheduleDestroy(segments, { rootId }) : undefined
+    const delay = Math.max(getSubscriptionGcDelay(), minGraceMs)
+    const deferred = delay > 0
+    if (count > 0) scheduleDowngradeGrace(this, hash, entry, delay)
+    else clearDowngradeGrace(entry)
+    const destroyPromise = count === 0 ? this.scheduleDestroy(segments, { rootId, delay }) : undefined
     await this.reconcileTransport(hash)
     if (count > 0) return
     if (deferred && !awaitDestroy) return
@@ -536,6 +547,7 @@ export class DocSubscriptions {
   }
 
   async flushPendingDestroys () {
+    await flushDowngradeGraces(this)
     const hashes = Array.from(filterMapKeys(this.entries, entry => !!entry.pendingDestroy))
     for (const hash of hashes) {
       await this.destroyByHash(hash)
@@ -544,7 +556,7 @@ export class DocSubscriptions {
 
   async scheduleDestroy (segments, options = {}) {
     const hash = hashDoc(segments)
-    const delay = getSubscriptionGcDelay()
+    const delay = options.delay ?? getSubscriptionGcDelay()
     if (delay <= 0) {
       await this.destroyByHash(hash, options)
       return
@@ -644,6 +656,7 @@ export class DocSubscriptions {
       if (options.force && entry?.owners.size) {
         this.removeAllOwnersFromEntry(hash)
       }
+      if (options.force) clearDowngradeGrace(entry)
       const count = entry ? this.getEntryTotalCount(entry) : (this.getTrackedCount(hash) || 0)
       if (!options.force && count > 0) {
         settlePending()
@@ -785,11 +798,14 @@ export class DocSubscriptions {
     return hasFetchBackedOwner ? 'fetch' : 'idle'
   }
 
-  // Owner-derived mode, except that an ownerless live transport lingers while
-  // its GC destroy is pending (see subscriptionTransport.js).
+  // Owner-derived mode, except that a live transport lingers while an ownerless
+  // entry's GC destroy is pending, or in a downgrade grace while owners remain
+  // (see subscriptionTransport.js).
   getTargetTransportMode (hash) {
     const entry = this.entries.get(hash)
-    const lingering = !!entry?.pendingDestroy && this.getEntryTotalCount(entry) === 0
+    const lingering = this.getEntryTotalCount(entry) === 0
+      ? !!entry?.pendingDestroy
+      : !!entry?.downgradeGrace
     return getTransportTargetMode(this.getDesiredTransportMode(hash), entry, lingering)
   }
 
@@ -814,6 +830,7 @@ export class DocSubscriptions {
   }
 
   async destroyTransportEntry (hash, runtime) {
+    clearDowngradeGrace(this.entries.get(hash))
     const activeDoc = this.entries.get(hash)?.runtime || runtime
     if (!activeDoc) {
       const entry = this.entries.get(hash)
