@@ -18,7 +18,7 @@ import {
   useOnce,
   useSyncEffect
 } from '../src/index.ts'
-import { setTestThrottling, resetTestThrottling, useSubClassic } from '../src/react/useSub.ts'
+import { setTestThrottling, resetTestThrottling } from '../src/react/useSub.ts'
 import { __resetSuspendMemoForTests } from '../src/react/useSuspendMemo.ts'
 import { useId, useNow, useTriggerUpdate, useUnmount, useScheduleUpdate } from '../src/react/helpers.ts'
 import trapRender from '../src/react/trapRender.js'
@@ -474,79 +474,6 @@ describe('useSub edge cases', () => {
     expect(errorThrown).toBe(false)
 
     console.error = originalError
-  })
-
-  it('useSubClassic path - test by importing useSubClassic directly and testing it', async () => {
-    // useSubClassic is the classic version that initially throws promise for Suspense
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $userSub = useSubClassic($.users.classicTest2)
-      return el('span', {}, $userSub.name.get() || 'loading')
-    })
-
-    const { container } = render(el(Component))
-    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
-    expect(container.textContent).toBe('')
-
-    await wait()
-    expect(renders).toBe(3)
-    expect(container.textContent).toBe('loading')
-
-    // Now set the whole document to create it
-    act(() => { $.users.classicTest2.set({ name: 'John' }) })
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(4)
-  })
-
-  it('useSubClassic with batch keeps update resubscribe in background', async () => {
-    const collection = 'classicBatchSwitch'
-    const lessonA = 'lesson_classic_batch_switch_1'
-    const lessonB = 'lesson_classic_batch_switch_2'
-
-    const $lessonA = await sub($[collection][lessonA])
-    const $lessonB = await sub($[collection][lessonB])
-    $lessonA.set({ courseId: 'course_a', stageIds: ['a1'] })
-    $lessonB.set({ courseId: 'course_b', stageIds: ['b1', 'b2'] })
-    await wait()
-
-    _del([collection, lessonA])
-    _del([collection, lessonB])
-
-    const Component = observer(() => {
-      const [courseId, setCourseId] = React.useState('course_a')
-      const [lessonId, setLessonId] = React.useState(lessonA)
-
-      useSubClassic($[collection], { courseId }, { batch: true })
-      useBatchSub()
-      const lesson = $[collection][lessonId].get()
-      const stageIds = lesson?.stageIds
-
-      return el(Fragment, null,
-        el('span', { id: 'classicBatchSwitch' }, stageIds ? stageIds.join(',') : 'pending'),
-        el('button', {
-          id: 'classicBatchSwitchBtn',
-          onClick: () => {
-            setCourseId('course_b')
-            setLessonId(lessonB)
-          }
-        }, 'switch')
-      )
-    }, { suspenseProps: { fallback: el('span', { id: 'classicBatchSwitch' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#classicBatchSwitch').textContent).toBe('Loading...')
-
-    await waitFor(() => {
-      expect(container.querySelector('#classicBatchSwitch').textContent).toBe('a1')
-    })
-
-    fireEvent.click(container.querySelector('#classicBatchSwitchBtn'))
-    expect(container.querySelector('#classicBatchSwitch').textContent).not.toBe('Loading...')
-
-    await waitFor(() => {
-      expect(container.querySelector('#classicBatchSwitch').textContent).toBe('b1,b2')
-    })
   })
 
   it('observer replays updates skipped during execution context', async () => {

@@ -219,7 +219,6 @@ export {
   default as useSub,
   useAsyncSub,
   useBatchSub,
-  setUseDeferredValue as __setUseDeferredValue,
   setDefaultDefer as __setDefaultDefer
 } from './react/useSub.ts'
 export {

@@ -64,9 +64,6 @@ const UNCOMMITTED_REACQUIRE_LIMIT = 10
 
 let TEST_THROTTLING: false | number = false
 
-// experimental feature to leverage useDeferredValue() to handle re-subscriptions.
-// Currently it does lead to issues with extra rerenders and requires further investigation
-let USE_DEFERRED_VALUE: boolean = true
 // by default we want to defer stuff if possible instead of throwing promises
 let DEFAULT_DEFER: boolean = true
 
@@ -460,11 +457,7 @@ function isUseSubOptions (value: unknown): value is UseSubOptions {
 function useNormalizedSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
   const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   if (isBatchBarrierCall(signal, params, options)) return closeBatchBarrier(scheduleGroupUpdate)
-  if (USE_DEFERRED_VALUE) {
-    return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
-  } else {
-    return useSubClassic(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
-  }
+  return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
 }
 
 function isBatchBarrierCall (signal: unknown, params: unknown, options?: UseSubOptions): boolean {
@@ -538,69 +531,6 @@ export function useSubDeferred (
   }
 }
 
-// classic version which initially throws promise for Suspense
-// but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (
-  signal: unknown,
-  params?: unknown,
-  { async = false, batch = false }: UseSubOptions = {}
-): unknown {
-  const id = executionContextTracker.newHookId()
-  const cache = useCache(undefined)
-  const scheduleUpdate = useScheduleUpdate()
-  const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
-  if (batch) promiseBatcher.activate()
-  const subscriptionLease = useSubscriptionLease(signal, params)
-  const promiseOrSignal = subscriptionLease.value
-  // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
-  if (isThenable(promiseOrSignal)) {
-    const promise = maybeThrottle(promiseOrSignal)
-    const readyPromise = getSubscriptionReadyPromise(promise, subscriptionLease)
-    scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
-    if (batch) {
-      const hasPreviousSignal = cache.has(id)
-      // Batch suspense must block only on initial load.
-      // On resubscribe we keep rendering previous signal and refresh in background.
-      if (!hasPreviousSignal) {
-        promiseBatcher.add(promise)
-        addBatchReadinessCheck(promise, subscriptionLease)
-      } else {
-        scheduleUpdate(readyPromise)
-      }
-      if (async) scheduleUpdate(readyPromise)
-      if (hasPreviousSignal) return cache.get(id)
-      return
-    }
-    // first time we just throw the promise to be caught by Suspense
-    if (!cache.has(id)) {
-      // if we are in async mode, we just return nothing and let the user
-      // handle appearance of signal on their own.
-      // We manually schedule an update when promise resolves since we can't
-      // rely on Suspense in this case to automatically trigger component's re-render
-      if (async) {
-        scheduleUpdate(readyPromise)
-        return
-      }
-      // in regular mode we throw the promise to be caught by Suspense
-      // this way we guarantee that the signal with all the data
-      // will always be there when component is rendered
-      scheduleGroupUpdate?.(readyPromise)
-      throw readyPromise
-    }
-    // if we already have a previous signal, we return it and wait for new promise to resolve
-    scheduleUpdate(readyPromise)
-    return cache.get(id)
-  // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
-  } else {
-    const $signal = promiseOrSignal
-    if (batch && !cache.has(id)) addBatchReadinessCheckForSignal($signal, subscriptionLease)
-    if (cache.get(id) !== $signal) {
-      cache.set(id, $signal)
-    }
-    return $signal
-  }
-}
-
 export function setTestThrottling (ms: number): void {
   if (typeof ms !== 'number') throw Error('setTestThrottling() accepts only a number in ms')
   if (ms === 0) throw Error('setTestThrottling(0) is not allowed, use resetTestThrottling() instead')
@@ -609,9 +539,6 @@ export function setTestThrottling (ms: number): void {
 }
 export function resetTestThrottling (): void {
   TEST_THROTTLING = false
-}
-export function setUseDeferredValue (value: boolean): void {
-  USE_DEFERRED_VALUE = value
 }
 export function setDefaultDefer (value: boolean): void {
   DEFAULT_DEFER = value
