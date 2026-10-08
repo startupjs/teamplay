@@ -83,13 +83,11 @@ describe('observer', () => {
     expect(renders).toBe(2)
   })
 
-  // Fixed: Signal changes in useEffect and useLayoutEffect now work correctly!
-  //
-  // The issue was that useSyncExternalStore's subscribe() is called AFTER
-  // the first render, but useEffect runs right after that first render.
-  //
-  // Solution: We queue pending updates if onStoreChange is not yet initialized,
-  // and execute them as soon as subscribe() is called.
+  // The observer wrapper subscribes (useSyncExternalStore) after its
+  // children's effects run, so a write in an effect lands before there is a
+  // listener. It still changes the store snapshot, and useSyncExternalStore
+  // re-renders right after it subscribes: the update shows in the same commit
+  // flush, with one extra render and nothing left for later.
   it('react to signal changes from useEffect', async () => {
     let renders = 0
     let $name
@@ -102,8 +100,8 @@ describe('observer', () => {
       return el('span', {}, $name.get())
     })
     const { container } = render(el(Component))
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(1)
+    expect(container.textContent).toBe('Jane')
+    expect(renders).toBe(2)
 
     await wait()
     expect(container.textContent).toBe('Jane')
@@ -148,8 +146,8 @@ describe('observer', () => {
       return el('span', {}, $name.get())
     })
     const { container } = render(el(Component))
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(1)
+    expect(container.textContent).toBe('Jane')
+    expect(renders).toBe(2)
 
     await wait()
     expect(container.textContent).toBe('Jane')

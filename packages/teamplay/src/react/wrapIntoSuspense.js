@@ -134,9 +134,16 @@ export default function wrapIntoSuspense ({
         onStoreChange: undefined,
         scheduledUpdatePromise: undefined,
         destroyTimer: undefined,
-        hasPendingUpdate: false,
         cache: new Map(),
         cacheDestroyCallbacks: new Set(),
+        // A new snapshot even without a listener: an update that arrives
+        // between a render and the subscription (children's effects run
+        // before this wrapper subscribes, StrictMode replays subscriptions)
+        // is caught by useSyncExternalStore's own check after it subscribes.
+        notify () {
+          adm.stateVersion = Symbol() // eslint-disable-line symbol-description
+          adm.onStoreChange?.()
+        },
         scheduleUpdate: promise => {
           if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
           if (adm.scheduledUpdatePromise === promise) return
@@ -144,12 +151,7 @@ export default function wrapIntoSuspense ({
           promise.then(() => {
             if (adm.scheduledUpdatePromise !== promise) return
             adm.scheduledUpdatePromise = undefined
-            if (adm.onStoreChange) {
-              adm.onStoreChange()
-            } else {
-              // A fast subscription may settle before useSyncExternalStore subscribes.
-              adm.hasPendingUpdate = true
-            }
+            adm.notify()
           })
         },
         subscribe (onStoreChange) {
@@ -157,17 +159,14 @@ export default function wrapIntoSuspense ({
           if (diag.on) noteAdmSubscribed(adm)
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
-          adm.onStoreChange = () => {
-            adm.stateVersion = Symbol() // eslint-disable-line symbol-description
-            onStoreChange()
+          adm.onStoreChange = onStoreChange
+          return () => {
+            // Never notify React after it unsubscribed: React queues an update
+            // to an unmounted fiber until its next render, keeping the fiber
+            // alive.
+            if (adm.onStoreChange === onStoreChange) adm.onStoreChange = undefined
+            scheduleDestroyAdm(adm)
           }
-          // If there was a pending update before subscribe was called, trigger it asynchronously
-          // to avoid updating during the subscribe/render phase
-          if (adm.hasPendingUpdate) {
-            adm.hasPendingUpdate = false
-            queueMicrotask(() => adm.onStoreChange?.())
-          }
-          return () => scheduleDestroyAdm(adm)
         },
         getSnapshot () {
           return adm.stateVersion
@@ -189,14 +188,7 @@ export default function wrapIntoSuspense ({
         componentId,
         createdAt: suspenseGroup?.createdAt ?? Date.now(),
         defer,
-        triggerUpdate: () => {
-          if (adm.onStoreChange) {
-            adm.onStoreChange()
-          } else {
-            // Save pending update - subscribe not called yet (e.g., from useEffect/useLayoutEffect)
-            adm.hasPendingUpdate = true
-          }
-        },
+        triggerUpdate: () => adm.notify(),
         scheduleUpdate: promise => adm.scheduleUpdate?.(promise),
         cache: {
           get: key => adm.cache?.get(key),
