@@ -13,10 +13,20 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
   * `__setUseDeferredValue()` (exported from `teamplay`) and the experimental switch behind it. `useSub()` always uses its default implementation, which keeps the previous signal through `useDeferredValue()` while it re-subscribes.
   * `useSubClassic()` (exported by `src/react/useSub.ts`, not by the package entry), the alternative `useSub()` implementation that `__setUseDeferredValue(false)` selected.
   * `useIsomorphicLayoutEffect` (`src/utils/useIsomorphicLayoutEffect.js`, internal), which only silenced React 18's server-side `useLayoutEffect` warning.
+* **teamplay:** a re-subscribe never returns the previous signal while the new subscription loads (that is what committed inconsistent dependent subscriptions, see Bug Fixes). What changes:
+  * `defer: false` (hook or `observer()`): a re-subscribe in an urgent render suspends to the Suspense fallback instead of rendering the previous signal. `forceDefer` (see Features) turns this off everywhere.
+  * `useBatchSub()`: the closing barrier suspends on a re-subscribe too, not only on the first render (deferred, this happens in the background render and the previous content stays on screen), and a batched target that is already subscribed but still materializing is waited for on a re-subscribe too.
+  * A committed component whose lease was released (e.g. hidden by `<Activity>` longer than the subscription GC delay) suspends while it re-acquires instead of rendering the unloaded previous signal.
+
+
+### Features
+
+* **teamplay:** `forceDefer`: React subscription hooks ignore `defer: false` (of a hook and of `observer()`) and always defer a re-subscribe. Set it in the runtime config (`globalThis[Symbol.for('teamplay.runtimeConfig')].forceDefer = true`, or `configureTeamplay({ forceDefer: true })`) before or after the app loads teamplay, or at runtime with `setForceDefer(true | false | null)` (exported from `teamplay`, next to `setSubscriptionGcDelay()`; it takes precedence over the config, `null` goes back to it). `getForceDefer()` and `getTeamplayConfig().forceDefer` return the value in effect. A mounted component picks a change up on its next render.
 
 
 ### Bug Fixes
 
+* **teamplay:** dependent subscriptions (`useSub($.courses[$user.courseId.get()])`) switch atomically: a component never commits a link that does not match the one it depends on (the new user with the previous course). Deferred (the default), the previous consistent state stays on screen, without the fallback, until every new subscription is loaded, then the component commits them at once; switching again meanwhile ends at the last target without committing the intermediate one. Before, every link committed as soon as it loaded (U2/C1/L1, then U2/C2/L1, ...), with `defer: false` too. This also holds for queries, aggregations, `useBatchSub()` chains and a child observer that subscribes to an id from its parent.
 * **teamplay:** the observer wrapper never notifies React after React unsubscribed; under React 19 that kept an unmounted component alive until the app's next render.
 * **teamplay:** an update that arrives before an observer subscribes (a child's effect writes, StrictMode replays the subscription) re-renders it in the same commit instead of a microtask later.
 * **teamplay:** an observer recovers after `<Activity>` hides and shows it: it keeps one subscription lease across renders and its scheduled updates re-render it again.

@@ -483,7 +483,7 @@ When changing React behavior, check both runtime correctness and end-user ergono
 `useSub()` keeps one component-owned subscription lease per hook and stable
 signal/query arguments. The component metadata cache preserves that lease across
 Suspense retries, committed effects release it on unmount, and a replacement
-lease keeps the previous snapshot alive until the replacement is ready.
+lease keeps the previous one alive until the replacement commits.
 The outer observer cache also owns pending leases, so unmounting a Suspense
 fallback can cancel subscription ownership before the transport becomes ready.
 A lease releases exactly its own acquisition (`acquireSub()`), never another
@@ -502,6 +502,43 @@ For batches, abandoned-render cleanup waits for the complete batch barrier
 rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React
 StrictMode subscription replay does not look like a real unmount.
+
+`useSub()` never returns a signal whose subscription is not ready (except
+`useAsyncSub()`, which returns `undefined`): a pending lease throws its
+readiness promise, on the first render and on a re-subscribe alike (a batch
+adds it to the barrier). That is what makes dependent subscriptions
+(`useSub($.courses[$user.courseId.get()])`) switch atomically, without ever
+committing a link that does not match the one it depends on:
+
+- Deferred (the default), the hook passes its signal and serialized params
+  through `useDeferredValue()`. An urgent render gets the committed ones, whose
+  lease is ready, and renders the previous consistent state; React then renders
+  the new ones in a deferred (transition-lane) render. A suspension there keeps
+  the committed UI without the fallback; React retries the render when the
+  promise settles, the next dependent hook gets its new input in that
+  non-urgent render (`useDeferredValue()` returns it at once there) and
+  suspends in turn, until the whole component, and any child observer rendered
+  in the same deferred render, is ready and commits at once.
+- `defer: false` acquires the new target in the urgent render, which suspends
+  to the fallback.
+- `forceDefer` (`setForceDefer()`, runtime config `forceDefer`,
+  `react/forceDefer.ts`) makes every hook defer. Both `useDeferredValue()`
+  calls run in every mode, fed a constant sentinel when the hook does not
+  defer, so the hook order is the same when the mode changes at runtime; the
+  urgent render that turns deferring on renders the committed lease's target
+  (what `useDeferredValue()` would have returned).
+
+Each hook remembers the lease of its last commit. An urgent render of the
+committed target while the deferred render waits for a new one is served by
+that lease, and the pending one stays in the cache for the deferred render
+(neither is re-acquired or released). When a component that has committed
+suspends, it arms `renderAttemptDestroyer`'s gate, so `trapRender` keeps its
+observer reaction instead of destroying it: a change of what the suspended
+render read (the id being switched again) still re-renders the component.
+Leases of a deferred render that are ready but wait for a later link are
+uncommitted leases like any other: a link slower than the 1000 ms hold
+releases them, and the retry re-acquires them synchronously from the
+transport grace.
 
 The observer wrapper (`wrapIntoSuspense.js`) re-renders its component through
 `useSyncExternalStore`. An update replaces the store snapshot whether or not

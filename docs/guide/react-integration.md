@@ -45,6 +45,16 @@ const UserProfile = observer(({ userId }) => {
 3. The `observer()` wrapper shows a loading state.
 4. Once the data is ready, the component renders with the data.
 
+### Switching subscriptions
+
+When a hook's signal or params change, the component keeps showing the
+previous data (no Suspense fallback) until the new subscriptions are loaded,
+including subscriptions that depend on each other
+(`useSub($.courses[$user.courseId.get()])`): they switch together, never one
+link at a time. `defer: false` shows the fallback instead, and the
+`forceDefer` runtime option ignores `defer: false` everywhere. See
+[Re-subscribing: consistency and `defer`](../api/use-sub-hook.md#re-subscribing-consistency-and-defer).
+
 ### Async subscriptions
 
 If the component should render its own loading state instead of suspending, use
@@ -86,9 +96,10 @@ const CoursePage = observer(({ courseId }) => {
 })
 ```
 
-`useBatchSub()` keeps TeamPlay's normal `defer` default. Pass `{ defer: false }`
-only when the component needs immediate resubscription timing, such as when
-migrating legacy synchronous batch screens.
+`useBatchSub()` keeps TeamPlay's normal `defer` default: when `courseId`
+changes, the previous course and lessons stay on screen until the new ones are
+loaded. With `{ defer: false }`, as in this example, a re-subscribe suspends to
+the fallback instead.
 
 `useBatchSub(signal, params, options)` is syntax sugar for
 `useSub(signal, params, { ...options, batch: true, async: false })`. The barrier

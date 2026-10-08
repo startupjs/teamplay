@@ -114,3 +114,7 @@ subscriptionGcDelay: ms })` from `teamplay/config`, or
 `globalThis[Symbol.for('teamplay.runtimeConfig')] = { subscriptionGcDelay: ms }`
 set by the app before or after it loads teamplay. `setSubscriptionGcDelay()`
 takes precedence over the config.
+
+The same runtime config takes `forceDefer: true`, which makes React
+subscription hooks ignore `defer: false` (see
+[useSub()](./use-sub-hook.md#ignoring-defer-false-everywhere-forcedefer)).
