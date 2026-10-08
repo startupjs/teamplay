@@ -673,6 +673,10 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
     clearTimeout(lease.cleanupTimer)
     lease.cleanupTimer = undefined
   }
+  // Every render that uses a lease React has not committed yet (re)arms its
+  // release: a render can be discarded before commit whether its subscription
+  // was ready (sync) or not. A pending lease is armed once it is ready.
+  if (!lease.committed && !isThenable(lease.value)) scheduleUncommittedLeaseCleanup(lease)
 
   useEffect(() => {
     // Released while React held this render's commit: re-render to re-acquire.

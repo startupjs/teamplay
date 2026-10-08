@@ -487,9 +487,11 @@ lease keeps the previous snapshot alive until the replacement is ready.
 The outer observer cache also owns pending leases, so unmounting a Suspense
 fallback can cancel subscription ownership before the transport becomes ready.
 A lease releases exactly its own acquisition (`acquireSub()`), never another
-`sub()` record of the same signal. A render attempt that never commits keeps
-its lease for `MAX_UNCOMMITTED_LEASE_GRACE_MS` (1000 ms, capped by a lower GC
-delay) after the subscription is ready, above React 19's 300 ms Suspense commit
+`sub()` record of the same signal. Every render that uses a lease React has not
+committed (re)arms its release, whether the subscription was ready at once or
+became ready later: a render attempt that never commits keeps the lease for
+`MAX_UNCOMMITTED_LEASE_GRACE_MS` (1000 ms, capped by a lower GC delay) after
+its last use or readiness, above React 19's 300 ms Suspense commit
 throttle, so a retry or a held commit finds the lease itself. The release then
 gives the transport at least the same grace, so a later re-acquire joins
 synchronously; with a GC delay of 0 the lease is released on the next task and
@@ -500,6 +502,10 @@ For batches, abandoned-render cleanup waits for the complete batch barrier
 rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React
 StrictMode subscription replay does not look like a real unmount.
+
+An observer wrapper whose render React discarded before it mounted never
+subscribes, so it is never destroyed explicitly; a FinalizationRegistry runs its
+cache destroy callbacks (lease releases) once it is collected.
 
 `observer()` creates its reaction during render (it has to track what the
 render reads). A render React discards before commit (StrictMode's double

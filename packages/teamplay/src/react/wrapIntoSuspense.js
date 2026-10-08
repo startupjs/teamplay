@@ -14,7 +14,8 @@ import {
 } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
 import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
-import { diag, noteAdmCreated, noteAdmSubscribed, noteAdmDestroyed } from '../diagnostics/state.ts'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
+import { diag, objectId, noteAdmCreated, noteAdmSubscribed, noteAdmDestroyed, noteAdmCollected } from '../diagnostics/state.ts'
 
 const SuspenseGroupContext = createContext()
 
@@ -77,10 +78,22 @@ function createSuspenseGroupStore () {
   }
 }
 
-// TODO: probably add FinalizationRegistry to handle destruction of observer() before it ever mounted.
-//       In such case we might have a memory leak because subscribe() would never fire and would never
-//       clean up the cache
+// A wrapper whose render React discarded before it mounted never subscribes,
+// so destroyAdm() never runs for it. Once it is collected, run its cache
+// destroy callbacks (useSub() lease releases) from this registry. The held
+// value is the callbacks set, which never references the wrapper.
+const unmountedAdms = new FinalizationRegistry(({ callbacks, diagId }) => {
+  for (const cleanup of Array.from(callbacks)) {
+    try {
+      cleanup()
+    } catch {}
+  }
+  callbacks.clear()
+  if (diagId != null) noteAdmCollected(diagId)
+})
+
 function destroyAdm (adm) {
+  unmountedAdms.unregister(adm)
   if (diag.on) noteAdmDestroyed(adm)
   clearTimeout(adm.destroyTimer)
   adm.destroyTimer = undefined
@@ -140,6 +153,7 @@ export default function wrapIntoSuspense ({
           })
         },
         subscribe (onStoreChange) {
+          unmountedAdms.unregister(adm)
           if (diag.on) noteAdmSubscribed(adm)
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
@@ -161,6 +175,10 @@ export default function wrapIntoSuspense ({
       }
       admRef.current = adm
       if (diag.on) noteAdmCreated(adm, Component.displayName || Component.name || 'Anonymous', componentId)
+      unmountedAdms.register(adm, {
+        callbacks: adm.cacheDestroyCallbacks,
+        diagId: diag.on ? objectId(adm) : undefined
+      }, adm)
     }
     const adm = admRef.current
 
@@ -185,9 +203,13 @@ export default function wrapIntoSuspense ({
           set: (key, value) => adm.cache?.set(key, value),
           has: key => adm.cache?.has(key),
           onDestroy: cleanup => {
-            adm.cacheDestroyCallbacks?.add(cleanup)
+            // capture the set, not the wrapper: the returned closure is kept by
+            // what the callback cleans up (a lease), which must not keep the
+            // wrapper alive
+            const callbacks = adm.cacheDestroyCallbacks
+            callbacks?.add(cleanup)
             return () => {
-              adm.cacheDestroyCallbacks?.delete(cleanup)
+              callbacks?.delete(cleanup)
             }
           }
         }

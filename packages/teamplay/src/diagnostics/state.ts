@@ -376,6 +376,13 @@ export function noteAdmSubscribed (adm: object): void {
   record('react.adm.subscribe', meta?.name, { adm: id })
 }
 
+// A never-mounted observer wrapper was collected (its destroy callbacks ran
+// from a finalizer).
+export function noteAdmCollected (id: number): void {
+  adms.delete(id)
+  record('react.adm.collected', undefined, { adm: id })
+}
+
 export function noteAdmDestroyed (adm: object): void {
   const id = peekObjectId(adm)
   const meta = id != null ? adms.get(id) : undefined
