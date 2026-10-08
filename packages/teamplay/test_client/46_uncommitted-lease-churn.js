@@ -6,7 +6,7 @@
 // render must re-acquire the subscription without suspending again; before
 // transport grace, the release tore the ShareDB query down and the page looped
 // subscribe/unsubscribe (LMS raised MAX_UNCOMMITTED_LEASE_GRACE_MS to 1000 ms
-// to hide it). React 18 does not reproduce the hold; run under React 19 to see
+// to hide it). React 18 did not hold the commit, so only React 19 reproduces
 // the original failure.
 import { createElement as el, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'

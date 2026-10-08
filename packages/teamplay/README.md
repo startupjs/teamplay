@@ -9,7 +9,7 @@ Features:
 - ORM
 - auto-sync data from client to DB and vice-versa __***__
 - query DB directly from client __***__
-- works in pure JS, on server (Node.js) and integrates with React
+- works in pure JS, on server (Node.js) and integrates with React (19+)
 
 > __*__ deep signals -- with support for objects and arrays\
 > __**__ concurrent changes to the same data are auto-merged using [OT](https://en.wikipedia.org/wiki/Operational_transformation)\

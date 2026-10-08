@@ -2,6 +2,8 @@
 
 TeamPlay integrates seamlessly with React, allowing you to build reactive user interfaces with ease. This guide will show you how to use TeamPlay in your React components.
 
+TeamPlay requires React 19 or newer. Observer components work under `<StrictMode>`, with concurrent rendering, and inside `<Activity>`: a hidden subtree releases its subscriptions and subscribes again when it is shown.
+
 ## The `observer()` Higher-Order Component
 
 To use TeamPlay signals in a React component, you need to wrap your component with the `observer()` function:

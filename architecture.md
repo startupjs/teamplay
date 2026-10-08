@@ -461,7 +461,7 @@ The runtime should route the operation correctly and produce clear errors when a
 
 ## React Integration
 
-React integration lives in [packages/teamplay/src/react](./packages/teamplay/src/react). The main public exports are:
+React integration lives in [packages/teamplay/src/react](./packages/teamplay/src/react). It requires React 19 (`react >= 19.0.0` peer dependency) and is written for React 19's rendering: render attempts React discards or holds before commit (StrictMode double renders, sibling prerendering of a suspended subtree, Suspense retries whose commit React holds for up to 300 ms; see the uncommitted lease grace below), a server renderer that ignores `useLayoutEffect` without a warning, and `<Activity>` (19.2) hiding a subtree without unmounting it. The main public exports are:
 
 - `observer()`
 - `useSub()`
@@ -502,6 +502,18 @@ For batches, abandoned-render cleanup waits for the complete batch barrier
 rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React
 StrictMode subscription replay does not look like a real unmount.
+
+The observer wrapper (`wrapIntoSuspense.js`) re-renders its component through
+`useSyncExternalStore`. An update replaces the store snapshot whether or not
+React is subscribed, and the wrapper drops React's listener as soon as React
+unsubscribes: an update that lands before the subscription (a child's effect
+runs before its parent wrapper subscribes, StrictMode replays subscriptions)
+is caught by `useSyncExternalStore`'s own check after it subscribes, and React
+is never notified after it unsubscribed (React 19 would keep the unmounted
+fiber queued until its next render). An unsubscribed wrapper releases what it
+holds (cache, lease releases) on the next task, but stays usable: `<Activity>`
+unsubscribes a subtree it hides without unmounting it and subscribes it again
+when it shows it.
 
 An observer wrapper whose render React discarded before it mounted never
 subscribes, so it is never destroyed explicitly; a FinalizationRegistry runs its
@@ -617,7 +629,7 @@ cd packages/teamplay && npm run test-client
 yarn workspace babel-plugin-teamplay test
 ```
 
-Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list.
+Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client) and run on React 19 (jsdom, `@testing-library/react`). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list. Shared client test helpers live in `test_client/helpers/` (ignored as test files); `releaseLastEventTarget()` drops react-dom's reference to the last DOM event target, whose development-only `_debugStack` otherwise keeps a test body's closures alive into the next test's leak check.
 
 Server/runtime tests live in [packages/teamplay/test](./packages/teamplay/test). Type tests live in [packages/teamplay/test_types](./packages/teamplay/test_types) and the strict external consumer setup.
 

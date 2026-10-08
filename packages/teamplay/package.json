@@ -108,7 +108,7 @@
   },
   "peerDependencies": {
     "@react-native-async-storage/async-storage": "*",
-    "react": "*",
+    "react": ">=19.0.0",
     "react-native": "*"
   },
   "peerDependenciesMeta": {

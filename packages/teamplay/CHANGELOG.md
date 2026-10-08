@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## Unreleased (next minor: 0.6.0)
+
+
+### ⚠ BREAKING CHANGES
+
+* **teamplay:** requires React 19. The `react` peer dependency is now `>=19.0.0`; React 18 is no longer supported (0.5.x is the last release line that supports it).
+* **teamplay:** removed React 18-era APIs and code paths:
+  * `__setUseDeferredValue()` (exported from `teamplay`) and the experimental switch behind it. `useSub()` always uses its default implementation, which keeps the previous signal through `useDeferredValue()` while it re-subscribes.
+  * `useSubClassic()` (exported by `src/react/useSub.ts`, not by the package entry), the alternative `useSub()` implementation that `__setUseDeferredValue(false)` selected.
+  * `useIsomorphicLayoutEffect` (`src/utils/useIsomorphicLayoutEffect.js`, internal), which only silenced React 18's server-side `useLayoutEffect` warning.
+
+
+### Bug Fixes
+
+* **teamplay:** the observer wrapper never notifies React after React unsubscribed; under React 19 that kept an unmounted component alive until the app's next render.
+* **teamplay:** an update that arrives before an observer subscribes (a child's effect writes, StrictMode replays the subscription) re-renders it in the same commit instead of a microtask later.
+* **teamplay:** an observer recovers after `<Activity>` hides and shows it: it keeps one subscription lease across renders and its scheduled updates re-render it again.
+
+
+
+
+
 ## [0.5.12](/compare/v0.5.11...v0.5.12) (2026-09-24)
 
 
