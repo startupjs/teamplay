@@ -13,14 +13,17 @@ type RootId = string | null | undefined
 
 const PENDING_DISPOSES = new Map<string, Promise<void>>()
 
-export default async function disposeRootContext (rootId: RootId): Promise<void> {
+// `$root` is the root signal when it is still alive (explicit close()); the
+// closed mark of its id lives as long as it does. The root finalizer passes
+// none: the root signal is gone.
+export default async function disposeRootContext (rootId: RootId, $root?: object): Promise<void> {
   const normalizedRootId = normalizeRootId(rootId)
   if (isGlobalRootId(normalizedRootId)) return
   const existing = PENDING_DISPOSES.get(normalizedRootId)
   if (existing) return existing
 
   if (diag.on) record('root.dispose.start', normalizedRootId)
-  const pending = runDispose(normalizedRootId)
+  const pending = runDispose(normalizedRootId, $root)
   PENDING_DISPOSES.set(normalizedRootId, pending)
   try {
     await pending
@@ -31,7 +34,7 @@ export default async function disposeRootContext (rootId: RootId): Promise<void>
   }
 }
 
-async function runDispose (rootId: string): Promise<void> {
+async function runDispose (rootId: string, $root?: object): Promise<void> {
   const context = getRootContext(rootId, false)
   if (!context) return
 
@@ -49,7 +52,7 @@ async function runDispose (rootId: string): Promise<void> {
   purgeSignalHashes(context.signalHashes)
   context.resetSignalHashes()
   context.resetDirectDocSubscriptions()
-  deleteRootContext(rootId)
+  deleteRootContext(rootId, $root)
   if (diag.on) record('root.dispose.end', rootId)
 }
 

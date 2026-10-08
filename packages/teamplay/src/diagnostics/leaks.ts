@@ -191,14 +191,14 @@ export function evaluate (collected: Collected, options: CheckLeaksOptions = {})
     })
   }
 
-  // informational: closed root ids are remembered forever
+  // informational: closed root ids are remembered while their root signal is alive
   const closedRemembered = collected.summary.roots?.closedRemembered ?? 0
   if (closedRemembered > 0 && !ignored('roots.closedRemembered')) {
     findings.push({
       code: 'roots.closedRemembered',
       severity: 'info',
       count: closedRemembered,
-      message: 'Closed root ids are kept in a module-level set for the lifetime of the process (grows by one per closed root, e.g. per request model).',
+      message: 'Closed roots whose root signal is still referenced (by the app or by one of their signals). Their ids stay closed until the root signal is garbage collected; a count that keeps growing means closed roots are being retained.',
       examples: []
     })
   }

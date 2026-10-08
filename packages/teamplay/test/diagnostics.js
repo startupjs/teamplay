@@ -231,7 +231,7 @@ describe('diagnostics', () => {
     const $root = getRootSignal({ rootId })
     await sub($root[COLLECTION].leak1)
     // Simulate a lifecycle bug: the root context is dropped but its owners are not released.
-    deleteRootContext(rootId)
+    deleteRootContext(rootId, $root)
 
     const report = diagnostics.checkLeaks()
     assert.equal(report.ok, false)
@@ -447,18 +447,25 @@ describe('diagnostics', () => {
     await cbPromise(cb => connection.get(COLLECTION, 'grace4').destroy(cb))
   })
 
-  it('remembers every closed root id (reports the growth)', async () => {
+  it('remembers closed root ids only while their root signals are alive', async () => {
     diagnostics.enable()
+    await runGc()
     const before = diagnostics.snapshot().roots.closedRemembered
-    for (let i = 0; i < 5; i++) {
-      const $root = getRootSignal()
-      await $root._session.userId.set('user' + i)
-      await $root.close()
-    }
-    const snapshot = diagnostics.snapshot()
-    assert.equal(snapshot.roots.closedRemembered, before + 5)
-    const finding = diagnostics.checkLeaks().findings.find(item => item.code === 'roots.closedRemembered')
-    assert.equal(finding.severity, 'info')
+    await (async () => {
+      const roots = []
+      for (let i = 0; i < 5; i++) {
+        const $root = getRootSignal()
+        await $root._session.userId.set('user' + i)
+        await $root.close()
+        roots.push($root)
+      }
+      const snapshot = diagnostics.snapshot()
+      assert.equal(snapshot.roots.closedRemembered, before + 5)
+      const finding = diagnostics.checkLeaks().findings.find(item => item.code === 'roots.closedRemembered')
+      assert.equal(finding.severity, 'info')
+    })()
+    await runGc()
+    assert.equal(diagnostics.snapshot().roots.closedRemembered, before)
   })
 
   it('keeps a bounded, filterable trace with optional stacks', async () => {

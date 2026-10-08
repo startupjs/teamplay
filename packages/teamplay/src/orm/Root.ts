@@ -87,7 +87,7 @@ export function closeRootSignalAsync (signal: RootSignalRuntime | undefined): Pr
   const rootId = $root?.[ROOT_ID]
   unregisterRootFinalizer($root)
   if (diag.on) record('root.close', rootId)
-  return disposeRootContext(rootId)
+  return disposeRootContext(rootId, $root)
 }
 
 export function closeRootSignal (signal: RootSignalRuntime | undefined): Promise<void>
