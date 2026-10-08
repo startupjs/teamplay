@@ -9,6 +9,7 @@ import { createElement as el, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { getRootSignal, observer, sub, unsub, useSub } from '../src/index.ts'
+import { act, render } from '@testing-library/react'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { querySubscriptions } from '../src/orm/Query.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
@@ -130,4 +131,27 @@ describe('useSub() does not loop re-subscribing', () => {
       await unsub($fetched)
     }
   }, 20000)
+
+  // The minimum grace is only for render attempts React did not commit: a
+  // committed lease released on unmount keeps zero-delay teardown immediate.
+  it('tears a committed lease down at once on unmount with setSubscriptionGcDelay(0)', async () => {
+    setSubscriptionGcDelay(0)
+    const id = 'committed-zero'
+    const doc = getConnection().get('noResubscribeLoopDocs', id)
+    await new Promise((resolve, reject) => doc.fetch(err => err ? reject(err) : resolve()))
+    if (doc.type == null) await new Promise((resolve, reject) => doc.create({ name: 'ready' }, err => err ? reject(err) : resolve()))
+    const hash = JSON.stringify(['noResubscribeLoopDocs', id])
+    const Reader = observer(function Reader () {
+      const $doc = useSub($root.noResubscribeLoopDocs[id])
+      return el('span', {}, $doc.name.get())
+    })
+    const view = render(el(Reader))
+    await act(async () => { await wait(50) })
+    expect(view.container.textContent).toBe('ready')
+    expect(docSubscriptions.entries.get(hash)?.mode).toBe('subscribe')
+    view.unmount()
+    await act(async () => { await wait(20) })
+    expect(docSubscriptions.entries.has(hash)).toBe(false)
+    expect(getConnection().get('noResubscribeLoopDocs', id).subscribed).toBe(false)
+  })
 })

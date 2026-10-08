@@ -328,6 +328,20 @@ for (const K of KINDS) {
       await result
     })
 
+    it('keeps zero-delay teardown immediate on root close', async () => {
+      setSubscriptionGcDelay(0)
+      const ctx = await setup()
+      const $root = getRootSignal({ rootId: `transport-grace-zero-close-${keyCounter}`, fetchOnly: false })
+      await K.sub($root, ctx)
+      wire = recordWire()
+
+      await $root.close()
+
+      assert.deepEqual(wire.messages, [K.unsubscribeAction])
+      assert.equal(K.runtime(ctx), undefined)
+      assert.equal(K.isLive(ctx), false)
+    })
+
     it('keeps fetch transports eager and refetches on a quick new owner', async () => {
       setSubscriptionGcDelay(60_000)
       const ctx = await setup()
