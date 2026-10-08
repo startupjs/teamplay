@@ -1,16 +1,29 @@
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import WeakRef, { destroyMockWeakRef, type WeakRefLike } from '../utils/MockWeakRef.ts'
 
-type FinalizationValue = readonly [string, ...object[]]
+// [key, owner, ...inputs]: inputs are kept alive until the value is collected.
+type FinalizationValue = readonly [string, string | undefined, ...object[]]
+
+export interface CacheOptions {
+  // Called once a collected value's entry is evicted, with the owner passed to
+  // set(). Not called when a fresh value was stored for the same key meanwhile.
+  onEvict?: (key: string, owner: string) => void
+}
 
 export default class Cache<TValue extends object = object> {
   private readonly cache = new Map<string, WeakRefLike<TValue>>()
-  private readonly fr = new FinalizationRegistry<FinalizationValue>(([key]) => {
+  private readonly onEvict: CacheOptions['onEvict']
+  private readonly fr = new FinalizationRegistry<FinalizationValue>(([key, owner]) => {
     // FinalizationRegistry can trigger long after the WeakRef was already
     // collected and a fresh value was stored for the same key.
     if (this.get(key)) return
     this.delete(key)
+    if (owner != null) this.onEvict?.(key, owner)
   })
+
+  constructor ({ onEvict }: CacheOptions = {}) {
+    this.onEvict = onEvict
+  }
 
   // For testing purposes.
   _getKeys (): string[] {
@@ -21,10 +34,10 @@ export default class Cache<TValue extends object = object> {
     return this.cache.get(key)?.deref()
   }
 
-  set (key: string, value: TValue, inputs: readonly object[] = []): void {
+  set (key: string, value: TValue, inputs: readonly object[] = [], owner?: string): void {
     if (typeof key !== 'string') throw Error('Cache key should be a string')
     this.cache.set(key, new WeakRef(value))
-    this.fr.register(value, [key, ...inputs])
+    this.fr.register(value, [key, owner, ...inputs])
   }
 
   delete (key: string): void {

@@ -231,6 +231,15 @@ export function registerRootOwnedSignalHash (
   getRootContext(rootId, true).registerSignalHash(signalHash)
 }
 
+export function unregisterRootOwnedSignalHash (
+  rootId: RootId,
+  signalHash: string | null | undefined
+): void {
+  const context = getRootContext(rootId, false)
+  if (!context) return
+  context.unregisterSignalHash(signalHash)
+}
+
 export function getRootOwnedSignalHashes (rootId: RootId): ReadonlySet<string> {
   const context = getRootContext(rootId, false)
   if (!context) return EMPTY_SET
