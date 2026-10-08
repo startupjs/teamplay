@@ -430,7 +430,10 @@ export function noteSubRecordAdded (kind: string, intent: string): void {
   count(`sub.${kind}.${intent}`)
 }
 
-export function noteUnsubRecords (records: ReadonlyArray<{ kind: string, intent: string, disposed: boolean }> | undefined): void {
+export function noteUnsubRecords (
+  records: ReadonlyArray<{ kind: string, intent: string, disposed: boolean }> | undefined,
+  requestedIntent?: string
+): void {
   if (!records) {
     count('sub.unsub.noRecord')
     return
@@ -445,8 +448,8 @@ export function noteUnsubRecords (records: ReadonlyArray<{ kind: string, intent:
     else subscribe++
   }
   count(`sub.unsub.${kind ?? 'none'}`)
-  if (fetch > 0 && subscribe > 0) {
-    // unsub() pops the most recent record regardless of its intent.
+  if (fetch > 0 && subscribe > 0 && requestedIntent == null) {
+    // unsub() without { mode } on a signal holding both kinds releases a fetch record.
     addIncident('sub.unsub.mixedIntents', kind, { fetch, subscribe })
   }
 }

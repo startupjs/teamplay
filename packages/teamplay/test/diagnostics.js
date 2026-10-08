@@ -310,8 +310,8 @@ describe('diagnostics', () => {
     await createDoc(COLLECTION, 'intent1', { name: 'intent' })
     const $doc = await sub($[COLLECTION].intent1, { mode: 'fetch' })
     await sub($[COLLECTION].intent1)
-    await unsub($doc)
-    await docSubscriptions.unsubscribe($doc, { intent: 'subscribe' })
+    await unsub($doc) // mixed intents without { mode }: releases the fetch record
+    await docSubscriptions.unsubscribe($doc, { intent: 'fetch' }) // the owner holds only a subscribe now
     const report = diagnostics.checkLeaks()
     const codes = findingCodes(report)
     assert.ok(codes.includes('sub.unsub.mixedIntents'), JSON.stringify(codes))

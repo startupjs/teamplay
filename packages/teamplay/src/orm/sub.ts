@@ -31,6 +31,16 @@ export interface SubOptions {
   mode?: SubMode
 }
 
+export interface UnsubOptions {
+  /**
+   * Which kind of sub() record to release: 'fetch' for a sub(..., { mode: 'fetch' }),
+   * 'subscribe' for a live one. By default the most recent record is released,
+   * except that when the signal holds both kinds a fetch record goes first, so
+   * a live subscription another caller holds is not downgraded.
+   */
+  mode?: 'fetch' | 'subscribe'
+}
+
 type SubIntent = 'fetch' | 'subscribe'
 type SubRecordKind = 'doc' | 'query' | 'aggregation'
 
@@ -239,12 +249,42 @@ function acquire (args: unknown[]): Acquired {
   }
 }
 
-export function unsub ($signal: unknown): Promise<void> | void {
+/**
+ * Release one sub() of the signal (see UnsubOptions for which one).
+ * A non-object second argument is ignored, so `signals.map(unsub)` works.
+ */
+export function unsub ($signal: unknown, options?: UnsubOptions): Promise<void> | void {
+  const intent = parseUnsubIntent(options)
   if (!($signal instanceof Signal)) return
-  if (diag.on) noteUnsubRecords(SUB_RECORDS.get($signal))
-  const record = takeSubRecord($signal)
+  if (diag.on) noteUnsubRecords(SUB_RECORDS.get($signal), intent)
+  const record = takeSubRecord($signal, { intent: intent ?? getDefaultUnsubIntent($signal) })
   if (!record) return
   return disposeSubRecord($signal, record)
+}
+
+function parseUnsubIntent (options: unknown): SubIntent | undefined {
+  if (!options || typeof options !== 'object') return
+  const mode = (options as UnsubOptions).mode
+  if (mode == null) return
+  if (mode !== 'fetch' && mode !== 'subscribe') {
+    throw Error(`unsub() option mode must be "fetch" or "subscribe". Got: ${String(mode)}`)
+  }
+  return mode
+}
+
+// With live records of both intents, release a fetch one: dropping it never
+// downgrades a subscription that another caller still holds.
+function getDefaultUnsubIntent ($signal: SignalBaseInstance): SubIntent | undefined {
+  const records = SUB_RECORDS.get($signal)
+  if (!records) return
+  let fetch = false
+  let subscribe = false
+  for (const record of records) {
+    if (record.disposed) continue
+    if (record.intent === 'fetch') fetch = true
+    else subscribe = true
+    if (fetch && subscribe) return 'fetch'
+  }
 }
 
 // React leases must be able to release ownership while the transport promise is still pending.

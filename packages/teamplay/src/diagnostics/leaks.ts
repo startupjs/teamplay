@@ -108,7 +108,7 @@ const INCIDENT_MESSAGES: Record<string, string> = {
   'doc.unsubscribe.intentMismatch': 'unsubscribe() with an intent the owner does not hold while it holds the other intent (counts leak).',
   'query.unsubscribe.intentMismatch': 'Query unsubscribe() with an intent the owner does not hold while it holds the other intent.',
   'aggregation.unsubscribe.intentMismatch': 'Aggregation unsubscribe() with an intent the owner does not hold while it holds the other intent.',
-  'sub.unsub.mixedIntents': 'unsub() on a signal holding both fetch and subscribe records; the most recent record is released regardless of intent.'
+  'sub.unsub.mixedIntents': 'unsub() without { mode } on a signal holding both fetch and subscribe records; a fetch record was released (pass { mode } to choose).'
 }
 
 export function checkLeaks (options: CheckLeaksOptions = {}): LeakReport {

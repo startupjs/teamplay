@@ -2139,54 +2139,60 @@ describe('sub() function - error handling and edge cases', () => {
     if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
   })
 
-  it('unsub() uses the mode recorded by sub()', async () => {
+  it('unsub() uses the mode recorded by sub() (fetch first when both are held, or as named)', async () => {
     const gameId = '_sub_unsub_mode'
     const $game = $.games[gameId]
-    const doc = getConnection().get('games', gameId)
-    const originalFetch = doc.fetch.bind(doc)
-    const originalUnfetch = doc.unfetch?.bind(doc)
-    const originalSubscribe = doc.subscribe.bind(doc)
-    const originalUnsubscribe = doc.unsubscribe.bind(doc)
     const calls = []
+    let restore
 
-    doc.fetch = function (...args) {
-      calls.push('fetch')
-      return originalFetch(...args)
-    }
-    if (originalUnfetch) {
-      doc.unfetch = function (...args) {
-        calls.push('unfetch')
-        return originalUnfetch(...args)
+    // The doc is destroyed after each round: patch the current ShareDB doc.
+    function instrument () {
+      const doc = getConnection().get('games', gameId)
+      const originals = {}
+      for (const method of ['fetch', 'unfetch', 'subscribe', 'unsubscribe']) {
+        if (typeof doc[method] !== 'function') continue
+        const original = originals[method] = doc[method].bind(doc)
+        doc[method] = function (...args) {
+          calls.push(method)
+          return original(...args)
+        }
       }
-    }
-    doc.subscribe = function (...args) {
-      calls.push('subscribe')
-      return originalSubscribe(...args)
-    }
-    doc.unsubscribe = function (...args) {
-      calls.push('unsubscribe')
-      return originalUnsubscribe(...args)
+      restore = () => Object.assign(doc, originals)
+      return { hasUnfetch: !!originals.unfetch }
     }
 
     try {
+      let { hasUnfetch } = instrument()
       await sub($game, { mode: 'fetch' })
       await sub($game, { mode: 'subscribe' })
+      // both are held: the fetch record goes first, the subscription stays live
       await unsub($game)
       await unsub($game)
-
       assert.deepEqual(calls, [
         'fetch',
-        originalUnfetch ? 'unfetch' : 'unsubscribe',
+        hasUnfetch ? 'unfetch' : 'unsubscribe',
+        'subscribe',
+        'unsubscribe'
+      ])
+
+      restore()
+      calls.length = 0
+      ;({ hasUnfetch } = instrument())
+      await sub($game, { mode: 'fetch' })
+      await sub($game, { mode: 'subscribe' })
+      await unsub($game, { mode: 'subscribe' })
+      await unsub($game, { mode: 'fetch' })
+      assert.deepEqual(calls, [
+        'fetch',
+        hasUnfetch ? 'unfetch' : 'unsubscribe',
         'subscribe',
         'unsubscribe',
         'fetch',
-        originalUnfetch ? 'unfetch' : 'unsubscribe'
+        hasUnfetch ? 'unfetch' : 'unsubscribe'
       ])
     } finally {
-      doc.fetch = originalFetch
-      if (originalUnfetch) doc.unfetch = originalUnfetch
-      doc.subscribe = originalSubscribe
-      doc.unsubscribe = originalUnsubscribe
+      restore?.()
+      const doc = getConnection().get('games', gameId)
       if (doc.data && !isMissingShareDoc(doc)) await cbPromise(cb => doc.del(cb))
     }
   })
