@@ -15,7 +15,7 @@ import {
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
 import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
-import { diag, objectId, noteAdmCreated, noteAdmSubscribed, noteAdmDestroyed, noteAdmCollected } from '../diagnostics/state.ts'
+import { diag } from '../diagnostics/hooks.ts'
 
 const SuspenseGroupContext = createContext()
 
@@ -89,12 +89,12 @@ const unmountedAdms = new FinalizationRegistry(({ callbacks, diagId }) => {
     } catch {}
   }
   callbacks.clear()
-  if (diagId != null) noteAdmCollected(diagId)
+  if (diagId != null) diag.noteAdmCollected(diagId)
 })
 
 function destroyAdm (adm) {
   unmountedAdms.unregister(adm)
-  if (diag.on) noteAdmDestroyed(adm)
+  if (diag.on) diag.noteAdmDestroyed(adm)
   clearTimeout(adm.destroyTimer)
   adm.destroyTimer = undefined
   for (const cleanup of Array.from(adm.cacheDestroyCallbacks || [])) cleanup()
@@ -154,7 +154,7 @@ export default function wrapIntoSuspense ({
         },
         subscribe (onStoreChange) {
           unmountedAdms.unregister(adm)
-          if (diag.on) noteAdmSubscribed(adm)
+          if (diag.on) diag.noteAdmSubscribed(adm)
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
           adm.onStoreChange = () => {
@@ -174,10 +174,10 @@ export default function wrapIntoSuspense ({
         }
       }
       admRef.current = adm
-      if (diag.on) noteAdmCreated(adm, Component.displayName || Component.name || 'Anonymous', componentId)
+      if (diag.on) diag.noteAdmCreated(adm, Component.displayName || Component.name || 'Anonymous', componentId)
       unmountedAdms.register(adm, {
         callbacks: adm.cacheDestroyCallbacks,
-        diagId: diag.on ? objectId(adm) : undefined
+        diagId: diag.on ? diag.objectId(adm) : undefined
       }, adm)
     }
     const adm = admRef.current

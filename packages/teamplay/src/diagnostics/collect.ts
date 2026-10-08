@@ -22,8 +22,9 @@ import { __getSuspendMemoInFlightCount } from '../react/useSuspendMemo.ts'
 import isServer from '../utils/isServer.ts'
 import {
   getAllFinalizationRegistryStats,
-  getFinalizationRegistryImplementation
-} from '../utils/MockFinalizationRegistry.ts'
+  getFinalizationRegistryImplementation,
+  getUntrackedFinalizationRegistries
+} from './finalization.ts'
 import { getTrackedOwnerTokenCount } from './instrument.ts'
 import { DEBUG, dataTreeRaw, valueSubscriptions, reactionSubscriptions } from './runtimeRefs.js'
 import {
@@ -768,10 +769,13 @@ function collectFinalization (): AnyRecord {
     // Only exact when diagnostics were enabled before teamplay loaded.
     liveEstimate: stats.registered - stats.unregistered - stats.finalized
   }))
+  // Registries created before 'teamplay/diagnostics' loaded are not counted.
+  const untracked = getUntrackedFinalizationRegistries()
   return {
     implementation: getFinalizationRegistryImplementation(),
-    exact: diag.enabledAtStartup,
-    registries
+    exact: diag.enabledAtStartup && untracked.length === 0,
+    registries,
+    untracked
   }
 }
 

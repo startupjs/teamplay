@@ -3,6 +3,7 @@
 // concurrent renders) must not keep anything alive or owned: their wrappers,
 // reactions, caches, $() values and useSub() leases, including leases that
 // were acquired synchronously because the data was already loaded.
+import '../src/diagnostics/index.ts' // 'teamplay/diagnostics' first, as an app does
 import { createElement as el, Suspense } from 'react'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { act, cleanup, render } from '@testing-library/react'

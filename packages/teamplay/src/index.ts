@@ -182,13 +182,12 @@ export interface ObserverFunction {
 export const Signal = RuntimeSignal
 export { SEGMENTS }
 export { __DEBUG_SIGNALS_CACHE__, rawSignal, getSignalClass } from './orm/getSignal.ts'
-export {
-  diagnostics,
-  enableDiagnostics,
-  disableDiagnostics,
-  isDiagnosticsEnabled
-} from './diagnostics/index.ts'
+// Only the diagnostics switch and API object ship with the main entry; the
+// implementation loads with 'teamplay/diagnostics' (automatic in Node, see
+// index.node.ts).
+export { diagnostics } from './diagnostics/hooks.ts'
 export type {
+  DiagnosticsApi,
   DiagnosticsOptions,
   Snapshot as DiagnosticsSnapshot,
   SnapshotOptions as DiagnosticsSnapshotOptions,

@@ -9,7 +9,7 @@ import trapRender from './trapRender.js'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
-import { diag, noteObserverCreated, noteObserverDestroyed } from '../diagnostics/state.ts'
+import { diag } from '../diagnostics/hooks.ts'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
 
@@ -78,7 +78,7 @@ export default function convertToObserver (BaseComponent, {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
         destroyRef.current = undefined
         uncommittedReactions.unregister(holder)
-        if (diag.on) noteObserverDestroyed(reactionRef.current, where)
+        if (diag.on) diag.noteObserverDestroyed(reactionRef.current, where)
         unobserve(reactionRef.current)
         reactionRef.current = undefined
         destroyCache(where)
@@ -99,7 +99,7 @@ export default function convertToObserver (BaseComponent, {
         scheduler: () => scheduleReaction(update),
         lazy: true
       })
-      if (diag.on) noteObserverCreated(reactionRef.current, Component.displayName || 'Anonymous', componentId)
+      if (diag.on) diag.noteObserverCreated(reactionRef.current, Component.displayName || 'Anonymous', componentId)
       if (!mountedRef.current) {
         renderTokenRef.current = {}
         uncommittedReactions.register(renderTokenRef.current, holder, holder)

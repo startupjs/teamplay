@@ -1,14 +1,18 @@
-// Diagnostics runtime state.
+// Diagnostics runtime state: counters, the trace ring buffer and the
+// registries the hooks fill.
 //
-// This module is imported by hot runtime paths (subscriptions, React hooks,
-// FinalizationRegistry wrappers), so it must stay dependency-free and cheap.
-// Every hook site guards itself with `if (diag.on)` so that a disabled
-// diagnostics build pays one property read per call.
+// Part of the full implementation ('teamplay/diagnostics'); the runtime reaches
+// these functions only through the hook functions on `diag` (hooks.ts), behind `if (diag.on)`.
+// install.ts loads this module before any teamplay runtime module, so it must
+// not import the runtime (signalSymbols only).
 //
 // Rule: diagnostics must never keep signals, docs or React objects alive.
 // Registries below hold ids, strings, numbers and WeakRefs only.
 
 import { SEGMENTS } from '../orm/signalSymbols.ts'
+import { diag } from './hooks.ts'
+
+export { diag }
 
 export interface DiagnosticsOptions {
   /** Record lifecycle events into a bounded ring buffer. */
@@ -91,20 +95,14 @@ const DEFAULT_TRACE_SIZE = 5000
 const MAX_INCIDENTS = 200
 const MAX_CHURN_KEYS = 2000
 
-export const diag = {
-  /** Master switch. Checked by every hook site. */
-  on: false,
-  /** Ring buffer recording. */
+Object.assign(diag, {
   trace: false,
-  /** Stack capture for traced events. */
   stacks: false,
   traceSize: DEFAULT_TRACE_SIZE,
   enabledAt: 0,
-  /** True when diagnostics were enabled before teamplay modules finished loading. */
   enabledAtStartup: false,
-  /** Name of the FinalizationRegistry whose callback is running right now. */
-  finalizing: undefined as string | undefined
-}
+  finalizing: undefined
+})
 
 let counters: Record<string, number> = Object.create(null)
 let timings: Record<string, TimingStat> = Object.create(null)
@@ -489,16 +487,4 @@ export function readStartupOptions (): DiagnosticsOptions | undefined {
     fromEnv = g.process?.env?.TEAMPLAY_DIAGNOSTICS
   } catch {}
   return parseFlag(fromEnv)
-}
-
-// Turn the switch on as early as possible (this module is imported by the
-// FinalizationRegistry wrapper, i.e. before any teamplay registry exists), so
-// counters cover the whole process. Method instrumentation is installed later
-// by diagnostics/index.ts.
-const startupOptions = readStartupOptions()
-if (startupOptions) {
-  diag.on = true
-  diag.enabledAt = now()
-  diag.enabledAtStartup = true
-  applyOptions(startupOptions)
 }

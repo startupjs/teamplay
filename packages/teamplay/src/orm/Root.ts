@@ -3,7 +3,7 @@ import disposeRootContext from './disposeRootContext.ts'
 import { getRootContext, reviveRootContext } from './rootContext.ts'
 import { isGlobalRootId, normalizeRootId } from './rootScope.ts'
 import ExportedFinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
-import { diag, record } from '../diagnostics/state.ts'
+import { diag } from '../diagnostics/hooks.ts'
 import type { SignalBaseInstance } from './Signal.ts'
 
 export const ROOT_FUNCTION = Symbol('root function')
@@ -71,7 +71,7 @@ export function getRootSignal ({
   // $root[CONNECTION] ??= connection
   $root[ROOT_ID] ??= rootId
   registerRootFinalizer($root)
-  if (diag.on) record('root.get', rootId)
+  if (diag.on) diag.record('root.get', rootId)
   return $root
 }
 
@@ -86,7 +86,7 @@ export function closeRootSignalAsync (signal: RootSignalRuntime | undefined): Pr
   const $root = getRoot(signal) || signal
   const rootId = $root?.[ROOT_ID]
   unregisterRootFinalizer($root)
-  if (diag.on) record('root.close', rootId)
+  if (diag.on) diag.record('root.close', rootId)
   return disposeRootContext(rootId, $root)
 }
 

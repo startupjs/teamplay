@@ -21,7 +21,7 @@ import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/A
 import { SEGMENTS } from '../orm/signalSymbols.ts'
 import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 import unrefTimer from '../utils/unrefTimer.ts'
-import { diag, addIncident, describeSubTarget, noteLeaseCreated, noteLeaseCommitted, noteLeaseReleased, pollerStart, pollerEnd } from '../diagnostics/state.ts'
+import { diag } from '../diagnostics/hooks.ts'
 import {
   isPublicDocumentSignal,
   type CollectionSignal,
@@ -659,14 +659,14 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
       if (nextLease.uncommittedReacquires >= UNCOMMITTED_REACQUIRE_LIMIT) {
         nextLease.sticky = true
         if (diag.on) {
-          addIncident('react.lease.reacquireLoop', describeSubTarget(signal, serializedParams), {
+          diag.addIncident('react.lease.reacquireLoop', diag.describeSubTarget(signal, serializedParams), {
             hook: cacheKey,
             reacquires: nextLease.uncommittedReacquires
           })
         }
       }
     }
-    if (diag.on) noteLeaseCreated(nextLease, describeSubTarget(signal, serializedParams), cacheKey, executionContextTracker.getComponentId())
+    if (diag.on) diag.noteLeaseCreated(nextLease, diag.describeSubTarget(signal, serializedParams), cacheKey, executionContextTracker.getComponentId())
     lease = nextLease
     cache.set(cacheKey, nextLease)
   } else {
@@ -686,7 +686,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
     }
     lease.committed = true
     lease.uncommittedReacquires = 0
-    if (diag.on) noteLeaseCommitted(lease)
+    if (diag.on) diag.noteLeaseCommitted(lease)
     clearTimeout(lease.cleanupTimer)
     lease.cleanupTimer = undefined
     clearTimeout(lease.releaseTimer)
@@ -787,7 +787,7 @@ function releaseSubscriptionLease (lease: SubscriptionLease, options?: SubReleas
   const previousLease = lease.previousLease
   lease.previousLease = undefined
   lease.released = true
-  if (diag.on) noteLeaseReleased(lease, lease.committed)
+  if (diag.on) diag.noteLeaseReleased(lease, lease.committed)
   lease.unregisterCacheDestroy?.()
   lease.unregisterCacheDestroy = undefined
   clearTimeout(lease.cleanupTimer)
@@ -876,10 +876,10 @@ async function waitForSubscriptionSignalReady (
 ): Promise<void> {
   let poller: number | undefined
   while (!lease?.released && !isSubscriptionSignalReady(signal)) {
-    if (diag.on && poller == null) poller = pollerStart('react.readinessPoll', describeSubTarget(signal))
+    if (diag.on && poller == null) poller = diag.pollerStart('react.readinessPoll', diag.describeSubTarget(signal))
     await new Promise(resolve => setTimeout(resolve, 16))
   }
-  pollerEnd(poller)
+  if (poller != null) diag.pollerEnd(poller)
 }
 
 function addBatchReadinessCheckForSignal (

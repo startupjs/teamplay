@@ -2,6 +2,7 @@
 // uncommitted render attempts (any re-subscribe path that cannot join the
 // released transport synchronously), it stops releasing its uncommitted lease
 // and reports react.lease.reacquireLoop, so the component still commits.
+import '../src/diagnostics/index.ts' // 'teamplay/diagnostics' first, as an app does
 import { createElement as el, Suspense } from 'react'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { getRootSignal, observer, useSub, diagnostics } from '../src/index.ts'
