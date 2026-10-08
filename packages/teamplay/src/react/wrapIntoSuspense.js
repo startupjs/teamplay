@@ -10,10 +10,10 @@ import {
   Suspense,
   useContext,
   useId,
+  useLayoutEffect,
   useRef
 } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
-import useIsomorphicLayoutEffect from '../utils/useIsomorphicLayoutEffect.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import { diag, objectId, noteAdmCreated, noteAdmSubscribed, noteAdmDestroyed, noteAdmCollected } from '../diagnostics/state.ts'
 
@@ -39,7 +39,8 @@ export function SuspenseGroup ({ children, fallback = null }) {
 }
 
 function GroupCommitMarker ({ store }) {
-  useIsomorphicLayoutEffect(() => {
+  // React 19 runs no layout effect on the server and no longer warns about it
+  useLayoutEffect(() => {
     store.hasRevealedContent = true
   }, [store])
   return null
@@ -92,19 +93,20 @@ const unmountedAdms = new FinalizationRegistry(({ callbacks, diagId }) => {
   if (diagId != null) noteAdmCollected(diagId)
 })
 
+// Releases what the wrapper holds while it is subscribed. The wrapper stays
+// usable: <Activity> unsubscribes a subtree it hides but keeps mounted, and
+// subscribes it again when it shows it.
 function destroyAdm (adm) {
   unmountedAdms.unregister(adm)
   if (diag.on) noteAdmDestroyed(adm)
   clearTimeout(adm.destroyTimer)
   adm.destroyTimer = undefined
-  for (const cleanup of Array.from(adm.cacheDestroyCallbacks || [])) cleanup()
-  adm.cacheDestroyCallbacks?.clear()
+  adm.destroyed = true
+  for (const cleanup of Array.from(adm.cacheDestroyCallbacks)) cleanup()
+  adm.cacheDestroyCallbacks.clear()
   adm.onStoreChange = undefined
   adm.scheduledUpdatePromise = undefined
-  adm.scheduleUpdate = undefined
-  adm.cache?.clear()
-  adm.cacheDestroyCallbacks = undefined
-  adm.cache = undefined
+  adm.cache.clear()
 }
 
 function scheduleDestroyAdm (adm) {
@@ -129,14 +131,23 @@ export default function wrapIntoSuspense ({
     const componentMetaRef = useRef()
     const admRef = useRef()
     if (!admRef.current) {
+      const name = Component.displayName || Component.name || 'Anonymous'
       const adm = {
         stateVersion: Symbol(), // eslint-disable-line symbol-description
         onStoreChange: undefined,
         scheduledUpdatePromise: undefined,
         destroyTimer: undefined,
-        hasPendingUpdate: false,
+        destroyed: false,
         cache: new Map(),
         cacheDestroyCallbacks: new Set(),
+        // A new snapshot even without a listener: an update that arrives
+        // between a render and the subscription (children's effects run
+        // before this wrapper subscribes, StrictMode replays subscriptions)
+        // is caught by useSyncExternalStore's own check after it subscribes.
+        notify () {
+          adm.stateVersion = Symbol() // eslint-disable-line symbol-description
+          adm.onStoreChange?.()
+        },
         scheduleUpdate: promise => {
           if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
           if (adm.scheduledUpdatePromise === promise) return
@@ -144,37 +155,34 @@ export default function wrapIntoSuspense ({
           promise.then(() => {
             if (adm.scheduledUpdatePromise !== promise) return
             adm.scheduledUpdatePromise = undefined
-            if (adm.onStoreChange) {
-              adm.onStoreChange()
-            } else {
-              // A fast subscription may settle before useSyncExternalStore subscribes.
-              adm.hasPendingUpdate = true
-            }
+            adm.notify()
           })
         },
         subscribe (onStoreChange) {
           unmountedAdms.unregister(adm)
+          if (adm.destroyed) {
+            // shown again by <Activity>
+            adm.destroyed = false
+            if (diag.on) noteAdmCreated(adm, name, componentId)
+          }
           if (diag.on) noteAdmSubscribed(adm)
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
-          adm.onStoreChange = () => {
-            adm.stateVersion = Symbol() // eslint-disable-line symbol-description
-            onStoreChange()
+          adm.onStoreChange = onStoreChange
+          return () => {
+            // Never notify React after it unsubscribed: React queues an update
+            // to an unmounted fiber until its next render, keeping the fiber
+            // alive.
+            if (adm.onStoreChange === onStoreChange) adm.onStoreChange = undefined
+            scheduleDestroyAdm(adm)
           }
-          // If there was a pending update before subscribe was called, trigger it asynchronously
-          // to avoid updating during the subscribe/render phase
-          if (adm.hasPendingUpdate) {
-            adm.hasPendingUpdate = false
-            queueMicrotask(() => adm.onStoreChange?.())
-          }
-          return () => scheduleDestroyAdm(adm)
         },
         getSnapshot () {
           return adm.stateVersion
         }
       }
       admRef.current = adm
-      if (diag.on) noteAdmCreated(adm, Component.displayName || Component.name || 'Anonymous', componentId)
+      if (diag.on) noteAdmCreated(adm, name, componentId)
       unmountedAdms.register(adm, {
         callbacks: adm.cacheDestroyCallbacks,
         diagId: diag.on ? objectId(adm) : undefined
@@ -189,27 +197,20 @@ export default function wrapIntoSuspense ({
         componentId,
         createdAt: suspenseGroup?.createdAt ?? Date.now(),
         defer,
-        triggerUpdate: () => {
-          if (adm.onStoreChange) {
-            adm.onStoreChange()
-          } else {
-            // Save pending update - subscribe not called yet (e.g., from useEffect/useLayoutEffect)
-            adm.hasPendingUpdate = true
-          }
-        },
-        scheduleUpdate: promise => adm.scheduleUpdate?.(promise),
+        triggerUpdate: () => adm.notify(),
+        scheduleUpdate: promise => adm.scheduleUpdate(promise),
         cache: {
-          get: key => adm.cache?.get(key),
-          set: (key, value) => adm.cache?.set(key, value),
-          has: key => adm.cache?.has(key),
+          get: key => adm.cache.get(key),
+          set: (key, value) => adm.cache.set(key, value),
+          has: key => adm.cache.has(key),
           onDestroy: cleanup => {
             // capture the set, not the wrapper: the returned closure is kept by
             // what the callback cleans up (a lease), which must not keep the
             // wrapper alive
             const callbacks = adm.cacheDestroyCallbacks
-            callbacks?.add(cleanup)
+            callbacks.add(cleanup)
             return () => {
-              callbacks?.delete(cleanup)
+              callbacks.delete(cleanup)
             }
           }
         }
