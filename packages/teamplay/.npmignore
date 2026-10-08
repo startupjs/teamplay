@@ -4,3 +4,4 @@ test/
 test_client/
 test_types/
 tsconfig*.json
+.mocharc.cjs
