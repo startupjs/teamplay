@@ -106,3 +106,11 @@ await unsub($user)                                          // release the fetch
 
 If subscription GC delay is enabled, cleanup may finish after the delay unless a
 quick re-subscribe cancels it.
+
+The delay is 3000 ms by default. Set it with `setSubscriptionGcDelay(ms)`
+(`setSubscriptionGcDelay(null)` goes back to the default), or for the whole
+runtime in its config, next to `idFields`: `configureTeamplay({
+subscriptionGcDelay: ms })` from `teamplay/config`, or
+`globalThis[Symbol.for('teamplay.runtimeConfig')] = { subscriptionGcDelay: ms }`
+set by the app before or after it loads teamplay. `setSubscriptionGcDelay()`
+takes precedence over the config.

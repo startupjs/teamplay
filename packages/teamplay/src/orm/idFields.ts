@@ -1,4 +1,5 @@
 import { findModel } from './addModel.ts'
+import { assertSubscriptionGcDelay, getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import type { PathSegment } from './types/path.ts'
 
 export type IdField = string
@@ -6,6 +7,9 @@ export type IdFields = readonly IdField[]
 export type PlainObject = Record<string, unknown>
 export interface TeamplayRuntimeConfig {
   idFields?: IdFields | null
+  // ms an unsubscribed doc or query stays subscribed in case it is needed
+  // again (default 3000); setSubscriptionGcDelay() overrides it
+  subscriptionGcDelay?: number | null
 }
 
 export const DEFAULT_ID_FIELDS = ['_id'] as const
@@ -24,7 +28,8 @@ export function getIdFieldsForSegments (segments: PathSegment[]): IdFields {
 }
 
 export function configureTeamplay ({
-  idFields
+  idFields,
+  subscriptionGcDelay
 }: TeamplayRuntimeConfig = {}): void {
   if (arguments.length === 0) return
   const config = getGlobalRuntimeConfig(true)
@@ -34,11 +39,21 @@ export function configureTeamplay ({
       ? DEFAULT_ID_FIELDS
       : normalizeIdFieldsConfig(idFields)
   }
+  if (Object.prototype.hasOwnProperty.call(options, 'subscriptionGcDelay')) {
+    if (subscriptionGcDelay == null) {
+      delete config.subscriptionGcDelay
+    } else {
+      assertSubscriptionGcDelay(subscriptionGcDelay, 'configureTeamplay() subscriptionGcDelay')
+      config.subscriptionGcDelay = subscriptionGcDelay
+    }
+  }
 }
 
+// the values in effect
 export function getTeamplayConfig (): Required<TeamplayRuntimeConfig> {
   return {
-    idFields: getDefaultIdFields()
+    idFields: getDefaultIdFields(),
+    subscriptionGcDelay: getSubscriptionGcDelay()
   }
 }
 
