@@ -109,6 +109,7 @@ Every snapshot has a flat `metrics` map (`'docs.entries': 3`, `'connection.docs.
 | `connection.untrackedSubscribedDocs` | error | A ShareDB doc is subscribed but no doc manager entry tracks it. The server keeps streaming its ops. |
 | `connection.untrackedQueries` | error | A ShareDB query is not owned by any query or aggregation runtime. |
 | `react.staleUncommittedLeases` | error | A useSub lease never committed and was not released. |
+| `react.lease.reacquireLoop` | warn | A useSub hook kept re-acquiring the same target from uncommitted render attempts (release/re-subscribe loop); its uncommitted lease is kept until commit or unmount. |
 | `react.leasesCollectedWithoutRelease` | error | A lease was garbage collected without being released, so its subscription count leaked. |
 | `react.stalePollers` | error | A readiness polling loop runs longer than the threshold. |
 | `doc.fr.liveOwnerWiped` (and `query.`, `aggregation.`) | error | A FinalizationRegistry callback took counts that a live signal still held. Finalizers release only the counts their collected signal acquired (`releaseFinalizedToken`), so this means a regression: a finalizer released the wrong counts or force-destroyed a shared owner key. |

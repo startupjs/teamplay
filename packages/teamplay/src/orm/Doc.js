@@ -429,7 +429,12 @@ export class DocSubscriptions {
     entry.retainCount += 1
     this.ensureRuntime(hash, segments)
     this.syncEntryMirror(entry)
-    if (hadPendingDestroy) this.reconcileTransport(hash).catch(ignoreDestroyError)
+    if (hadPendingDestroy) {
+      // A live transport lingering ownerless keeps lingering when only query
+      // results hold the doc now (a direct owner returning joins it).
+      scheduleDowngradeGrace(this, hash, entry)
+      this.reconcileTransport(hash).catch(ignoreDestroyError)
+    }
   }
 
   // Releases one owner count. The returned promise settles once the release is
@@ -509,6 +514,7 @@ export class DocSubscriptions {
     }
     entry.retainCount -= 1
     if ((this.getTrackedCount(hash) || 0) > 0) return
+    clearDowngradeGrace(entry)
     await this.scheduleDestroy(segments)
   }
 

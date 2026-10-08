@@ -98,7 +98,8 @@ const INCIDENT_SEVERITY: Record<string, Severity> = {
   'doc.unsubscribe.intentMismatch': 'warn',
   'query.unsubscribe.intentMismatch': 'warn',
   'aggregation.unsubscribe.intentMismatch': 'warn',
-  'sub.unsub.mixedIntents': 'info'
+  'sub.unsub.mixedIntents': 'info',
+  'react.lease.reacquireLoop': 'warn'
 }
 
 const INCIDENT_MESSAGES: Record<string, string> = {
@@ -108,7 +109,8 @@ const INCIDENT_MESSAGES: Record<string, string> = {
   'doc.unsubscribe.intentMismatch': 'unsubscribe() with an intent the owner does not hold while it holds the other intent (counts leak).',
   'query.unsubscribe.intentMismatch': 'Query unsubscribe() with an intent the owner does not hold while it holds the other intent.',
   'aggregation.unsubscribe.intentMismatch': 'Aggregation unsubscribe() with an intent the owner does not hold while it holds the other intent.',
-  'sub.unsub.mixedIntents': 'unsub() without { mode } on a signal holding both fetch and subscribe records; a fetch record was released (pass { mode } to choose).'
+  'sub.unsub.mixedIntents': 'unsub() without { mode } on a signal holding both fetch and subscribe records; a fetch record was released (pass { mode } to choose).',
+  'react.lease.reacquireLoop': 'A useSub() hook kept re-acquiring the same target from uncommitted render attempts (a release/re-subscribe loop); its uncommitted lease is now kept until commit or unmount. Look for a re-subscribe that cannot join the released transport synchronously.'
 }
 
 export function checkLeaks (options: CheckLeaksOptions = {}): LeakReport {

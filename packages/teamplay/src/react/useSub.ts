@@ -19,7 +19,8 @@ import {
 } from '../orm/Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { SEGMENTS } from '../orm/signalSymbols.ts'
-import { diag, describeSubTarget, noteLeaseCreated, noteLeaseCommitted, noteLeaseReleased, pollerStart, pollerEnd } from '../diagnostics/state.ts'
+import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import { diag, addIncident, describeSubTarget, noteLeaseCreated, noteLeaseCommitted, noteLeaseReleased, pollerStart, pollerEnd } from '../diagnostics/state.ts'
 import {
   isPublicDocumentSignal,
   type CollectionSignal,
@@ -47,13 +48,18 @@ export interface UseSubOptions {
 const USE_SUB_OPTION_KEYS = new Set<string>(['async', 'defer', 'batch'] satisfies Array<keyof UseSubOptions>)
 // React cannot tell us that it abandoned a render attempt, and it may hold a
 // finished one before committing it (React 19 holds a Suspense retry for up to
-// 300 ms after the last fallback). An uncommitted lease is released on the
-// next task after its subscription is ready, and its transport lingers for at
-// least this long (the subscription GC delay, if longer), so a retry or a
-// held commit re-acquires it synchronously, also with
-// setSubscriptionGcDelay(0). A render that commits a released lease
-// re-acquires it.
-const UNCOMMITTED_LEASE_GRACE_MS = 1000
+// 300 ms after the last fallback). An uncommitted lease is therefore kept for
+// MAX_UNCOMMITTED_LEASE_GRACE_MS after its subscription is ready (capped by a
+// lower subscription GC delay), so a retry or a held commit finds the lease
+// itself and nothing is re-subscribed. Its release then gives the transport at
+// least the same grace, so a later re-acquire still joins synchronously; this
+// is what keeps setSubscriptionGcDelay(0) working, where the lease is released
+// on the next task. A render that commits a released lease re-acquires it.
+const MAX_UNCOMMITTED_LEASE_GRACE_MS = 1000
+// Livelock guard: a hook that re-acquires the same target this many times in a
+// row from uncommitted leases stops releasing its uncommitted lease (it is
+// released on commit/unmount or when the observer is destroyed).
+const UNCOMMITTED_REACQUIRE_LIMIT = 10
 
 let TEST_THROTTLING: false | number = false
 
@@ -616,6 +622,12 @@ interface SubscriptionLease {
   // releases exactly this lease's acquisition (not another sub() of the signal)
   release?: (options?: SubReleaseOptions) => Promise<void> | void
   signalDisposed: boolean
+  // target identity kept after release, to detect re-acquire loops
+  target: unknown
+  targetParams?: string
+  releasedUncommitted: boolean
+  uncommittedReacquires: number
+  sticky: boolean
   inputSignal?: unknown
   serializedParams?: string
   previousLease?: SubscriptionLease
@@ -641,6 +653,18 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
   ) {
     const nextLease = createSubscriptionLease(signal, params, serializedParams, lease)
     nextLease.unregisterCacheDestroy = cache.onDestroy(() => releaseSubscriptionLease(nextLease))
+    if (lease?.releasedUncommitted && lease.target === signal && lease.targetParams === serializedParams) {
+      nextLease.uncommittedReacquires = lease.uncommittedReacquires + 1
+      if (nextLease.uncommittedReacquires >= UNCOMMITTED_REACQUIRE_LIMIT) {
+        nextLease.sticky = true
+        if (diag.on) {
+          addIncident('react.lease.reacquireLoop', describeSubTarget(signal, serializedParams), {
+            hook: cacheKey,
+            reacquires: nextLease.uncommittedReacquires
+          })
+        }
+      }
+    }
     if (diag.on) noteLeaseCreated(nextLease, describeSubTarget(signal, serializedParams), cacheKey, executionContextTracker.getComponentId())
     lease = nextLease
     cache.set(cacheKey, nextLease)
@@ -656,6 +680,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
       return
     }
     lease.committed = true
+    lease.uncommittedReacquires = 0
     if (diag.on) noteLeaseCommitted(lease)
     clearTimeout(lease.cleanupTimer)
     lease.cleanupTimer = undefined
@@ -693,7 +718,12 @@ function createSubscriptionLease (
     previousLease: previousLease?.released ? undefined : previousLease,
     committed: false,
     released: false,
-    signalDisposed: false
+    signalDisposed: false,
+    target: signal,
+    targetParams: serializedParams,
+    releasedUncommitted: false,
+    uncommittedReacquires: 0,
+    sticky: false
   }
 
   if (isThenable(value)) {
@@ -734,11 +764,15 @@ function scheduleRenderAttemptLeaseCleanup (
 }
 
 function scheduleUncommittedLeaseCleanup (lease: SubscriptionLease): void {
-  if (lease.committed || lease.released || lease.cleanupTimer) return
+  if (lease.committed || lease.released || lease.cleanupTimer || lease.sticky) return
+  const gcDelay = getSubscriptionGcDelay()
+  const holdMs = Math.min(gcDelay, MAX_UNCOMMITTED_LEASE_GRACE_MS)
   lease.cleanupTimer = setTimeout(() => {
     lease.cleanupTimer = undefined
-    if (!lease.committed) releaseSubscriptionLease(lease, { minGraceMs: UNCOMMITTED_LEASE_GRACE_MS })
-  })
+    if (lease.committed) return
+    lease.releasedUncommitted = true
+    releaseSubscriptionLease(lease, { minGraceMs: MAX_UNCOMMITTED_LEASE_GRACE_MS })
+  }, holdMs)
 }
 
 function releaseSubscriptionLease (lease: SubscriptionLease, options?: SubReleaseOptions): void {

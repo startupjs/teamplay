@@ -1736,7 +1736,7 @@ describe('Direct document transport grace', () => {
     await fetchUnsubscribePromise
   })
 
-  it('does not let a query retain adopt an ownerless live transport', async () => {
+  it('a query retain keeps an ownerless live transport only through a grace, never indefinitely', async () => {
     const manager = createTrackedDocManager(LifecycleMockDoc)
     const $doc = createDocSignal('gamesTransportGrace', 'query-retain-handoff')
     const hash = JSON.stringify($doc[SEGMENTS])
@@ -1755,7 +1755,11 @@ describe('Direct document transport grace', () => {
     assert.equal(entry.retainCount, 1)
     assert.equal(entry.owners.size, 0)
     assert.equal(entry.pendingDestroy, null)
-    assert.equal(doc.activeTransportMode, 'idle', 'query retain keeps data, not direct live transport')
+    // a direct owner returning in the grace would join the live transport
+    assert.equal(doc.activeTransportMode, 'subscribe', 'the grace carries over to the retained doc')
+    assert.ok(entry.downgradeGrace)
+    await manager.flushPendingDestroys()
+    assert.equal(doc.activeTransportMode, 'idle', 'query retain keeps data, not the direct live transport')
     assert.deepEqual(doc.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
 
     setSubscriptionGcDelay(0)

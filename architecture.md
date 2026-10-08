@@ -470,10 +470,15 @@ lease keeps the previous snapshot alive until the replacement is ready.
 The outer observer cache also owns pending leases, so unmounting a Suspense
 fallback can cancel subscription ownership before the transport becomes ready.
 A lease releases exactly its own acquisition (`acquireSub()`), never another
-`sub()` record of the same signal. A render attempt that never commits releases
-its lease on the next task after the subscription is ready, with a minimum
-transport grace (`UNCOMMITTED_LEASE_GRACE_MS`, also when the GC delay is 0), so
-a retry or a commit that React holds re-acquires it synchronously.
+`sub()` record of the same signal. A render attempt that never commits keeps
+its lease for `MAX_UNCOMMITTED_LEASE_GRACE_MS` (1000 ms, capped by a lower GC
+delay) after the subscription is ready, above React 19's 300 ms Suspense commit
+throttle, so a retry or a held commit finds the lease itself. The release then
+gives the transport at least the same grace, so a later re-acquire joins
+synchronously; with a GC delay of 0 the lease is released on the next task and
+only this transport grace remains. A hook that still re-acquires the same
+target 10 times in a row from uncommitted attempts keeps its uncommitted lease
+until commit or unmount (`react.lease.reacquireLoop` diagnostics warning).
 For batches, abandoned-render cleanup waits for the complete batch barrier
 rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React
