@@ -490,8 +490,8 @@ A lease releases exactly its own acquisition (`acquireSub()`), never another
 `sub()` record of the same signal. Every render that uses a lease React has not
 committed (re)arms its release, whether the subscription was ready at once or
 became ready later: a render attempt that never commits keeps the lease for
-`MAX_UNCOMMITTED_LEASE_GRACE_MS` (1000 ms, capped by a lower GC delay) after
-its last use or readiness, above React 19's 300 ms Suspense commit
+`MAX_UNCOMMITTED_LEASE_GRACE_MS` (1000 ms; 0 when the GC delay is 0) after its
+last use or readiness, above React 19's 300 ms Suspense commit
 throttle, so a retry or a held commit finds the lease itself. The release then
 gives the transport at least the same grace, so a later re-acquire joins
 synchronously; with a GC delay of 0 the lease is released on the next task and

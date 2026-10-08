@@ -50,9 +50,9 @@ const USE_SUB_OPTION_KEYS = new Set<string>(['async', 'defer', 'batch'] satisfie
 // React cannot tell us that it abandoned a render attempt, and it may hold a
 // finished one before committing it (React 19 holds a Suspense retry for up to
 // 300 ms after the last fallback). An uncommitted lease is therefore kept for
-// MAX_UNCOMMITTED_LEASE_GRACE_MS after its subscription is ready (capped by a
-// lower subscription GC delay), so a retry or a held commit finds the lease
-// itself and nothing is re-subscribed. Its release then gives the transport at
+// MAX_UNCOMMITTED_LEASE_GRACE_MS after its subscription is ready or its last
+// render (0 when the subscription GC delay is 0), so a retry or a held commit
+// finds the lease itself and nothing is re-subscribed. Its release then gives the transport at
 // least the same grace, so a later re-acquire still joins synchronously; this
 // is what keeps setSubscriptionGcDelay(0) working, where the lease is released
 // on the next task. A render that commits a released lease re-acquires it.
@@ -770,8 +770,10 @@ function scheduleRenderAttemptLeaseCleanup (
 
 function scheduleUncommittedLeaseCleanup (lease: SubscriptionLease): void {
   if (lease.committed || lease.released || lease.cleanupTimer || lease.sticky) return
-  const gcDelay = getSubscriptionGcDelay()
-  const holdMs = Math.min(gcDelay, MAX_UNCOMMITTED_LEASE_GRACE_MS)
+  // Not capped by a lower GC delay: the release gives the transport this much
+  // grace anyway, and a shorter hold makes a commit React 19 holds (300 ms
+  // Suspense throttle) re-acquire. A GC delay of 0 releases on the next task.
+  const holdMs = getSubscriptionGcDelay() > 0 ? MAX_UNCOMMITTED_LEASE_GRACE_MS : 0
   lease.cleanupTimer = unrefTimer(setTimeout(() => {
     lease.cleanupTimer = undefined
     if (lease.committed) return

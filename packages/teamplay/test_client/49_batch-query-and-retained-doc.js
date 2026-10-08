@@ -87,7 +87,9 @@ describe('useBatchSub() group with a query and a doc it returns', () => {
       await wait(100)
       expect(wire).toEqual({ s: 1, u: 0 })
       expect(renders).toBeLessThan(10)
-      expect(diagnostics.getCounters()['react.lease.create']).toBeLessThan(10)
+      // with a GC delay of 0 an uncommitted lease is released on the next task;
+      // a commit React holds re-acquires it synchronously (bounded, no wire)
+      expect(diagnostics.getCounters()['react.lease.create']).toBeLessThan(gcDelay ? 10 : 20)
     } finally {
       getConnection().off('send', onSend)
       reactRoot.unmount()

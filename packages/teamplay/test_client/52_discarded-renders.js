@@ -17,6 +17,8 @@ import connect from '../src/connect/test.js'
 const COLLECTION = 'discardedRenderDocs'
 const baselineGcDelay = getSubscriptionGcDelay()
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+// useSub() keeps an uncommitted lease this long before releasing it
+const LEASE_HOLD_MS = 1000
 // Suspends for longer than the page stays mounted (React keeps the boundary
 // reachable from the thrown promise until it settles).
 let pendingLoad
@@ -74,7 +76,7 @@ describe('observer render attempts discarded before mount', () => {
     expect(view.container.textContent).toBe('Loading')
     expect(ownerCount(COLLECTION)).toBeGreaterThan(before)
     view.unmount()
-    await act(async () => { await wait(200) })
+    await act(async () => { await wait(LEASE_HOLD_MS + 200) })
     await runGc()
     expect(ownerCount(COLLECTION)).toBe(before)
     expect(diagnostics.snapshot().react.leases.tracked).toBe(0)
@@ -103,7 +105,7 @@ describe('observer render attempts discarded before mount', () => {
       expect(view.container.textContent).toBe('Loading')
       view.unmount()
     }
-    await act(async () => { await wait(200) })
+    await act(async () => { await wait(LEASE_HOLD_MS + 200) })
     await runGc()
     await act(async () => { await wait(50) })
     await runGc()
