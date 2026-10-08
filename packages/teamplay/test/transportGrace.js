@@ -375,6 +375,30 @@ for (const K of KINDS) {
       assert.equal(K.runtime(ctx), undefined)
     })
 
+    it('keeps a live transport through the grace when the last subscriber leaves but a fetch owner stays', async () => {
+      setSubscriptionGcDelay(150)
+      const ctx = await setup()
+      const $fetchRoot = getRootSignal({ rootId: `transport-grace-downgrade-${keyCounter}`, fetchOnly: false })
+      const $fetch = await K.sub($fetchRoot, ctx, { mode: 'fetch' })
+      const $live = await K.sub($, ctx)
+      assert.equal(K.isLive(ctx), true)
+      wire = recordWire()
+
+      pending.push(unsub($live))
+      await wait(20)
+      assert.deepEqual(wire.messages, [], 'the transport is not downgraded during the grace')
+      assert.equal(K.isLive(ctx), true)
+      const $again = K.sub($, ctx)
+      assert.equal(isThenable($again), false, 'a subscriber arriving in the grace joins synchronously')
+      assert.deepEqual(K.read($again), K.expected(ctx))
+      pending.push(unsub($again))
+
+      await waitUntil(() => !K.isLive(ctx), 'the transport is downgraded to a fetch after the grace', 1000)
+      assert.deepEqual(wire.messages, [K.unsubscribeAction, K.fetchAction])
+      assert.deepEqual(K.read($fetch), K.expected(ctx), 'the fetch owner keeps its data')
+      await $fetchRoot.close()
+    })
+
     it('root close tears down a transport lingering after that root released it', async () => {
       setSubscriptionGcDelay(60_000)
       const ctx = await setup()
