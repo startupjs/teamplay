@@ -35,7 +35,8 @@ export default defineConfig({
             { text: 'Async Setters', link: '/guide/async-setters' },
             { text: 'TypeScript Support', link: '/guide/typescript-support' },
             { text: 'Usage in StartupJS', link: '/guide/usage-in-startupjs' },
-            { text: 'Offline Mode', link: '/guide/offline-mode' }
+            { text: 'Offline Mode', link: '/guide/offline-mode' },
+            { text: 'Diagnostics', link: '/guide/diagnostics' }
           ]
         },
         {

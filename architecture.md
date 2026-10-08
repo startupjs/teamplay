@@ -99,6 +99,7 @@ The public `teamplay` package exports multiple surfaces from [packages/teamplay/
 - `teamplay/babel` and `teamplay/babel/loader`: build-time model transforms.
 - `teamplay/connect-test` and `teamplay/connect-offline`: test/offline connection variants.
 - `teamplay/cache` and `teamplay/schema`: convenience re-exports.
+- `teamplay/diagnostics`: opt-in runtime diagnostics (also exported as `diagnostics` from `teamplay`).
 
 The main public entry is [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts). It creates the global root signal:
 
@@ -474,6 +475,17 @@ is revealed for the first time. Once that initial content commits, observer
 boundaries become local again. This preserves the shared startup fallback while
 preventing a later interaction that mounts a suspending observer from hiding or
 restarting the entire committed group.
+
+## Diagnostics
+
+Opt-in diagnostics live in [packages/teamplay/src/diagnostics](./packages/teamplay/src/diagnostics) and are documented in [docs/guide/diagnostics.md](./docs/guide/diagnostics.md).
+
+- `state.ts` is dependency-free. It holds the `diag.on` switch, counters, the trace ring buffer and WeakRef-only registries. It turns on at load time from `globalThis.__TEAMPLAY_DIAGNOSTICS__` or `TEAMPLAY_DIAGNOSTICS`. Hot paths (sub records, useSub leases, observer wrappers, reactions, readiness pollers, root lifecycle) call it behind `if (diag.on)`.
+- The default export of `utils/MockFinalizationRegistry.ts` wraps the selected implementation and counts registrations and finalizations while diagnostics are on.
+- `instrument.ts` wraps the doc/query/aggregation manager instance methods and runtime transport methods from the outside while enabled. The manager files carry no diagnostics code.
+- `collect.ts` reads managers, root contexts, the signal cache, the data tree, React registries and the ShareDB connection into JSON. `leaks.ts` turns that into findings and diffs.
+
+Diagnostics must never retain signals, docs or React objects. Keep registries to ids, strings and WeakRefs, and keep collectors read-only (raw objects, no observable reads).
 
 ## Backend Features
 
