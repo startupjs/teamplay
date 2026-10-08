@@ -1,7 +1,7 @@
 import { useEffect, useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import sub, { getSubResultSignal, unsub } from '../orm/sub.ts'
-import { useScheduleUpdate, useCache, useDefer } from './helpers.ts'
+import { useScheduleUpdate, useCache, useDefer, useTriggerUpdate } from './helpers.ts'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
@@ -48,7 +48,11 @@ export interface UseSubOptions {
 }
 
 const USE_SUB_OPTION_KEYS = new Set<string>(['async', 'defer', 'batch'] satisfies Array<keyof UseSubOptions>)
-const MAX_UNCOMMITTED_LEASE_GRACE_MS = 50
+// Experimental: transport grace keeps a released subscription live for the
+// subscription GC delay, so an uncommitted render attempt's lease can be
+// released on the next task; a render that commits a released lease
+// re-acquires it (synchronously, from the grace).
+const MAX_UNCOMMITTED_LEASE_GRACE_MS = 0
 
 let TEST_THROTTLING: false | number = false
 
@@ -621,6 +625,7 @@ interface SubscriptionLease {
 
 function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionLease {
   const cache = useCache(undefined)
+  const triggerUpdate = useTriggerUpdate()
   const hookId = executionContextTracker.newHookId()
   const cacheKey = `subscriptionLease:${hookId}`
   const serializedParams = params != null ? JSON.stringify(params) : undefined
@@ -641,6 +646,11 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
   }
 
   useEffect(() => {
+    // Released while React held this render's commit: re-render to re-acquire.
+    if (lease.released) {
+      triggerUpdate?.()
+      return
+    }
     lease.committed = true
     clearTimeout(lease.cleanupTimer)
     lease.cleanupTimer = undefined
@@ -651,7 +661,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
       lease.previousLease.releaseTimer = undefined
     }
     return () => scheduleSubscriptionLeaseRelease(lease)
-  }, [lease])
+  }, [lease, triggerUpdate])
 
   useEffect(() => {
     if (isThenable(lease.value)) return
