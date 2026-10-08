@@ -7,6 +7,7 @@ import {
   getRootContext
 } from './rootContext.ts'
 import { isGlobalRootId, normalizeRootId } from './rootScope.ts'
+import { diag, record } from '../diagnostics/state.ts'
 
 type RootId = string | null | undefined
 
@@ -18,6 +19,7 @@ export default async function disposeRootContext (rootId: RootId): Promise<void>
   const existing = PENDING_DISPOSES.get(normalizedRootId)
   if (existing) return existing
 
+  if (diag.on) record('root.dispose.start', normalizedRootId)
   const pending = runDispose(normalizedRootId)
   PENDING_DISPOSES.set(normalizedRootId, pending)
   try {
@@ -48,6 +50,12 @@ async function runDispose (rootId: string): Promise<void> {
   context.resetSignalHashes()
   context.resetDirectDocSubscriptions()
   deleteRootContext(rootId)
+  if (diag.on) record('root.dispose.end', rootId)
+}
+
+// For diagnostics: roots whose disposal is in progress.
+export function getPendingRootDisposeCount (): number {
+  return PENDING_DISPOSES.size
 }
 
 export function __resetPendingRootDisposesForTests (): void {

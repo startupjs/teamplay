@@ -290,6 +290,11 @@ export function isRootContextClosed (rootId: RootId): boolean {
   return CLOSED_ROOT_CONTEXTS.has(normalizeRootId(rootId))
 }
 
+// For diagnostics: closed root ids are remembered forever unless the same id is revived.
+export function getClosedRootContextCount (): number {
+  return CLOSED_ROOT_CONTEXTS.size
+}
+
 export function __getRootContextForTests (rootId: RootId): RootContext | undefined {
   return getRootContext(rootId, false)
 }

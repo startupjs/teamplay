@@ -5,3 +5,4 @@ export function runInBatch<TResult> (fn: () => TResult): TResult
 export function scheduleReaction (reactionFn: () => unknown): void
 export function flushReactions (): void
 export function __resetBatchSchedulerForTests (): void
+export function __getBatchSchedulerState (): { batchDepth: number, isFlushing: boolean, queuedReactions: number }

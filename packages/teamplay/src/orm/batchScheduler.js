@@ -55,6 +55,11 @@ export function flushReactions () {
   }
 }
 
+// For diagnostics.
+export function __getBatchSchedulerState () {
+  return { batchDepth, isFlushing, queuedReactions: queuedReactions.size }
+}
+
 export function __resetBatchSchedulerForTests () {
   batchDepth = 0
   isFlushing = false

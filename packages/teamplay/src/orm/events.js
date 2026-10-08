@@ -45,6 +45,13 @@ export function useEmit () {
   return emit
 }
 
+// For diagnostics.
+export function __getListenerCountsForDiagnostics () {
+  const result = {}
+  for (const [eventName, subs] of listeners) result[eventName] = subs.size
+  return result
+}
+
 export function __resetEventsForTests () {
   listeners.clear()
 }

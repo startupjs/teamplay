@@ -35,4 +35,15 @@ export default class Cache<TValue extends object = object> {
   get size (): number {
     return this.cache.size
   }
+
+  // For diagnostics: iterate keys with liveness of their weak refs without
+  // creating strong references to the cached values.
+  * _diagnosticEntries (): Generator<[string, boolean]> {
+    for (const [key, ref] of this.cache) yield [key, ref.deref() !== undefined]
+  }
+
+  // For diagnostics: the registry that evicts collected entries.
+  _diagnosticRegistry (): unknown {
+    return this.fr
+  }
 }
