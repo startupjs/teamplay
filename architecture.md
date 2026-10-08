@@ -341,8 +341,15 @@ sub($.users[id])
 
 [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
 
+The managers' reconcile loop in
+[packages/teamplay/src/orm/subscriptionTransport.js](./packages/teamplay/src/orm/subscriptionTransport.js)
+is the only coalescing layer for transports: it runs one transition per entry
+at a time and re-reads the target after each step, so racing sub/unsub calls
+collapse there. The Doc and Query runtimes only perform the ShareDB calls, and
+destroy paths close a transport through the same loop.
+
 The cleanup grace (racer's "unload delay") is shared by documents, queries and
-aggregations ([packages/teamplay/src/orm/subscriptionTransport.js](./packages/teamplay/src/orm/subscriptionTransport.js)):
+aggregations (same file):
 
 - owner counts are exact: `unsub()` releases its owner at once and resolves
   without waiting for the delayed destroy;

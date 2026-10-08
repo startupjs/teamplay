@@ -398,7 +398,7 @@ function collectDocs (ctx: Ctx): AnyRecord {
       total,
       pendingAgeMs,
       runtime: !!entry.runtime,
-      lifecycle: entry.runtime?.lifecycle?.state
+      transport: entry.runtime?.activeTransportMode
     }
     if (entry.phase === 'transition') categories.transition++
     if (entry.owners.size > 0) {

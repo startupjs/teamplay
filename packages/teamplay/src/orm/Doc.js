@@ -3,7 +3,6 @@ import { set as _set, del as _del, getRaw as _getRaw } from './dataTree.js'
 import { SEGMENTS } from './Signal.ts'
 import { getConnection } from './connection.ts'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
-import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
@@ -74,23 +73,23 @@ function deepEqualDocData (left, right) {
   return true
 }
 
+// The ShareDB doc behind one entry of DocSubscriptions. Its transport calls
+// are made only by the manager's reconcile loop (subscriptionTransport.js),
+// which runs one transition per entry at a time and coalesces racing intents,
+// so the runtime itself does not queue or collapse calls.
 class Doc {
   initialized
 
   constructor (collection, docId) {
     this.collection = collection
     this.docId = docId
-    this.lifecycle = new SubscriptionState({
-      onSubscribe: () => this._subscribe(),
-      onUnsubscribe: () => this._unsubscribe()
-    })
     this.requestedTransportMode = 'subscribe'
     this.activeTransportMode = 'idle'
     this.init()
   }
 
   get subscribed () {
-    return this.lifecycle.subscribed
+    return this.activeTransportMode !== 'idle'
   }
 
   init () {
@@ -101,12 +100,13 @@ class Doc {
 
   async subscribe ({ mode } = {}) {
     if (mode) this.requestedTransportMode = mode
-    await this.lifecycle.subscribe()
+    await this._subscribe()
     this.init()
   }
 
   async unsubscribe () {
-    await this.lifecycle.unsubscribe()
+    if (this.activeTransportMode === 'idle') return
+    await this._unsubscribe()
   }
 
   async _subscribe () {
@@ -687,8 +687,11 @@ export class DocSubscriptions {
         return
       }
       const activeDoc = nextEntry?.runtime || doc
+      // The reconcile above closed the transport (no owner left, nothing
+      // lingers) unless an owner arrived meanwhile: then it is theirs.
       if (activeDoc.activeTransportMode !== 'idle') {
-        await activeDoc.unsubscribe()
+        settlePending()
+        return
       }
       const finalEntryBeforeDestroy = this.entries.get(hash)
       const finalCountBeforeDestroy = finalEntryBeforeDestroy
@@ -838,6 +841,8 @@ export class DocSubscriptions {
 
   async destroyTransportEntry (hash, runtime) {
     clearDowngradeGrace(this.entries.get(hash))
+    // destroying now ends a grace the entry may still be lingering in
+    this.takePendingDestroy(hash)?.resolve()
     const activeDoc = this.entries.get(hash)?.runtime || runtime
     if (!activeDoc) {
       const entry = this.entries.get(hash)
@@ -848,9 +853,10 @@ export class DocSubscriptions {
       this.deleteEntryIfEmpty(hash)
       return
     }
-    if (activeDoc.activeTransportMode !== 'idle') {
-      await activeDoc.unsubscribe()
-    }
+    // close the transport through the reconcile gate; a transport that stays
+    // open belongs to an owner that arrived meanwhile
+    if (activeDoc.activeTransportMode !== 'idle') await this.reconcileTransport(hash)
+    if (activeDoc.activeTransportMode !== 'idle') return
     if (typeof activeDoc.hasPending === 'function' && activeDoc.hasPending()) {
       if (typeof activeDoc.whenNothingPending === 'function') {
         await new Promise(resolve => activeDoc.whenNothingPending(resolve))

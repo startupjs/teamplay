@@ -4,7 +4,6 @@ import getSignal from './getSignal.ts'
 import { getConnection } from './connection.ts'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
-import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { getScopedSignalHash, normalizeRootId } from './rootScope.ts'
@@ -56,16 +55,14 @@ export class Query {
     this.hash = hash
     this.rootIds = new Set()
     this.docSignals = new Set()
-    this.lifecycle = new SubscriptionState({
-      onSubscribe: () => this._subscribe(),
-      onUnsubscribe: () => this._unsubscribe()
-    })
     this.requestedTransportMode = 'subscribe'
     this.activeTransportMode = 'idle'
   }
 
+  // Transport calls are made only by the manager's reconcile loop, which runs
+  // one transition per entry at a time (see subscriptionTransport.js).
   get subscribed () {
-    return this.activeTransportMode !== 'idle' || this.lifecycle.subscribed
+    return this.activeTransportMode !== 'idle'
   }
 
   init () {
@@ -76,12 +73,12 @@ export class Query {
 
   async subscribe ({ mode } = {}) {
     if (mode) this.requestedTransportMode = mode
-    await this.lifecycle.subscribe()
+    await this._subscribe()
     this.init()
   }
 
   async unsubscribe () {
-    await this.lifecycle.unsubscribe()
+    if (this.activeTransportMode !== 'idle') await this._unsubscribe()
     if (!this.subscribed) {
       this.initialized = undefined
       this._detachTransportData({ keepRoots: false })
