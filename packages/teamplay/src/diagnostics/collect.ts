@@ -227,6 +227,35 @@ function normalizeRoot (rootId: unknown): string {
   return rootId == null ? GLOBAL_ROOT_ID : String(rootId)
 }
 
+// The mode the manager drives a transport to. During the GC grace an ownerless
+// live ('subscribe') transport keeps 'subscribe' as its target (transport
+// grace), so it is compared against this rather than the owner-derived mode.
+function targetModeOf (manager: AnyRecord, key: string): string {
+  return typeof manager.getTargetTransportMode === 'function'
+    ? manager.getTargetTransportMode(key)
+    : manager.getDesiredTransportMode(key)
+}
+
+// A lingering entry in 'subscribe' mode is adopted synchronously by the next
+// owner, so its ShareDB transport must really be subscribed. `wantSubscribe`
+// and a registered 'qs' query survive disconnects (ShareDB resubscribes them),
+// so a disconnected client is not reported.
+function isShareDocLive (collection: unknown, id: unknown): boolean {
+  if (collection == null || id == null) return false
+  const shareDoc = (connection as AnyRecord | undefined)?.collections?.[String(collection)]?.[String(id)]
+  if (!shareDoc) return false
+  // the latest queued request wins, as in ShareDB's own _queueSubscribe()
+  const pending = shareDoc.pendingSubscribe
+  const lastRequest = pending?.[pending.length - 1] ?? shareDoc.inflightSubscribe
+  return lastRequest ? !!lastRequest.wantSubscribe : !!shareDoc.wantSubscribe
+}
+
+function isShareQueryLive (runtime: AnyRecord | undefined): boolean {
+  const shareQuery = runtime?.shareQuery
+  if (!shareQuery || shareQuery.action !== 'qs') return false
+  return (connection as AnyRecord | undefined)?.queries?.[shareQuery.id] === shareQuery
+}
+
 function safeParse (json: string): any {
   try {
     return JSON.parse(json)
@@ -337,11 +366,13 @@ function collectDocs (ctx: Ctx): AnyRecord {
   let stalePendingDestroys = 0
   let oldestPendingDestroyMs: number | undefined
   let divergent = 0
+  let graceTransportNotLive = 0
   for (const [hash, entry] of manager.entries as Map<string, AnyRecord>) {
     const mode = entryMode(entry)
     inc(byMode, mode)
     inc(byPhase, entry.phase)
-    const collection = entry.segments?.[0] ?? safeParse(hash)?.[0]
+    const segments = entry.segments ?? safeParse(hash)
+    const collection = segments?.[0]
     if (collection != null) inc(byCollection, String(collection))
     if (entry.runtime) runtimes++
     owners += entry.owners.size
@@ -371,14 +402,24 @@ function collectDocs (ctx: Ctx): AnyRecord {
     if (entry.owners.size > 0) {
       categories.owned++
       addExample(ctx, 'docs.owned', { ...example, ownerRoots: ownerRootsOf(manager, entry) })
-    } else if (entry.retainCount > 0) categories.retainedOnly++
-    else if (entry.pendingDestroy) {
+    } else if (entry.retainCount > 0) {
+      // held by query results only (including a query lingering in its grace)
+      categories.retainedOnly++
+      addExample(ctx, 'docs.retainedOnly', example)
+    } else if (entry.pendingDestroy) {
+      // GC grace. Expected while the timer is not overdue and the transport is
+      // either live (transport grace) or closed (released fetch). A fetch
+      // transport left open shows up as divergent below.
       if (mode === 'subscribe') categories.graceLive++
       else categories.graceStale++
       addExample(ctx, 'docs.pendingDestroy', example)
       if ((pendingAgeMs ?? 0) > ctx.thresholds.pendingDestroyMaxAgeMs) {
         stalePendingDestroys++
         addExample(ctx, 'docs.stalePendingDestroy', example)
+      }
+      if (mode === 'subscribe' && entry.phase === 'stable' && !entry.reconcilePromise && !isShareDocLive(collection, segments?.[1])) {
+        graceTransportNotLive++
+        addExample(ctx, 'docs.graceTransportNotLive', example)
       }
     } else if (entry.phase === 'stable') {
       // Nobody owns it and nothing will clean it up: leak suspect.
@@ -388,10 +429,10 @@ function collectDocs (ctx: Ctx): AnyRecord {
       else addExample(ctx, 'docs.emptyEntry', example)
     }
     if (entry.phase === 'stable' && !entry.reconcilePromise) {
-      const desired = manager.getTargetTransportMode(hash)
+      const desired = targetModeOf(manager, hash)
       if (desired !== mode) {
         divergent++
-        addExample(ctx, 'docs.divergent', { ...example, desired })
+        addExample(ctx, 'docs.divergent', { ...example, desired, grace: (entry.owners.size === 0 && !!entry.pendingDestroy) || undefined })
       }
     }
   }
@@ -406,6 +447,7 @@ function collectDocs (ctx: Ctx): AnyRecord {
     stalePendingDestroys,
     oldestPendingDestroyMs,
     divergent,
+    graceTransportNotLive,
     categories,
     byMode: sortDict(byMode),
     byPhase: sortDict(byPhase),
@@ -486,7 +528,7 @@ function collectQueries (ctx: Ctx, manager: AnyRecord, kind: string): AnyRecord 
   const byMode: Dict = {}
   const byPhase: Dict = {}
   const byCollection: Dict = {}
-  const categories: Dict = { owned: 0, lingering: 0, ownerless: 0, transition: 0 }
+  const categories: Dict = { owned: 0, graceLive: 0, graceStale: 0, ownerless: 0, transition: 0 }
   let runtimes = 0
   let owners = 0
   let pendingDestroys = 0
@@ -496,6 +538,7 @@ function collectQueries (ctx: Ctx, manager: AnyRecord, kind: string): AnyRecord 
   let attachedRoots = 0
   let results = 0
   let divergent = 0
+  let graceTransportNotLive = 0
   for (const [transportHash, entry] of manager.entries as Map<string, AnyRecord>) {
     const mode = entryMode(entry)
     inc(byMode, mode)
@@ -539,10 +582,18 @@ function collectQueries (ctx: Ctx, manager: AnyRecord, kind: string): AnyRecord 
       categories.owned++
       addExample(ctx, listPrefix + '.owned', { ...example, ownerRoots: ownerRootsOf(manager, entry) })
     } else if (entry.pendingDestroyByOwner.size > 0) {
-      // Last owner left: root data already removed, transport closed,
-      // runtime and owner record wait for the per-owner gc timer.
-      categories.lingering++
+      // GC grace: the released owners keep their roots attached (root data
+      // stays) until their per-owner timers fire. A live transport stays
+      // subscribed (transport grace); a released fetch is closed eagerly.
+      // Expected while no timer is overdue (stalePendingDestroy above); a fetch
+      // transport left open shows up as divergent below.
+      if (mode === 'subscribe') categories.graceLive++
+      else categories.graceStale++
       addExample(ctx, listPrefix + '.pendingDestroy', example)
+      if (mode === 'subscribe' && entry.phase === 'stable' && !entry.reconcilePromise && !isShareQueryLive(runtime)) {
+        graceTransportNotLive++
+        addExample(ctx, listPrefix + '.graceTransportNotLive', example)
+      }
     } else if (entry.phase === 'stable') {
       categories.ownerless++
       if (mode !== 'idle') addExample(ctx, listPrefix + '.transportWithoutOwners', example)
@@ -550,10 +601,10 @@ function collectQueries (ctx: Ctx, manager: AnyRecord, kind: string): AnyRecord 
       else addExample(ctx, listPrefix + '.emptyEntry', example)
     }
     if (entry.phase === 'stable' && !entry.reconcilePromise) {
-      const desired = manager.getDesiredTransportMode(transportHash)
+      const desired = targetModeOf(manager, transportHash)
       if (desired !== mode) {
         divergent++
-        addExample(ctx, listPrefix + '.divergent', { ...example, desired })
+        addExample(ctx, listPrefix + '.divergent', { ...example, desired, grace: (entry.owners.size === 0 && entry.pendingDestroyByOwner.size > 0) || undefined })
       }
     }
   }
@@ -566,6 +617,7 @@ function collectQueries (ctx: Ctx, manager: AnyRecord, kind: string): AnyRecord 
     stalePendingDestroys,
     oldestPendingDestroyMs,
     divergent,
+    graceTransportNotLive,
     categories,
     materializedDocSignals: docSignals,
     attachedRoots,

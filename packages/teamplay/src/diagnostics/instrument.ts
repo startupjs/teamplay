@@ -45,6 +45,8 @@ const patches: Patch[] = []
 // manager -> ownerKey -> tokenId -> token record (WeakRef + subscribe count)
 const ownerTokens = new WeakMap<object, Map<string, Map<number, TokenRecord>>>()
 let nextPendingUnsubId = 1
+// > 0 while a manager's releaseFinalizedToken() runs (see observeFinalizedRelease)
+let finalizedReleaseDepth = 0
 
 export function isInstrumented (): boolean {
   return patches.length > 0
@@ -185,42 +187,106 @@ export function getTrackedOwnerTokenCount (manager: Manager): number {
   return total
 }
 
-// Called when a FinalizationRegistry callback force-destroys an owner key.
-// A finalization is legitimate when the only remaining owners belong to
-// collected signals. If a still-alive signal holds counts under the same owner
-// key, the force destroy wipes a live subscription.
-function checkFinalizedOwner (manager: Manager, kind: string, ownerKey: string | undefined, entryKey: string | undefined): void {
-  if (!ownerKey) return
+interface TrackedOwnerTokens {
+  liveTokens: number
+  liveCount: number
+  deadCount: number
+}
+
+// Reads the diagnostics' own per-signal counts of an owner key and drops the
+// records of collected signals.
+function readTrackedOwnerTokens (manager: Manager, ownerKey: string): TrackedOwnerTokens {
+  const state = { liveTokens: 0, liveCount: 0, deadCount: 0 }
   const tokens = ownerTokens.get(manager)?.get(ownerKey)
-  let liveTokens = 0
-  let liveCount = 0
-  let deadCount = 0
-  if (tokens) {
-    for (const [id, tokenRecord] of tokens) {
-      if (tokenRecord.ref.deref() !== undefined) {
-        liveTokens++
-        liveCount += tokenRecord.count
-      } else {
-        deadCount += tokenRecord.count
-        tokens.delete(id)
-      }
+  if (!tokens) return state
+  for (const [id, tokenRecord] of tokens) {
+    if (tokenRecord.ref.deref() !== undefined) {
+      state.liveTokens++
+      state.liveCount += tokenRecord.count
+    } else {
+      state.deadCount += tokenRecord.count
+      tokens.delete(id)
     }
   }
+  if (tokens.size === 0) ownerTokens.get(manager)?.delete(ownerKey)
+  return state
+}
+
+function getOwnerCount (manager: Manager, ownerKey: string): number {
   const ownerRecord = manager.ownerRecords.get(ownerKey)
-  const ownerCount = ownerRecord ? (ownerRecord.fetchCount || 0) + (ownerRecord.subscribeCount || 0) : 0
-  record(kind + '.fr.ownerFinalized', entryKey, { ownerCount, liveCount, deadCount, registry: diag.finalizing })
+  return ownerRecord ? (ownerRecord.fetchCount || 0) + (ownerRecord.subscribeCount || 0) : 0
+}
+
+// A finalizer released the counts of one collected signal (the managers'
+// releaseFinalizedToken). That is legitimate as long as the live signals of the
+// same owner key keep theirs: an owner left with fewer counts than its live
+// signals hold means the release wiped a live subscription. The release
+// finishes asynchronously, so it is tracked like a pending unsub() and
+// waitForIdle() waits for it.
+function observeFinalizedRelease (
+  manager: Manager,
+  kind: string,
+  ownerKey: string,
+  entryKey: string | undefined,
+  original: AnyFn,
+  args: IArguments
+): unknown {
+  let ownerCountBefore = 0
+  safely(() => { ownerCountBefore = getOwnerCount(manager, ownerKey) })
+  finalizedReleaseDepth++
+  let result: unknown
+  try {
+    result = Reflect.apply(original, manager, args)
+  } finally {
+    finalizedReleaseDepth--
+  }
+  safely(() => {
+    const { liveTokens, liveCount, deadCount } = readTrackedOwnerTokens(manager, ownerKey)
+    const ownerCount = getOwnerCount(manager, ownerKey)
+    record(kind + '.fr.ownerFinalized', entryKey, {
+      released: ownerCountBefore - ownerCount,
+      ownerCount,
+      liveCount,
+      deadCount,
+      registry: diag.finalizing
+    })
+    if (liveCount > ownerCount) {
+      addIncident(kind + '.fr.liveOwnerWiped', entryKey, { ownerCount, liveCount, liveTokens, deadCount })
+    }
+    if (!manager.ownerRecords.has(ownerKey)) clearTokens(manager, ownerKey)
+    if (isThenable(result)) trackPendingUnsub(kind, entryKey ?? '', 'finalized', result, kind + '.fr.release')
+  })
+  return result
+}
+
+// Called when a FinalizationRegistry callback destroys an owner key directly
+// instead of going through releaseFinalizedToken() (the managers no longer do
+// that; this catches a regression). A forced destroy ends every count of the
+// owner key, so any live signal holding counts under it loses its
+// subscription.
+function checkFinalizedOwner (manager: Manager, kind: string, ownerKey: string | undefined, entryKey: string | undefined): void {
+  if (!ownerKey || finalizedReleaseDepth > 0) return
+  const { liveTokens, liveCount, deadCount } = readTrackedOwnerTokens(manager, ownerKey)
+  const ownerCount = getOwnerCount(manager, ownerKey)
+  record(kind + '.fr.ownerFinalized', entryKey, { ownerCount, liveCount, deadCount, registry: diag.finalizing, forced: true })
   if (liveCount > 0) {
     addIncident(kind + '.fr.liveOwnerWiped', entryKey, { ownerCount, liveCount, liveTokens, deadCount })
   }
 }
 
-function trackPendingUnsub (kind: string, key: string, intent: string, promise: PromiseLike<unknown>): void {
+function trackPendingUnsub (
+  kind: string,
+  key: string,
+  intent: string,
+  promise: PromiseLike<unknown>,
+  timing = kind + '.unsubscribe'
+): void {
   const id = nextPendingUnsubId++
   const startedAt = now()
   pendingUnsubs.set(id, { id, kind, key, intent, startedAt })
   const done = (): void => {
     pendingUnsubs.delete(id)
-    time(kind + '.unsubscribe', now() - startedAt)
+    time(timing, now() - startedAt)
   }
   promise.then(done, done)
 }
@@ -376,11 +442,17 @@ function instrumentDocManager (manager: Manager, kind: string): void {
     if (!diag.on) return Reflect.apply(original, this, arguments)
     safely(() => {
       const hash = this.ownerRecords.get(ownerKey)?.hash ?? options?.hash
-      if (diag.finalizing) checkFinalizedOwner(this, kind, ownerKey, hash)
+      if (diag.finalizing && finalizedReleaseDepth === 0) checkFinalizedOwner(this, kind, ownerKey, hash)
       else record(kind + '.destroyByOwner', hash, { force: !!options?.force })
       if (options?.force) clearTokens(this, ownerKey)
     })
     return Reflect.apply(original, this, arguments)
+  })
+
+  // FinalizationRegistry callback: (ownerKey, hash, token)
+  patch(manager, 'releaseFinalizedToken', original => function (this: Manager, ownerKey: string, hash: string) {
+    if (!diag.on) return Reflect.apply(original, this, arguments)
+    return observeFinalizedRelease(this, kind, ownerKey, hash ?? this.ownerRecords.get(ownerKey)?.hash, original, arguments)
   })
 
   patch(manager, 'reconcileTransport', original => function (this: Manager, hash: string) {
@@ -521,6 +593,12 @@ function instrumentQueryManager (manager: Manager, kind: string): void {
   patch(manager, 'reconcileTransport', original => function (this: Manager, transportHash: string) {
     if (!diag.on) return Reflect.apply(original, this, arguments)
     return observeReconcile(this, kind, transportHash, original, Array.from(arguments))
+  })
+
+  // FinalizationRegistry callback: (ownerKey, token)
+  patch(manager, 'releaseFinalizedToken', original => function (this: Manager, ownerKey: string) {
+    if (!diag.on) return Reflect.apply(original, this, arguments)
+    return observeFinalizedRelease(this, kind, ownerKey, this.ownerRecords.get(ownerKey)?.transportHash, original, arguments)
   })
 }
 

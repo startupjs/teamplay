@@ -60,7 +60,7 @@ diagnostics.getIncidents()  // recorded anomalies (see findings below)
 diagnostics.resetCounters() // counters, timings, incidents, churn maps
 diagnostics.clearTrace()
 await diagnostics.forceGc()      // runs globalThis.gc() when exposed, lets finalizers run
-await diagnostics.waitForIdle()  // no transitions, pending destroys, pending unsub() or pollers
+await diagnostics.waitForIdle()  // no transitions, pending destroys, pending owner releases or pollers
 diagnostics.disable()            // removes instrumentation and clears collected state
 ```
 
@@ -85,14 +85,14 @@ Every snapshot has a flat `metrics` map (`'docs.entries': 3`, `'connection.docs.
 | Section | What it shows |
 | --- | --- |
 | `signals.cache` | Cached signal proxies: `total`, `live`, `dead` (collected but not yet evicted by the registry), `byKind` (`root`, `collection`, `doc`, `field`, `query`, `queryData`, `aggregation`, `aggregationRow`, `local`, `private`), `byCollection`, `byRoot`. |
-| `docs` | Doc subscription manager. `categories`: `owned` (has owners), `retainedOnly` (held by a query result), `graceLive` (no owners, transport still subscribed during `gcDelay`), `graceStale` (no owners, data kept but no stream), `ownerless` (no owners and nothing will clean it up), `transition`. Also `pendingDestroys`, `stalePendingDestroys`, `oldestPendingDestroyMs`, `divergent`, `byMode`, `byPhase`, `ownerRecords` (by root, closed or missing roots). |
-| `queries`, `aggregations` | Same for queries and aggregations. `lingering` means the last owner left: root data is already removed and the transport closed, while the runtime and owner record wait for their per-owner timer. `materializedDocSignals` is the number of result docs retained by query runtimes. |
+| `docs` | Doc subscription manager. `categories`: `owned` (has owners), `retainedOnly` (held only by query results, including a query lingering in its grace), `graceLive` (no owners, transport still subscribed during `gcDelay`; the next owner adopts it synchronously), `graceStale` (no owners, released fetch: data kept, transport closed), `ownerless` (no owners and nothing will clean it up), `transition`. Also `pendingDestroys`, `stalePendingDestroys`, `oldestPendingDestroyMs`, `divergent`, `graceTransportNotLive`, `byMode`, `byPhase`, `ownerRecords` (by root, closed or missing roots). |
+| `queries`, `aggregations` | Same for queries and aggregations. In the grace (`graceLive`, `graceStale`) the last owner left, but its root stays attached (its `$queries` / `$aggregations` data stays) and the owner record waits for its per-owner timer; a live transport stays subscribed, a released fetch is closed. `materializedDocSignals` is the number of result docs retained by query runtimes. |
 | `roots` | Root contexts: `count`, `closedRemembered` (closed root ids kept for the process lifetime), `pendingDisposes`, `signalHashes` / `staleSignalHashes` (hashes a root remembers whose signals were already collected), `privateQueries`, `privateAggregations`, `localValues`, and the `largest` roots. |
 | `finalization` | Every TeamPlay FinalizationRegistry with `registered`, `unregistered`, `finalized`, `liveEstimate` (exact only when enabled before load). |
 | `react` | `leases` (useSub: committed, uncommitted, pending, collected without release, churn by target and hook), `adms` (observer wrappers: subscribed, never subscribed, cache contents), `observers` (reactions: orphaned, extra, unmounted), `pollers`, `promiseBatcher`, `suspendMemoInFlight`, event listeners, batch scheduler, `debugCounters` (the old `DEBUG` map). |
 | `dataTree` | Public docs per collection and `orphanDocs`: docs in the tree that no doc manager entry tracks. |
 | `connection` | ShareDB connection: docs per collection, subscribed, pending/inflight ops, never loaded, `untracked` (`subscribed`, `pending`, `phantom`, `loaded`), queries by action and collection, untracked queries. On the server, `server` adds backend `agentsCount`, pubsub streams and the agent's subscribed docs/queries. |
-| `sub` | Pending `unsub()` promises (they resolve when the grace timer fires) and the incident count. |
+| `sub` | Pending owner releases and the incident count: `unsub()` promises (they resolve once the release is applied, not when the grace timer fires) and releases started by a FinalizationRegistry callback (intent `finalized`). |
 | `counters`, `timings` | Event counters and duration stats (`doc.subscribe`, `doc.transport.subscribe`, `query.unsubscribe`, `react.readinessPoll`, ...). |
 
 ## Findings
@@ -101,8 +101,9 @@ Every snapshot has a flat `metrics` map (`'docs.entries': 3`, `'connection.docs.
 | --- | --- | --- |
 | `docs.transportWithoutOwners`, `queries.…`, `aggregations.…` | error | A transport is subscribed or fetched with zero owners and no pending destroy. Nothing will close it. |
 | `*.runtimeWithoutOwners` | error | Materialized runtime with zero owners, no retain and no pending destroy. |
-| `*.divergent` | error | Transport mode differs from its target while the entry is stable and no reconcile is in flight (lost wakeup). |
-| `*.stalePendingDestroy` | error | A destroy is pending longer than the threshold. |
+| `*.divergent` | error | Transport mode differs from its target while the entry is stable and no reconcile is in flight (lost wakeup). The target keeps a live transport during the grace, so a lingering subscription is not divergent; a fetch transport left open in the grace is (`grace: true` in the example). |
+| `*.stalePendingDestroy` | error | A destroy (grace timer) is pending longer than the threshold. |
+| `*.graceTransportNotLive` | error | An entry lingers in its grace as a live subscription, but its ShareDB doc or query is no longer subscribed. The next owner would adopt it synchronously and get data that no longer updates. A disconnected client is not reported (ShareDB resubscribes on reconnect). |
 | `*.ownersOfClosedRoots`, `*.ownersOfMissingRoots` | error | Owner records belong to a closed or unknown root. |
 | `roots.orphanQueryData`, `roots.orphanAggregationData` | error | `$queries` / `$aggregations` data in a root without an owner or attached runtime. |
 | `connection.untrackedSubscribedDocs` | error | A ShareDB doc is subscribed but no doc manager entry tracks it. The server keeps streaming its ops. |
@@ -110,14 +111,14 @@ Every snapshot has a flat `metrics` map (`'docs.entries': 3`, `'connection.docs.
 | `react.staleUncommittedLeases` | error | A useSub lease never committed and was not released. |
 | `react.leasesCollectedWithoutRelease` | error | A lease was garbage collected without being released, so its subscription count leaked. |
 | `react.stalePollers` | error | A readiness polling loop runs longer than the threshold. |
-| `doc.fr.liveOwnerWiped` (and `query.`, `aggregation.`) | error | A FinalizationRegistry callback force-destroyed an owner key that a live signal still owned. |
+| `doc.fr.liveOwnerWiped` (and `query.`, `aggregation.`) | error | A FinalizationRegistry callback took counts that a live signal still held. Finalizers release only the counts their collected signal acquired (`releaseFinalizedToken`), so this means a regression: a finalizer released the wrong counts or force-destroyed a shared owner key. |
 | `connection.untrackedLoadedDocs`, `connection.phantomDocs`, `dataTree.orphanDocs` | warn | Docs written without a subscription, or created by `connection.get()` probes. They stay in memory until the page reloads. |
 | `react.orphanObservers`, `react.extraObservers`, `react.staleUnmountedObservers` | warn | Observer reactions from renders React discarded (StrictMode, abandoned mounts). They stay connected to the observables they read. |
 | `react.staleNeverSubscribedAdms` | warn | Observer wrappers that rendered but never mounted. |
 | `doc.subscribe.bypassedSub` (and `query.`, `aggregation.`) | warn | Subscriptions created without `sub()` (for example aggregation-row setters). They are released only by GC. |
 | `*.unsubscribe.intentMismatch` | warn | `unsubscribe()` with an intent the owner does not hold while it holds the other one. |
 | `roots.staleSignalHashes` | warn | A root remembers many hashes of collected signals. |
-| `sub.stalePendingUnsubs` | warn | `unsub()` promises pending longer than the threshold. |
+| `sub.stalePendingUnsubs` | warn | Owner releases (`unsub()` or finalizer) pending longer than the threshold. |
 | `sub.unsub.mixedIntents`, `roots.closedRemembered`, `signals.dead`, `connection.untrackedPendingDocs` | info | Context for the above. |
 
 Every finding carries `count` and up to `limit` `examples` with hashes, ids, roots and ages.
@@ -130,10 +131,10 @@ With `trace: true` every lifecycle event is stored as `{ seq, t, type, key, data
 - `doc.transport.subscribe|fetch|unsubscribe|unfetch`, `doc.runtime.destroy|dispose`
 - the same `query.*` and `aggregation.*` events, plus `query.transport.destroy`, `query.runtime.detach`
 - `doc.subscribe.slowPathWhileLive`: `sub()` returned a promise although the transport was already live
-- `root.get`, `root.close`, `root.dispose.start`, `root.dispose.end`, `fr.finalized`, `*.fr.ownerFinalized`
+- `root.get`, `root.close`, `root.dispose.start`, `root.dispose.end`, `fr.finalized`, `*.fr.ownerFinalized` (a finalizer released a collected signal's counts: `released`, the owner's remaining `ownerCount`, and the counts its live signals hold; the `*.fr.release` timing measures the release)
 - `react.lease.create|commit|release|releaseUncommitted`, `react.adm.create|subscribe|destroy`, `react.observer.create|destroy`, `react.readinessPoll.start|end`, `react.batchReadinessPoll.start|end`, `reaction.create|dispose`
 
-Counters that are not trace events: `doc.reconcile.noop` (an `unsub()` flipped the entry into transition without changing the transport), `doc.reconcile.joined`, `doc.subscribe.sync`, `sub.doc.subscribe` / `sub.doc.fetch` (sub records), `sub.unsub.*`.
+Counters that are not trace events: `doc.reconcile.noop` (a reconcile that changed nothing on the wire; the entry stays stable), `doc.reconcile.joined`, `doc.subscribe.sync`, `sub.doc.subscribe` / `sub.doc.fetch` (sub records), `sub.unsub.*`.
 
 ```js
 diagnostics.getTrace({ type: ['doc.destroy', 'doc.subscribe'], key: '"users","42"' })

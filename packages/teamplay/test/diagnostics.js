@@ -148,32 +148,41 @@ describe('diagnostics', () => {
     assert.equal(typeof snapshot.metrics['docs.entries'], 'number')
     assert.doesNotThrow(() => JSON.stringify(snapshot))
 
-    // query release: root data is removed immediately, the owner/runtime waits for the gc timer
+    // release: unsub() resolves at release, while the doc and the query linger
+    // with live transports (and the query's root data) until their gc timers
     const queryUnsub = unsub($query)
     const docUnsub = unsub($doc)
-    await delay(20)
+    const released = await Promise.race([
+      Promise.all([queryUnsub, docUnsub]).then(() => true),
+      delay(1000).then(() => false)
+    ])
+    assert.equal(released, true, 'unsub() does not wait for the grace timer')
     snapshot = diagnostics.snapshot({ details: true })
-    assert.equal(mine(snapshot.details['queries.pendingDestroy']).length, 1, 'query lingers until its gc timer')
+    assert.equal(snapshot.sub.pendingUnsubs.count, 0)
+    const queryEntry = mine(snapshot.details['queries.pendingDestroy'])
+    assert.equal(queryEntry.length, 1, 'query lingers until its gc timer')
+    assert.equal(queryEntry[0].mode, 'subscribe', 'the query transport stays live through the grace')
+    assert.equal(queryEntry[0].owners, 0)
     assert.equal(mine(snapshot.details['queries.owned']).length, 0)
-    assert.equal(snapshot.roots.privateQueries, 0, 'root query data is removed immediately')
-    // unsub() promises resolve only when the grace timers fire
-    assert.equal(snapshot.sub.pendingUnsubs.byKind.query, 1)
-    // the direct doc keeps its live transport through the grace period
-    const docEntry = mine(snapshot.details['docs.pendingDestroy']).find(entry => entry.hash === hash)
-    assert.equal(docEntry.mode, 'subscribe')
+    assert.ok(snapshot.queries.categories.graceLive >= 1)
+    assert.equal(snapshot.roots.privateQueries, 1, 'root query data is kept through the grace')
+    // the released doc stays retained by the lingering query's results
+    const docEntry = mine(snapshot.details['docs.retainedOnly']).find(entry => entry.hash === hash)
     assert.equal(docEntry.owners, 0)
-    assert.equal(typeof docEntry.pendingAgeMs, 'number')
-    assert.equal(mine(diagnostics.checkLeaks().findings.filter(item => item.severity === 'error')).length, 0)
-    assert.equal(
-      diagnostics.checkLeaks({ thresholds: { pendingDestroyMaxAgeMs: -1 } }).findings.some(item => item.code === 'docs.stalePendingDestroy'),
-      true,
-      'pending destroys older than the threshold are reported'
-    )
+    assert.equal(docEntry.retain, 1)
+    // a live transport in its grace is expected state, not a leak
+    const graceReport = diagnostics.checkLeaks()
+    for (const finding of graceReport.findings.filter(item => item.severity === 'error')) {
+      assert.deepEqual(mine(finding.examples), [], finding.code)
+    }
+    assert.deepEqual(mine(snapshot.details['queries.divergent']), [])
+    assert.deepEqual(mine(snapshot.details['docs.divergent']), [])
 
     // finish the grace period
     await querySubscriptions.flushPendingDestroys()
     await docSubscriptions.flushPendingDestroys()
-    await Promise.all([queryUnsub, docUnsub])
+    snapshot = diagnostics.snapshot()
+    assert.equal(snapshot.roots.privateQueries, 0, 'root query data is removed when the grace ends')
     $doc = undefined
     $query = undefined
     await runGc()
@@ -310,7 +319,7 @@ describe('diagnostics', () => {
     await unsub($doc)
   })
 
-  it('flags a FinalizationRegistry force-destroy that wipes a live owner', async () => {
+  it('a finalizer releases only the collected signal and does not wipe a live owner', async () => {
     diagnostics.enable()
     setSubscriptionGcDelay(0)
     await createDoc(COLLECTION, 'fr1', { name: 'fr' })
@@ -325,19 +334,117 @@ describe('diagnostics', () => {
     // A new signal for the same doc subscribes under the same owner key.
     const $live = $[COLLECTION].fr1
     const subscribed = sub($live)
-    for (let i = 0; i < 20 && !diagnostics.getIncidents().length; i++) {
+    const finalized = () => diagnostics.getCounters()['doc.fr.ownerFinalized'] || 0
+    for (let i = 0; i < 20 && !finalized(); i++) {
       await delay()
       global.gc()
     }
     await subscribed
+    await diagnostics.waitForIdle()
+    assert.ok(finalized() >= 1, 'the finalizer of the collected signal ran')
+    const event = diagnostics.getTrace({ type: 'doc.fr.ownerFinalized', key: hash, limit: 1 })[0]
+    if (event) assert.equal(event.data.liveCount, 1)
+    assert.deepEqual(diagnostics.getIncidents().filter(item => item.code === 'doc.fr.liveOwnerWiped'), [])
+    // The live signal keeps its subscription.
+    assert.equal(docSubscriptions.subCount.get(hash), 1)
+    assert.equal(docSubscriptions.docs.get(hash)?.activeTransportMode, 'subscribe')
+    await unsub($live)
+  })
+
+  it('flags a finalizer release that takes the counts of a live owner', async () => {
+    diagnostics.enable()
+    setSubscriptionGcDelay(0)
+    await createDoc(COLLECTION, 'fr2', { name: 'fr' })
+    const hash = JSON.stringify([COLLECTION, 'fr2'])
+    const $live = await sub($[COLLECTION].fr2)
+    const [ownerKey, record] = Array.from(docSubscriptions.ownerRecords).find(([, item]) => item.hash === hash)
+    const [liveToken] = record.tokens.keys()
+    // Simulate a finalizer releasing the token of a signal that is still alive.
+    await docSubscriptions.releaseFinalizedToken(ownerKey, hash, liveToken)
+    await diagnostics.waitForIdle()
     const incident = diagnostics.getIncidents().find(item => item.code === 'doc.fr.liveOwnerWiped')
     assert.ok(incident, JSON.stringify(diagnostics.getIncidents()))
     assert.equal(incident.key, hash)
+    assert.equal(incident.data.liveCount, 1)
+    assert.equal(incident.data.ownerCount, 0)
     const finding = diagnostics.checkLeaks().findings.find(item => item.code === 'doc.fr.liveOwnerWiped')
     assert.equal(finding.severity, 'error')
     // The live signal lost its subscription: the doc manager no longer tracks it.
     assert.equal(docSubscriptions.subCount.get(hash), undefined)
     await unsub($live)
+  })
+
+  it('treats a live transport grace as expected and flags dead, open-fetch or overdue grace entries', async () => {
+    diagnostics.enable()
+    setSubscriptionGcDelay(10000)
+    await createDoc(COLLECTION, 'grace1', { name: 'graceDoc' })
+    await createDoc(COLLECTION, 'grace2', { name: 'graceFetch' })
+    await createDoc(COLLECTION, 'grace3', { name: 'graceQuery' })
+    await createDoc(COLLECTION, 'grace4', { name: 'graceAgg' })
+    const liveHash = JSON.stringify([COLLECTION, 'grace1'])
+    const fetchHash = JSON.stringify([COLLECTION, 'grace2'])
+    const errorsOfMine = report => report.findings
+      .filter(item => item.severity === 'error' && mine(item.examples).length > 0)
+      .map(item => item.code)
+      .sort()
+
+    await unsub(await sub($[COLLECTION].grace1))
+    const $query = await sub($[COLLECTION], { name: 'graceQuery' })
+    const queryHash = Array.from(querySubscriptions.entries.keys()).find(key => key.includes('"graceQuery"'))
+    await unsub($query)
+    const $rows = await sub(aggregation(({ name }) => [{ $match: { name } }]), { $collection: COLLECTION, name: 'graceAgg' })
+    const aggregationHash = Array.from(aggregationSubscriptions.entries.keys()).find(key => key.includes('graceAgg'))
+    await unsub($rows)
+    await unsub(await sub($[COLLECTION].grace2, { mode: 'fetch' }))
+
+    // live transports and a released fetch (data kept, transport closed) in their grace
+    let snapshot = diagnostics.snapshot({ details: true })
+    const docGrace = mine(snapshot.details['docs.pendingDestroy'])
+    assert.equal(docGrace.find(item => item.hash === liveHash)?.mode, 'subscribe')
+    assert.equal(docGrace.find(item => item.hash === fetchHash)?.mode, 'idle')
+    assert.ok(snapshot.docs.categories.graceStale >= 1)
+    assert.equal(mine(snapshot.details['queries.pendingDestroy'])[0]?.mode, 'subscribe')
+    assert.equal(mine(snapshot.details['aggregations.pendingDestroy'])[0]?.mode, 'subscribe')
+    assert.deepEqual(errorsOfMine(diagnostics.checkLeaks()), [])
+
+    // overdue grace timers
+    assert.deepEqual(
+      errorsOfMine(diagnostics.checkLeaks({ thresholds: { pendingDestroyMaxAgeMs: -1 } })),
+      ['aggregations.stalePendingDestroy', 'docs.stalePendingDestroy', 'queries.stalePendingDestroy']
+    )
+
+    // a lingering 'live' transport whose ShareDB subscription is gone
+    const connection = getConnection()
+    connection.get(COLLECTION, 'grace1').unsubscribe()
+    querySubscriptions.entries.get(queryHash).runtime.shareQuery.destroy()
+    aggregationSubscriptions.entries.get(aggregationHash).runtime.shareQuery.destroy()
+    // a released fetch whose transport was left open
+    const fetchRuntime = docSubscriptions.docs.get(fetchHash)
+    fetchRuntime.activeTransportMode = 'fetch'
+    const report = diagnostics.checkLeaks()
+    assert.deepEqual(errorsOfMine(report), [
+      'aggregations.graceTransportNotLive',
+      'docs.divergent',
+      'docs.graceTransportNotLive',
+      'queries.graceTransportNotLive'
+    ])
+    const divergent = report.findings.find(item => item.code === 'docs.divergent')
+    const divergentFetch = mine(divergent.examples).find(item => item.hash === fetchHash)
+    assert.equal(divergentFetch.grace, true)
+    assert.equal(divergentFetch.desired, 'idle')
+    assert.equal(mine(report.findings.find(item => item.code === 'docs.graceTransportNotLive').examples)[0].hash, liveHash)
+
+    // cleanup
+    fetchRuntime.activeTransportMode = 'idle'
+    await aggregationSubscriptions.flushPendingDestroys()
+    await querySubscriptions.flushPendingDestroys()
+    await docSubscriptions.flushPendingDestroys()
+    snapshot = diagnostics.snapshot({ details: true })
+    assert.deepEqual(mine(snapshot.details['docs.pendingDestroy']), [])
+    assert.deepEqual(mine(snapshot.details['queries.pendingDestroy']), [])
+    assert.deepEqual(mine(snapshot.details['aggregations.pendingDestroy']), [])
+    // the aggregation source doc was only loaded by createDoc()
+    await cbPromise(cb => connection.get(COLLECTION, 'grace4').destroy(cb))
   })
 
   it('remembers every closed root id (reports the growth)', async () => {
@@ -400,6 +507,8 @@ describe('diagnostics', () => {
       diagnostics.checkLeaks()
     })()
     await runGc()
+    // finalizer releases complete asynchronously
+    await diagnostics.waitForIdle()
     assert.equal(signalsCache.size, cacheSize, 'signal cache back to its size')
     assert.equal(docSubscriptions.docs.has(hash), false, 'doc finalized and destroyed')
     assert.equal(snapshot0QueryCount(), 0, 'query finalized and destroyed')
