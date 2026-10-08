@@ -182,6 +182,22 @@ export interface ObserverFunction {
 export const Signal = RuntimeSignal
 export { SEGMENTS }
 export { __DEBUG_SIGNALS_CACHE__, rawSignal, getSignalClass } from './orm/getSignal.ts'
+export {
+  diagnostics,
+  enableDiagnostics,
+  disableDiagnostics,
+  isDiagnosticsEnabled
+} from './diagnostics/index.ts'
+export type {
+  DiagnosticsOptions,
+  Snapshot as DiagnosticsSnapshot,
+  SnapshotOptions as DiagnosticsSnapshotOptions,
+  CheckLeaksOptions,
+  LeakReport,
+  SnapshotDiff,
+  TraceEvent,
+  TraceFilter
+} from './diagnostics/index.ts'
 export { default as addModel } from './orm/addModel.ts'
 export {
   defineModels,

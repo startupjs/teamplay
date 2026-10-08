@@ -26,6 +26,11 @@
       "teamplay-ts": "./src/connect/index.js",
       "default": "./dist/connect/index.js"
     },
+    "./diagnostics": {
+      "teamplay-ts": "./src/diagnostics/index.ts",
+      "types": "./dist/diagnostics/index.d.ts",
+      "default": "./dist/diagnostics/index.js"
+    },
     "./config": {
       "teamplay-ts": "./src/config.ts",
       "types": "./dist/config.d.ts",
