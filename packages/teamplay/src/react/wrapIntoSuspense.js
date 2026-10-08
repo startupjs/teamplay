@@ -15,7 +15,7 @@ import {
 } from 'react'
 import { pipeComponentMeta, pipeComponentDisplayName, ComponentMetaContext } from './helpers.ts'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
-import { diag, objectId, noteAdmCreated, noteAdmSubscribed, noteAdmDestroyed, noteAdmCollected } from '../diagnostics/state.ts'
+import { diag } from '../diagnostics/hooks.ts'
 
 const SuspenseGroupContext = createContext()
 
@@ -90,7 +90,7 @@ const unmountedAdms = new FinalizationRegistry(({ callbacks, diagId }) => {
     } catch {}
   }
   callbacks.clear()
-  if (diagId != null) noteAdmCollected(diagId)
+  if (diagId != null) diag.noteAdmCollected(diagId)
 })
 
 // Releases what the wrapper holds while it is subscribed. The wrapper stays
@@ -98,7 +98,7 @@ const unmountedAdms = new FinalizationRegistry(({ callbacks, diagId }) => {
 // subscribes it again when it shows it.
 function destroyAdm (adm) {
   unmountedAdms.unregister(adm)
-  if (diag.on) noteAdmDestroyed(adm)
+  if (diag.on) diag.noteAdmDestroyed(adm)
   clearTimeout(adm.destroyTimer)
   adm.destroyTimer = undefined
   adm.destroyed = true
@@ -163,9 +163,9 @@ export default function wrapIntoSuspense ({
           if (adm.destroyed) {
             // shown again by <Activity>
             adm.destroyed = false
-            if (diag.on) noteAdmCreated(adm, name, componentId)
+            if (diag.on) diag.noteAdmCreated(adm, name, componentId)
           }
-          if (diag.on) noteAdmSubscribed(adm)
+          if (diag.on) diag.noteAdmSubscribed(adm)
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
           adm.onStoreChange = onStoreChange
@@ -182,10 +182,10 @@ export default function wrapIntoSuspense ({
         }
       }
       admRef.current = adm
-      if (diag.on) noteAdmCreated(adm, name, componentId)
+      if (diag.on) diag.noteAdmCreated(adm, name, componentId)
       unmountedAdms.register(adm, {
         callbacks: adm.cacheDestroyCallbacks,
-        diagId: diag.on ? objectId(adm) : undefined
+        diagId: diag.on ? diag.objectId(adm) : undefined
       }, adm)
     }
     const adm = admRef.current

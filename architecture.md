@@ -99,7 +99,7 @@ The public `teamplay` package exports multiple surfaces from [packages/teamplay/
 - `teamplay/babel` and `teamplay/babel/loader`: build-time model transforms.
 - `teamplay/connect-test` and `teamplay/connect-offline`: test/offline connection variants.
 - `teamplay/cache` and `teamplay/schema`: convenience re-exports.
-- `teamplay/diagnostics`: opt-in runtime diagnostics (also exported as `diagnostics` from `teamplay`).
+- `teamplay/diagnostics`: opt-in runtime diagnostics. The `teamplay` main entry exports only the switch and the same `diagnostics` object, filled in when the subpath loads; the Node entry (`src/index.node.ts`, `exports` condition `node`) loads it automatically. `teamplay/diagnostics/enable` loads and switches it on.
 
 The main public entry is [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts). It creates the global root signal:
 
@@ -537,8 +537,10 @@ restarting the entire committed group.
 
 Opt-in diagnostics live in [packages/teamplay/src/diagnostics](./packages/teamplay/src/diagnostics) and are documented in [docs/guide/diagnostics.md](./docs/guide/diagnostics.md).
 
-- `state.ts` is dependency-free. It holds the `diag.on` switch, counters, the trace ring buffer and WeakRef-only registries. It turns on at load time from `globalThis.__TEAMPLAY_DIAGNOSTICS__` or `TEAMPLAY_DIAGNOSTICS`. Hot paths (sub records, useSub leases, observer wrappers, reactions, readiness pollers, root lifecycle) call it behind `if (diag.on)`.
-- The default export of `utils/MockFinalizationRegistry.ts` wraps the selected implementation and counts registrations and finalizations while diagnostics are on.
+- `hooks.ts` is the only diagnostics module the runtime imports, so it is the only one in bundles that do not import `teamplay/diagnostics` (Metro does not tree-shake). It holds the `diag` object (the `diag.on` switch; the hook functions are added when the implementation loads) and the shared `diagnostics` API object. Hot paths (sub records, useSub leases, observer wrappers, reactions, readiness pollers, root lifecycle) call `diag.record()`, `diag.noteLeaseCreated()`, ... behind `if (diag.on)`. The switch turns on only after the hook functions are installed. `test/diagnosticsLazy.js` and `node scripts/bundle-size.mjs --check` keep every other diagnostics module unreachable from `src/index.ts`.
+- `install.ts` is the first import of `index.ts` and imports no runtime module. It adds the hook functions to `diag` and switches diagnostics on from `globalThis.__TEAMPLAY_DIAGNOSTICS__` or `TEAMPLAY_DIAGNOSTICS`. When the subpath is loaded before `teamplay`, this happens before any runtime module evaluates.
+- `state.ts` holds counters, the trace ring buffer and WeakRef-only registries.
+- `utils/MockFinalizationRegistry.ts` creates plain registries of the selected implementation, or, once diagnostics are loaded, counting wrappers from `finalization.ts` (`diag.createFinalizationRegistry`). Registries created earlier are reported as `finalization.untracked`.
 - `instrument.ts` wraps the doc/query/aggregation manager instance methods and runtime transport methods from the outside while enabled. The manager files carry no diagnostics code.
 - `collect.ts` reads managers, root contexts, the signal cache, the data tree, React registries and the ShareDB connection into JSON. `leaks.ts` turns that into findings and diffs.
 

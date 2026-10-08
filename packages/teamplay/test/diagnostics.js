@@ -18,7 +18,7 @@ import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
 import { del as _del } from '../src/orm/dataTree.js'
 import { deleteRootContext, reviveRootContext } from '../src/orm/rootContext.ts'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
-import { getAllFinalizationRegistryStats } from '../src/utils/MockFinalizationRegistry.ts'
+import { getAllFinalizationRegistryStats } from '../src/diagnostics/finalization.ts'
 import { runGc } from './_helpers.js'
 
 before(connect)

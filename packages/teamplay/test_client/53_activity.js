@@ -5,6 +5,7 @@
 // subscriptions on every render, and with its scheduled updates (a
 // re-subscribe that resolves later) still re-rendering it. Skipped on React
 // 19.0 and 19.1, which have no <Activity>.
+import '../src/diagnostics/index.ts' // 'teamplay/diagnostics' first, as an app does
 import * as React from 'react'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { act, cleanup, render } from '@testing-library/react'

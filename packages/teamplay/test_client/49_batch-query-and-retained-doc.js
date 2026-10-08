@@ -7,6 +7,7 @@
 // again and suspend: in LMS one hook churned ~51k leases in 45 s and the page
 // stayed on Loading. Here a gate after the group delays React's retry past
 // that release, which LMS pages hit by being busy.
+import '../src/diagnostics/index.ts' // 'teamplay/diagnostics' first, as an app does
 import { createElement as el, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'

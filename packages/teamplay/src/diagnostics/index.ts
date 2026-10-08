@@ -1,12 +1,23 @@
 // TeamPlay runtime diagnostics: signals, caches, subscriptions, roots, React
 // leases and the ShareDB connection. See docs/guide/diagnostics.md.
 //
-// Enable before teamplay loads (exact FinalizationRegistry counters):
+// This is the full implementation ('teamplay/diagnostics'). The 'teamplay'
+// main entry ships only the switch and an API object whose methods throw until
+// this module is loaded (hooks.ts); loading it fills both. The Node entry of
+// 'teamplay' loads it automatically. Bundles (browser, React Native) include it
+// only when the app imports it, best as the first import:
+//   import 'teamplay/diagnostics'                         // load; flags below switch it on
+//   import 'teamplay/diagnostics/enable'                  // load and switch on
+// Switch on at load (exact FinalizationRegistry counters when loaded first):
 //   globalThis.__TEAMPLAY_DIAGNOSTICS__ = true            // or { trace: true, stacks: true }
 //   TEAMPLAY_DIAGNOSTICS=1 node server.js                 // or =trace,stacks
 // or at runtime:
-//   import { diagnostics } from 'teamplay'
+//   import { diagnostics } from 'teamplay/diagnostics'
 //   diagnostics.enable({ trace: true })
+//
+// install.ts must stay the first import: it installs the hooks before the
+// runtime modules imported below create their FinalizationRegistries.
+import './install.ts'
 import { docSubscriptions } from '../orm/Doc.js'
 import { querySubscriptions } from '../orm/Query.js'
 import { aggregationSubscriptions } from '../orm/Aggregation.js'
@@ -14,10 +25,8 @@ import { __DEBUG_SIGNALS_CACHE__ as SIGNALS_CACHE } from '../orm/getSignal.ts'
 import { __getRootFinalizationRegistry } from '../orm/Root.ts'
 import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 import { valueSubscriptions, reactionSubscriptions } from './runtimeRefs.js'
-import {
-  nameFinalizationRegistry,
-  sweepFinalizationRegistry
-} from '../utils/MockFinalizationRegistry.ts'
+import { nameFinalizationRegistry, sweepFinalizationRegistry } from './finalization.ts'
+import { diagnostics } from './hooks.ts'
 import {
   diag,
   now,
@@ -79,7 +88,7 @@ const REGISTRIES: Array<[unknown, string]> = [
 ]
 for (const [registry, name] of REGISTRIES) nameFinalizationRegistry(registry, name)
 
-export function enableDiagnostics (options: DiagnosticsOptions = {}): typeof diagnostics {
+export function enableDiagnostics (options: DiagnosticsOptions = {}): DiagnosticsApi {
   if (!diag.on) {
     diag.on = true
     diag.enabledAt = now()
@@ -225,7 +234,7 @@ export {
   resetCounters
 }
 
-export const diagnostics = {
+const api = {
   enable: enableDiagnostics,
   disable: disableDiagnostics,
   isEnabled: isDiagnosticsEnabled,
@@ -242,6 +251,13 @@ export const diagnostics = {
   waitForIdle
 }
 
+export type DiagnosticsApi = typeof api
+
+// The same object the main entry exports (hooks.ts): fill in the implementation.
+Object.assign(diagnostics, api)
+
+export { diagnostics }
+
 interface GlobalTeamplay {
   __teamplay__?: Record<string, unknown>
 }
@@ -257,6 +273,7 @@ function unexposeGlobal (): void {
   if (g.__teamplay__?.diagnostics === diagnostics) delete g.__teamplay__.diagnostics
 }
 
-// Diagnostics requested before teamplay loaded (global flag or env var):
-// counters are already on (state.ts), install the method instrumentation now.
+// Diagnostics switched on as this module loaded (global flag, env var or
+// 'teamplay/diagnostics/enable'): counters are already on (install.ts),
+// install the method instrumentation and expose the API now.
 if (diag.on) enableDiagnostics()

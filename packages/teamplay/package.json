@@ -7,8 +7,12 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "teamplay-ts": "./src/index.ts",
+      "teamplay-ts": {
+        "node": "./src/index.node.ts",
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
+      "node": "./dist/index.node.js",
       "default": "./dist/index.js"
     },
     "./orm": {
@@ -30,6 +34,11 @@
       "teamplay-ts": "./src/diagnostics/index.ts",
       "types": "./dist/diagnostics/index.d.ts",
       "default": "./dist/diagnostics/index.js"
+    },
+    "./diagnostics/enable": {
+      "teamplay-ts": "./src/diagnostics/enable.ts",
+      "types": "./dist/diagnostics/enable.d.ts",
+      "default": "./dist/diagnostics/enable.js"
     },
     "./config": {
       "teamplay-ts": "./src/config.ts",
@@ -135,6 +144,9 @@
     "testEnvironment": "jsdom",
     "testRegex": "test_client/.*\\.jsx?$",
     "testSequencer": "./test_client/testSequencer.cjs",
+    "setupFiles": [
+      "<rootDir>/test_client/helpers/diagnosticsFromEnv.js"
+    ],
     "testPathIgnorePatterns": [
       "node_modules",
       "<rootDir>/test_client/helpers"

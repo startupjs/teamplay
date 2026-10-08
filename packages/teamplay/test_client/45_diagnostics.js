@@ -1,3 +1,4 @@
+import '../src/diagnostics/index.ts' // 'teamplay/diagnostics' first, as an app does
 import { createElement as el, StrictMode, Suspense } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals'
 import { act, cleanup, render, waitFor } from '@testing-library/react'

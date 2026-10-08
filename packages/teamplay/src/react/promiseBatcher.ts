@@ -1,4 +1,4 @@
-import { diag, pollerStart, pollerEnd } from '../diagnostics/state.ts'
+import { diag } from '../diagnostics/hooks.ts'
 
 let active = false
 let promises: Array<PromiseLike<unknown>> = []
@@ -104,8 +104,11 @@ async function waitForChecksReady (pendingChecks: BatchReadinessCheck[]): Promis
   let poller: number | undefined
   while (true) {
     const notReadyChecks = getNotReadyChecks(pendingChecks)
-    if (notReadyChecks.length === 0) return pollerEnd(poller)
-    if (diag.on && poller == null) poller = pollerStart('react.batchReadinessPoll', `${notReadyChecks.length} checks`)
+    if (notReadyChecks.length === 0) {
+      if (poller != null) diag.pollerEnd(poller)
+      return
+    }
+    if (diag.on && poller == null) poller = diag.pollerStart('react.batchReadinessPoll', `${notReadyChecks.length} checks`)
     if (!warned && isDevMode() && Date.now() - startedAt >= READINESS_WARN_AFTER_MS) {
       warned = true
       warnAboutChecksDelay(notReadyChecks)

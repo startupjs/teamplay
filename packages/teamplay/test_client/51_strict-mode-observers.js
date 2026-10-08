@@ -2,6 +2,7 @@
 // any abandoned render attempt) must not leave observer reactions connected
 // to the observables they read, and a mounted observer must stay reactive
 // after StrictMode replays its effects (mount, unmount, mount).
+import '../src/diagnostics/index.ts' // 'teamplay/diagnostics' first, as an app does
 import { createElement as el, StrictMode } from 'react'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { act, cleanup, render } from '@testing-library/react'

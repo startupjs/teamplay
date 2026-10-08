@@ -8,7 +8,7 @@ import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js
 import { getRoot, ROOT_ID } from './Root.ts'
 import { isRootContextClosed } from './rootContext.ts'
 import isServer from '../utils/isServer.ts'
-import { diag, noteSubRecordAdded, noteUnsubRecords } from '../diagnostics/state.ts'
+import { diag } from '../diagnostics/hooks.ts'
 import type {
   CollectionSignal,
   ComputedQueryParamsInput,
@@ -256,7 +256,7 @@ function acquire (args: unknown[]): Acquired {
 export function unsub ($signal: unknown, options?: UnsubOptions): Promise<void> | void {
   const intent = parseUnsubIntent(options)
   if (!($signal instanceof Signal)) return
-  if (diag.on) noteUnsubRecords(SUB_RECORDS.get($signal), intent)
+  if (diag.on) diag.noteUnsubRecords(SUB_RECORDS.get($signal), intent)
   const record = takeSubRecord($signal, { intent: intent ?? getDefaultUnsubIntent($signal) })
   if (!record) return
   return disposeSubRecord($signal, record)
@@ -469,7 +469,7 @@ function addSubRecord ($signal: SignalBaseInstance, kind: SubRecordKind, intent:
   }
   const record = { kind, intent, disposed: false }
   records.push(record)
-  if (diag.on) noteSubRecordAdded(kind, intent)
+  if (diag.on) diag.noteSubRecordAdded(kind, intent)
   return record
 }
 
