@@ -29,8 +29,8 @@
   "devDependencies": {
     "@rspress/core": "^2.0.0",
     "@types/node": "^25.6.0",
-    "@types/react": "^18.3.28",
-    "@types/react-dom": "^18.3.7",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -38,8 +38,8 @@
     "lerna": "^9.0.3",
     "lint-staged": "^15.2.2",
     "neostandard": "^0.13.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   },

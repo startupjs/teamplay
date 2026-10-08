@@ -487,7 +487,7 @@ export function useSubDeferred (
   params?: unknown,
   { async = false, defer, batch = false }: UseSubOptions = {}
 ): unknown {
-  const $signalRef = useRef<unknown>()
+  const $signalRef = useRef<unknown>(undefined)
   const scheduleUpdate = useScheduleUpdate()
   const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   const observerDefer = useDefer()
