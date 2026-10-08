@@ -114,7 +114,7 @@ Every snapshot has a flat `metrics` map (`'docs.entries': 3`, `'connection.docs.
 | `react.stalePollers` | error | A readiness polling loop runs longer than the threshold. |
 | `doc.fr.liveOwnerWiped` (and `query.`, `aggregation.`) | error | A FinalizationRegistry callback took counts that a live signal still held. Finalizers release only the counts their collected signal acquired (`releaseFinalizedToken`), so this means a regression: a finalizer released the wrong counts or force-destroyed a shared owner key. |
 | `connection.untrackedLoadedDocs`, `connection.phantomDocs`, `dataTree.orphanDocs` | warn | Docs written without a subscription, or created by `connection.get()` probes. They stay in memory until the page reloads. |
-| `react.orphanObservers`, `react.extraObservers`, `react.staleUnmountedObservers` | warn | Observer reactions from renders React discarded (StrictMode, abandoned mounts). They stay connected to the observables they read. |
+| `react.orphanObservers`, `react.extraObservers`, `react.staleUnmountedObservers` | warn | Observer reactions from renders React discarded (StrictMode, abandoned mounts) that are not disposed yet. Their finalizer unobserves them once React drops the render and GC runs; a count that persists after GC is a leak. |
 | `react.staleNeverSubscribedAdms` | warn | Observer wrappers that rendered but never mounted. |
 | `doc.subscribe.bypassedSub` (and `query.`, `aggregation.`) | warn | Subscriptions created by calling the subscription managers directly instead of `sub()`. Unless the caller releases them, they are released only by GC. |
 | `*.unsubscribe.intentMismatch` | warn | `unsubscribe()` with an intent the owner does not hold while it holds the other one. |

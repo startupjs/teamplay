@@ -484,6 +484,14 @@ rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React
 StrictMode subscription replay does not look like a real unmount.
 
+`observer()` creates its reaction during render (it has to track what the
+render reads). A render React discards before commit (StrictMode's double
+render, abandoned concurrent renders) registers its reaction in a
+FinalizationRegistry against a hook-state object only that render references;
+when React drops the render, the reaction is unobserved. A commit unregisters
+it, and if StrictMode's effect replay (mount, unmount, mount) destroyed the
+reaction, the mount effect re-renders to create a new one.
+
 `SuspenseGroup` consolidates default observer boundaries only until its content
 is revealed for the first time. Once that initial content commits, observer
 boundaries become local again. This preserves the shared startup fallback while
