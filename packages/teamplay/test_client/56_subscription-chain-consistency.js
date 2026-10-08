@@ -8,6 +8,7 @@
 //   commits the new chain at once;
 // - defer: false: it suspends (shows the fallback) until the new chain is
 //   ready;
+// - forceDefer (setForceDefer(), runtime config): defer: false is ignored.
 // The first mount suspends to the fallback in every mode.
 //
 // Every scenario runs twice: under act() (@testing-library/react) and with
@@ -24,8 +25,12 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   $,
   aggregation,
+  configureTeamplay,
   diagnostics,
+  getForceDefer,
+  getTeamplayConfig,
   observer,
+  setForceDefer,
   useBatchSub,
   useSub
 } from '../src/index.ts'
@@ -36,6 +41,7 @@ import connect from '../src/connect/test.js'
 // network latency of every request of the client connection, in ms
 const THROTTLE = 80
 const FALLBACK = 'Loading...'
+const RUNTIME_CONFIG = Symbol.for('teamplay.runtimeConfig')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 const baselineGcDelay = getSubscriptionGcDelay()
@@ -70,6 +76,8 @@ afterEach(async () => {
   networkDelay = 0
   collectionDelays.clear()
   setSubscriptionGcDelay(baselineGcDelay)
+  setForceDefer(null)
+  configureTeamplay({ forceDefer: null })
   diagnostics.disable()
 })
 
@@ -376,6 +384,23 @@ for (const mode of ['act', 'scheduler']) {
         expectOnlyConsistentStates(log, { fallback: 'shown' })
       })
 
+      it('setForceDefer(true) ignores useSub(..., { defer: false })', async () => {
+        expect(setForceDefer(true)).toBe(true)
+        expect(getForceDefer()).toBe(true)
+        const name = await seedDocChain()
+        const { log } = await runSwitch({ mode, name, useChain: useDocChain, chainText: docChainText, options: { defer: false } })
+        expectOnlyConsistentStates(log, { fallback: 'never' })
+      })
+
+      it('the runtime config forceDefer ignores observer({ defer: false })', async () => {
+        globalThis[RUNTIME_CONFIG] = { ...globalThis[RUNTIME_CONFIG], forceDefer: true }
+        expect(getForceDefer()).toBe(true)
+        expect(getTeamplayConfig().forceDefer).toBe(true)
+        const name = await seedDocChain()
+        const { log } = await runSwitch({ mode, name, useChain: useDocChain, chainText: docChainText, observerOptions: { defer: false } })
+        expectOnlyConsistentStates(log, { fallback: 'never' })
+      })
+
       it('deferred: a1 -> a2 -> a3 in quick succession ends at a3 without committing a2', async () => {
         const name = await seedDocChain()
         const { log } = await runSwitch({ mode, name, useChain: useDocChain, chainText: docChainText, steps: ['a2', 'a3'] })
@@ -441,6 +466,12 @@ for (const mode of ['act', 'scheduler']) {
         expect(log.commits.at(-1)).toBe(queryChainText(2))
       })
 
+      it('setForceDefer(true) ignores defer: false', async () => {
+        setForceDefer(true)
+        const name = await seedQueryChain()
+        const { log } = await runSwitch({ mode, name, useChain: useAggregationChain, chainText: queryChainText, options: { defer: false } })
+        expectOnlyConsistentStates(log, { fallback: 'never' })
+      })
     })
 
     describe('useBatchSub() chain', () => {
@@ -458,11 +489,44 @@ for (const mode of ['act', 'scheduler']) {
         expect(log.commits.at(-1)).toBe(batchChainText(2))
       })
 
+      it('setForceDefer(true) ignores defer: false', async () => {
+        setForceDefer(true)
+        const name = await seedDocChain()
+        const { log } = await runSwitch({ mode, name, useChain: useBatchChain, chainText: batchChainText, options: { defer: false } })
+        expectOnlyConsistentStates(log, { fallback: 'never' })
+      })
+
       it('deferred: a1 -> a2 -> a3 in quick succession ends at a3 without committing a2', async () => {
         const name = await seedDocChain()
         const { log } = await runSwitch({ mode, name, useChain: useBatchChain, chainText: batchChainText, steps: ['a2', 'a3'] })
         expectOnlyConsistentStates(log, { fallback: 'never' })
         expect(log.commits).not.toContain(batchChainText(2))
+      })
+    })
+
+    describe('forceDefer at runtime', () => {
+      it('applies to a mounted defer: false component without breaking its hooks', async () => {
+        const name = await seedDocChain()
+        const log = createLog()
+        const Component = createChainComponent({ useChain: useDocChain, name, options: { defer: false }, log })
+        Component.log = log
+        networkDelay = THROTTLE
+        const harness = await mountChain(Component, mode)
+        await harness.waitForText(docChainText(1))
+        log.commits.length = 0
+        log.dom.length = 0
+        setForceDefer(true)
+        harness.click('toA2')
+        await harness.waitForText(docChainText(2))
+        expectOnlyConsistentStates(log, { fallback: 'never' })
+        // and back
+        setForceDefer(false)
+        expect(getForceDefer()).toBe(false)
+        log.commits.length = 0
+        log.dom.length = 0
+        harness.click('toA3')
+        await harness.waitForText(docChainText(3))
+        expectOnlyConsistentStates(log, { fallback: 'shown' })
       })
     })
 
@@ -523,3 +587,30 @@ for (const mode of ['act', 'scheduler']) {
     })
   })
 }
+
+describe('forceDefer configuration', () => {
+  it('setForceDefer() takes precedence over the runtime config; null goes back to it', () => {
+    expect(getForceDefer()).toBe(false)
+    configureTeamplay({ forceDefer: true })
+    expect(globalThis[RUNTIME_CONFIG].forceDefer).toBe(true)
+    expect(getForceDefer()).toBe(true)
+    expect(setForceDefer(false)).toBe(false)
+    expect(getForceDefer()).toBe(false)
+    expect(getTeamplayConfig().forceDefer).toBe(false)
+    expect(setForceDefer(null)).toBe(true)
+    configureTeamplay({ forceDefer: null })
+    expect(globalThis[RUNTIME_CONFIG].forceDefer).toBe(undefined)
+    expect(getForceDefer()).toBe(false)
+  })
+
+  it('rejects a value that is not a boolean', () => {
+    expect(() => setForceDefer('yes')).toThrow(/boolean/)
+    expect(() => configureTeamplay({ forceDefer: 1 })).toThrow(/boolean/)
+    globalThis[RUNTIME_CONFIG] = { ...globalThis[RUNTIME_CONFIG], forceDefer: 'true' }
+    try {
+      expect(() => getForceDefer()).toThrow(/boolean/)
+    } finally {
+      delete globalThis[RUNTIME_CONFIG].forceDefer
+    }
+  })
+})

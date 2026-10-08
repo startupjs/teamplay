@@ -263,6 +263,7 @@ export type {
   TeamplayRuntimeConfig
 } from './config.ts'
 export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.ts'
+export { getForceDefer, setForceDefer } from './react/forceDefer.ts'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.ts'
 export { GUID_PATTERN, defineSchema, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'

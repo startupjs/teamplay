@@ -4,10 +4,12 @@ import $, {
   aggregation,
   defineSchema,
   getConnection,
+  getForceDefer,
   getRootSignal,
   getSubscriptionGcDelay,
   observer,
   reaction,
+  setForceDefer,
   setSubscriptionGcDelay,
   SuspenseGroup,
   sub,
@@ -102,6 +104,11 @@ React.createElement(ObservedUser, {})
 
 const gcDelay: number = getSubscriptionGcDelay()
 const nextGcDelay: number = setSubscriptionGcDelay(gcDelay)
+const forceDefer: boolean = getForceDefer()
+const nextForceDefer: boolean = setForceDefer(forceDefer)
+setForceDefer(null)
+// @ts-expect-error forceDefer is a boolean.
+setForceDefer('true')
 const activeConnection: TeamplayConnection = getConnection()
 const maybeDoc: TeamplayShareDoc | undefined = activeConnection.collections?.users?.user1
 const fetchedDoc: TeamplayShareDoc = activeConnection.get('users', 'user1')
@@ -154,7 +161,8 @@ function ExternalConsumerComponent () {
     scheduleUpdate(Promise.resolve()),
     maybeDoc,
     fetchedDoc,
-    nextGcDelay
+    nextGcDelay,
+    nextForceDefer
   ])
 
   optionalSuspenseGroupScheduleUpdate?.(Promise.resolve())

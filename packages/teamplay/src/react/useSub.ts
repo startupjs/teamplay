@@ -2,6 +2,7 @@ import { useEffect, useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import { acquireSub, type SubReleaseOptions } from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer, useTriggerUpdate } from './helpers.ts'
+import { getForceDefer } from './forceDefer.ts'
 import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import executionContextTracker from './executionContextTracker.ts'
@@ -486,7 +487,7 @@ interface SubHookState {
 
 // Fed to useDeferredValue() instead of the signal when a hook does not defer:
 // it never changes, so it never schedules a deferred render, and the hook
-// order stays the same when the defer mode of a hook changes between renders.
+// order stays the same when the defer mode changes at runtime (setForceDefer()).
 const NOT_DEFERRED = Symbol('teamplay.notDeferred')
 
 // version of sub() which works as a react hook and throws promise for Suspense
@@ -504,6 +505,7 @@ const NOT_DEFERRED = Symbol('teamplay.notDeferred')
 //   and suspends in turn, until the whole component is ready and commits at
 //   once.
 // - defer: false: an urgent re-subscribe suspends to the Suspense fallback.
+// - forceDefer (setForceDefer(), runtime config): defer: false is ignored.
 export function useSubDeferred (
   signal: unknown,
   params?: unknown,
@@ -515,7 +517,7 @@ export function useSubDeferred (
   const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   const observerDefer = useDefer()
   if (batch) promiseBatcher.activate()
-  const deferred = !!(defer ?? observerDefer ?? DEFAULT_DEFER)
+  const deferred = getForceDefer() || !!(defer ?? observerDefer ?? DEFAULT_DEFER)
   let serializedParams = params != null ? JSON.stringify(params) : undefined
   const deferredSignal = useDeferredValue(deferred ? signal : NOT_DEFERRED)
   const deferredParams = useDeferredValue(deferred ? serializedParams : NOT_DEFERRED)
@@ -526,8 +528,8 @@ export function useSubDeferred (
       signal = deferredSignal
       serializedParams = deferredParams as string | undefined
     } else if (hook.committedLease && !hook.committedLease.released) {
-      // the urgent render that turns deferring on gets the previous value
-      // of useDeferredValue(), which is the sentinel:
+      // the urgent render that turns deferring on (setForceDefer(true)) gets
+      // the previous value of useDeferredValue(), which is the sentinel:
       // render the committed target, as useDeferredValue() would have
       paramsAsJson = true
       signal = hook.committedLease.inputSignal
