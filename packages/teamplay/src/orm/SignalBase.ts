@@ -35,7 +35,7 @@ import {
   stringRemovePublic as _stringRemovePublic
 } from './dataTree.js'
 import getSignal, { rawSignal } from './getSignal.ts'
-import { docSubscriptions } from './Doc.js'
+import { acquireSub } from './sub.ts'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import {
@@ -881,6 +881,47 @@ function racerDeepCopy (value) {
   return value
 }
 
+// Runs `call` while holding a scoped subscription to the source doc of an
+// aggregation row (writes need the doc loaded). The subscription is released
+// once the call settles, through the normal GC grace: a write that follows
+// within the grace joins the lingering transport synchronously.
+function callWithSourceDoc ($doc, call) {
+  const acquisition = acquireSub($doc)
+  const run = () => {
+    let result
+    try {
+      result = call()
+    } catch (err) {
+      releaseQuietly(acquisition)
+      throw err
+    }
+    if (!isThenable(result)) {
+      releaseQuietly(acquisition)
+      return result
+    }
+    return Promise.resolve(result).then(value => {
+      releaseQuietly(acquisition)
+      return value
+    }, err => {
+      releaseQuietly(acquisition)
+      throw err
+    })
+  }
+  // a failed subscribe rejects and drops its own ownership
+  if (isThenable(acquisition.value)) return acquisition.value.then(run)
+  return run()
+}
+
+function releaseQuietly (acquisition) {
+  Promise.resolve(acquisition.release()).catch(ignoreReleaseError)
+}
+
+function ignoreReleaseError () {}
+
+function isThenable (value) {
+  return !!value && (typeof value === 'object' || typeof value === 'function') && typeof value.then === 'function'
+}
+
 // dot syntax returns a child signal only if no such method or property exists
 export const regularBindings = {
   apply (signal, thisArg, argumentsList) {
@@ -926,16 +967,11 @@ export const extremelyLateBindings = {
         if (getters.includes(key)) {
           const $parent = getSignal(getRoot(signal), segments)
           return Reflect.apply(fn, $parent, argumentsList)
-        // for async methods (setters) subscribe to the original doc and run the method on its relative signal
+        // for async methods (setters) subscribe to the original doc for the duration
+        // of the call and run the method on its relative signal
         } else {
           const $doc = getSignal(getRoot(signal), [collectionName, aggregationDocId])
-          const promise = docSubscriptions.subscribe($doc)
-          if (!promise) return Reflect.apply(fn, $original, argumentsList)
-          return new Promise(resolve => {
-            promise.then(() => {
-              resolve(Reflect.apply(fn, $original, argumentsList))
-            })
-          })
+          return callWithSourceDoc($doc, () => Reflect.apply(fn, $original, argumentsList))
         }
       } else if (!DEFAULT_GETTERS.includes(key)) {
         throw Error(ERRORS.aggregationSetter(segments, key))

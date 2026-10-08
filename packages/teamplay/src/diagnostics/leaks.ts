@@ -173,7 +173,6 @@ export function evaluate (collected: Collected, options: CheckLeaksOptions = {})
   }
 
   // owners created by calling the managers directly instead of sub()
-  // (e.g. aggregation-row setters subscribe the source doc and never release it)
   const counters = collected.summary.counters || {}
   for (const kind of ['doc', 'query', 'aggregation']) {
     const code = kind + '.subscribe.bypassedSub'

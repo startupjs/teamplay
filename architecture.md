@@ -263,7 +263,7 @@ $user.displayName       // child signal
 $user.displayName()     // parent model method call
 ```
 
-Aggregation rows have additional fallback behavior: when an aggregation row contains `_id` or `id`, model method calls can be routed back to the source document signal.
+Aggregation rows have additional fallback behavior: when an aggregation row contains `_id` or `id`, model method calls can be routed back to the source document signal. Non-getter calls (setters, model methods) hold a scoped subscription to the source document (`acquireSub()` in `sub.ts`) for the duration of the call and release it when the call settles, through the normal transport grace.
 
 This boundary is intentionally treated as high risk. Add focused behavior tests before changing proxy `apply` logic.
 

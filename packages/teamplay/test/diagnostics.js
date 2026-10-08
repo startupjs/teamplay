@@ -528,26 +528,28 @@ describe('diagnostics', () => {
     }
   })
 
-  it('flags aggregation-row setters that subscribe the source doc outside sub()', async () => {
+  it('flags subscriptions created by calling the managers directly instead of sub()', async () => {
     diagnostics.enable()
     setSubscriptionGcDelay(0)
     await createDoc(COLLECTION, 'agg1', { name: 'agg', active: true, price: 1 })
+    // aggregation-row setters hold the source doc only for the write (sub() records)
     const _rows = aggregation(({ active }) => [{ $match: { active, name: 'agg' } }])
     const $rows = await sub(_rows, { $collection: COLLECTION, active: true })
     for (let i = 0; i < 3; i++) await $rows[0].price.set(10 + i)
     await unsub($rows)
-    const snapshot = diagnostics.snapshot({ details: true })
-    const owned = mine(snapshot.details['docs.owned'])
-    // The aggregation is gone but each setter left a subscribe count on the source doc.
+    await diagnostics.waitForIdle()
+    assert.deepEqual(mine(diagnostics.snapshot({ details: true }).details['docs.owned']), [])
+    assert.equal(diagnostics.checkLeaks().findings.some(item => item.code === 'doc.subscribe.bypassedSub'), false)
+
+    const $doc = $[COLLECTION].agg1
+    for (let i = 0; i < 3; i++) await docSubscriptions.subscribe($doc)
+    const owned = mine(diagnostics.snapshot({ details: true }).details['docs.owned'])
     assert.equal(owned.length, 1)
     assert.deepEqual(owned[0].ownerRoots, ['__global__:3'])
     const finding = diagnostics.checkLeaks().findings.find(item => item.code === 'doc.subscribe.bypassedSub')
     assert.equal(finding?.count, 3)
     // cleanup
-    const hash = JSON.stringify([COLLECTION, 'agg1'])
-    for (const [ownerKey, record] of docSubscriptions.ownerRecords) {
-      if (record.hash === hash) await docSubscriptions.destroyByOwnerKey(ownerKey, { force: true })
-    }
+    for (let i = 0; i < 3; i++) await docSubscriptions.unsubscribe($doc)
   })
 
   it('diff() lists metrics that grew between snapshots', async () => {

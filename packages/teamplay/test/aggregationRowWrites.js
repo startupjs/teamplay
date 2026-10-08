@@ -64,6 +64,8 @@ describe('aggregation row writes', () => {
     }
     await unsub($rows)
     assert.equal(ownerCount('a'), 0, 'no owner is left on the source doc')
+    // the release of the last write is applied asynchronously
+    await diagnostics.waitForIdle()
     assert.equal(docSubscriptions.entries.has(docHash('a')), false, 'the source doc entry is torn down')
     const codes = diagnostics.checkLeaks().findings.map(finding => finding.code)
     assert.equal(codes.includes('doc.subscribe.bypassedSub'), false, JSON.stringify(codes))
