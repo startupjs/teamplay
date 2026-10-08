@@ -441,11 +441,11 @@ describe('useSub edge cases', () => {
     })
 
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('')
 
     await wait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('loading')
   })
 
@@ -486,17 +486,17 @@ describe('useSub edge cases', () => {
     })
 
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('')
 
     await wait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('loading')
 
     // Now set the whole document to create it
     act(() => { $.users.classicTest2.set({ name: 'John' }) })
     expect(container.textContent).toBe('John')
-    expect(renders).toBe(3)
+    expect(renders).toBe(4)
   })
 
   it('useSubClassic with batch keeps update resubscribe in background', async () => {

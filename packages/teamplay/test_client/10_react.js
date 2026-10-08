@@ -378,30 +378,30 @@ describe('useSub() for subscribing to documents', () => {
       )
     })
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('')
 
     await wait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('anonymous')
 
     fireEvent.click(container.querySelector('#doc'))
-    expect(renders).toBe(3)
+    expect(renders).toBe(4)
     expect(container.textContent).toBe('John')
 
     fireEvent.click(container.querySelector('#name'))
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('Jane')
 
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
 
     act(() => { $.users._1.name.set('Alice') })
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
     expect(container.textContent).toBe('Alice')
 
     await wait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
   })
 })
 
@@ -421,11 +421,11 @@ describe('useSub() for subscribing to queries', () => {
       return el('span', {}, $activeUsers.map($user => $user.name.get()).join(','))
     }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('Loading...')
 
     await wait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('John')
     expect($john.status.get()).toBe('active')
     expect($jane.status.get()).toBe('inactive')
@@ -433,17 +433,17 @@ describe('useSub() for subscribing to queries', () => {
     act(() => { $.users._2.status.set('active') })
     expect(container.textContent).toBe('John')
     await wait()
-    expect(renders).toBe(3)
+    expect(renders).toBe(4)
     expect(container.textContent).toBe('John,Jane')
 
     act(() => { $.users._1.status.set('inactive') })
     expect(container.textContent).toBe('John,Jane')
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('Jane')
 
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
   })
 
   it("handles query parameter changes. Should NOT show Suspense's 'Loading...' text on resubscribe", async () => {
@@ -469,35 +469,35 @@ describe('useSub() for subscribing to queries', () => {
       )
     }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('Loading...')
 
     await throttledWait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('John,Jane')
 
     fireEvent.click(container.querySelector('#active'))
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('John,Jane')
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('John,Jane')
     await throttledWait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
     expect(container.textContent).toBe('John')
 
     await wait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
 
     fireEvent.click(container.querySelector('#inactive'))
-    expect(renders).toBe(7)
+    expect(renders).toBe(8)
     expect(container.textContent).toBe('John')
     await throttledWait()
-    expect(renders).toBe(8)
+    expect(renders).toBe(9)
     expect(container.textContent).toBe('Jane')
 
     await throttledWait()
-    expect(renders).toBe(8)
+    expect(renders).toBe(9)
     resetTestThrottling()
   })
 })
