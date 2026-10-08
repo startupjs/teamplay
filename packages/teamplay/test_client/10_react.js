@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { $, useSub, useAsyncSub, useScheduleUpdate, observer, sub } from '../src/index.ts'
 import { setTestThrottling, resetTestThrottling } from '../src/react/useSub.ts'
 import { runGc, cache } from '../test/_helpers.js'
+import { releaseLastEventTarget } from './helpers/releaseLastEventTarget.js'
 import connect from '../src/connect/test.js'
 
 before(connect)
@@ -11,6 +12,7 @@ beforeEach(() => {
   expect(cache.size).toBe(1)
 })
 afterEach(cleanup)
+afterEach(releaseLastEventTarget)
 afterEach(runGc)
 
 describe('observer', () => {

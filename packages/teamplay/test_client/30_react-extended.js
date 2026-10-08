@@ -24,6 +24,7 @@ import { useId, useNow, useTriggerUpdate, useUnmount, useScheduleUpdate } from '
 import trapRender from '../src/react/trapRender.js'
 import renderAttemptDestroyer from '../src/react/renderAttemptDestroyer.ts'
 import { runGc, cache } from '../test/_helpers.js'
+import { releaseLastEventTarget } from './helpers/releaseLastEventTarget.js'
 import { get as _get, set as _set, del as _del } from '../src/orm/dataTree.js'
 import connect from '../src/connect/test.js'
 import { docSubscriptions } from '../src/orm/Doc.js'
@@ -41,6 +42,7 @@ beforeEach(() => {
   expect(cache.size).toBe(1)
 })
 afterEach(cleanup)
+afterEach(releaseLastEventTarget)
 afterEach(runGc)
 afterEach(() => {
   __resetEventsForTests()
