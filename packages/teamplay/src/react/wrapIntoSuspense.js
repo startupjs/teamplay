@@ -138,15 +138,26 @@ export default function wrapIntoSuspense ({
         scheduledUpdatePromise: undefined,
         destroyTimer: undefined,
         destroyed: false,
+        hasPendingUpdate: false,
         cache: new Map(),
         cacheDestroyCallbacks: new Set(),
-        // A new snapshot even without a listener: an update that arrives
-        // between a render and the subscription (children's effects run
-        // before this wrapper subscribes, StrictMode replays subscriptions)
-        // is caught by useSyncExternalStore's own check after it subscribes.
+        // The snapshot changes only while React listens. Without a listener
+        // the wrapper may have rendered in a concurrent render that is still
+        // in progress (React subscribes after the commit and yields while it
+        // renders): React checks the snapshots of such a render before it
+        // commits it, and a changed one makes it render the whole root again
+        // synchronously, discarding every component mounting in it. So the
+        // update waits for the next subscribe, which delivers it: children's
+        // effects run before this wrapper subscribes, StrictMode replays
+        // subscriptions, <Activity> shows a hidden subtree again. After an
+        // unmount nothing subscribes and React is never notified.
         notify () {
+          if (!adm.onStoreChange) {
+            adm.hasPendingUpdate = true
+            return
+          }
           adm.stateVersion = Symbol() // eslint-disable-line symbol-description
-          adm.onStoreChange?.()
+          adm.onStoreChange()
         },
         scheduleUpdate: promise => {
           if (!promise?.then) throw Error('scheduleUpdate() expects a promise')
@@ -169,6 +180,12 @@ export default function wrapIntoSuspense ({
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
           adm.onStoreChange = onStoreChange
+          if (adm.hasPendingUpdate) {
+            adm.hasPendingUpdate = false
+            // re-renders in this commit's flush (React's listener compares the
+            // snapshot with the rendered one)
+            adm.notify()
+          }
           return () => {
             // Never notify React after it unsubscribed: React queues an update
             // to an unmounted fiber until its next render, keeping the fiber
