@@ -1,7 +1,7 @@
 import { createElement as el, Fragment, useEffect, useLayoutEffect } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { $, useSub, useAsyncSub, observer, sub } from '../src/index.ts'
+import { $, useSub, useAsyncSub, useScheduleUpdate, observer, sub } from '../src/index.ts'
 import { setTestThrottling, resetTestThrottling } from '../src/react/useSub.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import connect from '../src/connect/test.js'
@@ -123,6 +123,17 @@ describe('observer', () => {
     unmount()
     await wait()
     expect(true).toBe(true)
+  })
+
+  // An update that arrives after React unsubscribed must not reach React:
+  // React 19 queues an update for an unmounted fiber in a module-level queue
+  // until its next render anywhere, keeping the component (and what its
+  // closures reference) alive until then.
+  it('does not notify React after unmount, so the unmounted component can be collected', async () => {
+    const componentRef = renderAndUnmountBeforeScheduledUpdate()
+    await wait()
+    await runGc()
+    expect(componentRef.deref()).toBe(undefined)
   })
 
   it('react to signal changes from useLayoutEffect', async () => {
@@ -548,6 +559,24 @@ describe('useAsyncSub()', () => {
     resetTestThrottling()
   })
 })
+
+// Kept out of the test body so that only React can keep the component alive.
+function renderAndUnmountBeforeScheduledUpdate () {
+  let resolve
+  const update = new Promise(_resolve => { resolve = _resolve })
+  function ScheduledUpdate () {
+    useScheduleUpdate()(update)
+    return el('span', {}, 'scheduled')
+  }
+  const { unmount } = render(el(observer(ScheduledUpdate)))
+  unmount()
+  // drop @testing-library's own reference to the rendered element
+  cleanup()
+  // delivered in a microtask: after React unsubscribed, before the observer
+  // wrapper is destroyed
+  resolve()
+  return new WeakRef(ScheduledUpdate)
+}
 
 function fr (...children) {
   return el(Fragment, {}, ...children)
