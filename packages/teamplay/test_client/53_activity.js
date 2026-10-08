@@ -3,8 +3,9 @@
 // leases) and runs the effects again when it shows the subtree. An observer
 // must come back from that fully: reactive, without re-acquiring its
 // subscriptions on every render, and with its scheduled updates (a
-// re-subscribe that resolves later) still re-rendering it.
-import { createElement as el, Activity } from 'react'
+// re-subscribe that resolves later) still re-rendering it. Skipped on React
+// 19.0 and 19.1, which have no <Activity>.
+import * as React from 'react'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { act, cleanup, render } from '@testing-library/react'
 import { $, diagnostics, observer, useSub } from '../src/index.ts'
@@ -14,6 +15,8 @@ import { getConnection } from '../src/orm/connection.ts'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
 import connect from '../src/connect/test.js'
 
+const { createElement: el, Activity } = React
+const describeActivity = Activity ? describe : describe.skip
 const COLLECTION = 'activityDocs'
 const baselineGcDelay = getSubscriptionGcDelay()
 const wait = ms => act(async () => { await new Promise(resolve => setTimeout(resolve, ms)) })
@@ -50,7 +53,7 @@ function leaseCreates () {
   return diagnostics.getCounters()['react.lease.create'] || 0
 }
 
-describe('observer() inside <Activity>', () => {
+describeActivity('observer() inside <Activity>', () => {
   it('is reactive after it is shown again and keeps its subscription lease across renders', async () => {
     diagnostics.enable()
     const $label = $.session.activityLabel
