@@ -94,7 +94,7 @@ export class QuerySubscriptions {
   pendingDestroyTimers: ReadonlyMapView<string, PendingQueryDestroyEntry>
   constructor (QueryClass?: QueryConstructor)
   subscribe ($query: Signal, options?: { intent?: SubscriptionIntent }): Promise<void> | void
-  unsubscribe ($query: Signal, options?: { intent?: SubscriptionIntent }): Promise<void>
+  unsubscribe ($query: Signal, options?: { intent?: SubscriptionIntent, awaitDestroy?: boolean }): Promise<void>
   destroy (collectionName: string, params: unknown, options?: { force?: boolean }): Promise<void>
   clear (): Promise<void>
   flushPendingDestroys (): Promise<void>

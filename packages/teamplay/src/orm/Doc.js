@@ -7,6 +7,14 @@ import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
+import {
+  addOwnerToken,
+  canJoinTransport,
+  createOwnerTokenCounts,
+  getTransportTargetMode,
+  reconcileEntryTransport,
+  removeOwnerToken
+} from './subscriptionTransport.js'
 import { getRoot, ROOT_ID, GLOBAL_ROOT_ID, getRootTransportMode } from './Root.ts'
 import {
   registerRootOwnedDirectDocSubscription,
@@ -208,7 +216,10 @@ export class DocSubscriptions {
     this.DocClass = DocClass
     this.ownerRecords = new Map() // ownerKey -> owner record
     this.entries = new Map() // transportHash -> transport entry
-    this.fr = new FinalizationRegistry(({ hash, ownerKey }) => this.destroyByOwnerKey(ownerKey, { hash, force: true }))
+    this.fr = new FinalizationRegistry(({ hash, ownerKey, token }) => {
+      this.releaseFinalizedToken(ownerKey, hash, token).catch(ignoreDestroyError)
+    })
+    this.lingeringHashesByRoot = new Map() // rootId -> Set<hash> released by that root, pending GC
     this.subCount = createReadonlyMapView({
       get: hash => this.getTrackedCount(hash),
       has: hash => this.getTrackedCount(hash) !== undefined,
@@ -268,7 +279,8 @@ export class DocSubscriptions {
         hash: meta.hash,
         segments: meta.segments ? [...meta.segments] : parseDocHash(meta.hash),
         fetchCount: 0,
-        subscribeCount: 0
+        subscribeCount: 0,
+        tokens: createOwnerTokenCounts()
       }
       this.ownerRecords.set(ownerKey, record)
     } else {
@@ -381,7 +393,6 @@ export class DocSubscriptions {
     const ownerKey = getDocOwnerKey(rootId, hash)
     const token = getDocFinalizationToken($doc)
     const entry = this.getOrCreateEntry(hash, segments)
-    const previousCount = this.getEntryTotalCount(entry)
     this.cancelDestroy(hash)
     const record = this.getOrCreateOwnerRecord(ownerKey, { hash, segments, rootId })
     this.incrementOwnerIntent(record, intent)
@@ -389,15 +400,17 @@ export class DocSubscriptions {
     if (rootId) {
       registerRootOwnedDirectDocSubscription(rootId, hash, segments, token)
     }
-    this.fr.register($doc, { hash, ownerKey }, token)
+    if (addOwnerToken(record.tokens, token, intent)) {
+      this.fr.register($doc, { hash, ownerKey, token }, token)
+    }
     this.ensureRuntime(hash, segments)
-    const doc = entry.runtime
-    if (
-      previousCount > 0 &&
-      doc &&
-      entry.phase === 'stable' &&
-      this.getDesiredTransportMode(hash) === doc.activeTransportMode
-    ) return
+    // Join a settled transport synchronously, including one lingering ownerless
+    // in its GC grace: its runtime already holds the data.
+    const targetMode = this.getTargetTransportMode(hash)
+    if (canJoinTransport(entry, targetMode)) {
+      entry.targetMode = targetMode
+      return
+    }
     return this.reconcileTransport(hash)
   }
 
@@ -413,7 +426,10 @@ export class DocSubscriptions {
     if (hadPendingDestroy) this.reconcileTransport(hash).catch(ignoreDestroyError)
   }
 
-  async unsubscribe ($doc, { intent = 'subscribe' } = {}) {
+  // Releases one owner count. The returned promise settles once the release is
+  // applied; with `awaitDestroy` (the default) it also waits for a deferred GC
+  // destroy of the runtime, which public unsub() does not.
+  async unsubscribe ($doc, { intent = 'subscribe', awaitDestroy = true } = {}) {
     const segments = [...$doc[SEGMENTS]]
     const hash = hashDoc(segments)
     const rootId = getOwningRootId($doc)
@@ -426,23 +442,46 @@ export class DocSubscriptions {
       return
     }
     this.setOwnerIntentCount(record, intent, currentIntentCount - 1)
-    const nextOwnerCount = this.getOwnerTotalCount(record)
+    const charged = removeOwnerToken(record.tokens, token, intent)
+    if (charged.emptied) this.fr.unregister(charged.token)
     if (rootId) {
-      unregisterRootOwnedDirectDocSubscription(rootId, hash, token)
+      unregisterRootOwnedDirectDocSubscription(rootId, hash, charged.token ?? token)
     }
+    await this.applyOwnerRelease(record, { awaitDestroy })
+  }
+
+  // Shared tail of an owner release (unsubscribe and finalized signals).
+  async applyOwnerRelease (record, { awaitDestroy = true } = {}) {
+    const { hash, segments, rootId } = record
     const entry = this.getOrCreateEntry(hash, segments)
-    if (nextOwnerCount === 0) {
-      this.fr.unregister(token)
-      if (record) {
-        this.removeOwnerFromEntry(record)
-      }
-      this.ownerRecords.delete(ownerKey)
+    if (this.getOwnerTotalCount(record) === 0) {
+      this.removeOwnerFromEntry(record)
+      this.deleteOwnerRecord(record)
     }
     const count = this.getEntryTotalCount(entry)
-    const destroyPromise = count === 0 ? this.scheduleDestroy(segments) : undefined
+    const deferred = getSubscriptionGcDelay() > 0
+    const destroyPromise = count === 0 ? this.scheduleDestroy(segments, { rootId }) : undefined
     await this.reconcileTransport(hash)
     if (count > 0) return
+    if (deferred && !awaitDestroy) return
     await destroyPromise
+  }
+
+  // The signal that acquired these counts was garbage-collected without
+  // unsub(): release exactly its counts. Other signals of the same path may
+  // still own the doc through the same owner key.
+  async releaseFinalizedToken (ownerKey, hash, token) {
+    const record = this.ownerRecords.get(ownerKey)
+    const counts = record?.tokens.get(token)
+    if (!counts) return
+    record.tokens.delete(token)
+    const released = counts.fetchCount + counts.subscribeCount
+    if (record.rootId) {
+      for (let i = 0; i < released; i++) unregisterRootOwnedDirectDocSubscription(record.rootId, hash, token)
+    }
+    this.setOwnerIntentCount(record, 'fetch', record.fetchCount - counts.fetchCount)
+    this.setOwnerIntentCount(record, 'subscribe', record.subscribeCount - counts.subscribeCount)
+    await this.applyOwnerRelease(record, { awaitDestroy: false })
   }
 
   async release ($doc) {
@@ -474,18 +513,26 @@ export class DocSubscriptions {
     }
     this.entries.clear()
     this.ownerRecords.clear()
+    this.lingeringHashesByRoot.clear()
   }
 
   async releaseRootOwnedSubscriptions (rootId) {
     const entries = Array.from(getRootOwnedDirectDocSubscriptions(rootId).entries())
-    if (entries.length === 0) return
     for (const [hash, entry] of entries) {
       for (const token of entry.tokenCounts.keys()) {
         this.fr.unregister(token)
       }
       await this.destroyByOwnerKey(getDocOwnerKey(rootId, hash), { hash, force: true })
     }
-    clearRootOwnedDirectDocSubscriptions(rootId)
+    if (entries.length) clearRootOwnedDirectDocSubscriptions(rootId)
+    // Closing a root also ends the GC grace of what that root released last.
+    const lingeringHashes = Array.from(this.lingeringHashesByRoot.get(rootId) || [])
+    for (const hash of lingeringHashes) {
+      const entry = this.entries.get(hash)
+      if (!entry?.pendingDestroy?.rootIds.has(rootId)) continue
+      if (this.getEntryTotalCount(entry) > 0) continue
+      await this.destroyByHash(hash, { force: true })
+    }
   }
 
   async flushPendingDestroys () {
@@ -506,6 +553,7 @@ export class DocSubscriptions {
     const existing = entry.pendingDestroy
     if (existing) {
       if (options.force) existing.force = true
+      this.trackLingeringRoot(existing, hash, options.rootId)
       return existing.promise
     }
     const pendingDestroy = createPendingDestroyEntry()
@@ -514,7 +562,29 @@ export class DocSubscriptions {
       this.destroyByHash(hash, { force: pendingDestroy.force }).catch(ignoreDestroyError)
     }, delay)
     entry.pendingDestroy = pendingDestroy
+    this.trackLingeringRoot(pendingDestroy, hash, options.rootId)
     return pendingDestroy.promise
+  }
+
+  trackLingeringRoot (pendingDestroy, hash, rootId) {
+    if (rootId == null) return
+    pendingDestroy.rootIds.add(rootId)
+    let hashes = this.lingeringHashesByRoot.get(rootId)
+    if (!hashes) {
+      hashes = new Set()
+      this.lingeringHashesByRoot.set(rootId, hashes)
+    }
+    hashes.add(hash)
+  }
+
+  untrackLingeringRoots (pendingDestroy, hash) {
+    for (const rootId of pendingDestroy.rootIds) {
+      const hashes = this.lingeringHashesByRoot.get(rootId)
+      if (!hashes) continue
+      hashes.delete(hash)
+      if (hashes.size === 0) this.lingeringHashesByRoot.delete(rootId)
+    }
+    pendingDestroy.rootIds.clear()
   }
 
   cancelDestroy (hash) {
@@ -523,35 +593,21 @@ export class DocSubscriptions {
     entry.resolve()
   }
 
-  async reconcileTransport (hash) {
-    const entry = this.getOrCreateEntry(hash)
-    entry.targetMode = this.getTargetTransportMode(hash)
-    if (entry.phase === 'transition' && entry.reconcilePromise) return entry.reconcilePromise
-    const next = Promise.resolve()
-      .catch(ignoreDestroyError)
-      .then(() => this.reconcileTransportNow(hash))
-    entry.phase = 'transition'
-    entry.reconcilePromise = next
-    try {
-      await next
-    } finally {
-      const currentEntry = this.entries.get(hash)
-      if (currentEntry?.reconcilePromise === next) {
-        currentEntry.reconcilePromise = null
-        currentEntry.phase = 'stable'
-      }
-      this.deleteEntryIfEmpty(hash)
-    }
+  reconcileTransport (hash) {
+    return reconcileEntryTransport(this, hash)
   }
 
-  async reconcileTransportNow (hash) {
+  async reconcileTransportNow (hash, settle) {
     const entry = this.getOrCreateEntry(hash)
     while (true) {
       let doc = entry.runtime
       const desiredMode = entry.targetMode = this.getTargetTransportMode(hash)
       const currentMode = doc?.activeTransportMode ?? entry.mode
       entry.mode = currentMode
-      if (desiredMode === currentMode) return
+      if (desiredMode === currentMode) {
+        settle?.()
+        return
+      }
       if (desiredMode === 'idle') {
         if (doc && currentMode !== 'idle') {
           await doc.unsubscribe()
@@ -659,6 +715,7 @@ export class DocSubscriptions {
     if (expectedEntry && pendingDestroy !== expectedEntry) return
     clearTimeout(pendingDestroy.timer)
     transportEntry.pendingDestroy = null
+    this.untrackLingeringRoots(pendingDestroy, hash)
     this.deleteEntryIfEmpty(hash)
     return pendingDestroy
   }
@@ -700,7 +757,7 @@ export class DocSubscriptions {
     const knownHash = hash ?? record?.hash
     if (record) {
       this.removeOwnerFromEntry(record)
-      this.ownerRecords.delete(ownerKey)
+      this.deleteOwnerRecord(record)
     }
     if (!knownHash) return
     const ownerKeys = this.entries.get(knownHash)?.owners
@@ -728,16 +785,12 @@ export class DocSubscriptions {
     return hasFetchBackedOwner ? 'fetch' : 'idle'
   }
 
+  // Owner-derived mode, except that an ownerless live transport lingers while
+  // its GC destroy is pending (see subscriptionTransport.js).
   getTargetTransportMode (hash) {
-    const desiredMode = this.getDesiredTransportMode(hash)
-    if (desiredMode !== 'idle') return desiredMode
     const entry = this.entries.get(hash)
-    const activeMode = entry?.runtime?.activeTransportMode ?? entry?.mode
-    const canReuseLiveTransport =
-      entry?.pendingDestroy &&
-      this.getEntryTotalCount(entry) === 0 &&
-      activeMode === 'subscribe'
-    return canReuseLiveTransport ? 'subscribe' : 'idle'
+    const lingering = !!entry?.pendingDestroy && this.getEntryTotalCount(entry) === 0
+    return getTransportTargetMode(this.getDesiredTransportMode(hash), entry, lingering)
   }
 
   removeAllOwnersFromEntry (hash) {
@@ -745,10 +798,19 @@ export class DocSubscriptions {
     if (!entry) return
     for (const ownerKey of Array.from(entry.owners)) {
       const record = this.ownerRecords.get(ownerKey)
-      if (record) this.removeOwnerFromEntry(record)
-      else entry.owners.delete(ownerKey)
-      this.ownerRecords.delete(ownerKey)
+      if (record) {
+        this.removeOwnerFromEntry(record)
+        this.deleteOwnerRecord(record)
+      } else {
+        entry.owners.delete(ownerKey)
+      }
     }
+  }
+
+  deleteOwnerRecord (record) {
+    for (const token of record.tokens.keys()) this.fr.unregister(token)
+    record.tokens.clear()
+    if (this.ownerRecords.get(record.ownerKey) === record) this.ownerRecords.delete(record.ownerKey)
   }
 
   async destroyTransportEntry (hash, runtime) {
@@ -792,7 +854,7 @@ export class DocSubscriptions {
     const entry = this.entries.get(hash)
     if (record) {
       this.removeOwnerFromEntry(record)
-      this.ownerRecords.delete(ownerKey)
+      this.deleteOwnerRecord(record)
     } else if (entry?.owners.has(ownerKey)) {
       entry.owners.delete(ownerKey)
     }
@@ -812,7 +874,7 @@ export class DocSubscriptions {
       await this.destroyTransportEntry(hash, nextEntry?.runtime || entry?.runtime)
       return
     }
-    await this.scheduleDestroy(segments, { force: false })
+    await this.scheduleDestroy(segments, { force: false, rootId: record?.rootId })
   }
 
   getRuntime (hash) {
@@ -880,6 +942,7 @@ function createPendingDestroyEntry () {
   return {
     timer: undefined,
     force: false,
+    rootIds: new Set(),
     promise,
     resolve: resolvePending,
     reject: rejectPending

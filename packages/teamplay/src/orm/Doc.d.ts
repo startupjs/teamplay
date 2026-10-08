@@ -80,7 +80,7 @@ export class DocSubscriptions {
   constructor (DocClass?: DocConstructor)
   init ($doc: Signal): void
   subscribe ($doc: Signal, options?: { intent?: SubscriptionIntent }): Promise<void> | void
-  unsubscribe ($doc: Signal, options?: { intent?: SubscriptionIntent }): Promise<void>
+  unsubscribe ($doc: Signal, options?: { intent?: SubscriptionIntent, awaitDestroy?: boolean }): Promise<void>
   retain ($doc: Signal): void
   release ($doc: Signal): Promise<void>
   destroy (segments: SignalPathSegments): Promise<void>

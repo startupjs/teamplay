@@ -206,9 +206,12 @@ function disposeSubRecord ($signal: SignalBaseInstance, record: SubRecord): Prom
   const rootId = $root?.[ROOT_ID]
   if (isRootContextClosed(rootId)) return
 
-  if (record.kind === 'doc') return docSubscriptions.unsubscribe($signal, { intent: record.intent })
-  if (record.kind === 'query') return querySubscriptions.unsubscribe($signal, { intent: record.intent })
-  if (record.kind === 'aggregation') return aggregationSubscriptions.unsubscribe($signal, { intent: record.intent })
+  // Resolve once ownership is released; a deferred GC destroy of the runtime
+  // (transport grace) is not awaited.
+  const options = { intent: record.intent, awaitDestroy: false }
+  if (record.kind === 'doc') return docSubscriptions.unsubscribe($signal, options)
+  if (record.kind === 'query') return querySubscriptions.unsubscribe($signal, options)
+  if (record.kind === 'aggregation') return aggregationSubscriptions.unsubscribe($signal, options)
 }
 
 function getAggregationFromFunction (

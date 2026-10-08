@@ -1983,7 +1983,7 @@ describe('Direct document transport grace', () => {
   })
 })
 
-describe('Transport grace non-goals', () => {
+describe('Query and aggregation transport grace', () => {
   afterEach(assertTrackedManagersAndReset)
   const gcDelay = 60_000
 
@@ -1995,7 +1995,7 @@ describe('Transport grace non-goals', () => {
     __resetSubscriptionGcDelayForTests()
   })
 
-  it('keeps query transport teardown eager while retaining its runtime for GC', async () => {
+  it('keeps the query transport live during GC grace and lets a new owner adopt it', async () => {
     const manager = createTrackedQueryManager(MockQuery)
     const $query = createMockQuerySignal('gamesQueryGrace', { active: true })
     const hash = $query[QUERY_HASH]
@@ -2005,19 +2005,27 @@ describe('Transport grace non-goals', () => {
     const unsubscribePromise = manager.unsubscribe($query)
     await wait(0)
 
-    assert.deepEqual(query.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
-    assert.equal(query.activeTransportMode, 'idle')
-    assert.ok(manager.queries.has(hash), 'only materialized query runtime remains until GC')
+    assert.deepEqual(query.events, ['subscribe:subscribe'], 'wire unsubscribe is deferred')
+    assert.equal(query.activeTransportMode, 'subscribe')
     assert.equal(manager.pendingDestroyTimers.size, 1)
 
-    await manager.flushPendingDestroys()
+    assert.equal(manager.subscribe($query), undefined, 'adoption is synchronous')
     await unsubscribePromise
+    assert.equal(manager.queries.get(hash), query)
+    assert.equal(manager.pendingDestroyTimers.size, 0)
+    assert.deepEqual(query.events, ['subscribe:subscribe'], 'adoption does not churn the wire')
+
+    const finalUnsubscribePromise = manager.unsubscribe($query)
+    await manager.flushPendingDestroys()
+    await finalUnsubscribePromise
+    assert.deepEqual(query.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(manager.queries.has(hash), false)
   })
 
-  it('keeps aggregation transport teardown eager while retaining its runtime for GC', async () => {
+  it('keeps the aggregation transport live during GC grace and tears it down at expiry', async () => {
     const manager = createTrackedQueryManager(MockQuery)
     manager.runtimeKind = 'aggregation'
-    const $root = getRootSignal({ rootId: '_aggregation_transport_grace_non_goal' })
+    const $root = getRootSignal({ rootId: '_aggregation_transport_grace' })
     const $aggregation = getAggregationSignal(
       'gamesAggregationGrace',
       { $aggregate: [{ $match: { active: true } }] },
@@ -2030,13 +2038,43 @@ describe('Transport grace non-goals', () => {
     const unsubscribePromise = manager.unsubscribe($aggregation)
     await wait(0)
 
-    assert.deepEqual(aggregation.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
-    assert.equal(aggregation.activeTransportMode, 'idle')
-    assert.ok(manager.queries.has(hash), 'only materialized aggregation runtime remains until GC')
+    assert.deepEqual(aggregation.events, ['subscribe:subscribe'])
+    assert.equal(aggregation.activeTransportMode, 'subscribe')
+    assert.ok(aggregation.rootIds.has($root[ROOT_ID]), 'the lingering owner keeps its root attached')
     assert.equal(manager.pendingDestroyTimers.size, 1)
 
     await manager.flushPendingDestroys()
     await unsubscribePromise
+    assert.deepEqual(aggregation.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(manager.queries.has(hash), false)
+  })
+
+  it('keeps a shared transport while another released owner is still in its grace', async () => {
+    const manager = createTrackedQueryManager(MockQuery)
+    const $rootA = getRootSignal({ rootId: '_query_grace_owner_a' })
+    const $rootB = getRootSignal({ rootId: '_query_grace_owner_b' })
+    const $queryA = getQuerySignal('gamesQueryGraceShared', { active: true }, { root: $rootA })
+    const $queryB = getQuerySignal('gamesQueryGraceShared', { active: true }, { root: $rootB })
+    const hash = $queryA[QUERY_HASH]
+
+    await manager.subscribe($queryA)
+    await manager.subscribe($queryB)
+    const query = manager.queries.get(hash)
+    const unsubscribeA = manager.unsubscribe($queryA)
+    const unsubscribeB = manager.unsubscribe($queryB)
+    await wait(0)
+
+    // Expire A's grace only: B's pending destroy still holds the transport.
+    await manager.destroyByOwnerKey(getQueryOwnerKeyForTest($queryA, $rootA[ROOT_ID]), { transportHash: hash })
+    await unsubscribeA
+    assert.equal(query.activeTransportMode, 'subscribe')
+    assert.equal(query.rootIds.has($rootA[ROOT_ID]), false, 'the expired owner detached its root')
+    assert.equal(query.rootIds.has($rootB[ROOT_ID]), true)
+
+    await manager.flushPendingDestroys()
+    await unsubscribeB
+    assert.deepEqual(query.events, ['subscribe:subscribe', 'unsubscribe:subscribe'])
+    assert.equal(manager.entries.size, 0)
   })
 })
 

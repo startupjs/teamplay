@@ -340,15 +340,24 @@ sub($.users[id])
 
 [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
 
-The cleanup grace has transport-specific semantics:
+The cleanup grace (racer's "unload delay") is shared by documents, queries and
+aggregations ([packages/teamplay/src/orm/subscriptionTransport.js](./packages/teamplay/src/orm/subscriptionTransport.js)):
 
-- an already-live direct document keeps its runtime, materialized data, and
-  ShareDB subscription through `subscriptionGcDelay`; a matching owner can
-  adopt all three without a wire unsubscribe/resubscribe cycle;
-- a direct fetch keeps only its runtime and materialized data through the grace;
-  its transport is unfetched eagerly, and a later owner performs a fresh fetch;
-- forced cleanup (`clear()`, root disposal, explicit destroy, or finalization)
-  bypasses the grace and closes the transport immediately.
+- owner counts are exact: `unsub()` releases its owner at once and resolves
+  without waiting for the delayed destroy;
+- an already-live transport keeps its runtime, materialized data, and ShareDB
+  subscription through `subscriptionGcDelay` after its final owner leaves; a new
+  owner adopts all three synchronously (`sub()` returns the signal, not a
+  promise) with no wire traffic;
+- a fetch keeps only its runtime and materialized data through the grace; its
+  transport is unfetched eagerly, and a later owner performs a fresh fetch;
+- a release that changes nothing on the wire leaves the entry `stable`, so a
+  following `sub()` of the same target in the same render stays synchronous;
+- forced cleanup (`clear()`, root disposal, explicit destroy) bypasses the grace
+  and closes the transport immediately; root disposal also ends the grace of
+  what that root released last;
+- a garbage-collected signal that still held subscriptions releases only the
+  counts it acquired (per-signal token), then goes through the normal grace.
 
 ### Query Subscription Flow
 
@@ -373,9 +382,9 @@ $queries.<hash>.extra
 
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
-Query GC does not share the direct-live transport grace. Its runtime/private
-materialization may remain until delayed cleanup, but the ShareDB query
-transport closes as soon as its final owner leaves.
+Queries share the transport grace. A released owner keeps its root attached
+(its `$queries.<hash>` data stays) until its own pending destroy fires; the
+ShareDB query stays subscribed while any released owner is in its grace.
 
 ### Aggregation Subscription Flow
 
@@ -393,8 +402,8 @@ sub(aggregationHeader, params)
 
 [packages/teamplay/src/orm/Aggregation.js](./packages/teamplay/src/orm/Aggregation.js) extends query behavior. Aggregation output comes from query `extra`, not from normal query `results`. If aggregation rows include `_id` or `id`, the runtime can inject configured id fields and route model method calls back to source documents.
 
-Aggregations reuse query transport teardown semantics: materialized runtime
-state may wait for GC, while the server aggregation transport closes eagerly.
+Aggregations reuse the query transport grace: a live aggregation stays
+subscribed through `subscriptionGcDelay` after its final owner leaves.
 
 ## Writes And Mutations
 

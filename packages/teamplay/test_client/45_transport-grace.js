@@ -61,12 +61,14 @@ describe.each(Object.keys(TARGETS))('%s: readiness check followed by useSub of t
     const wire = []
     const onSend = message => { if (WIRE_ACTIONS.has(message.a)) wire.push(message.a) }
 
+    // The render-count guard bails out of a render loop for good, so the hook
+    // order is stable for every render that reaches the hooks.
     const Component = observer(function ReadinessThenUseSub () {
       stats.renders += 1
       if (stats.renders > MAX_RENDERS) return el('span', {}, 'RenderLoop')
-      if (memo) useMemoReadiness(args)
+      if (memo) useMemoReadiness(args) // eslint-disable-line react-hooks/rules-of-hooks
       else checkReadiness(args)
-      const $signal = useSub(...args, { defer: false })
+      const $signal = useSub(...args, { defer: false }) // eslint-disable-line react-hooks/rules-of-hooks
       return el('span', {}, $signal ? 'Ready' : 'Missing')
     }, { suspenseProps: { fallback: el('span', {}, 'Loading') } })
 
