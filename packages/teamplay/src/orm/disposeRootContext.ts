@@ -46,6 +46,7 @@ async function runDispose (rootId: string, $root?: object): Promise<void> {
   }
 
   await docSubscriptions.releaseRootOwnedSubscriptions(rootId)
+  await docSubscriptions.releaseRootWrittenDocs(rootId)
 
   context.resetPrivateData()
 

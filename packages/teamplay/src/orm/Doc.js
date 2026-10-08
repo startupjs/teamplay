@@ -23,7 +23,9 @@ import {
   registerRootOwnedDirectDocSubscription,
   unregisterRootOwnedDirectDocSubscription,
   getRootOwnedDirectDocSubscriptions,
-  clearRootOwnedDirectDocSubscriptions
+  clearRootOwnedDirectDocSubscriptions,
+  registerRootWrittenDoc,
+  takeRootWrittenDocs
 } from './rootContext.ts'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
@@ -422,7 +424,10 @@ export class DocSubscriptions {
   }
 
   retain ($doc) {
-    const segments = [...$doc[SEGMENTS]]
+    this.retainSegments([...$doc[SEGMENTS]])
+  }
+
+  retainSegments (segments) {
     const hash = hashDoc(segments)
     const entry = this.getOrCreateEntry(hash, segments)
     const hadPendingDestroy = !!entry.pendingDestroy
@@ -499,6 +504,36 @@ export class DocSubscriptions {
     this.setOwnerIntentCount(record, 'fetch', record.fetchCount - counts.fetchCount)
     this.setOwnerIntentCount(record, 'subscribe', record.subscribeCount - counts.subscribeCount)
     await this.applyOwnerRelease(record, { awaitDestroy: false })
+  }
+
+  // A public write through a non-global root to a doc that nothing tracks (no
+  // owner, no retain, no pending destroy): the root holds the doc like a query
+  // retain until it is disposed, so read-after-write keeps working while the
+  // root lives and the doc does not outlive it (racer had a model and a
+  // connection per request). The global root's writes are not tracked.
+  retainWrittenDoc (rootId, segments) {
+    if (rootId == null || rootId === GLOBAL_ROOT_ID) return
+    const docSegments = segments.slice(0, 2)
+    const hash = hashDoc(docSegments)
+    const entry = this.entries.get(hash)
+    if (entry && (this.getEntryTotalCount(entry) > 0 || entry.pendingDestroy)) return
+    const [collection, docId] = docSegments
+    if (!getConnection().collections?.[collection]?.[docId]) return
+    if (!registerRootWrittenDoc(rootId, hash)) return
+    this.retainSegments(docSegments)
+  }
+
+  // Root disposal: drop the retains of the docs the root wrote, and destroy
+  // the ones nothing else holds (closing a root ends their grace).
+  async releaseRootWrittenDocs (rootId) {
+    for (const hash of takeRootWrittenDocs(rootId)) {
+      const entry = this.entries.get(hash)
+      if (!entry || entry.retainCount <= 0) continue
+      entry.retainCount -= 1
+      if (this.getEntryTotalCount(entry) > 0) continue
+      clearDowngradeGrace(entry)
+      await this.destroyByHash(hash)
+    }
   }
 
   async release ($doc) {

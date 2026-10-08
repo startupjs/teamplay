@@ -36,6 +36,7 @@ import {
 } from './dataTree.js'
 import getSignal, { rawSignal } from './getSignal.ts'
 import { acquireSub } from './sub.ts'
+import { docSubscriptions } from './Doc.js'
 import { IS_QUERY, HASH, QUERIES } from './Query.js'
 import { AGGREGATIONS, IS_AGGREGATION, getAggregationCollectionName, getAggregationDocId } from './Aggregation.js'
 import {
@@ -155,9 +156,17 @@ const SIGNAL_READ_CONTEXT = {
   }
 }
 
+// A doc written through a non-global root without a subscription stays loaded
+// until that root closes (see DocSubscriptions.retainWrittenDoc()).
+function retainRootWrite ($signal, segments) {
+  if (segments.length < 2) return
+  docSubscriptions.retainWrittenDoc(getSignalOwningRootId($signal), segments)
+}
+
 const SIGNAL_VALUE_MUTATION_CONTEXT = {
   getOwningRootId: getSignalOwningRootId,
   isPublicCollection,
+  afterPublicWrite: retainRootWrite,
   setPublicDoc: _setPublicDoc,
   setPrivateData,
   deletePublicDoc (segments) {
@@ -436,13 +445,17 @@ export class Signal<TValue = unknown> extends Function {
       : value
 
     if (isPublicCollection(segments[0])) {
-      if (value === undefined) {
-        await _setPublicDoc(segments, nextValue)
-        if (segments.length === 2) {
-          _del(segments)
+      try {
+        if (value === undefined) {
+          await _setPublicDoc(segments, nextValue)
+          if (segments.length === 2) {
+            _del(segments)
+          }
+        } else {
+          await _setPublicDocReplace(segments, nextValue)
         }
-      } else {
-        await _setPublicDocReplace(segments, nextValue)
+      } finally {
+        retainRootWrite(this, segments)
       }
       return
     }

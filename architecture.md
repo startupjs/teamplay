@@ -290,6 +290,14 @@ Document signals read from this tree once docs are fetched/subscribed. Writes to
 
 Public document ids are strings. Numeric segments are array indices, not document ids.
 
+Docs written without a subscription: a public write through a non-global root
+to a doc that nothing tracks (no owner, retain or pending destroy) makes that
+root retain the doc in the doc manager until the root is closed or collected,
+so read-after-write works while the root lives and the doc does not outlive
+it (racer had a model and a ShareDB connection per request). Writes through
+the global root are not tracked: such docs stay loaded, as on a racer client
+page.
+
 ### Root-Scoped Private Data
 
 Private/local data is root-owned and lives in [packages/teamplay/src/orm/rootContext.ts](./packages/teamplay/src/orm/rootContext.ts) plus [packages/teamplay/src/orm/privateData.js](./packages/teamplay/src/orm/privateData.js).

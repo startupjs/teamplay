@@ -40,7 +40,11 @@ export async function setSignalValue<TSignal extends SignalValueMutationOwner> (
     : value
 
   if (context.isPublicCollection(segments[0])) {
-    await context.setPublicDoc(segments, nextValue)
+    try {
+      await context.setPublicDoc(segments, nextValue)
+    } finally {
+      context.afterPublicWrite?.($signal, segments)
+    }
     return
   }
 
@@ -59,7 +63,11 @@ export async function deleteSignalValue<TSignal extends SignalValueMutationOwner
 
   if (context.isPublicCollection(segments[0])) {
     if (segments.length === 1) throw Error('Can\'t delete the whole collection')
-    await context.deletePublicDoc(segments)
+    try {
+      await context.deletePublicDoc(segments)
+    } finally {
+      context.afterPublicWrite?.($signal, segments)
+    }
     return
   }
 

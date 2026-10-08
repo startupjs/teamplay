@@ -24,7 +24,11 @@ describe('root-scoped public signals', () => {
     setSubscriptionGcDelay(0)
   })
 
+  const roots = []
+
   afterEach(async () => {
+    // a root holds the docs it wrote until it is closed
+    for (const $root of roots.splice(0)) await $root.close()
     _del([PUBLIC_COLLECTION])
     _del([PUBLIC_VIEW_COLLECTION])
     _del([PUBLIC_MODEL_COLLECTION])
@@ -37,7 +41,9 @@ describe('root-scoped public signals', () => {
   })
 
   function createRoot (rootId) {
-    return getRootSignal({ rootId })
+    const $root = getRootSignal({ rootId })
+    roots.push($root)
+    return $root
   }
 
   it('creates distinct public doc and child signals per root while reusing them within a root', () => {

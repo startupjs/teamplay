@@ -1,5 +1,5 @@
 import { observable } from '@nx-js/observer-util'
-import { normalizeRootId } from './rootScope.ts'
+import { isGlobalRootId, normalizeRootId } from './rootScope.ts'
 import { getDefaultFetchOnly } from './connection.ts'
 import WeakRef, { type WeakRefLike } from '../utils/MockWeakRef.ts'
 import type { PathSegment } from './types/path.ts'
@@ -42,6 +42,9 @@ export default class RootContext {
   readonly aggregationRuntimeHashes = new Set<string>()
   readonly signalHashes = new Set<string>()
   readonly directDocSubscriptions = new Map<string, DirectDocSubscriptionEntry>()
+  // public docs this root wrote while nothing tracked them; the doc manager
+  // retains them for the root until it is disposed
+  readonly writtenDocs = new Set<string>()
 
   constructor (rootId: RootId, { fetchOnly }: RootContextOptions = {}) {
     this.rootId = normalizeRootId(rootId)
@@ -171,7 +174,8 @@ export default class RootContext {
       this.queryRuntimeHashes.size === 0 &&
       this.aggregationRuntimeHashes.size === 0 &&
       this.signalHashes.size === 0 &&
-      this.directDocSubscriptions.size === 0
+      this.directDocSubscriptions.size === 0 &&
+      this.writtenDocs.size === 0
     )
   }
 }
@@ -297,6 +301,24 @@ export function clearRootOwnedDirectDocSubscriptions (rootId: RootId): void {
 // signal) is alive: late writes and subscriptions through its signals must not
 // recreate the context. Without `$root` (the root signal was already
 // collected) nothing can reach the id, so it is not remembered.
+// Returns true when the doc is new for this root (the caller retains it once).
+// A closed root or the global root does not hold written docs.
+export function registerRootWrittenDoc (rootId: RootId, hash: string): boolean {
+  if (rootId == null || isGlobalRootId(rootId)) return false
+  const context = getRootContext(rootId, false)
+  if (!context || context.writtenDocs.has(hash)) return false
+  context.writtenDocs.add(hash)
+  return true
+}
+
+export function takeRootWrittenDocs (rootId: RootId): string[] {
+  const context = getRootContext(rootId, false)
+  if (!context) return []
+  const hashes = Array.from(context.writtenDocs)
+  context.writtenDocs.clear()
+  return hashes
+}
+
 export function deleteRootContext (rootId: RootId, $root?: object): void {
   const normalizedRootId = normalizeRootId(rootId)
   ROOT_CONTEXTS.delete(normalizedRootId)

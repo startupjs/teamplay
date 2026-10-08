@@ -196,7 +196,8 @@ describe('root finalization', () => {
       let $rootA = getRootSignal({ rootId: rootIdA, fetchOnly: true })
       const $rootB = getRootSignal({ rootId: rootIdB, fetchOnly: false })
 
-      await $rootA[DOC_COLLECTION][docId].set({ name: 'One' })
+      // created outside the roots: a root holds the docs it writes until it closes
+      await createDocDirectly(DOC_COLLECTION, docId, { name: 'One' })
 
       let $docA = $rootA[DOC_COLLECTION][docId]
       const $docB = $rootB[DOC_COLLECTION][docId]
@@ -235,6 +236,13 @@ async function waitForDisposed (rootId, iterations = 8) {
     if (!__getRootContextForTests(rootId)) return
   }
   assert.fail(`Expected root context ${rootId} to be disposed`)
+}
+
+async function createDocDirectly (collection, id, data) {
+  const doc = getConnection().get(collection, id)
+  await new Promise((resolve, reject) => doc.fetch(err => (err ? reject(err) : resolve())))
+  if (doc.type != null) return
+  await new Promise((resolve, reject) => doc.create(data, err => (err ? reject(err) : resolve())))
 }
 
 async function destroyConnectionCollection (collectionName) {

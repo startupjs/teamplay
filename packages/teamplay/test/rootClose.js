@@ -167,7 +167,8 @@ describe('root close()', () => {
     const $docB = $rootB[DOC_COLLECTION]._1
     const hash = JSON.stringify([DOC_COLLECTION, '_1'])
 
-    await $docA.set({ title: 'Doc 1' })
+    // created outside the roots: a root holds the docs it writes until it closes
+    await createDocDirectly(DOC_COLLECTION, '_1', { title: 'Doc 1' })
     await sub($docA)
     await sub($docB)
 
@@ -290,6 +291,13 @@ describe('root close()', () => {
     await closeSignal($rootAgain)
   })
 })
+
+async function createDocDirectly (collection, id, data) {
+  const doc = getConnection().get(collection, id)
+  await new Promise((resolve, reject) => doc.fetch(err => (err ? reject(err) : resolve())))
+  if (doc.type != null) return
+  await new Promise((resolve, reject) => doc.create(data, err => (err ? reject(err) : resolve())))
+}
 
 function closeSignal ($signal) {
   return new Promise((resolve, reject) => {
