@@ -93,19 +93,20 @@ const unmountedAdms = new FinalizationRegistry(({ callbacks, diagId }) => {
   if (diagId != null) noteAdmCollected(diagId)
 })
 
+// Releases what the wrapper holds while it is subscribed. The wrapper stays
+// usable: <Activity> unsubscribes a subtree it hides but keeps mounted, and
+// subscribes it again when it shows it.
 function destroyAdm (adm) {
   unmountedAdms.unregister(adm)
   if (diag.on) noteAdmDestroyed(adm)
   clearTimeout(adm.destroyTimer)
   adm.destroyTimer = undefined
-  for (const cleanup of Array.from(adm.cacheDestroyCallbacks || [])) cleanup()
-  adm.cacheDestroyCallbacks?.clear()
+  adm.destroyed = true
+  for (const cleanup of Array.from(adm.cacheDestroyCallbacks)) cleanup()
+  adm.cacheDestroyCallbacks.clear()
   adm.onStoreChange = undefined
   adm.scheduledUpdatePromise = undefined
-  adm.scheduleUpdate = undefined
-  adm.cache?.clear()
-  adm.cacheDestroyCallbacks = undefined
-  adm.cache = undefined
+  adm.cache.clear()
 }
 
 function scheduleDestroyAdm (adm) {
@@ -130,11 +131,13 @@ export default function wrapIntoSuspense ({
     const componentMetaRef = useRef()
     const admRef = useRef()
     if (!admRef.current) {
+      const name = Component.displayName || Component.name || 'Anonymous'
       const adm = {
         stateVersion: Symbol(), // eslint-disable-line symbol-description
         onStoreChange: undefined,
         scheduledUpdatePromise: undefined,
         destroyTimer: undefined,
+        destroyed: false,
         cache: new Map(),
         cacheDestroyCallbacks: new Set(),
         // A new snapshot even without a listener: an update that arrives
@@ -157,6 +160,11 @@ export default function wrapIntoSuspense ({
         },
         subscribe (onStoreChange) {
           unmountedAdms.unregister(adm)
+          if (adm.destroyed) {
+            // shown again by <Activity>
+            adm.destroyed = false
+            if (diag.on) noteAdmCreated(adm, name, componentId)
+          }
           if (diag.on) noteAdmSubscribed(adm)
           clearTimeout(adm.destroyTimer)
           adm.destroyTimer = undefined
@@ -174,7 +182,7 @@ export default function wrapIntoSuspense ({
         }
       }
       admRef.current = adm
-      if (diag.on) noteAdmCreated(adm, Component.displayName || Component.name || 'Anonymous', componentId)
+      if (diag.on) noteAdmCreated(adm, name, componentId)
       unmountedAdms.register(adm, {
         callbacks: adm.cacheDestroyCallbacks,
         diagId: diag.on ? objectId(adm) : undefined
@@ -190,19 +198,19 @@ export default function wrapIntoSuspense ({
         createdAt: suspenseGroup?.createdAt ?? Date.now(),
         defer,
         triggerUpdate: () => adm.notify(),
-        scheduleUpdate: promise => adm.scheduleUpdate?.(promise),
+        scheduleUpdate: promise => adm.scheduleUpdate(promise),
         cache: {
-          get: key => adm.cache?.get(key),
-          set: (key, value) => adm.cache?.set(key, value),
-          has: key => adm.cache?.has(key),
+          get: key => adm.cache.get(key),
+          set: (key, value) => adm.cache.set(key, value),
+          has: key => adm.cache.has(key),
           onDestroy: cleanup => {
             // capture the set, not the wrapper: the returned closure is kept by
             // what the callback cleans up (a lease), which must not keep the
             // wrapper alive
             const callbacks = adm.cacheDestroyCallbacks
-            callbacks?.add(cleanup)
+            callbacks.add(cleanup)
             return () => {
-              callbacks?.delete(cleanup)
+              callbacks.delete(cleanup)
             }
           }
         }
