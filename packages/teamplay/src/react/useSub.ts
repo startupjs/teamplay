@@ -2,6 +2,7 @@ import { useEffect, useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
 import { acquireSub, type SubReleaseOptions } from '../orm/sub.ts'
 import { useScheduleUpdate, useCache, useDefer, useTriggerUpdate } from './helpers.ts'
+import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
@@ -474,59 +475,109 @@ function closeBatchBarrier (
   }
 }
 
+// Per-hook state of useSubDeferred(), kept in a ref of the component.
+interface SubHookState {
+  // the last signal this hook returned (any render, committed or not);
+  // keeps it from being garbage collected while the component exists
+  $signal: unknown
+  // the lease of this hook's last commit (set in its commit effect)
+  committedLease?: SubscriptionLease
+}
+
+// Fed to useDeferredValue() instead of the signal when a hook does not defer:
+// it never changes, so it never schedules a deferred render, and the hook
+// order stays the same when the defer mode of a hook changes between renders.
+const NOT_DEFERRED = Symbol('teamplay.notDeferred')
+
 // version of sub() which works as a react hook and throws promise for Suspense
+//
+// A subscription that is not ready suspends the render (except in async
+// mode), so a component never commits a hook's new target before it is
+// loaded, and subscriptions that depend on each other (a doc, then the doc
+// its field points to) switch together:
+// - deferred (default): the signal and params go through useDeferredValue().
+//   An urgent render gets the previous (committed, ready) ones and renders
+//   the previous consistent state; the new ones appear only in a non-urgent
+//   render (React's deferred render, a transition, a retry), where
+//   suspending keeps the committed UI on screen without the fallback. Each
+//   dependent hook then gets its new input in the retried non-urgent render
+//   and suspends in turn, until the whole component is ready and commits at
+//   once.
+// - defer: false: an urgent re-subscribe suspends to the Suspense fallback.
 export function useSubDeferred (
   signal: unknown,
   params?: unknown,
   { async = false, defer, batch = false }: UseSubOptions = {}
 ): unknown {
-  const $signalRef = useRef<unknown>(undefined)
+  const hookRef = useRef<SubHookState | undefined>(undefined)
+  const hook = hookRef.current ??= { $signal: undefined }
   const scheduleUpdate = useScheduleUpdate()
   const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   const observerDefer = useDefer()
   if (batch) promiseBatcher.activate()
-  defer ??= observerDefer ?? DEFAULT_DEFER
-  if (defer) {
-    signal = useDeferredValue(signal) // eslint-disable-line react-hooks/rules-of-hooks
-    const serializedParams = useDeferredValue(params ? JSON.stringify(params) : undefined) // eslint-disable-line react-hooks/rules-of-hooks
-    params = serializedParams != null ? JSON.parse(serializedParams) : undefined
+  const deferred = !!(defer ?? observerDefer ?? DEFAULT_DEFER)
+  let serializedParams = params != null ? JSON.stringify(params) : undefined
+  const deferredSignal = useDeferredValue(deferred ? signal : NOT_DEFERRED)
+  const deferredParams = useDeferredValue(deferred ? serializedParams : NOT_DEFERRED)
+  let paramsAsJson = false
+  if (deferred) {
+    if (deferredSignal !== NOT_DEFERRED && deferredParams !== NOT_DEFERRED) {
+      paramsAsJson = true
+      signal = deferredSignal
+      serializedParams = deferredParams as string | undefined
+    } else if (hook.committedLease && !hook.committedLease.released) {
+      // the urgent render that turns deferring on gets the previous value
+      // of useDeferredValue(), which is the sentinel:
+      // render the committed target, as useDeferredValue() would have
+      paramsAsJson = true
+      signal = hook.committedLease.inputSignal
+      serializedParams = hook.committedLease.serializedParams
+    }
   }
-  const subscriptionLease = useSubscriptionLease(signal, params)
+  // deferred params are passed as JSON (parsed only to acquire a new lease)
+  const subscriptionLease = useSubscriptionLease(signal, serializedParams, paramsAsJson ? undefined : params, hook)
   const promiseOrSignal = subscriptionLease.value
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
     const readyPromise = getSubscriptionReadyPromise(promise, subscriptionLease)
     scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
-    const hasPreviousSignal = !!$signalRef.current
-    if (batch) {
-      // Batch suspense must block only on initial load.
-      // On resubscribe we keep rendering previous signal and refresh in background.
-      if (!hasPreviousSignal) {
-        promiseBatcher.add(promise)
-        addBatchReadinessCheck(promise, subscriptionLease)
-      } else {
-        scheduleUpdate(readyPromise)
-      }
-      if (async) scheduleUpdate(readyPromise)
-      return $signalRef.current
-    }
     if (async) {
+      // never suspends: undefined (or, batched, the previous signal) until
+      // ready, then re-renders
+      if (batch) {
+        if (!hook.$signal) {
+          promiseBatcher.add(promise)
+          addBatchReadinessCheck(promise, subscriptionLease)
+        }
+        scheduleUpdate(readyPromise)
+        return hook.$signal
+      }
       scheduleUpdate(readyPromise)
       return
     }
-    // Keep previous snapshot during update re-subscribe and refresh in background.
-    if (hasPreviousSignal) {
-      scheduleUpdate(readyPromise)
-      return $signalRef.current
+    // A component that has committed keeps its observer reaction while this
+    // render is suspended (React keeps the committed UI on screen on a
+    // non-urgent render, or hides it behind the fallback), so a change of
+    // what the render read (the id being switched again) re-renders it.
+    if (hook.committedLease) renderAttemptDestroyer.armSuspenseGate()
+    if (batch) {
+      // the closing useBatchSub() suspends until the whole batch is ready,
+      // on the first render and on a re-subscribe alike; until then the
+      // calls in between see the previous signal
+      promiseBatcher.add(promise)
+      addBatchReadinessCheck(promise, subscriptionLease)
+      return hook.$signal
     }
     scheduleGroupUpdate?.(readyPromise)
     throw readyPromise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
-    if (batch && !$signalRef.current) addBatchReadinessCheckForSignal($signal, subscriptionLease)
-    if ($signalRef.current !== $signal) $signalRef.current = $signal
+    // a batched target this hook has not committed yet (subscribed
+    // elsewhere) can still be materializing
+    if (batch && !subscriptionLease.committed) addBatchReadinessCheckForSignal($signal, subscriptionLease)
+    hook.$signal = $signal
     return $signal
   }
 }
@@ -566,19 +617,31 @@ interface SubscriptionLease {
   unregisterCacheDestroy?: () => void
 }
 
-function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionLease {
+function useSubscriptionLease (
+  signal: unknown,
+  serializedParams: string | undefined,
+  params: unknown,
+  hook: SubHookState
+): SubscriptionLease {
   const cache = useCache(undefined)
   const triggerUpdate = useTriggerUpdate()
   const hookId = executionContextTracker.newHookId()
   const cacheKey = `subscriptionLease:${hookId}`
-  const serializedParams = params != null ? JSON.stringify(params) : undefined
   let lease = cache.get(cacheKey) as SubscriptionLease | undefined
-  if (
-    !lease ||
-    lease.released ||
-    lease.inputSignal !== signal ||
-    lease.serializedParams !== serializedParams
+  const committedLease = hook.committedLease
+  if (lease && !lease.released && isLeaseFor(lease, signal, serializedParams)) {
+    clearTimeout(lease.cleanupTimer)
+    lease.cleanupTimer = undefined
+  } else if (
+    committedLease && committedLease !== lease && !committedLease.released &&
+    isLeaseFor(committedLease, signal, serializedParams)
   ) {
+    // An urgent render of the committed target while a deferred render waits
+    // for a new one: the committed lease serves it, and the new one stays
+    // for the deferred render.
+    lease = committedLease
+  } else {
+    if (params === undefined && serializedParams != null) params = JSON.parse(serializedParams)
     const nextLease = createSubscriptionLease(signal, params, serializedParams, lease)
     nextLease.unregisterCacheDestroy = cache.onDestroy(() => releaseSubscriptionLease(nextLease))
     if (lease?.releasedUncommitted && lease.target === signal && lease.targetParams === serializedParams) {
@@ -596,9 +659,6 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
     if (diag.on) diag.noteLeaseCreated(nextLease, diag.describeSubTarget(signal, serializedParams), cacheKey, executionContextTracker.getComponentId())
     lease = nextLease
     cache.set(cacheKey, nextLease)
-  } else {
-    clearTimeout(lease.cleanupTimer)
-    lease.cleanupTimer = undefined
   }
   // Every render that uses a lease React has not committed yet (re)arms its
   // release: a render can be discarded before commit whether its subscription
@@ -612,6 +672,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
       return
     }
     lease.committed = true
+    hook.committedLease = lease
     lease.uncommittedReacquires = 0
     if (diag.on) diag.noteLeaseCommitted(lease)
     clearTimeout(lease.cleanupTimer)
@@ -623,7 +684,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
       lease.previousLease.releaseTimer = undefined
     }
     return () => scheduleSubscriptionLeaseRelease(lease)
-  }, [lease, triggerUpdate])
+  }, [lease, triggerUpdate, hook])
 
   useEffect(() => {
     if (isThenable(lease.value)) return
@@ -631,6 +692,10 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
   })
 
   return lease
+}
+
+function isLeaseFor (lease: SubscriptionLease, signal: unknown, serializedParams: string | undefined): boolean {
+  return lease.inputSignal === signal && lease.serializedParams === serializedParams
 }
 
 function createSubscriptionLease (

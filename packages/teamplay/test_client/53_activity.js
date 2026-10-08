@@ -96,7 +96,7 @@ describeActivity('observer() inside <Activity>', () => {
     const $kind = $.session.activityKind
     $kind.set('first')
     const Reader = observer(function ActivityQueryReader () {
-      // keeps the previous query result while the next one loads
+      // a re-subscribe suspends until the next query result is loaded
       const $docs = useSub($[COLLECTION], { kind: $kind.get() }, { defer: false })
       return el('span', {}, $docs.map($doc => $doc.name.get()).join(','))
     })

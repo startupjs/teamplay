@@ -3,15 +3,11 @@
 // subscription is ready, without suspending. With subscriptions that depend
 // on each other (a user, then the user's course, then the course's lesson),
 // switching the first one therefore never shows the Suspense fallback and
-// never renders a document that is not loaded: every hook keeps its previous
-// document until its next one is ready, and the chain moves forward one
-// subscription at a time until it is consistent again.
-//
-// Note: it does not hold the whole chain back. Between the first hook's new
-// document and the last one's, the component commits mixed states
-// (U2/C1/L1, U2/C2/L1): a useDeferredValue() of a hook below the one that
-// changed returns its previous value during the urgent re-render that the
-// ready subscription triggers.
+// never renders a document that is not loaded, and it switches the whole
+// chain at once: the deferred render suspends on each new subscription in
+// turn while the previous chain stays on screen, and commits once every one
+// is ready (56_subscription-chain-consistency.js covers queries, batches and
+// the other defer modes).
 import { createElement as el, Fragment, useLayoutEffect } from 'react'
 import { afterEach, beforeAll, describe, expect, it } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -73,16 +69,8 @@ describe('dependent useSub() calls (deferred by default)', () => {
     fireEvent.click(container.querySelector('#switch'))
     await waitForText(container, 'U2/C2/L2')
     expect(commits).not.toContain('fallback')
-    // each committed state is fully loaded, and the chain only moves forward
-    let previous = [1, 1, 1]
-    for (const text of commits) {
-      expect(text).toMatch(/^U[12]\/C[12]\/L[12]$/)
-      const state = text.match(/\d/g).map(Number)
-      // a document switches only after the one it depends on did
-      expect(state[1] <= state[0] && state[2] <= state[1]).toBe(true)
-      for (let i = 0; i < 3; i++) expect(state[i]).toBeGreaterThanOrEqual(previous[i])
-      previous = state
-    }
+    // the previous chain, then the new one: never a mix of the two
+    for (const text of commits) expect(['U1/C1/L1', 'U2/C2/L2']).toContain(text)
     expect(commits.at(-1)).toBe('U2/C2/L2')
   })
 })
