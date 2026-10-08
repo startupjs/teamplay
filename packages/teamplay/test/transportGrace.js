@@ -435,3 +435,88 @@ for (const K of KINDS) {
     })
   })
 }
+
+// LMS app root: a useBatchSub group subscribes a query that returns a doc and
+// that same doc directly. The query retains the doc; when the direct owner is
+// released (e.g. an uncommitted render attempt's lease), the doc's own live
+// transport must linger like an ownerless one, so the next direct sub() is
+// synchronous instead of unsubscribing and re-subscribing the doc.
+describe('doc retained by a live query: direct owner grace', () => {
+  const COLLECTION = 'transportGraceRetained'
+  let wire
+  const pending = []
+
+  afterEach(async () => {
+    wire?.stop()
+    wire = undefined
+    setSubscriptionGcDelay(0)
+    await flushAllPendingDestroys()
+    await Promise.allSettled(pending.splice(0))
+    await flushAllPendingDestroys()
+    await docSubscriptions.clear()
+    await querySubscriptions.clear()
+  })
+
+  async function setup () {
+    keyCounter += 1
+    const key = `retained_${keyCounter}`
+    await createRemoteDoc(COLLECTION, key, { name: 'initial', grp: key })
+    const $query = await sub($[COLLECTION], { grp: key })
+    const $doc = $[COLLECTION][key]
+    const docHash = JSON.stringify([COLLECTION, key])
+    assert.equal(docSubscriptions.entries.get(docHash)?.retainCount, 1, 'the query retains the doc')
+    return { key, $query, $doc, docHash }
+  }
+
+  it('sub/unsub/sub of the doc in the same tick is synchronous and wire-free', async () => {
+    setSubscriptionGcDelay(3000)
+    const { key, $query, $doc, docHash } = await setup()
+    await sub($doc)
+    assert.equal(docSubscriptions.entries.get(docHash).mode, 'subscribe')
+    wire = recordWire()
+
+    pending.push(unsub($doc))
+    const again = sub($doc)
+    assert.equal(isThenable(again), false, 'the re-subscribe joins the live doc transport')
+    assert.equal(again.name.get(), 'initial')
+    await wait(10)
+    assert.deepEqual(wire.messages, [], 'the doc transport was not unsubscribed')
+    assert.equal(getConnection().get(COLLECTION, key).subscribed, true)
+    pending.push(unsub(again), unsub($query))
+  })
+
+  it('keeps the released doc transport live for the grace, then unsubscribes it once', async () => {
+    setSubscriptionGcDelay(100)
+    const { key, $query, $doc, docHash } = await setup()
+    await sub($doc)
+    wire = recordWire()
+
+    pending.push(unsub($doc))
+    await wait(20)
+    assert.deepEqual(wire.messages, [], 'no unsubscribe during the grace')
+    const late = sub($doc)
+    assert.equal(isThenable(late), false, 'a subscriber in the grace joins synchronously')
+    pending.push(unsub(late))
+    await waitUntil(() => !getConnection().get(COLLECTION, key).subscribed, 'unsubscribed after the grace', 1000)
+    assert.deepEqual(wire.messages, ['u'])
+    assert.equal(docSubscriptions.entries.get(docHash)?.retainCount, 1, 'still retained by the query')
+    assert.equal($doc.name.get(), 'initial', 'the query keeps the data')
+    pending.push(unsub($query))
+  })
+
+  it('a query that retains the doc during its ownerless grace keeps it live', async () => {
+    setSubscriptionGcDelay(3000)
+    keyCounter += 1
+    const key = `retained_${keyCounter}`
+    await createRemoteDoc(COLLECTION, key, { name: 'initial', grp: key })
+    const $doc = await sub($[COLLECTION][key])
+    await unsub($doc)
+    wire = recordWire()
+    const $query = await sub($[COLLECTION], { grp: key })
+    await wait(10)
+    assert.deepEqual(wire.messages, ['qs'], 'the doc transport was not unsubscribed')
+    const again = sub($doc)
+    assert.equal(isThenable(again), false)
+    pending.push(unsub(again), unsub($query))
+  })
+})
