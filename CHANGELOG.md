@@ -3,6 +3,54 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## Unreleased (next minor: 0.6.0)
+
+
+### ⚠ BREAKING CHANGES
+
+* **teamplay:** requires React 19. The `react` peer dependency is now `>=19.0.0`; React 18 is no longer supported (0.5.x is the last release line that supports it).
+* **teamplay:** removed React 18-era APIs and code paths:
+  * `__setUseDeferredValue()` (exported from `teamplay`) and the experimental switch behind it. `useSub()` always uses its default implementation, which keeps the previous signal through `useDeferredValue()` while it re-subscribes.
+  * `useSubClassic()` (exported by `src/react/useSub.ts`, not by the package entry), the alternative `useSub()` implementation that `__setUseDeferredValue(false)` selected.
+  * `useIsomorphicLayoutEffect` (`src/utils/useIsomorphicLayoutEffect.js`, internal), which only silenced React 18's server-side `useLayoutEffect` warning.
+* **teamplay:** a re-subscribe never returns the previous signal while the new subscription loads (that is what committed inconsistent dependent subscriptions, see Bug Fixes). What changes:
+  * `defer: false` (hook or `observer()`): a re-subscribe in an urgent render suspends to the Suspense fallback instead of rendering the previous signal. `forceDefer` (see Features) turns this off everywhere.
+  * `useBatchSub()`: the closing barrier suspends on a re-subscribe too, not only on the first render (deferred, this happens in the background render and the previous content stays on screen), and a batched target that is already subscribed but still materializing is waited for on a re-subscribe too.
+  * A committed component whose lease was released (e.g. hidden by `<Activity>` longer than the subscription GC delay) suspends while it re-acquires instead of rendering the unloaded previous signal.
+* **teamplay:** `unsub()` resolves when the ownership is released, no longer when the subscription is finally torn down after the GC delay (`await unsub()` used to wait ~3 s, also in server request handlers).
+* **teamplay:** `unsub($signal)` on a signal holding both a fetch and a subscribe releases the fetch first; `unsub($signal, { mode: 'fetch' | 'subscribe' })` picks one.
+* **teamplay:** writes through aggregation rows (`$rows[0].field.set()`) hold the source doc only for the write; they no longer leave it subscribed, so a later write to that doc without a subscription of its own no longer works by accident.
+* **teamplay:** a live subscription that downgrades to fetch (its last subscriber leaves while fetch owners or query retains remain) keeps the live transport for the GC delay first, like any other release.
+
+
+### Features
+
+* **teamplay:** `forceDefer`: React subscription hooks ignore `defer: false` (of a hook and of `observer()`) and always defer a re-subscribe. Set it in the runtime config (`globalThis[Symbol.for('teamplay.runtimeConfig')].forceDefer = true`, or `configureTeamplay({ forceDefer: true })`) before or after the app loads teamplay, or at runtime with `setForceDefer(true | false | null)` (exported from `teamplay`, next to `setSubscriptionGcDelay()`; it takes precedence over the config, `null` goes back to it). `getForceDefer()` and `getTeamplayConfig().forceDefer` return the value in effect. A mounted component picks a change up on its next render.
+* **teamplay:** opt-in diagnostics on the `teamplay/diagnostics` subpath (`snapshot()`, `checkLeaks()`, `diff()`, event trace, `waitForIdle()`, `forceGc()`); enable with `TEAMPLAY_DIAGNOSTICS=1|trace` in Node or by importing the subpath first in an app bundle (see docs/guide/diagnostics.md). The main entry ships only a tiny switch (~0.3–0.5 KB gzip).
+* **teamplay:** the subscription GC delay can be set in the runtime config (`subscriptionGcDelay`, or `configureTeamplay()`), besides `setSubscriptionGcDelay()`.
+
+
+### Bug Fixes
+
+* **teamplay:** dependent subscriptions (`useSub($.courses[$user.courseId.get()])`) switch atomically: a component never commits a link that does not match the one it depends on (the new user with the previous course). Deferred (the default), the previous consistent state stays on screen, without the fallback, until every new subscription is loaded, then the component commits them at once; switching again meanwhile ends at the last target without committing the intermediate one. Before, every link committed as soon as it loaded (U2/C1/L1, then U2/C2/L1, ...), with `defer: false` too. This also holds for queries, aggregations, `useBatchSub()` chains and a child observer that subscribes to an id from its parent.
+* **teamplay:** the observer wrapper never notifies React after React unsubscribed; under React 19 that kept an unmounted component alive until the app's next render.
+* **teamplay:** an update that arrives before an observer subscribes (a child's effect writes, StrictMode replays the subscription) re-renders it in the same commit instead of a microtask later.
+* **teamplay:** an observer recovers after `<Activity>` hides and shows it: it keeps one subscription lease across renders and its scheduled updates re-render it again.
+* **teamplay:** released subscriptions linger like racer's unload delay: the ShareDB subscription of a released doc, query or aggregation stays live for the GC delay (3 s), and a re-subscribe in that window is synchronous with no network traffic. Queries and aggregations used to be unsubscribed immediately (since b6ad1b9c). Also: releasing a non-last owner no longer flips the entry into a transition (a later `sub()` in the same render got a promise), a warm entry takes the synchronous path whatever its previous owner count, a doc retained by a live query keeps its own transport grace, and a reconcile lost-wakeup race is closed.
+* **teamplay:** a FinalizationRegistry callback for a collected signal releases only the counts that signal registered; it used to force-destroy the whole owner key, including a newer live signal's subscription.
+* **teamplay:** leaks: React leases from renders React discards (sync or async) are released after a 1000 ms hold, and a never-mounted observer's reaction and destroy callbacks run from a finalizer; closed root ids and per-root signal hashes are forgotten once unreachable; a request root destroys the docs it wrote without a subscription when it closes.
+* **teamplay:** `useSub()` no longer loops re-subscribing with a GC delay of 0 or when another owner only fetches the doc, and a hook that keeps re-acquiring the same target from uncommitted renders keeps its lease (reported as `react.lease.reacquireLoop`).
+* **teamplay:** cleanup timers are `unref()`'d in Node, so a script exits once its work is done instead of waiting out the GC delay.
+* **teamplay:** one coalescing layer for doc transports (`SubscriptionState` removed); dead `waitForImperativeQueryReady` removed.
+
+
+### Performance Improvements
+
+* **teamplay:** `findModel()` (run on every signal lookup) splits the registered patterns once and groups them by segment count instead of splitting every pattern on each call; with ~250 models that was most of the cost of creating a signal. Any change to `MODELS` drops the index.
+* **teamplay:** an update that arrives before an observer subscribes no longer makes React 19 re-render the whole root from scratch (React's store-consistency check); this had added ~29% discarded render attempts in a large app.
+
+
+
 ## [0.5.12](/compare/v0.5.11...v0.5.12) (2026-09-24)
 
 

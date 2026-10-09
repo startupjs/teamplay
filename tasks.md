@@ -38,6 +38,7 @@ This file is the active task list for [architecture.md](./architecture.md) and [
   - shared storage routing for array/string/increment mutators.
 - Standard `npm test` and the pre-commit hook run type, server, and client suites.
 - Client tests use numeric filename ordering plus a path-order Jest sequencer instead of an explicit file list.
+- The React integration targets React 19 only (peer `react >= 19.0.0`); the client suite runs on React 19, and React 18 code paths (`useSubClassic()`, `__setUseDeferredValue()`, `useIsomorphicLayoutEffect`) are removed.
 
 ## Active Tasks
 
@@ -144,3 +145,5 @@ These are known but not active until there is a concrete product or maintenance 
 - Full `SignalBase.ts` conversion. Continue slices instead.
 - New document accessor APIs such as `$.users.doc(id)`. Do not add solely for TypeScript.
 - Full JSON Schema support. Keep the TeamPlay-supported subset explicit.
+- `observer(Component, { forwardRef: true })`: React 19 passes `ref` to function components as a prop, so the option is only needed for the `(props, ref)` render signature. Deprecating it is a public API change.
+- `src/react/universalSub.js` is not imported anywhere.

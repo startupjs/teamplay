@@ -6,7 +6,7 @@ import { ROOT, ROOT_ID, GLOBAL_ROOT_ID } from './Root.ts'
 import { QUERIES } from './Query.js'
 import { AGGREGATIONS } from './Aggregation.js'
 import { getSignalIdentityHash } from './rootScope.ts'
-import { isRootContextClosed, registerRootOwnedSignalHash } from './rootContext.ts'
+import { isRootContextClosed, registerRootOwnedSignalHash, unregisterRootOwnedSignalHash } from './rootContext.ts'
 import type { PathSegment } from './types/path.ts'
 import type { RootSignalRuntime } from './Root.ts'
 import type { SignalModelConstructor } from './Signal.ts'
@@ -22,7 +22,11 @@ interface ProxyHandlerOptions {
   useExtremelyLateBindings?: boolean
 }
 
-const PROXIES_CACHE = new Cache<RootSignalRuntime>()
+// A non-global root remembers the hashes of its signals so that closing it can
+// purge them from the cache; a collected signal is forgotten by its root too.
+const PROXIES_CACHE = new Cache<RootSignalRuntime>({
+  onEvict: (signalHash, rootId) => unregisterRootOwnedSignalHash(rootId, signalHash)
+})
 const PROXY_TO_SIGNAL = new WeakMap<RootSignalRuntime, RootSignalRuntime>()
 
 // extremely late bindings let you use fields in your raw data which have the same name as signal's methods
@@ -71,9 +75,10 @@ export default function getSignal ($root?: RootSignalRuntime, segments: PathSegm
     signal[ROOT] = proxy
   }
   PROXY_TO_SIGNAL.set(proxy, signal)
-  if (!rootClosed && owningRootId != null && owningRootId !== GLOBAL_ROOT_ID) {
-    registerRootOwnedSignalHash(owningRootId, signalHash)
-  }
+  const registeredRootId = !rootClosed && owningRootId != null && owningRootId !== GLOBAL_ROOT_ID
+    ? owningRootId
+    : undefined
+  if (registeredRootId) registerRootOwnedSignalHash(registeredRootId, signalHash)
   const dependencies: RootSignalRuntime[] = []
 
   // if the signal is a child of the local value created through the $() function,
@@ -90,7 +95,7 @@ export default function getSignal ($root?: RootSignalRuntime, segments: PathSegm
     }
   }
 
-  if (!rootClosed) PROXIES_CACHE.set(signalHash, proxy, dependencies)
+  if (!rootClosed) PROXIES_CACHE.set(signalHash, proxy, dependencies, registeredRootId)
   return proxy
 }
 

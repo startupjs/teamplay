@@ -1,15 +1,29 @@
-import { forwardRef as _forwardRef, useRef } from 'react'
+import { forwardRef as _forwardRef, useEffect, useRef } from 'react'
 import { observe, unobserve } from '@nx-js/observer-util'
 import _throttle from 'lodash/throttle.js'
 import { createCaches, getDummyCache } from '@teamplay/cache'
 import { __increment, __decrement } from '@teamplay/debug'
 import executionContextTracker from './executionContextTracker.ts'
-import { pipeComponentMeta, useUnmount, useId, useTriggerUpdate } from './helpers.ts'
+import { pipeComponentMeta, useId, useTriggerUpdate } from './helpers.ts'
 import trapRender from './trapRender.js'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
+import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
+import { diag } from '../diagnostics/hooks.ts'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
+
+// The reaction has to exist during render (it tracks what the render reads),
+// but React may discard a render before committing it (StrictMode's double
+// render, abandoned concurrent renders). Each reaction created by a render
+// that has not committed yet is registered here against a hook-state object
+// that only that render's fiber references; if React drops the render, the
+// object is collected and the reaction is unobserved. A commit unregisters it.
+const uncommittedReactions = new FinalizationRegistry(holder => {
+  try {
+    holder.dispose?.()
+  } catch {}
+})
 
 export default function convertToObserver (BaseComponent, {
   forwardRef,
@@ -34,6 +48,11 @@ export default function convertToObserver (BaseComponent, {
     // This way it will track any observable changes and will trigger rerender
     const reactionRef = useRef()
     const destroyRef = useRef()
+    // Finalization target for a render React discards: referenced only by
+    // this fiber's hook state (never by the reaction or its holder).
+    const renderTokenRef = useRef(null)
+    const holderRef = useRef()
+    const mountedRef = useRef(false)
     if (!reactionRef.current) {
       let hasDeferredUpdateAfterExecutionContext = false
       let update = () => {
@@ -54,13 +73,21 @@ export default function convertToObserver (BaseComponent, {
         }
       }
       if (throttle) update = _throttle(update, throttle)
-      destroyRef.current = (where) => {
+      const holder = {}
+      const destroy = destroyRef.current = (where) => {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
         destroyRef.current = undefined
+        uncommittedReactions.unregister(holder)
+        if (diag.on) diag.noteObserverDestroyed(reactionRef.current, where)
         unobserve(reactionRef.current)
         reactionRef.current = undefined
         destroyCache(where)
       }
+      // Disposes only this reaction (a later one may reuse the refs).
+      holder.dispose = () => {
+        if (destroyRef.current === destroy) destroy('uncommitted render')
+      }
+      holderRef.current = holder
       const trappedRender = trapRender({
         render: BaseComponent,
         cache,
@@ -72,12 +99,26 @@ export default function convertToObserver (BaseComponent, {
         scheduler: () => scheduleReaction(update),
         lazy: true
       })
+      if (diag.on) diag.noteObserverCreated(reactionRef.current, Component.displayName || 'Anonymous', componentId)
+      if (!mountedRef.current) {
+        renderTokenRef.current = {}
+        uncommittedReactions.register(renderTokenRef.current, holder, holder)
+      }
     }
 
-    // clean up observer on unmount
-    useUnmount(() => {
-      destroyRef.current?.('useUnmount()')
-    })
+    useEffect(() => {
+      mountedRef.current = true
+      if (holderRef.current) uncommittedReactions.unregister(holderRef.current)
+      // StrictMode replays effects (mount, unmount, mount) without rendering:
+      // the replayed unmount destroyed the reaction, so render again to
+      // create and subscribe a new one.
+      if (!reactionRef.current) triggerUpdate()
+      return () => {
+        // clean up observer on unmount
+        mountedRef.current = false
+        destroyRef.current?.('useUnmount()')
+      }
+    }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
     return reactionRef.current(...args)
   }

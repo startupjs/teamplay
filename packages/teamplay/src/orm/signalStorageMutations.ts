@@ -9,6 +9,8 @@ type MaybePromise<TValue> = TValue | Promise<TValue>
 export interface SignalStorageMutationContext<TSignal> {
   getOwningRootId: ($signal: TSignal) => string | undefined
   isPublicCollection: (segment: PathSegment | undefined) => boolean
+  // called after a public write was attempted (also when it failed)
+  afterPublicWrite?: ($signal: TSignal, segments: PathSegment[]) => void
 }
 
 export interface SignalStorageMutationHandlers<TResult> {
@@ -33,9 +35,13 @@ export async function runSignalStorageMutation<TSignal, TResult> (
   }
 
   if (context.isPublicCollection(segments[0])) {
-    return {
-      skipped: false,
-      value: await handlers.public(segments)
+    try {
+      return {
+        skipped: false,
+        value: await handlers.public(segments)
+      }
+    } finally {
+      context.afterPublicWrite?.($signal, segments)
     }
   }
 

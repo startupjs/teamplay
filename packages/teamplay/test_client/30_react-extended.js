@@ -18,12 +18,13 @@ import {
   useOnce,
   useSyncEffect
 } from '../src/index.ts'
-import { setTestThrottling, resetTestThrottling, useSubClassic } from '../src/react/useSub.ts'
+import { setTestThrottling, resetTestThrottling } from '../src/react/useSub.ts'
 import { __resetSuspendMemoForTests } from '../src/react/useSuspendMemo.ts'
 import { useId, useNow, useTriggerUpdate, useUnmount, useScheduleUpdate } from '../src/react/helpers.ts'
 import trapRender from '../src/react/trapRender.js'
 import renderAttemptDestroyer from '../src/react/renderAttemptDestroyer.ts'
 import { runGc, cache } from '../test/_helpers.js'
+import { releaseLastEventTarget } from './helpers/releaseLastEventTarget.js'
 import { get as _get, set as _set, del as _del } from '../src/orm/dataTree.js'
 import connect from '../src/connect/test.js'
 import { docSubscriptions } from '../src/orm/Doc.js'
@@ -41,6 +42,7 @@ beforeEach(() => {
   expect(cache.size).toBe(1)
 })
 afterEach(cleanup)
+afterEach(releaseLastEventTarget)
 afterEach(runGc)
 afterEach(() => {
   __resetEventsForTests()
@@ -439,11 +441,11 @@ describe('useSub edge cases', () => {
     })
 
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('')
 
     await wait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('loading')
   })
 
@@ -472,79 +474,6 @@ describe('useSub edge cases', () => {
     expect(errorThrown).toBe(false)
 
     console.error = originalError
-  })
-
-  it('useSubClassic path - test by importing useSubClassic directly and testing it', async () => {
-    // useSubClassic is the classic version that initially throws promise for Suspense
-    let renders = 0
-    const Component = observer(() => {
-      renders++
-      const $userSub = useSubClassic($.users.classicTest2)
-      return el('span', {}, $userSub.name.get() || 'loading')
-    })
-
-    const { container } = render(el(Component))
-    expect(renders).toBe(1)
-    expect(container.textContent).toBe('')
-
-    await wait()
-    expect(renders).toBe(2)
-    expect(container.textContent).toBe('loading')
-
-    // Now set the whole document to create it
-    act(() => { $.users.classicTest2.set({ name: 'John' }) })
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(3)
-  })
-
-  it('useSubClassic with batch keeps update resubscribe in background', async () => {
-    const collection = 'classicBatchSwitch'
-    const lessonA = 'lesson_classic_batch_switch_1'
-    const lessonB = 'lesson_classic_batch_switch_2'
-
-    const $lessonA = await sub($[collection][lessonA])
-    const $lessonB = await sub($[collection][lessonB])
-    $lessonA.set({ courseId: 'course_a', stageIds: ['a1'] })
-    $lessonB.set({ courseId: 'course_b', stageIds: ['b1', 'b2'] })
-    await wait()
-
-    _del([collection, lessonA])
-    _del([collection, lessonB])
-
-    const Component = observer(() => {
-      const [courseId, setCourseId] = React.useState('course_a')
-      const [lessonId, setLessonId] = React.useState(lessonA)
-
-      useSubClassic($[collection], { courseId }, { batch: true })
-      useBatchSub()
-      const lesson = $[collection][lessonId].get()
-      const stageIds = lesson?.stageIds
-
-      return el(Fragment, null,
-        el('span', { id: 'classicBatchSwitch' }, stageIds ? stageIds.join(',') : 'pending'),
-        el('button', {
-          id: 'classicBatchSwitchBtn',
-          onClick: () => {
-            setCourseId('course_b')
-            setLessonId(lessonB)
-          }
-        }, 'switch')
-      )
-    }, { suspenseProps: { fallback: el('span', { id: 'classicBatchSwitch' }, 'Loading...') } })
-
-    const { container } = render(el(Component))
-    expect(container.querySelector('#classicBatchSwitch').textContent).toBe('Loading...')
-
-    await waitFor(() => {
-      expect(container.querySelector('#classicBatchSwitch').textContent).toBe('a1')
-    })
-
-    fireEvent.click(container.querySelector('#classicBatchSwitchBtn'))
-    expect(container.querySelector('#classicBatchSwitch').textContent).not.toBe('Loading...')
-
-    await waitFor(() => {
-      expect(container.querySelector('#classicBatchSwitch').textContent).toBe('b1,b2')
-    })
   })
 
   it('observer replays updates skipped during execution context', async () => {
@@ -1085,7 +1014,7 @@ describe('useBatchSub', () => {
     }
   })
 
-  it('keeps previous signal during update resubscribe', async () => {
+  it('suspends to the fallback during an update resubscribe with defer: false', async () => {
     const collection = 'batchSubRouteSwitch'
     const docA = 'doc_batch_sub_route_a'
     const docB = 'doc_batch_sub_route_b'
@@ -1117,11 +1046,13 @@ describe('useBatchSub', () => {
         expect(container.querySelector('#batchSubRouteSwitch').textContent).toBe('a1')
       })
 
+      // the next doc is not loaded: neither it nor the previous one is
+      // rendered (the component reads the doc without a guard)
       fireEvent.click(container.querySelector('#batchSubRouteSwitchBtn'))
-      expect(container.querySelector('#batchSubRouteSwitch').textContent).not.toBe('Loading...')
+      expect(visibleText(container, 'batchSubRouteSwitch')).toBe('Loading...')
 
       await waitFor(() => {
-        expect(container.querySelector('#batchSubRouteSwitch').textContent).toBe('b1,b2')
+        expect(visibleText(container, 'batchSubRouteSwitch')).toBe('b1,b2')
       })
     } finally {
       resetTestThrottling()
@@ -1161,7 +1092,7 @@ describe('useBatchSub', () => {
       })
 
       fireEvent.click(container.querySelector('#batchSubDefaultDeferRouteSwitchBtn'))
-      expect(container.querySelector('#batchSubDefaultDeferRouteSwitch').textContent).not.toBe('Loading...')
+      expect(visibleText(container, 'batchSubDefaultDeferRouteSwitch')).toBe('a1')
 
       await waitFor(() => {
         expect(container.querySelector('#batchSubDefaultDeferRouteSwitch').textContent).toBe('b1,b2')
@@ -1208,7 +1139,7 @@ describe('useBatchSub', () => {
       })
 
       fireEvent.click(container.querySelector('#batchSubExplicitDeferQuerySwitchBtn'))
-      expect(container.querySelector('#batchSubExplicitDeferQuerySwitch').textContent).not.toBe('Loading...')
+      expect(visibleText(container, 'batchSubExplicitDeferQuerySwitch')).toBe('a1')
 
       await waitFor(() => {
         expect(container.querySelector('#batchSubExplicitDeferQuerySwitch').textContent).toBe('b1,b2')
@@ -1373,7 +1304,7 @@ describe('useBatchSub', () => {
     })
   })
 
-  it('keeps previous query signal during update resubscribe', async () => {
+  it('suspends to the fallback during an update query resubscribe with defer: false', async () => {
     const collection = 'batchSubLocalLessonsSwitch'
     const lessonA = 'lesson_batch_sub_switch_1'
     const lessonB = 'lesson_batch_sub_switch_2'
@@ -1389,6 +1320,7 @@ describe('useBatchSub', () => {
     _del([collection, lessonA])
     _del([collection, lessonB])
 
+    const rendered = []
     const Component = observer(() => {
       const [courseId, setCourseId] = React.useState('course_a')
       const [lessonId, setLessonId] = React.useState(lessonA)
@@ -1397,6 +1329,7 @@ describe('useBatchSub', () => {
       useBatchSub()
       const lesson = $[collection][lessonId].get()
       const stageIds = lesson?.stageIds
+      rendered.push(stageIds ? stageIds.join(',') : 'pending')
 
       return el(Fragment, null,
         el('span', { id: 'batchSubLocalSwitch' }, stageIds ? stageIds.join(',') : 'pending'),
@@ -1418,14 +1351,16 @@ describe('useBatchSub', () => {
     })
 
     fireEvent.click(container.querySelector('#batchSubLocalSwitchBtn'))
-    expect(container.querySelector('#batchSubLocalSwitch').textContent).not.toBe('Loading...')
+    expect(visibleText(container, 'batchSubLocalSwitch')).toBe('Loading...')
 
     await waitFor(() => {
-      expect(container.querySelector('#batchSubLocalSwitch').textContent).toBe('b1,b2')
+      expect(visibleText(container, 'batchSubLocalSwitch')).toBe('b1,b2')
     })
+    // the new lesson is never read before the query has loaded it
+    expect(rendered).not.toContain('pending')
   })
 
-  it('keeps previous docs for no-guard local reads during query switches', async () => {
+  it('suspends to the fallback for no-guard local reads during query switches with defer: false', async () => {
     const collection = 'batchSubLocalLessonsSwitchNoGuard'
     const lessonA = 'lesson_batch_sub_switch_no_guard_1'
     const lessonB = 'lesson_batch_sub_switch_no_guard_2'
@@ -1462,10 +1397,10 @@ describe('useBatchSub', () => {
       })
 
       fireEvent.click(container.querySelector('#batchSubLocalSwitchNoGuardBtn'))
-      expect(container.querySelector('#batchSubLocalSwitchNoGuard').textContent).not.toBe('Loading...')
+      expect(visibleText(container, 'batchSubLocalSwitchNoGuard')).toBe('Loading...')
 
       await waitFor(() => {
-        expect(container.querySelector('#batchSubLocalSwitchNoGuard').textContent).toBe('b1,b2')
+        expect(visibleText(container, 'batchSubLocalSwitchNoGuard')).toBe('b1,b2')
       })
     } finally {
       resetTestThrottling()
@@ -1788,6 +1723,14 @@ describe('Edge cases', () => {
 
 function fr (...children) {
   return el(Fragment, {}, ...children)
+}
+
+// The element with this id that is on screen: when a Suspense boundary that
+// shows content suspends, React hides the content (display: none) and adds
+// the fallback, so both can have the same id.
+function visibleText (container, id) {
+  const node = Array.from(container.querySelectorAll('#' + id)).find(node => node.style.display !== 'none')
+  return node?.textContent
 }
 
 async function wait (ms = 30) {

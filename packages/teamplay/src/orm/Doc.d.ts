@@ -44,6 +44,7 @@ export interface DocRuntimeEntry {
   owners: Set<string>
   retainCount: number
   pendingDestroy: PendingDestroyEntry | null
+  downgradeGrace: { timer?: ReturnType<typeof setTimeout> } | null
   reconcilePromise: Promise<void> | null
 }
 
@@ -80,14 +81,17 @@ export class DocSubscriptions {
   constructor (DocClass?: DocConstructor)
   init ($doc: Signal): void
   subscribe ($doc: Signal, options?: { intent?: SubscriptionIntent }): Promise<void> | void
-  unsubscribe ($doc: Signal, options?: { intent?: SubscriptionIntent }): Promise<void>
+  unsubscribe ($doc: Signal, options?: { intent?: SubscriptionIntent, awaitDestroy?: boolean, minGraceMs?: number }): Promise<void>
   retain ($doc: Signal): void
+  retainSegments (segments: SignalPathSegments): void
+  retainWrittenDoc (rootId: string | undefined, segments: SignalPathSegments): void
+  releaseRootWrittenDocs (rootId: string): Promise<void>
   release ($doc: Signal): Promise<void>
   destroy (segments: SignalPathSegments): Promise<void>
   clear (): Promise<void>
   releaseRootOwnedSubscriptions (rootId: string): Promise<void>
   flushPendingDestroys (): Promise<void>
-  scheduleDestroy (segments: SignalPathSegments, options?: { force?: boolean }): Promise<void> | void
+  scheduleDestroy (segments: SignalPathSegments, options?: { force?: boolean, rootId?: string, delay?: number }): Promise<void> | void
   cancelDestroy (hash: string): void
   getOwnerMeta (ownerKey: string): DocOwnerMeta | undefined
   getOwnerKeys (hash: string): Set<string> | undefined

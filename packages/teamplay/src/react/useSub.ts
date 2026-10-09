@@ -1,7 +1,9 @@
 import { useEffect, useRef, useDeferredValue } from 'react'
 import type { AggregationFunction, AggregationParams, ClientAggregationFunction } from '@teamplay/utils/aggregation'
-import sub, { getSubResultSignal, unsub } from '../orm/sub.ts'
-import { useScheduleUpdate, useCache, useDefer } from './helpers.ts'
+import { acquireSub, type SubReleaseOptions } from '../orm/sub.ts'
+import { useScheduleUpdate, useCache, useDefer, useTriggerUpdate } from './helpers.ts'
+import { getForceDefer } from './forceDefer.ts'
+import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
@@ -20,6 +22,8 @@ import {
 import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/Aggregation.js'
 import { SEGMENTS } from '../orm/signalSymbols.ts'
 import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
+import unrefTimer from '../utils/unrefTimer.ts'
+import { diag } from '../diagnostics/hooks.ts'
 import {
   isPublicDocumentSignal,
   type CollectionSignal,
@@ -35,9 +39,6 @@ import {
   type WildcardSignalPath
 } from '../orm/Signal.ts'
 
-type RuntimeSub = (signal: unknown, params?: unknown) => unknown
-const runtimeSub = sub as RuntimeSub
-
 export interface UseSubOptions {
   /** Return `undefined` while loading instead of throwing a Suspense promise. */
   async?: boolean
@@ -48,13 +49,23 @@ export interface UseSubOptions {
 }
 
 const USE_SUB_OPTION_KEYS = new Set<string>(['async', 'defer', 'batch'] satisfies Array<keyof UseSubOptions>)
-const MAX_UNCOMMITTED_LEASE_GRACE_MS = 50
+// React cannot tell us that it abandoned a render attempt, and it may hold a
+// finished one before committing it (React 19 holds a Suspense retry for up to
+// 300 ms after the last fallback). An uncommitted lease is therefore kept for
+// MAX_UNCOMMITTED_LEASE_GRACE_MS after its subscription is ready or its last
+// render (0 when the subscription GC delay is 0), so a retry or a held commit
+// finds the lease itself and nothing is re-subscribed. Its release then gives the transport at
+// least the same grace, so a later re-acquire still joins synchronously; this
+// is what keeps setSubscriptionGcDelay(0) working, where the lease is released
+// on the next task. A render that commits a released lease re-acquires it.
+const MAX_UNCOMMITTED_LEASE_GRACE_MS = 1000
+// Livelock guard: a hook that re-acquires the same target this many times in a
+// row from uncommitted leases stops releasing its uncommitted lease (it is
+// released on commit/unmount or when the observer is destroyed).
+const UNCOMMITTED_REACQUIRE_LIMIT = 10
 
 let TEST_THROTTLING: false | number = false
 
-// experimental feature to leverage useDeferredValue() to handle re-subscriptions.
-// Currently it does lead to issues with extra rerenders and requires further investigation
-let USE_DEFERRED_VALUE: boolean = true
 // by default we want to defer stuff if possible instead of throwing promises
 let DEFAULT_DEFER: boolean = true
 
@@ -448,11 +459,7 @@ function isUseSubOptions (value: unknown): value is UseSubOptions {
 function useNormalizedSub (signal: unknown, params?: unknown, options?: UseSubOptions): unknown {
   const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   if (isBatchBarrierCall(signal, params, options)) return closeBatchBarrier(scheduleGroupUpdate)
-  if (USE_DEFERRED_VALUE) {
-    return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
-  } else {
-    return useSubClassic(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
-  }
+  return useSubDeferred(signal, params, options) // eslint-disable-line react-hooks/rules-of-hooks
 }
 
 function isBatchBarrierCall (signal: unknown, params: unknown, options?: UseSubOptions): boolean {
@@ -469,122 +476,110 @@ function closeBatchBarrier (
   }
 }
 
+// Per-hook state of useSubDeferred(), kept in a ref of the component.
+interface SubHookState {
+  // the last signal this hook returned (any render, committed or not);
+  // keeps it from being garbage collected while the component exists
+  $signal: unknown
+  // the lease of this hook's last commit (set in its commit effect)
+  committedLease?: SubscriptionLease
+}
+
+// Fed to useDeferredValue() instead of the signal when a hook does not defer:
+// it never changes, so it never schedules a deferred render, and the hook
+// order stays the same when the defer mode changes at runtime (setForceDefer()).
+const NOT_DEFERRED = Symbol('teamplay.notDeferred')
+
 // version of sub() which works as a react hook and throws promise for Suspense
+//
+// A subscription that is not ready suspends the render (except in async
+// mode), so a component never commits a hook's new target before it is
+// loaded, and subscriptions that depend on each other (a doc, then the doc
+// its field points to) switch together:
+// - deferred (default): the signal and params go through useDeferredValue().
+//   An urgent render gets the previous (committed, ready) ones and renders
+//   the previous consistent state; the new ones appear only in a non-urgent
+//   render (React's deferred render, a transition, a retry), where
+//   suspending keeps the committed UI on screen without the fallback. Each
+//   dependent hook then gets its new input in the retried non-urgent render
+//   and suspends in turn, until the whole component is ready and commits at
+//   once.
+// - defer: false: an urgent re-subscribe suspends to the Suspense fallback.
+// - forceDefer (setForceDefer(), runtime config): defer: false is ignored.
 export function useSubDeferred (
   signal: unknown,
   params?: unknown,
   { async = false, defer, batch = false }: UseSubOptions = {}
 ): unknown {
-  const $signalRef = useRef<unknown>()
+  const hookRef = useRef<SubHookState | undefined>(undefined)
+  const hook = hookRef.current ??= { $signal: undefined }
   const scheduleUpdate = useScheduleUpdate()
   const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
   const observerDefer = useDefer()
   if (batch) promiseBatcher.activate()
-  defer ??= observerDefer ?? DEFAULT_DEFER
-  if (defer) {
-    signal = useDeferredValue(signal) // eslint-disable-line react-hooks/rules-of-hooks
-    const serializedParams = useDeferredValue(params ? JSON.stringify(params) : undefined) // eslint-disable-line react-hooks/rules-of-hooks
-    params = serializedParams != null ? JSON.parse(serializedParams) : undefined
+  const deferred = getForceDefer() || !!(defer ?? observerDefer ?? DEFAULT_DEFER)
+  let serializedParams = params != null ? JSON.stringify(params) : undefined
+  const deferredSignal = useDeferredValue(deferred ? signal : NOT_DEFERRED)
+  const deferredParams = useDeferredValue(deferred ? serializedParams : NOT_DEFERRED)
+  let paramsAsJson = false
+  if (deferred) {
+    if (deferredSignal !== NOT_DEFERRED && deferredParams !== NOT_DEFERRED) {
+      paramsAsJson = true
+      signal = deferredSignal
+      serializedParams = deferredParams as string | undefined
+    } else if (hook.committedLease && !hook.committedLease.released) {
+      // the urgent render that turns deferring on (setForceDefer(true)) gets
+      // the previous value of useDeferredValue(), which is the sentinel:
+      // render the committed target, as useDeferredValue() would have
+      paramsAsJson = true
+      signal = hook.committedLease.inputSignal
+      serializedParams = hook.committedLease.serializedParams
+    }
   }
-  const subscriptionLease = useSubscriptionLease(signal, params)
+  // deferred params are passed as JSON (parsed only to acquire a new lease)
+  const subscriptionLease = useSubscriptionLease(signal, serializedParams, paramsAsJson ? undefined : params, hook)
   const promiseOrSignal = subscriptionLease.value
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (isThenable(promiseOrSignal)) {
     const promise = maybeThrottle(promiseOrSignal)
     const readyPromise = getSubscriptionReadyPromise(promise, subscriptionLease)
     scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
-    const hasPreviousSignal = !!$signalRef.current
-    if (batch) {
-      // Batch suspense must block only on initial load.
-      // On resubscribe we keep rendering previous signal and refresh in background.
-      if (!hasPreviousSignal) {
-        promiseBatcher.add(promise)
-        addBatchReadinessCheck(promise, subscriptionLease)
-      } else {
-        scheduleUpdate(readyPromise)
-      }
-      if (async) scheduleUpdate(readyPromise)
-      return $signalRef.current
-    }
     if (async) {
+      // never suspends: undefined (or, batched, the previous signal) until
+      // ready, then re-renders
+      if (batch) {
+        if (!hook.$signal) {
+          promiseBatcher.add(promise)
+          addBatchReadinessCheck(promise, subscriptionLease)
+        }
+        scheduleUpdate(readyPromise)
+        return hook.$signal
+      }
       scheduleUpdate(readyPromise)
       return
     }
-    // Keep previous snapshot during update re-subscribe and refresh in background.
-    if (hasPreviousSignal) {
-      scheduleUpdate(readyPromise)
-      return $signalRef.current
+    // A component that has committed keeps its observer reaction while this
+    // render is suspended (React keeps the committed UI on screen on a
+    // non-urgent render, or hides it behind the fallback), so a change of
+    // what the render read (the id being switched again) re-renders it.
+    if (hook.committedLease) renderAttemptDestroyer.armSuspenseGate()
+    if (batch) {
+      // the closing useBatchSub() suspends until the whole batch is ready,
+      // on the first render and on a re-subscribe alike; until then the
+      // calls in between see the previous signal
+      promiseBatcher.add(promise)
+      addBatchReadinessCheck(promise, subscriptionLease)
+      return hook.$signal
     }
     scheduleGroupUpdate?.(readyPromise)
     throw readyPromise
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
-    if (batch && !$signalRef.current) addBatchReadinessCheckForSignal($signal, subscriptionLease)
-    if ($signalRef.current !== $signal) $signalRef.current = $signal
-    return $signal
-  }
-}
-
-// classic version which initially throws promise for Suspense
-// but if we get a promise second time, we return the last signal and wait for promise to resolve
-export function useSubClassic (
-  signal: unknown,
-  params?: unknown,
-  { async = false, batch = false }: UseSubOptions = {}
-): unknown {
-  const id = executionContextTracker.newHookId()
-  const cache = useCache(undefined)
-  const scheduleUpdate = useScheduleUpdate()
-  const scheduleGroupUpdate = useSuspenseGroupScheduleUpdate()
-  if (batch) promiseBatcher.activate()
-  const subscriptionLease = useSubscriptionLease(signal, params)
-  const promiseOrSignal = subscriptionLease.value
-  // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
-  if (isThenable(promiseOrSignal)) {
-    const promise = maybeThrottle(promiseOrSignal)
-    const readyPromise = getSubscriptionReadyPromise(promise, subscriptionLease)
-    scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
-    if (batch) {
-      const hasPreviousSignal = cache.has(id)
-      // Batch suspense must block only on initial load.
-      // On resubscribe we keep rendering previous signal and refresh in background.
-      if (!hasPreviousSignal) {
-        promiseBatcher.add(promise)
-        addBatchReadinessCheck(promise, subscriptionLease)
-      } else {
-        scheduleUpdate(readyPromise)
-      }
-      if (async) scheduleUpdate(readyPromise)
-      if (hasPreviousSignal) return cache.get(id)
-      return
-    }
-    // first time we just throw the promise to be caught by Suspense
-    if (!cache.has(id)) {
-      // if we are in async mode, we just return nothing and let the user
-      // handle appearance of signal on their own.
-      // We manually schedule an update when promise resolves since we can't
-      // rely on Suspense in this case to automatically trigger component's re-render
-      if (async) {
-        scheduleUpdate(readyPromise)
-        return
-      }
-      // in regular mode we throw the promise to be caught by Suspense
-      // this way we guarantee that the signal with all the data
-      // will always be there when component is rendered
-      scheduleGroupUpdate?.(readyPromise)
-      throw readyPromise
-    }
-    // if we already have a previous signal, we return it and wait for new promise to resolve
-    scheduleUpdate(readyPromise)
-    return cache.get(id)
-  // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
-  } else {
-    const $signal = promiseOrSignal
-    if (batch && !cache.has(id)) addBatchReadinessCheckForSignal($signal, subscriptionLease)
-    if (cache.get(id) !== $signal) {
-      cache.set(id, $signal)
-    }
+    // a batched target this hook has not committed yet (subscribed
+    // elsewhere) can still be materializing
+    if (batch && !subscriptionLease.committed) addBatchReadinessCheckForSignal($signal, subscriptionLease)
+    hook.$signal = $signal
     return $signal
   }
 }
@@ -598,9 +593,6 @@ export function setTestThrottling (ms: number): void {
 export function resetTestThrottling (): void {
   TEST_THROTTLING = false
 }
-export function setUseDeferredValue (value: boolean): void {
-  USE_DEFERRED_VALUE = value
-}
 export function setDefaultDefer (value: boolean): void {
   DEFAULT_DEFER = value
 }
@@ -608,7 +600,15 @@ export function setDefaultDefer (value: boolean): void {
 interface SubscriptionLease {
   value: unknown
   signal?: unknown
+  // releases exactly this lease's acquisition (not another sub() of the signal)
+  release?: (options?: SubReleaseOptions) => Promise<void> | void
   signalDisposed: boolean
+  // target identity kept after release, to detect re-acquire loops
+  target: unknown
+  targetParams?: string
+  releasedUncommitted: boolean
+  uncommittedReacquires: number
+  sticky: boolean
   inputSignal?: unknown
   serializedParams?: string
   previousLease?: SubscriptionLease
@@ -619,29 +619,64 @@ interface SubscriptionLease {
   unregisterCacheDestroy?: () => void
 }
 
-function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionLease {
+function useSubscriptionLease (
+  signal: unknown,
+  serializedParams: string | undefined,
+  params: unknown,
+  hook: SubHookState
+): SubscriptionLease {
   const cache = useCache(undefined)
+  const triggerUpdate = useTriggerUpdate()
   const hookId = executionContextTracker.newHookId()
   const cacheKey = `subscriptionLease:${hookId}`
-  const serializedParams = params != null ? JSON.stringify(params) : undefined
   let lease = cache.get(cacheKey) as SubscriptionLease | undefined
-  if (
-    !lease ||
-    lease.released ||
-    lease.inputSignal !== signal ||
-    lease.serializedParams !== serializedParams
-  ) {
-    const nextLease = createSubscriptionLease(signal, params, serializedParams, lease)
-    nextLease.unregisterCacheDestroy = cache.onDestroy(() => releaseSubscriptionLease(nextLease))
-    lease = nextLease
-    cache.set(cacheKey, nextLease)
-  } else {
+  const committedLease = hook.committedLease
+  if (lease && !lease.released && isLeaseFor(lease, signal, serializedParams)) {
     clearTimeout(lease.cleanupTimer)
     lease.cleanupTimer = undefined
+  } else if (
+    committedLease && committedLease !== lease && !committedLease.released &&
+    isLeaseFor(committedLease, signal, serializedParams)
+  ) {
+    // An urgent render of the committed target while a deferred render waits
+    // for a new one: the committed lease serves it, and the new one stays
+    // for the deferred render.
+    lease = committedLease
+  } else {
+    if (params === undefined && serializedParams != null) params = JSON.parse(serializedParams)
+    const nextLease = createSubscriptionLease(signal, params, serializedParams, lease)
+    nextLease.unregisterCacheDestroy = cache.onDestroy(() => releaseSubscriptionLease(nextLease))
+    if (lease?.releasedUncommitted && lease.target === signal && lease.targetParams === serializedParams) {
+      nextLease.uncommittedReacquires = lease.uncommittedReacquires + 1
+      if (nextLease.uncommittedReacquires >= UNCOMMITTED_REACQUIRE_LIMIT) {
+        nextLease.sticky = true
+        if (diag.on) {
+          diag.addIncident('react.lease.reacquireLoop', diag.describeSubTarget(signal, serializedParams), {
+            hook: cacheKey,
+            reacquires: nextLease.uncommittedReacquires
+          })
+        }
+      }
+    }
+    if (diag.on) diag.noteLeaseCreated(nextLease, diag.describeSubTarget(signal, serializedParams), cacheKey, executionContextTracker.getComponentId())
+    lease = nextLease
+    cache.set(cacheKey, nextLease)
   }
+  // Every render that uses a lease React has not committed yet (re)arms its
+  // release: a render can be discarded before commit whether its subscription
+  // was ready (sync) or not. A pending lease is armed once it is ready.
+  if (!lease.committed && !isThenable(lease.value)) scheduleUncommittedLeaseCleanup(lease)
 
   useEffect(() => {
+    // Released while React held this render's commit: re-render to re-acquire.
+    if (lease.released) {
+      triggerUpdate?.()
+      return
+    }
     lease.committed = true
+    hook.committedLease = lease
+    lease.uncommittedReacquires = 0
+    if (diag.on) diag.noteLeaseCommitted(lease)
     clearTimeout(lease.cleanupTimer)
     lease.cleanupTimer = undefined
     clearTimeout(lease.releaseTimer)
@@ -651,7 +686,7 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
       lease.previousLease.releaseTimer = undefined
     }
     return () => scheduleSubscriptionLeaseRelease(lease)
-  }, [lease])
+  }, [lease, triggerUpdate, hook])
 
   useEffect(() => {
     if (isThenable(lease.value)) return
@@ -661,22 +696,33 @@ function useSubscriptionLease (signal: unknown, params?: unknown): SubscriptionL
   return lease
 }
 
+function isLeaseFor (lease: SubscriptionLease, signal: unknown, serializedParams: string | undefined): boolean {
+  return lease.inputSignal === signal && lease.serializedParams === serializedParams
+}
+
 function createSubscriptionLease (
   signal: unknown,
   params: unknown,
   serializedParams?: string,
   previousLease?: SubscriptionLease
 ): SubscriptionLease {
-  const value = params != null ? runtimeSub(signal, params) : runtimeSub(signal)
+  const acquisition = params != null ? acquireSub(signal, params) : acquireSub(signal)
+  const value = acquisition.value
   const lease: SubscriptionLease = {
     value,
-    signal: getSubResultSignal(value),
+    signal: acquisition.signal,
+    release: acquisition.release,
     inputSignal: signal,
     serializedParams,
     previousLease: previousLease?.released ? undefined : previousLease,
     committed: false,
     released: false,
-    signalDisposed: false
+    signalDisposed: false,
+    target: signal,
+    targetParams: serializedParams,
+    releasedUncommitted: false,
+    uncommittedReacquires: 0,
+    sticky: false
   }
 
   if (isThenable(value)) {
@@ -717,25 +763,32 @@ function scheduleRenderAttemptLeaseCleanup (
 }
 
 function scheduleUncommittedLeaseCleanup (lease: SubscriptionLease): void {
-  if (lease.committed || lease.released || lease.cleanupTimer) return
-  lease.cleanupTimer = setTimeout(() => {
+  if (lease.committed || lease.released || lease.cleanupTimer || lease.sticky) return
+  // Not capped by a lower GC delay: the release gives the transport this much
+  // grace anyway, and a shorter hold makes a commit React 19 holds (300 ms
+  // Suspense throttle) re-acquire. A GC delay of 0 releases on the next task.
+  const holdMs = getSubscriptionGcDelay() > 0 ? MAX_UNCOMMITTED_LEASE_GRACE_MS : 0
+  lease.cleanupTimer = unrefTimer(setTimeout(() => {
     lease.cleanupTimer = undefined
-    if (!lease.committed) releaseSubscriptionLease(lease)
-  }, Math.min(getSubscriptionGcDelay(), MAX_UNCOMMITTED_LEASE_GRACE_MS))
+    if (lease.committed) return
+    lease.releasedUncommitted = true
+    releaseSubscriptionLease(lease, { minGraceMs: MAX_UNCOMMITTED_LEASE_GRACE_MS })
+  }, holdMs))
 }
 
-function releaseSubscriptionLease (lease: SubscriptionLease): void {
+function releaseSubscriptionLease (lease: SubscriptionLease, options?: SubReleaseOptions): void {
   if (lease.released) return
   const previousLease = lease.previousLease
   lease.previousLease = undefined
   lease.released = true
+  if (diag.on) diag.noteLeaseReleased(lease, lease.committed)
   lease.unregisterCacheDestroy?.()
   lease.unregisterCacheDestroy = undefined
   clearTimeout(lease.cleanupTimer)
   lease.cleanupTimer = undefined
   clearTimeout(lease.releaseTimer)
   lease.releaseTimer = undefined
-  disposeSubscriptionLeaseSignal(lease)
+  disposeSubscriptionLeaseSignal(lease, options)
   if (lease.committed && previousLease) releaseSubscriptionLease(previousLease)
 }
 
@@ -754,18 +807,18 @@ function scheduleSubscriptionLeaseRelease (lease: SubscriptionLease): void {
   })
 }
 
-function disposeSubscriptionLeaseSignal (lease: SubscriptionLease): void {
-  const signal = lease.signal
+function disposeSubscriptionLeaseSignal (lease: SubscriptionLease, options?: SubReleaseOptions): void {
+  const release = lease.release
+  lease.release = undefined
   lease.signal = undefined
   lease.inputSignal = undefined
   lease.serializedParams = undefined
   lease.value = undefined
-  // A pending sub result exposes its signal before its promise settles. If this
-  // lease was released while pending, the resolution callback sees the same
-  // acquisition again and must not unsubscribe another owner's matching record.
-  if (!signal || lease.signalDisposed) return
+  // A lease released while its sub result was pending is disposed again when
+  // the result settles; the acquisition is released once.
+  if (!release || lease.signalDisposed) return
   lease.signalDisposed = true
-  Promise.resolve(unsub(signal)).catch(ignoreSubscriptionCleanupError)
+  Promise.resolve(release(options)).catch(ignoreSubscriptionCleanupError)
 }
 
 function ignoreSubscriptionCleanupError (): void {}
@@ -815,9 +868,12 @@ async function waitForSubscriptionSignalReady (
   signal: unknown,
   lease?: SubscriptionLease
 ): Promise<void> {
+  let poller: number | undefined
   while (!lease?.released && !isSubscriptionSignalReady(signal)) {
+    if (diag.on && poller == null) poller = diag.pollerStart('react.readinessPoll', diag.describeSubTarget(signal))
     await new Promise(resolve => setTimeout(resolve, 16))
   }
+  if (poller != null) diag.pollerEnd(poller)
 }
 
 function addBatchReadinessCheckForSignal (

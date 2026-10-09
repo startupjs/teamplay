@@ -1,7 +1,7 @@
 import { it, describe, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, sub, aggregation } from '../src/index.ts'
+import { $, sub, unsub, aggregation } from '../src/index.ts'
 import { aggregationSubscriptions } from '../src/orm/Aggregation.js'
 import connect from '../src/connect/test.js'
 
@@ -254,7 +254,9 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
     assert.deepEqual(activeIds, ['_1', '_2', '_4'], 'active items are correct')
     assert.deepEqual(categoryAIds, ['_1', '_3'], 'category A items are correct')
 
-    // Modify a document and verify both aggregations update appropriately
+    // Modify a document and verify both aggregations update appropriately.
+    // Writing a field needs the document loaded: subscribe to it.
+    await sub($item1)
     await $item1.name.set('Item 1 Modified')
 
     const updatedActiveResults = sanitizeAggregationResult($activeItems.get())
@@ -268,6 +270,7 @@ describe('Aggregation Subscriptions - Server-side Tests', () => {
 
     // Revert the change
     await $item1.name.set('Item 1')
+    await unsub($item1)
   })
 
   it('aggregation with $group and $project', async () => {

@@ -7,8 +7,12 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "teamplay-ts": "./src/index.ts",
+      "teamplay-ts": {
+        "node": "./src/index.node.ts",
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
+      "node": "./dist/index.node.js",
       "default": "./dist/index.js"
     },
     "./orm": {
@@ -25,6 +29,16 @@
     "./connect": {
       "teamplay-ts": "./src/connect/index.js",
       "default": "./dist/connect/index.js"
+    },
+    "./diagnostics": {
+      "teamplay-ts": "./src/diagnostics/index.ts",
+      "types": "./dist/diagnostics/index.d.ts",
+      "default": "./dist/diagnostics/index.js"
+    },
+    "./diagnostics/enable": {
+      "teamplay-ts": "./src/diagnostics/enable.ts",
+      "types": "./dist/diagnostics/enable.d.ts",
+      "default": "./dist/diagnostics/enable.js"
     },
     "./config": {
       "teamplay-ts": "./src/config.ts",
@@ -92,18 +106,18 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^25.6.0",
-    "@types/react": "^18.3.28",
+    "@types/react": "^19.2.14",
     "c8": "^11.0.0",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
     "mocha": "^11.7.5",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "@react-native-async-storage/async-storage": "*",
-    "react": "*",
+    "react": ">=19.0.0",
     "react-native": "*"
   },
   "peerDependenciesMeta": {
@@ -130,6 +144,9 @@
     "testEnvironment": "jsdom",
     "testRegex": "test_client/.*\\.jsx?$",
     "testSequencer": "./test_client/testSequencer.cjs",
+    "setupFiles": [
+      "<rootDir>/test_client/helpers/diagnosticsFromEnv.js"
+    ],
     "testPathIgnorePatterns": [
       "node_modules",
       "<rootDir>/test_client/helpers"

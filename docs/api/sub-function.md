@@ -88,9 +88,33 @@ await Promise.all([
 
 Call `unsub($signal)` for signals returned by `sub()`.
 
-`unsub()` remembers whether the signal was loaded with fetch or subscribe mode
-and releases it with the matching transport. This matters for mixed flows such
-as a fetch-only load followed by a live subscription on the same signal.
+Each `unsub()` releases one `sub()` of that signal, with the transport mode it
+was loaded with. Signals are shared per root and path, so two pieces of code
+can hold the same signal with different modes. When a signal holds both a
+fetch and a live subscription, `unsub($signal)` releases a fetch first, so it
+never downgrades a live subscription another caller still holds. Name the one
+to release with `unsub($signal, { mode: 'fetch' | 'subscribe' })`:
+
+```js
+const $user = await sub($.users[userId], { mode: 'fetch' }) // one-time load
+await sub($.users[userId])                                  // live, elsewhere
+await unsub($user, { mode: 'subscribe' })                   // stop live updates
+await unsub($user)                                          // release the fetch
+```
+
+`unsub()` with a mode that the signal does not hold does nothing.
 
 If subscription GC delay is enabled, cleanup may finish after the delay unless a
 quick re-subscribe cancels it.
+
+The delay is 3000 ms by default. Set it with `setSubscriptionGcDelay(ms)`
+(`setSubscriptionGcDelay(null)` goes back to the default), or for the whole
+runtime in its config, next to `idFields`: `configureTeamplay({
+subscriptionGcDelay: ms })` from `teamplay/config`, or
+`globalThis[Symbol.for('teamplay.runtimeConfig')] = { subscriptionGcDelay: ms }`
+set by the app before or after it loads teamplay. `setSubscriptionGcDelay()`
+takes precedence over the config.
+
+The same runtime config takes `forceDefer: true`, which makes React
+subscription hooks ignore `defer: false` (see
+[useSub()](./use-sub-hook.md#ignoring-defer-false-everywhere-forcedefer)).

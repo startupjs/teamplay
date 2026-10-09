@@ -182,6 +182,21 @@ export interface ObserverFunction {
 export const Signal = RuntimeSignal
 export { SEGMENTS }
 export { __DEBUG_SIGNALS_CACHE__, rawSignal, getSignalClass } from './orm/getSignal.ts'
+// Only the diagnostics switch and API object ship with the main entry; the
+// implementation loads with 'teamplay/diagnostics' (automatic in Node, see
+// index.node.ts).
+export { diagnostics } from './diagnostics/hooks.ts'
+export type {
+  DiagnosticsApi,
+  DiagnosticsOptions,
+  Snapshot as DiagnosticsSnapshot,
+  SnapshotOptions as DiagnosticsSnapshotOptions,
+  CheckLeaksOptions,
+  LeakReport,
+  SnapshotDiff,
+  TraceEvent,
+  TraceFilter
+} from './diagnostics/index.ts'
 export { default as addModel } from './orm/addModel.ts'
 export {
   defineModels,
@@ -203,7 +218,6 @@ export {
   default as useSub,
   useAsyncSub,
   useBatchSub,
-  setUseDeferredValue as __setUseDeferredValue,
   setDefaultDefer as __setDefaultDefer
 } from './react/useSub.ts'
 export {
@@ -249,6 +263,7 @@ export type {
   TeamplayRuntimeConfig
 } from './config.ts'
 export { getSubscriptionGcDelay, setSubscriptionGcDelay } from './orm/subscriptionGcDelay.ts'
+export { getForceDefer, setForceDefer } from './react/forceDefer.ts'
 export { useId, useNow, useScheduleUpdate, useTriggerUpdate } from './react/helpers.ts'
 export { GUID_PATTERN, defineSchema, hasMany, hasOne, hasManyFlags, belongsTo, pickFormFields } from '@teamplay/schema'
 export { aggregation, aggregationHeader as __aggregationHeader } from '@teamplay/utils/aggregation'

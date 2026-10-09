@@ -78,7 +78,9 @@ describe('privateData infrastructure', () => {
 
   it('ignores late private writes after the root context is closed', () => {
     setPrivateData('rootA', ['_session', 'userId'], 'a')
-    deleteRootContext('rootA')
+    // stands in for the root signal: the id stays closed while it is alive
+    const $rootA = {}
+    deleteRootContext('rootA', $rootA)
 
     assert.doesNotThrow(() => {
       setPrivateData('rootA', ['_session', 'userId'], 'b')
@@ -88,5 +90,6 @@ describe('privateData infrastructure', () => {
 
     assert.equal(getRootContext('rootA', false), undefined)
     assert.equal(getPrivateData('rootA', ['_session', 'userId']), undefined)
+    assert.ok($rootA)
   })
 })

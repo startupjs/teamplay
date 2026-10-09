@@ -8,6 +8,7 @@ import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js
 import { getRoot, ROOT_ID } from './Root.ts'
 import { isRootContextClosed } from './rootContext.ts'
 import isServer from '../utils/isServer.ts'
+import { diag } from '../diagnostics/hooks.ts'
 import type {
   CollectionSignal,
   ComputedQueryParamsInput,
@@ -30,6 +31,16 @@ export interface SubOptions {
   mode?: SubMode
 }
 
+export interface UnsubOptions {
+  /**
+   * Which kind of sub() record to release: 'fetch' for a sub(..., { mode: 'fetch' }),
+   * 'subscribe' for a live one. By default the most recent record is released,
+   * except that when the signal holds both kinds a fetch record goes first, so
+   * a live subscription another caller holds is not downgraded.
+   */
+  mode?: 'fetch' | 'subscribe'
+}
+
 type SubIntent = 'fetch' | 'subscribe'
 type SubRecordKind = 'doc' | 'query' | 'aggregation'
 
@@ -37,6 +48,10 @@ interface SubRecord {
   kind: SubRecordKind
   intent: SubIntent
   disposed: boolean
+  // How the record left SUB_RECORDS: released by its own acquisition, taken
+  // by an unsub() call (possibly meant for another record of the same signal),
+  // or dropped because its subscribe failed.
+  takenBy?: 'release' | 'unsub' | 'failed'
 }
 
 const SUB_RECORDS = new WeakMap<SignalBaseInstance, SubRecord[]>()
@@ -44,6 +59,32 @@ const SUB_RESULT_SIGNAL = Symbol('sub result signal')
 
 interface PendingSubResult extends Promise<SignalBaseInstance> {
   [SUB_RESULT_SIGNAL]?: SignalBaseInstance
+}
+
+type SubValue = SignalBaseInstance | Promise<SignalBaseInstance>
+
+interface Acquired {
+  value: SubValue
+  signal: SignalBaseInstance
+  record: SubRecord
+}
+
+export interface SubReleaseOptions {
+  /**
+   * Keep a transport this release leaves without owners lingering for at least
+   * this long, even when the subscription GC delay is shorter.
+   */
+  minGraceMs?: number
+}
+
+/**
+ * An acquisition made by acquireSub(): what sub() returns plus a disposer
+ * that releases exactly this acquisition.
+ */
+export interface SubAcquisition {
+  value: SubValue
+  signal: SignalBaseInstance
+  release: (options?: SubReleaseOptions) => Promise<void> | void
 }
 
 /**
@@ -138,6 +179,30 @@ export default function sub<
 ): MaybePromiseSubResult<CollectionSignal<TDocument, TCollectionModel, TDocumentModel, TCollectionPath>, TParams>
 
 export default function sub ($signal: unknown, params?: unknown, options?: SubOptions): unknown {
+  return acquire(Array.from(arguments)).value
+}
+
+/**
+ * Internal: subscribe like sub() and get a disposer that releases exactly this
+ * acquisition, independently of other sub()/unsub() calls on the same signal.
+ * Calling `release()` more than once releases once.
+ */
+export function acquireSub (...args: unknown[]): SubAcquisition {
+  const { value, signal, record } = acquire(args)
+  let released = false
+  return {
+    value,
+    signal,
+    release (options?: SubReleaseOptions) {
+      if (released) return
+      released = true
+      return releaseSubRecord(signal, record, options)
+    }
+  }
+}
+
+function acquire (args: unknown[]): Acquired {
+  const [$signal, params, options] = args as [unknown, unknown, SubOptions | undefined]
   // TODO: temporarily disable support for multiple subscriptions
   //       since this has to be properly cached using useDeferredSignal() in useSub()
   // if (Array.isArray($signal)) {
@@ -147,13 +212,13 @@ export default function sub ($signal: unknown, params?: unknown, options?: SubOp
   // }
   if (Array.isArray($signal)) throw Error('sub() does not support multiple subscriptions yet')
   if (isRuntimePublicDocumentSignal($signal)) {
-    if (arguments.length > 2) {
-      throw Error(ERRORS.subDocArguments($signal, ...Array.from(arguments).slice(1)))
+    if (args.length > 2) {
+      throw Error(ERRORS.subDocArguments($signal, ...args.slice(1)))
     }
     return doc$($signal, parseSubOptions(params as SubOptions | undefined))
   } else if (isRuntimePublicCollectionSignal($signal)) {
-    if (arguments.length < 2 || arguments.length > 3) {
-      throw Error(ERRORS.subQueryArguments($signal, params, ...Array.from(arguments).slice(2)))
+    if (args.length < 2 || args.length > 3) {
+      throw Error(ERRORS.subQueryArguments($signal, params, ...args.slice(2)))
     }
     return query$($signal, params, parseSubOptions(options))
   } else if (isClientAggregationFunction($signal)) {
@@ -184,11 +249,42 @@ export default function sub ($signal: unknown, params?: unknown, options?: SubOp
   }
 }
 
-export function unsub ($signal: unknown): Promise<void> | void {
+/**
+ * Release one sub() of the signal (see UnsubOptions for which one).
+ * A non-object second argument is ignored, so `signals.map(unsub)` works.
+ */
+export function unsub ($signal: unknown, options?: UnsubOptions): Promise<void> | void {
+  const intent = parseUnsubIntent(options)
   if (!($signal instanceof Signal)) return
-  const record = takeSubRecord($signal)
+  if (diag.on) diag.noteUnsubRecords(SUB_RECORDS.get($signal), intent)
+  const record = takeSubRecord($signal, { intent: intent ?? getDefaultUnsubIntent($signal) })
   if (!record) return
   return disposeSubRecord($signal, record)
+}
+
+function parseUnsubIntent (options: unknown): SubIntent | undefined {
+  if (!options || typeof options !== 'object') return
+  const mode = (options as UnsubOptions).mode
+  if (mode == null) return
+  if (mode !== 'fetch' && mode !== 'subscribe') {
+    throw Error(`unsub() option mode must be "fetch" or "subscribe". Got: ${String(mode)}`)
+  }
+  return mode
+}
+
+// With live records of both intents, release a fetch one: dropping it never
+// downgrades a subscription that another caller still holds.
+function getDefaultUnsubIntent ($signal: SignalBaseInstance): SubIntent | undefined {
+  const records = SUB_RECORDS.get($signal)
+  if (!records) return
+  let fetch = false
+  let subscribe = false
+  for (const record of records) {
+    if (record.disposed) continue
+    if (record.intent === 'fetch') fetch = true
+    else subscribe = true
+    if (fetch && subscribe) return 'fetch'
+  }
 }
 
 // React leases must be able to release ownership while the transport promise is still pending.
@@ -198,7 +294,11 @@ export function getSubResultSignal (result: unknown): SignalBaseInstance | undef
   return (result as PendingSubResult)[SUB_RESULT_SIGNAL]
 }
 
-function disposeSubRecord ($signal: SignalBaseInstance, record: SubRecord): Promise<void> | void {
+function disposeSubRecord (
+  $signal: SignalBaseInstance,
+  record: SubRecord,
+  releaseOptions?: SubReleaseOptions
+): Promise<void> | void {
   if (record.disposed) return
   record.disposed = true
 
@@ -206,9 +306,12 @@ function disposeSubRecord ($signal: SignalBaseInstance, record: SubRecord): Prom
   const rootId = $root?.[ROOT_ID]
   if (isRootContextClosed(rootId)) return
 
-  if (record.kind === 'doc') return docSubscriptions.unsubscribe($signal, { intent: record.intent })
-  if (record.kind === 'query') return querySubscriptions.unsubscribe($signal, { intent: record.intent })
-  if (record.kind === 'aggregation') return aggregationSubscriptions.unsubscribe($signal, { intent: record.intent })
+  // Resolve once ownership is released; a deferred GC destroy of the runtime
+  // (transport grace) is not awaited.
+  const options = { intent: record.intent, awaitDestroy: false, minGraceMs: releaseOptions?.minGraceMs }
+  if (record.kind === 'doc') return docSubscriptions.unsubscribe($signal, options)
+  if (record.kind === 'query') return querySubscriptions.unsubscribe($signal, options)
+  if (record.kind === 'aggregation') return aggregationSubscriptions.unsubscribe($signal, options)
 }
 
 function getAggregationFromFunction (
@@ -216,7 +319,7 @@ function getAggregationFromFunction (
   collection: string,
   params?: unknown,
   subOptions?: ResolvedSubOptions
-): SignalBaseInstance | Promise<SignalBaseInstance> {
+): Acquired {
   const aggregationParams = sanitizeAggregationParams(params) as AggregationParams
   let session: unknown
   if (isRecord(aggregationParams) && aggregationParams.$session) {
@@ -230,7 +333,7 @@ function getAggregationFromFunction (
   return aggregation$(collection, Array.isArray(result) ? { $aggregate: result } : result, undefined, subOptions)
 }
 
-function doc$ ($doc: SignalBaseInstance, subOptions: ResolvedSubOptions): SignalBaseInstance | Promise<SignalBaseInstance> {
+function doc$ ($doc: SignalBaseInstance, subOptions: ResolvedSubOptions): Acquired {
   const promise = docSubscriptions.subscribe($doc, { intent: subOptions.intent })
   return returnSubscribedSignal($doc, 'doc', subOptions.intent, promise)
 }
@@ -239,7 +342,7 @@ function query$ (
   $collection: SignalBaseInstance,
   params: unknown,
   subOptions: ResolvedSubOptions
-): SignalBaseInstance | Promise<SignalBaseInstance> {
+): Acquired {
   const collectionName = $collection[SEGMENTS][0]
   if (typeof collectionName !== 'string') throw Error(ERRORS.queryCollectionName($collection))
   if (typeof params !== 'object') throw Error(ERRORS.queryParamsObject(collectionName, params))
@@ -258,7 +361,7 @@ function aggregation$ (
   params: unknown,
   signalOptions?: QuerySignalOptions,
   subOptions: ResolvedSubOptions = parseSubOptions()
-): SignalBaseInstance | Promise<SignalBaseInstance> {
+): Acquired {
   const $aggregationQuery = getAggregationSignal(collectionName, params, signalOptions)
   const promise = aggregationSubscriptions.subscribe($aggregationQuery, { intent: subOptions.intent })
   return returnSubscribedSignal($aggregationQuery, 'aggregation', subOptions.intent, promise)
@@ -322,15 +425,15 @@ function returnSubscribedSignal (
   kind: SubRecordKind,
   intent: SubIntent,
   promise?: Promise<void> | void
-): SignalBaseInstance | Promise<SignalBaseInstance> {
+): Acquired {
   const record = addSubRecord($signal, kind, intent)
   if (!promise) {
-    return $signal
+    return { value: $signal, signal: $signal, record }
   }
   const result = Promise.resolve(promise).then(
     () => $signal,
     err => {
-      const pendingCleanup = takeSpecificSubRecord($signal, record)
+      const pendingCleanup = takeSpecificSubRecord($signal, record, 'failed')
       if (pendingCleanup) {
         Promise.resolve(disposeSubRecord($signal, pendingCleanup)).catch(ignoreSubCleanupError)
       }
@@ -338,7 +441,24 @@ function returnSubscribedSignal (
     }
   ) as PendingSubResult
   Object.defineProperty(result, SUB_RESULT_SIGNAL, { value: $signal })
-  return result
+  return { value: result, signal: $signal, record }
+}
+
+// Releases the acquisition that created `record`. If an unsub() call took this
+// record (unsub() picks by recency, so it may have meant another acquisition
+// of the same signal), the record that call left behind is released instead,
+// so every acquisition and every unsub() releases exactly one record.
+function releaseSubRecord (
+  $signal: SignalBaseInstance,
+  record: SubRecord,
+  options?: SubReleaseOptions
+): Promise<void> | void {
+  let target = takeSpecificSubRecord($signal, record, 'release')
+  if (!target && record.takenBy === 'unsub') {
+    target = takeSubRecord($signal, { kind: record.kind, intent: record.intent }, 'release')
+  }
+  if (!target) return
+  return disposeSubRecord($signal, target, options)
 }
 
 function addSubRecord ($signal: SignalBaseInstance, kind: SubRecordKind, intent: SubIntent): SubRecord {
@@ -349,25 +469,35 @@ function addSubRecord ($signal: SignalBaseInstance, kind: SubRecordKind, intent:
   }
   const record = { kind, intent, disposed: false }
   records.push(record)
+  if (diag.on) diag.noteSubRecordAdded(kind, intent)
   return record
 }
 
-function takeSubRecord ($signal: SignalBaseInstance): SubRecord | undefined {
+// Takes the most recent live record (matching `filter` when given).
+function takeSubRecord (
+  $signal: SignalBaseInstance,
+  filter: Partial<Pick<SubRecord, 'kind' | 'intent'>> = {},
+  takenBy: SubRecord['takenBy'] = 'unsub'
+): SubRecord | undefined {
   const records = SUB_RECORDS.get($signal)
   if (!records) return
   for (let i = records.length - 1; i >= 0; i--) {
     const record = records[i]
     if (record.disposed) continue
+    if (filter.kind != null && record.kind !== filter.kind) continue
+    if (filter.intent != null && record.intent !== filter.intent) continue
     records.splice(i, 1)
     if (records.length === 0) SUB_RECORDS.delete($signal)
+    record.takenBy = takenBy
     return record
   }
-  SUB_RECORDS.delete($signal)
+  if (records.length === 0) SUB_RECORDS.delete($signal)
 }
 
 function takeSpecificSubRecord (
   $signal: SignalBaseInstance,
-  target: SubRecord
+  target: SubRecord,
+  takenBy: SubRecord['takenBy']
 ): SubRecord | undefined {
   const records = SUB_RECORDS.get($signal)
   if (!records) return
@@ -375,6 +505,7 @@ function takeSpecificSubRecord (
   if (index === -1) return
   records.splice(index, 1)
   if (records.length === 0) SUB_RECORDS.delete($signal)
+  target.takenBy = takenBy
   return target
 }
 

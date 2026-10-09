@@ -1,5 +1,6 @@
 import { observe, unobserve } from '@nx-js/observer-util'
 import { scheduleReaction } from './batchScheduler.js'
+import { diag } from '../diagnostics/hooks.ts'
 
 export interface ReactionOptions {
   lazy?: boolean
@@ -45,14 +46,17 @@ export function reaction (fn: () => unknown, options: ReactionOptions = {}): Rea
 
   if (!options.lazy) runReaction(runner)
 
-  return {
+  const handle: ReactionHandle = {
     dispose () {
       if (disposed) return
       disposed = true
       pendingReactionFn = undefined
+      if (diag.on) diag.noteReactionDisposed(handle)
       unobserve(runner)
     }
   }
+  if (diag.on) diag.noteReactionCreated(handle)
+  return handle
 }
 
 export default reaction

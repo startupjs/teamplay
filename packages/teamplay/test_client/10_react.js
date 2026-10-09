@@ -1,9 +1,10 @@
 import { createElement as el, Fragment, useEffect, useLayoutEffect } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { $, useSub, useAsyncSub, observer, sub } from '../src/index.ts'
+import { $, useSub, useAsyncSub, useScheduleUpdate, observer, sub } from '../src/index.ts'
 import { setTestThrottling, resetTestThrottling } from '../src/react/useSub.ts'
 import { runGc, cache } from '../test/_helpers.js'
+import { releaseLastEventTarget } from './helpers/releaseLastEventTarget.js'
 import connect from '../src/connect/test.js'
 
 before(connect)
@@ -11,6 +12,7 @@ beforeEach(() => {
   expect(cache.size).toBe(1)
 })
 afterEach(cleanup)
+afterEach(releaseLastEventTarget)
 afterEach(runGc)
 
 describe('observer', () => {
@@ -83,13 +85,11 @@ describe('observer', () => {
     expect(renders).toBe(2)
   })
 
-  // Fixed: Signal changes in useEffect and useLayoutEffect now work correctly!
-  //
-  // The issue was that useSyncExternalStore's subscribe() is called AFTER
-  // the first render, but useEffect runs right after that first render.
-  //
-  // Solution: We queue pending updates if onStoreChange is not yet initialized,
-  // and execute them as soon as subscribe() is called.
+  // The observer wrapper subscribes (useSyncExternalStore) after its
+  // children's effects run, so a write in an effect lands before there is a
+  // listener. It still changes the store snapshot, and useSyncExternalStore
+  // re-renders right after it subscribes: the update shows in the same commit
+  // flush, with one extra render and nothing left for later.
   it('react to signal changes from useEffect', async () => {
     let renders = 0
     let $name
@@ -102,8 +102,8 @@ describe('observer', () => {
       return el('span', {}, $name.get())
     })
     const { container } = render(el(Component))
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(1)
+    expect(container.textContent).toBe('Jane')
+    expect(renders).toBe(2)
 
     await wait()
     expect(container.textContent).toBe('Jane')
@@ -125,6 +125,17 @@ describe('observer', () => {
     expect(true).toBe(true)
   })
 
+  // An update that arrives after React unsubscribed must not reach React:
+  // React 19 queues an update for an unmounted fiber in a module-level queue
+  // until its next render anywhere, keeping the component (and what its
+  // closures reference) alive until then.
+  it('does not notify React after unmount, so the unmounted component can be collected', async () => {
+    const componentRef = renderAndUnmountBeforeScheduledUpdate()
+    await wait()
+    await runGc()
+    expect(componentRef.deref()).toBe(undefined)
+  })
+
   it('react to signal changes from useLayoutEffect', async () => {
     let renders = 0
     let $name
@@ -137,8 +148,8 @@ describe('observer', () => {
       return el('span', {}, $name.get())
     })
     const { container } = render(el(Component))
-    expect(container.textContent).toBe('John')
-    expect(renders).toBe(1)
+    expect(container.textContent).toBe('Jane')
+    expect(renders).toBe(2)
 
     await wait()
     expect(container.textContent).toBe('Jane')
@@ -367,30 +378,30 @@ describe('useSub() for subscribing to documents', () => {
       )
     })
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('')
 
     await wait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('anonymous')
 
     fireEvent.click(container.querySelector('#doc'))
-    expect(renders).toBe(3)
+    expect(renders).toBe(4)
     expect(container.textContent).toBe('John')
 
     fireEvent.click(container.querySelector('#name'))
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('Jane')
 
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
 
     act(() => { $.users._1.name.set('Alice') })
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
     expect(container.textContent).toBe('Alice')
 
     await wait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
   })
 })
 
@@ -410,11 +421,11 @@ describe('useSub() for subscribing to queries', () => {
       return el('span', {}, $activeUsers.map($user => $user.name.get()).join(','))
     }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('Loading...')
 
     await wait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('John')
     expect($john.status.get()).toBe('active')
     expect($jane.status.get()).toBe('inactive')
@@ -422,17 +433,17 @@ describe('useSub() for subscribing to queries', () => {
     act(() => { $.users._2.status.set('active') })
     expect(container.textContent).toBe('John')
     await wait()
-    expect(renders).toBe(3)
+    expect(renders).toBe(4)
     expect(container.textContent).toBe('John,Jane')
 
     act(() => { $.users._1.status.set('inactive') })
     expect(container.textContent).toBe('John,Jane')
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('Jane')
 
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
   })
 
   it("handles query parameter changes. Should NOT show Suspense's 'Loading...' text on resubscribe", async () => {
@@ -458,35 +469,35 @@ describe('useSub() for subscribing to queries', () => {
       )
     }, { suspenseProps: { fallback: el('span', {}, 'Loading...') } })
     const { container } = render(el(Component))
-    expect(renders).toBe(1)
+    expect(renders).toBe(2) // the attempt that commits the fallback + React 19's prerender of the suspended subtree
     expect(container.textContent).toBe('Loading...')
 
     await throttledWait()
-    expect(renders).toBe(2)
+    expect(renders).toBe(3)
     expect(container.textContent).toBe('John,Jane')
 
     fireEvent.click(container.querySelector('#active'))
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('John,Jane')
     await wait()
-    expect(renders).toBe(4)
+    expect(renders).toBe(5)
     expect(container.textContent).toBe('John,Jane')
     await throttledWait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
     expect(container.textContent).toBe('John')
 
     await wait()
-    expect(renders).toBe(5)
+    expect(renders).toBe(6)
 
     fireEvent.click(container.querySelector('#inactive'))
-    expect(renders).toBe(7)
+    expect(renders).toBe(8)
     expect(container.textContent).toBe('John')
     await throttledWait()
-    expect(renders).toBe(8)
+    expect(renders).toBe(9)
     expect(container.textContent).toBe('Jane')
 
     await throttledWait()
-    expect(renders).toBe(8)
+    expect(renders).toBe(9)
     resetTestThrottling()
   })
 })
@@ -548,6 +559,24 @@ describe('useAsyncSub()', () => {
     resetTestThrottling()
   })
 })
+
+// Kept out of the test body so that only React can keep the component alive.
+function renderAndUnmountBeforeScheduledUpdate () {
+  let resolve
+  const update = new Promise(_resolve => { resolve = _resolve })
+  function ScheduledUpdate () {
+    useScheduleUpdate()(update)
+    return el('span', {}, 'scheduled')
+  }
+  const { unmount } = render(el(observer(ScheduledUpdate)))
+  unmount()
+  // drop @testing-library's own reference to the rendered element
+  cleanup()
+  // delivered in a microtask: after React unsubscribed, before the observer
+  // wrapper is destroyed
+  resolve()
+  return new WeakRef(ScheduledUpdate)
+}
 
 function fr (...children) {
   return el(Fragment, {}, ...children)

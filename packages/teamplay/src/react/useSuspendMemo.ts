@@ -85,6 +85,11 @@ export function useSuspendMemoByKey<TValue> (
   }, [key, ...normalizeDeps(deps)])
 }
 
+// For diagnostics.
+export function __getSuspendMemoInFlightCount (): number {
+  return IN_FLIGHT_BY_KEY.size
+}
+
 export function __resetSuspendMemoForTests (): void {
   IN_FLIGHT_BY_KEY.clear()
 }

@@ -4,13 +4,24 @@ import getSignal from './getSignal.ts'
 import { getConnection } from './connection.ts'
 import { docSubscriptions } from './Doc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
-import SubscriptionState from './SubscriptionState.js'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { getScopedSignalHash, normalizeRootId } from './rootScope.ts'
 import { getRoot, ROOT_ID, getRootTransportMode } from './Root.ts'
 import { registerRootOwnedRuntime, unregisterRootOwnedRuntime } from './rootContext.ts'
 import { setSignalRuntimeDescriptor } from './signalRuntimeDescriptor.ts'
+import unrefTimer from '../utils/unrefTimer.ts'
+import {
+  addOwnerToken,
+  canJoinTransport,
+  clearDowngradeGrace,
+  createOwnerTokenCounts,
+  flushDowngradeGraces,
+  getTransportTargetMode,
+  reconcileEntryTransport,
+  removeOwnerToken,
+  scheduleDowngradeGrace
+} from './subscriptionTransport.js'
 import {
   delPrivateData,
   getPrivateData,
@@ -18,6 +29,16 @@ import {
 } from './privateData.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
+const QUERY_FINALIZATION_TOKENS = new WeakMap()
+
+function getQueryFinalizationToken ($query) {
+  let token = QUERY_FINALIZATION_TOKENS.get($query)
+  if (!token) {
+    token = {}
+    QUERY_FINALIZATION_TOKENS.set($query, token)
+  }
+  return token
+}
 export const COLLECTION_NAME = Symbol('query collection name')
 export const PARAMS = Symbol('query params')
 export const HASH = Symbol('query hash')
@@ -34,16 +55,14 @@ export class Query {
     this.hash = hash
     this.rootIds = new Set()
     this.docSignals = new Set()
-    this.lifecycle = new SubscriptionState({
-      onSubscribe: () => this._subscribe(),
-      onUnsubscribe: () => this._unsubscribe()
-    })
     this.requestedTransportMode = 'subscribe'
     this.activeTransportMode = 'idle'
   }
 
+  // Transport calls are made only by the manager's reconcile loop, which runs
+  // one transition per entry at a time (see subscriptionTransport.js).
   get subscribed () {
-    return this.activeTransportMode !== 'idle' || this.lifecycle.subscribed
+    return this.activeTransportMode !== 'idle'
   }
 
   init () {
@@ -54,12 +73,12 @@ export class Query {
 
   async subscribe ({ mode } = {}) {
     if (mode) this.requestedTransportMode = mode
-    await this.lifecycle.subscribe()
+    await this._subscribe()
     this.init()
   }
 
   async unsubscribe () {
-    await this.lifecycle.unsubscribe()
+    if (this.activeTransportMode !== 'idle') await this._unsubscribe()
     if (!this.subscribed) {
       this.initialized = undefined
       this._detachTransportData({ keepRoots: false })
@@ -228,8 +247,8 @@ export class QuerySubscriptions {
     this.runtimeKind = 'query'
     this.ownerRecords = new Map() // ownerKey -> owner record
     this.entries = new Map() // transportHash -> transport entry
-    this.fr = new FinalizationRegistry(({ collectionName, params, ownerKey }) => {
-      this.scheduleDestroy(collectionName, params, ownerKey, { force: true })
+    this.fr = new FinalizationRegistry(({ ownerKey, token }) => {
+      this.releaseFinalizedToken(ownerKey, token).catch(ignoreDestroyError)
     })
     this.subCount = createReadonlyMapView({
       get: ownerKey => this.getTrackedOwnerCount(ownerKey),
@@ -303,7 +322,8 @@ export class QuerySubscriptions {
         params: meta.params,
         transportHash: meta.transportHash,
         fetchCount: 0,
-        subscribeCount: 0
+        subscribeCount: 0,
+        tokens: createOwnerTokenCounts()
       }
       this.ownerRecords.set(ownerKey, record)
     } else {
@@ -326,6 +346,7 @@ export class QuerySubscriptions {
         runtime: null,
         owners: new Set(),
         pendingDestroyByOwner: new Map(),
+        downgradeGrace: null,
         reconcilePromise: null
       }
       this.entries.set(transportHash, entry)
@@ -366,15 +387,17 @@ export class QuerySubscriptions {
     return entry
   }
 
-  removeOwnerFromEntry (record) {
+  // `keepRoot` leaves the owner's root attached (its materialized data stays)
+  // and registered with the root while the owner lingers in its GC grace; the
+  // owner's pending destroy (or root close) detaches it later.
+  removeOwnerFromEntry (record, { keepRoot = false } = {}) {
     const entry = this.entries.get(record.transportHash)
     if (!entry) return
-    if (!entry.owners.delete(record.ownerKey)) {
-      this.syncEntryMirror(entry)
-      return
+    entry.owners.delete(record.ownerKey)
+    if (!keepRoot) {
+      detachQueryRoot(entry.runtime, record.rootId)
+      unregisterRootOwnedRuntime(record.rootId, this.runtimeKind, record.transportHash)
     }
-    detachQueryRoot(entry.runtime, record.rootId)
-    unregisterRootOwnedRuntime(record.rootId, this.runtimeKind, record.transportHash)
     this.syncEntryMirror(entry)
   }
 
@@ -431,10 +454,7 @@ export class QuerySubscriptions {
     const ownerKey = getQueryOwnerKey(rootId, transportHash)
     this.cancelDestroy(ownerKey, transportHash)
 
-    const previousCount = this.getOwnerTotalCount(ownerKey)
-    let record = this.ownerRecords.get(ownerKey)
-
-    record = this.getOrCreateOwnerRecord(ownerKey, {
+    const record = this.getOrCreateOwnerRecord(ownerKey, {
       rootId,
       collectionName,
       params,
@@ -442,19 +462,27 @@ export class QuerySubscriptions {
     })
     const entry = this.addOwnerToEntry(record)
     this.incrementOwnerIntent(record, intent)
-    this.fr.register($query, { collectionName, params, ownerKey }, $query)
+    const token = getQueryFinalizationToken($query)
+    if (addOwnerToken(record.tokens, token, intent)) {
+      this.fr.register($query, { ownerKey, token }, token)
+    }
 
-    if (
-      previousCount > 0 &&
-      entry.runtime &&
-      entry.phase === 'stable' &&
-      this.getDesiredTransportMode(transportHash) === entry.mode
-    ) return
-
+    // A subscriber arriving in a downgrade grace keeps the transport live.
+    if (this.getDesiredTransportMode(transportHash) === 'subscribe') clearDowngradeGrace(entry)
+    // Join a settled transport synchronously, including one lingering ownerless
+    // in its GC grace: the runtime is materialized and the root is attached.
+    const targetMode = this.getTargetTransportMode(transportHash)
+    if (canJoinTransport(entry, targetMode)) {
+      entry.targetMode = targetMode
+      return
+    }
     return this.reconcileTransport(transportHash)
   }
 
-  async unsubscribe ($query, { intent = 'subscribe' } = {}) {
+  // Releases one owner count. The returned promise settles once the release is
+  // applied; with `awaitDestroy` (the default) it also waits for a deferred GC
+  // destroy of the owner, which public unsub() does not.
+  async unsubscribe ($query, { intent = 'subscribe', awaitDestroy = true, minGraceMs } = {}) {
     const ownerKey = getQueryOwnerKey(getOwningRootId($query), $query[HASH])
     const record = this.ownerRecords.get(ownerKey)
     const currentIntentCount = this.getOwnerIntentCount(record, intent)
@@ -462,34 +490,63 @@ export class QuerySubscriptions {
       if (ERROR_ON_EXCESSIVE_UNSUBSCRIBES) throw Error(ERRORS.notSubscribed($query))
       return
     }
-    const transportHash = record?.transportHash ?? $query[HASH]
     this.setOwnerIntentCount(record, intent, currentIntentCount - 1)
+    const charged = removeOwnerToken(record.tokens, getQueryFinalizationToken($query), intent)
+    if (charged.emptied) this.fr.unregister(charged.token)
+    await this.applyOwnerRelease(record, { awaitDestroy, minGraceMs })
+  }
 
+  // Shared tail of an owner release (unsubscribe and finalized signals).
+  // `minGraceMs` extends the grace of what this release leaves behind beyond
+  // the GC delay (React render attempts that were not committed).
+  async applyOwnerRelease (record, { awaitDestroy = true, minGraceMs = 0 } = {}) {
+    const { ownerKey, transportHash } = record
     const count = this.getOwnerTotalCount(record)
-
     if (count === 0) {
-      this.fr.unregister($query)
-      if (record) {
-        this.removeOwnerFromEntry(record)
-      }
+      for (const token of record.tokens.keys()) this.fr.unregister(token)
+      record.tokens.clear()
+      this.removeOwnerFromEntry(record, { keepRoot: true })
     }
-
+    const delay = Math.max(getSubscriptionGcDelay(), minGraceMs)
+    const deferred = delay > 0
+    const entry = this.entries.get(transportHash)
+    if (entry?.owners.size > 0) scheduleDowngradeGrace(this, transportHash, entry, delay)
+    else clearDowngradeGrace(entry)
     const destroyPromise = count === 0
-      ? this.scheduleDestroy($query[COLLECTION_NAME], $query[PARAMS], ownerKey, { transportHash })
+      ? this.scheduleDestroy(record.collectionName, record.params, ownerKey, { transportHash, delay })
       : undefined
 
     await this.reconcileTransport(transportHash)
     if (count > 0) return
+    if (deferred && !awaitDestroy) return
     await destroyPromise
+  }
+
+  // The signal that acquired these counts was garbage-collected without
+  // unsub(): release exactly its counts. Another signal of the same root and
+  // params may still own the query through the same owner key.
+  async releaseFinalizedToken (ownerKey, token) {
+    const record = this.ownerRecords.get(ownerKey)
+    const counts = record?.tokens.get(token)
+    if (!counts) return
+    record.tokens.delete(token)
+    this.setOwnerIntentCount(record, 'fetch', record.fetchCount - counts.fetchCount)
+    this.setOwnerIntentCount(record, 'subscribe', record.subscribeCount - counts.subscribeCount)
+    await this.applyOwnerRelease(record, { awaitDestroy: false })
   }
 
   async destroy (collectionName, params, options = {}) {
     const transportHash = hashQuery(collectionName, params)
-    const ownerKeys = Array.from(this.getOwnerKeys(transportHash) || [])
+    const entry = this.entries.get(transportHash)
+    const ownerKeys = new Set([
+      ...(entry?.owners || []),
+      ...(entry?.pendingDestroyByOwner.keys() || [])
+    ])
     for (const ownerKey of ownerKeys) {
       await this.destroyByOwnerKey(ownerKey, {
         collectionName,
         params,
+        transportHash,
         force: options.force ?? true
       })
     }
@@ -508,6 +565,7 @@ export class QuerySubscriptions {
   }
 
   async flushPendingDestroys () {
+    await flushDowngradeGraces(this)
     const ownerKeys = Array.from(this.getPendingDestroyOwnerKeys())
     for (const ownerKey of ownerKeys) {
       await this.destroyByOwnerKey(ownerKey)
@@ -517,7 +575,7 @@ export class QuerySubscriptions {
   async scheduleDestroy (collectionName, params, ownerKey, options = {}) {
     const transportHash = options.transportHash ?? hashQuery(collectionName, params)
     const fallbackOwnerKey = ownerKey ?? getQueryOwnerKey(undefined, transportHash)
-    const delay = getSubscriptionGcDelay()
+    const delay = options.delay ?? getSubscriptionGcDelay()
     if (delay <= 0) {
       await this.destroyByOwnerKey(fallbackOwnerKey, {
         collectionName,
@@ -538,7 +596,7 @@ export class QuerySubscriptions {
     pendingDestroy.collectionName = collectionName
     pendingDestroy.params = params
     pendingDestroy.transportHash = transportHash
-    pendingDestroy.timer = setTimeout(() => {
+    pendingDestroy.timer = unrefTimer(setTimeout(() => {
       this.destroyByOwnerKey(fallbackOwnerKey, {
         collectionName,
         params,
@@ -546,7 +604,7 @@ export class QuerySubscriptions {
         force: pendingDestroy.force
       })
         .catch(ignoreDestroyError)
-    }, delay)
+    }, delay))
     entry.pendingDestroyByOwner.set(fallbackOwnerKey, pendingDestroy)
     return pendingDestroy.promise
   }
@@ -557,35 +615,21 @@ export class QuerySubscriptions {
     pendingDestroy.resolve()
   }
 
-  async reconcileTransport (transportHash) {
-    const entry = this.getOrCreateEntry(transportHash)
-    entry.targetMode = this.getDesiredTransportMode(transportHash)
-    if (entry.phase === 'transition' && entry.reconcilePromise) return entry.reconcilePromise
-    const next = Promise.resolve()
-      .catch(ignoreDestroyError)
-      .then(() => this.reconcileTransportNow(transportHash))
-    entry.phase = 'transition'
-    entry.reconcilePromise = next
-    try {
-      await next
-    } finally {
-      const currentEntry = this.entries.get(transportHash)
-      if (currentEntry?.reconcilePromise === next) {
-        currentEntry.reconcilePromise = null
-        currentEntry.phase = 'stable'
-      }
-      this.deleteEntryIfEmpty(transportHash)
-    }
+  reconcileTransport (transportHash) {
+    return reconcileEntryTransport(this, transportHash)
   }
 
-  async reconcileTransportNow (transportHash) {
+  async reconcileTransportNow (transportHash, settle) {
     const entry = this.getOrCreateEntry(transportHash)
     while (true) {
       let query = entry.runtime
-      const desiredMode = entry.targetMode = this.getDesiredTransportMode(transportHash)
+      const desiredMode = entry.targetMode = this.getTargetTransportMode(transportHash)
       const currentMode = query?.activeTransportMode ?? entry.mode
       entry.mode = currentMode
-      if (desiredMode === currentMode) return
+      if (desiredMode === currentMode) {
+        settle?.()
+        return
+      }
       if (desiredMode === 'idle') {
         if (query && currentMode !== 'idle') {
           await unsubscribeQueryTransport(query, { keepRoots: true })
@@ -649,7 +693,19 @@ export class QuerySubscriptions {
     return hasFetchBackedOwner ? 'fetch' : 'idle'
   }
 
+  // Owner-derived mode, except that a live transport lingers while an
+  // ownerless entry has a released owner's GC destroy pending, or in a
+  // downgrade grace while owners remain (see subscriptionTransport.js).
+  getTargetTransportMode (transportHash) {
+    const entry = this.entries.get(transportHash)
+    const lingering = !!entry && (entry.owners.size === 0
+      ? entry.pendingDestroyByOwner.size > 0
+      : !!entry.downgradeGrace)
+    return getTransportTargetMode(this.getDesiredTransportMode(transportHash), entry, lingering)
+  }
+
   async destroyTransportEntry (transportHash, runtime) {
+    clearDowngradeGrace(this.entries.get(transportHash))
     const activeRuntime = this.entries.get(transportHash)?.runtime || runtime
     if (!activeRuntime) {
       const entry = this.entries.get(transportHash)
@@ -711,7 +767,7 @@ export class QuerySubscriptions {
         const query = entry?.runtime
         await this.reconcileTransport(transportHash)
         const nextEntry = this.entries.get(transportHash)
-        if (!nextEntry || nextEntry.owners.size === 0) {
+        if (!nextEntry || !this.isTransportStillHeld(nextEntry)) {
           await this.destroyTransportEntry(transportHash, query)
         }
         settlePending()
@@ -720,12 +776,14 @@ export class QuerySubscriptions {
       const { transportHash } = record
       const entry = this.entries.get(transportHash)
       const query = entry?.runtime
-      if (entry?.owners.has(ownerKey)) this.removeOwnerFromEntry(record)
+      // Also detaches the root of an owner that was lingering in its grace.
+      this.removeOwnerFromEntry(record)
+      for (const token of record.tokens.keys()) this.fr.unregister(token)
       this.ownerRecords.delete(ownerKey)
 
       await this.reconcileTransport(transportHash)
       const nextEntry = this.entries.get(transportHash)
-      if (nextEntry && nextEntry.owners.size > 0) {
+      if (nextEntry && this.isTransportStillHeld(nextEntry)) {
         settlePending()
         return
       }
@@ -735,6 +793,13 @@ export class QuerySubscriptions {
       settlePending(err)
       throw err
     }
+  }
+
+  // Active owners keep the transport, and so do other released owners still in
+  // their grace: a forced destroy ends only the claims of the owner it targets
+  // (clear() and destroy() target every owner, lingering ones included).
+  isTransportStillHeld (entry) {
+    return entry.owners.size > 0 || entry.pendingDestroyByOwner.size > 0
   }
 
   async destroyByRuntimeHash (runtimeHash, options = {}) {

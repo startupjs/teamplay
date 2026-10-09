@@ -2,6 +2,8 @@
 
 TeamPlay integrates seamlessly with React, allowing you to build reactive user interfaces with ease. This guide will show you how to use TeamPlay in your React components.
 
+TeamPlay requires React 19 or newer. Observer components work under `<StrictMode>`, with concurrent rendering, and inside `<Activity>`: a hidden subtree releases its subscriptions and subscribes again when it is shown.
+
 ## The `observer()` Higher-Order Component
 
 To use TeamPlay signals in a React component, you need to wrap your component with the `observer()` function:
@@ -42,6 +44,16 @@ const UserProfile = observer(({ userId }) => {
 2. While fetching, it "suspends" the component.
 3. The `observer()` wrapper shows a loading state.
 4. Once the data is ready, the component renders with the data.
+
+### Switching subscriptions
+
+When a hook's signal or params change, the component keeps showing the
+previous data (no Suspense fallback) until the new subscriptions are loaded,
+including subscriptions that depend on each other
+(`useSub($.courses[$user.courseId.get()])`): they switch together, never one
+link at a time. `defer: false` shows the fallback instead, and the
+`forceDefer` runtime option ignores `defer: false` everywhere. See
+[Re-subscribing: consistency and `defer`](../api/use-sub-hook.md#re-subscribing-consistency-and-defer).
 
 ### Async subscriptions
 
@@ -84,9 +96,10 @@ const CoursePage = observer(({ courseId }) => {
 })
 ```
 
-`useBatchSub()` keeps TeamPlay's normal `defer` default. Pass `{ defer: false }`
-only when the component needs immediate resubscription timing, such as when
-migrating legacy synchronous batch screens.
+`useBatchSub()` keeps TeamPlay's normal `defer` default: when `courseId`
+changes, the previous course and lessons stay on screen until the new ones are
+loaded. With `{ defer: false }`, as in this example, a re-subscribe suspends to
+the fallback instead.
 
 `useBatchSub(signal, params, options)` is syntax sugar for
 `useSub(signal, params, { ...options, batch: true, async: false })`. The barrier

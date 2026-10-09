@@ -99,6 +99,7 @@ The public `teamplay` package exports multiple surfaces from [packages/teamplay/
 - `teamplay/babel` and `teamplay/babel/loader`: build-time model transforms.
 - `teamplay/connect-test` and `teamplay/connect-offline`: test/offline connection variants.
 - `teamplay/cache` and `teamplay/schema`: convenience re-exports.
+- `teamplay/diagnostics`: opt-in runtime diagnostics. The `teamplay` main entry exports only the switch and the same `diagnostics` object, filled in when the subpath loads; the Node entry (`src/index.node.ts`, `exports` condition `node`) loads it automatically. `teamplay/diagnostics/enable` loads and switches it on.
 
 The main public entry is [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts). It creates the global root signal:
 
@@ -262,7 +263,7 @@ $user.displayName       // child signal
 $user.displayName()     // parent model method call
 ```
 
-Aggregation rows have additional fallback behavior: when an aggregation row contains `_id` or `id`, model method calls can be routed back to the source document signal.
+Aggregation rows have additional fallback behavior: when an aggregation row contains `_id` or `id`, model method calls can be routed back to the source document signal. Non-getter calls (setters, model methods) hold a scoped subscription to the source document (`acquireSub()` in `sub.ts`) for the duration of the call and release it when the call settles, through the normal transport grace.
 
 This boundary is intentionally treated as high risk. Add focused behavior tests before changing proxy `apply` logic.
 
@@ -288,6 +289,14 @@ Document signals read from this tree once docs are fetched/subscribed. Writes to
 - preserve local observable state in sync with ShareDB events.
 
 Public document ids are strings. Numeric segments are array indices, not document ids.
+
+Docs written without a subscription: a public write through a non-global root
+to a doc that nothing tracks (no owner, retain or pending destroy) makes that
+root retain the doc in the doc manager until the root is closed or collected,
+so read-after-write works while the root lives and the doc does not outlive
+it (racer had a model and a ShareDB connection per request). Writes through
+the global root are not tracked: such docs stay loaded, as on a racer client
+page.
 
 ### Root-Scoped Private Data
 
@@ -340,15 +349,37 @@ sub($.users[id])
 
 [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
 
-The cleanup grace has transport-specific semantics:
+The managers' reconcile loop in
+[packages/teamplay/src/orm/subscriptionTransport.js](./packages/teamplay/src/orm/subscriptionTransport.js)
+is the only coalescing layer for transports: it runs one transition per entry
+at a time and re-reads the target after each step, so racing sub/unsub calls
+collapse there. The Doc and Query runtimes only perform the ShareDB calls, and
+destroy paths close a transport through the same loop.
 
-- an already-live direct document keeps its runtime, materialized data, and
-  ShareDB subscription through `subscriptionGcDelay`; a matching owner can
-  adopt all three without a wire unsubscribe/resubscribe cycle;
-- a direct fetch keeps only its runtime and materialized data through the grace;
-  its transport is unfetched eagerly, and a later owner performs a fresh fetch;
-- forced cleanup (`clear()`, root disposal, explicit destroy, or finalization)
-  bypasses the grace and closes the transport immediately.
+The cleanup grace (racer's "unload delay") is shared by documents, queries and
+aggregations (same file):
+
+- owner counts are exact: `unsub()` releases its owner at once and resolves
+  without waiting for the delayed destroy;
+- an already-live transport keeps its runtime, materialized data, and ShareDB
+  subscription through `subscriptionGcDelay` after its final owner leaves; a new
+  owner adopts all three synchronously (`sub()` returns the signal, not a
+  promise) with no wire traffic;
+- a fetch keeps only its runtime and materialized data through the grace; its
+  transport is unfetched eagerly, and a later owner performs a fresh fetch;
+- the same grace covers a downgrade: when the last subscribe owner leaves but
+  fetch owners remain, a live transport keeps subscribing through the delay
+  (a subscriber arriving meanwhile joins synchronously) and is then downgraded
+  to a fetch (racer delayed every unsubscribe the same way);
+- a release that changes nothing on the wire leaves the entry `stable`, so a
+  following `sub()` of the same target in the same render stays synchronous;
+- forced cleanup (`clear()`, root disposal, explicit destroy) bypasses the grace
+  and closes the transport immediately; root disposal also ends the grace of
+  what that root released last;
+- a garbage-collected signal that still held subscriptions releases only the
+  counts it acquired (per-signal token), then goes through the normal grace.
+- on Node the grace and destroy timers are `unref()`'d (`utils/unrefTimer.ts`):
+  they never keep a process alive once its own work is done.
 
 ### Query Subscription Flow
 
@@ -373,9 +404,9 @@ $queries.<hash>.extra
 
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
-Query GC does not share the direct-live transport grace. Its runtime/private
-materialization may remain until delayed cleanup, but the ShareDB query
-transport closes as soon as its final owner leaves.
+Queries share the transport grace. A released owner keeps its root attached
+(its `$queries.<hash>` data stays) until its own pending destroy fires; the
+ShareDB query stays subscribed while any released owner is in its grace.
 
 ### Aggregation Subscription Flow
 
@@ -393,8 +424,8 @@ sub(aggregationHeader, params)
 
 [packages/teamplay/src/orm/Aggregation.js](./packages/teamplay/src/orm/Aggregation.js) extends query behavior. Aggregation output comes from query `extra`, not from normal query `results`. If aggregation rows include `_id` or `id`, the runtime can inject configured id fields and route model method calls back to source documents.
 
-Aggregations reuse query transport teardown semantics: materialized runtime
-state may wait for GC, while the server aggregation transport closes eagerly.
+Aggregations reuse the query transport grace: a live aggregation stays
+subscribed through `subscriptionGcDelay` after its final owner leaves.
 
 ## Writes And Mutations
 
@@ -430,7 +461,7 @@ The runtime should route the operation correctly and produce clear errors when a
 
 ## React Integration
 
-React integration lives in [packages/teamplay/src/react](./packages/teamplay/src/react). The main public exports are:
+React integration lives in [packages/teamplay/src/react](./packages/teamplay/src/react). It requires React 19 (`react >= 19.0.0` peer dependency) and is written for React 19's rendering: render attempts React discards or holds before commit (StrictMode double renders, sibling prerendering of a suspended subtree, Suspense retries whose commit React holds for up to 300 ms; see the uncommitted lease grace below), a server renderer that ignores `useLayoutEffect` without a warning, and `<Activity>` (19.2) hiding a subtree without unmounting it. The main public exports are:
 
 - `observer()`
 - `useSub()`
@@ -452,19 +483,105 @@ When changing React behavior, check both runtime correctness and end-user ergono
 `useSub()` keeps one component-owned subscription lease per hook and stable
 signal/query arguments. The component metadata cache preserves that lease across
 Suspense retries, committed effects release it on unmount, and a replacement
-lease keeps the previous snapshot alive until the replacement is ready.
+lease keeps the previous one alive until the replacement commits.
 The outer observer cache also owns pending leases, so unmounting a Suspense
 fallback can cancel subscription ownership before the transport becomes ready.
+A lease releases exactly its own acquisition (`acquireSub()`), never another
+`sub()` record of the same signal. Every render that uses a lease React has not
+committed (re)arms its release, whether the subscription was ready at once or
+became ready later: a render attempt that never commits keeps the lease for
+`MAX_UNCOMMITTED_LEASE_GRACE_MS` (1000 ms; 0 when the GC delay is 0) after its
+last use or readiness, above React 19's 300 ms Suspense commit
+throttle, so a retry or a held commit finds the lease itself. The release then
+gives the transport at least the same grace, so a later re-acquire joins
+synchronously; with a GC delay of 0 the lease is released on the next task and
+only this transport grace remains. A hook that still re-acquires the same
+target 10 times in a row from uncommitted attempts keeps its uncommitted lease
+until commit or unmount (`react.lease.reacquireLoop` diagnostics warning).
 For batches, abandoned-render cleanup waits for the complete batch barrier
 rather than an individual query; incomplete render attempts fall back to the
 individual readiness promise. Cleanup is deferred by one task so React
 StrictMode subscription replay does not look like a real unmount.
+
+`useSub()` never returns a signal whose subscription is not ready (except
+`useAsyncSub()`, which returns `undefined`): a pending lease throws its
+readiness promise, on the first render and on a re-subscribe alike (a batch
+adds it to the barrier). That is what makes dependent subscriptions
+(`useSub($.courses[$user.courseId.get()])`) switch atomically, without ever
+committing a link that does not match the one it depends on:
+
+- Deferred (the default), the hook passes its signal and serialized params
+  through `useDeferredValue()`. An urgent render gets the committed ones, whose
+  lease is ready, and renders the previous consistent state; React then renders
+  the new ones in a deferred (transition-lane) render. A suspension there keeps
+  the committed UI without the fallback; React retries the render when the
+  promise settles, the next dependent hook gets its new input in that
+  non-urgent render (`useDeferredValue()` returns it at once there) and
+  suspends in turn, until the whole component, and any child observer rendered
+  in the same deferred render, is ready and commits at once.
+- `defer: false` acquires the new target in the urgent render, which suspends
+  to the fallback.
+- `forceDefer` (`setForceDefer()`, runtime config `forceDefer`,
+  `react/forceDefer.ts`) makes every hook defer. Both `useDeferredValue()`
+  calls run in every mode, fed a constant sentinel when the hook does not
+  defer, so the hook order is the same when the mode changes at runtime; the
+  urgent render that turns deferring on renders the committed lease's target
+  (what `useDeferredValue()` would have returned).
+
+Each hook remembers the lease of its last commit. An urgent render of the
+committed target while the deferred render waits for a new one is served by
+that lease, and the pending one stays in the cache for the deferred render
+(neither is re-acquired or released). When a component that has committed
+suspends, it arms `renderAttemptDestroyer`'s gate, so `trapRender` keeps its
+observer reaction instead of destroying it: a change of what the suspended
+render read (the id being switched again) still re-renders the component.
+Leases of a deferred render that are ready but wait for a later link are
+uncommitted leases like any other: a link slower than the 1000 ms hold
+releases them, and the retry re-acquires them synchronously from the
+transport grace.
+
+The observer wrapper (`wrapIntoSuspense.js`) re-renders its component through
+`useSyncExternalStore`. An update replaces the store snapshot whether or not
+React is subscribed, and the wrapper drops React's listener as soon as React
+unsubscribes: an update that lands before the subscription (a child's effect
+runs before its parent wrapper subscribes, StrictMode replays subscriptions)
+is caught by `useSyncExternalStore`'s own check after it subscribes, and React
+is never notified after it unsubscribed (React 19 would keep the unmounted
+fiber queued until its next render). An unsubscribed wrapper releases what it
+holds (cache, lease releases) on the next task, but stays usable: `<Activity>`
+unsubscribes a subtree it hides without unmounting it and subscribes it again
+when it shows it.
+
+An observer wrapper whose render React discarded before it mounted never
+subscribes, so it is never destroyed explicitly; a FinalizationRegistry runs its
+cache destroy callbacks (lease releases) once it is collected.
+
+`observer()` creates its reaction during render (it has to track what the
+render reads). A render React discards before commit (StrictMode's double
+render, abandoned concurrent renders) registers its reaction in a
+FinalizationRegistry against a hook-state object only that render references;
+when React drops the render, the reaction is unobserved. A commit unregisters
+it, and if StrictMode's effect replay (mount, unmount, mount) destroyed the
+reaction, the mount effect re-renders to create a new one.
 
 `SuspenseGroup` consolidates default observer boundaries only until its content
 is revealed for the first time. Once that initial content commits, observer
 boundaries become local again. This preserves the shared startup fallback while
 preventing a later interaction that mounts a suspending observer from hiding or
 restarting the entire committed group.
+
+## Diagnostics
+
+Opt-in diagnostics live in [packages/teamplay/src/diagnostics](./packages/teamplay/src/diagnostics) and are documented in [docs/guide/diagnostics.md](./docs/guide/diagnostics.md).
+
+- `hooks.ts` is the only diagnostics module the runtime imports, so it is the only one in bundles that do not import `teamplay/diagnostics` (Metro does not tree-shake). It holds the `diag` object (the `diag.on` switch; the hook functions are added when the implementation loads) and the shared `diagnostics` API object. Hot paths (sub records, useSub leases, observer wrappers, reactions, readiness pollers, root lifecycle) call `diag.record()`, `diag.noteLeaseCreated()`, ... behind `if (diag.on)`. The switch turns on only after the hook functions are installed. `test/diagnosticsLazy.js` and `node scripts/bundle-size.mjs --check` keep every other diagnostics module unreachable from `src/index.ts`.
+- `install.ts` is the first import of `index.ts` and imports no runtime module. It adds the hook functions to `diag` and switches diagnostics on from `globalThis.__TEAMPLAY_DIAGNOSTICS__` or `TEAMPLAY_DIAGNOSTICS`. When the subpath is loaded before `teamplay`, this happens before any runtime module evaluates.
+- `state.ts` holds counters, the trace ring buffer and WeakRef-only registries.
+- `utils/MockFinalizationRegistry.ts` creates plain registries of the selected implementation, or, once diagnostics are loaded, counting wrappers from `finalization.ts` (`diag.createFinalizationRegistry`). Registries created earlier are reported as `finalization.untracked`.
+- `instrument.ts` wraps the doc/query/aggregation manager instance methods and runtime transport methods from the outside while enabled. The manager files carry no diagnostics code.
+- `collect.ts` reads managers, root contexts, the signal cache, the data tree, React registries and the ShareDB connection into JSON. `leaks.ts` turns that into findings and diffs.
+
+Diagnostics must never retain signals, docs or React objects. Keep registries to ids, strings and WeakRefs, and keep collectors read-only (raw objects, no observable reads).
 
 ## Backend Features
 
@@ -551,7 +668,7 @@ cd packages/teamplay && npm run test-client
 yarn workspace babel-plugin-teamplay test
 ```
 
-Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list.
+Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client) and run on React 19 (jsdom, `@testing-library/react`). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list. Shared client test helpers live in `test_client/helpers/` (ignored as test files); `releaseLastEventTarget()` drops react-dom's reference to the last DOM event target, whose development-only `_debugStack` otherwise keeps a test body's closures alive into the next test's leak check.
 
 Server/runtime tests live in [packages/teamplay/test](./packages/teamplay/test). Type tests live in [packages/teamplay/test_types](./packages/teamplay/test_types) and the strict external consumer setup.
 

@@ -45,6 +45,7 @@ export interface QueryRuntimeEntry {
   runtime: Query | null
   owners: Set<string>
   pendingDestroyByOwner: Map<string, PendingQueryDestroyEntry>
+  downgradeGrace: { timer?: ReturnType<typeof setTimeout> } | null
   reconcilePromise: Promise<void> | null
 }
 
@@ -94,7 +95,7 @@ export class QuerySubscriptions {
   pendingDestroyTimers: ReadonlyMapView<string, PendingQueryDestroyEntry>
   constructor (QueryClass?: QueryConstructor)
   subscribe ($query: Signal, options?: { intent?: SubscriptionIntent }): Promise<void> | void
-  unsubscribe ($query: Signal, options?: { intent?: SubscriptionIntent }): Promise<void>
+  unsubscribe ($query: Signal, options?: { intent?: SubscriptionIntent, awaitDestroy?: boolean, minGraceMs?: number }): Promise<void>
   destroy (collectionName: string, params: unknown, options?: { force?: boolean }): Promise<void>
   clear (): Promise<void>
   flushPendingDestroys (): Promise<void>
@@ -102,7 +103,7 @@ export class QuerySubscriptions {
     collectionName: string,
     params: unknown,
     ownerKey?: string,
-    options?: { transportHash?: string, force?: boolean }
+    options?: { transportHash?: string, force?: boolean, delay?: number }
   ): Promise<void> | void
   cancelDestroy (ownerKey: string, transportHash?: string): void
   destroyByRuntimeHash (runtimeHash: string, options?: { rootId?: string, force?: boolean }): Promise<void>

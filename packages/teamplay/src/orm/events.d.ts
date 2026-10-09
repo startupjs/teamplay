@@ -4,3 +4,4 @@ export const removeListener: any
 export const useOn: any
 export const useEmit: any
 export const __resetEventsForTests: any
+export function __getListenerCountsForDiagnostics (): Record<string, number>

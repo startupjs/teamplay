@@ -1,3 +1,6 @@
+import { diag } from '../diagnostics/hooks.ts'
+import unrefTimer from './unrefTimer.ts'
+
 export const REGISTRY_SWEEP_INTERVAL = 10000
 
 type TimeoutId = ReturnType<typeof setTimeout>
@@ -94,22 +97,34 @@ export class WeakRefBasedFinalizationRegistry<TValue = unknown> {
 
   scheduleSweep (): void {
     if (this.sweepTimeout) return
-    this.sweepTimeout = setTimeout(this.sweep, REGISTRY_SWEEP_INTERVAL)
+    this.sweepTimeout = unrefTimer(setTimeout(this.sweep, REGISTRY_SWEEP_INTERVAL))
   }
 }
 
-let ExportedFinalizationRegistry: FinalizationRegistryLikeConstructor
+let BaseFinalizationRegistry: FinalizationRegistryLikeConstructor
 
 if (typeof FinalizationRegistry !== 'undefined') {
-  ExportedFinalizationRegistry = FinalizationRegistry as FinalizationRegistryLikeConstructor
+  BaseFinalizationRegistry = FinalizationRegistry as FinalizationRegistryLikeConstructor
 } else if (typeof WeakRef !== 'undefined') {
   console.warn('FinalizationRegistry is not available in this environment. ' +
       'Using a mock implementation: WeakRefBasedFinalizationRegistry')
-  ExportedFinalizationRegistry = WeakRefBasedFinalizationRegistry
+  BaseFinalizationRegistry = WeakRefBasedFinalizationRegistry
 } else {
   console.warn('Neither FinalizationRegistry nor WeakRef are available in this environment. ' +
       'Using a mock implementation: PermanentFinalizationRegistry')
-  ExportedFinalizationRegistry = PermanentFinalizationRegistry
+  BaseFinalizationRegistry = PermanentFinalizationRegistry
 }
+
+// Registries teamplay creates once 'teamplay/diagnostics' is loaded are
+// counting wrappers around the selected implementation
+// (diagnostics/finalization.ts); before that, and in bundles without
+// diagnostics, they are plain registries of the selected implementation.
+function TeamplayFinalizationRegistry<TValue = unknown> (finalize: (value: TValue) => void): FinalizationRegistryLike<TValue> {
+  return diag.createFinalizationRegistry
+    ? diag.createFinalizationRegistry(finalize, BaseFinalizationRegistry)
+    : new BaseFinalizationRegistry<TValue>(finalize)
+}
+
+const ExportedFinalizationRegistry = TeamplayFinalizationRegistry as unknown as FinalizationRegistryLikeConstructor
 
 export default ExportedFinalizationRegistry
