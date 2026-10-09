@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.6.0](https://github.com/startupjs/teamplay/compare/v0.5.12...v0.6.0) (2026-10-09)
+
+**Note:** Version bump only for package @teamplay/channel
+
+
+
+
+
 ## [0.5.11](/compare/v0.5.10...v0.5.11) (2026-09-08)
 
 
