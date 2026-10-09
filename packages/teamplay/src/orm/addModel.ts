@@ -2,7 +2,46 @@ import type { SignalClass } from './Signal.ts'
 import type { TeamplayModels, TeamplayPluginModels } from '../index.ts'
 import type { PathSegment } from './types/path.ts'
 
-export const MODELS: Record<string, SignalClass<any>> = {}
+interface IndexedPattern {
+  patternSegments: string[]
+  Model: SignalClass<any>
+}
+
+// findModel() runs on every signal lookup (getSignalClass, idFields), so the
+// registered patterns are split once and grouped by segment count, keeping
+// registration order (the first match still wins). Any change to MODELS —
+// through addModel() or written to it directly (tests swap models in and out) —
+// drops the index; the next lookup rebuilds it.
+let PATTERNS_BY_LENGTH: Map<number, IndexedPattern[]> | undefined
+const models: Record<string, SignalClass<any>> = {}
+
+export const MODELS: Record<string, SignalClass<any>> = new Proxy(models, {
+  set (target, pattern, Model) {
+    PATTERNS_BY_LENGTH = undefined
+    return Reflect.set(target, pattern, Model)
+  },
+  defineProperty (target, pattern, descriptor) {
+    PATTERNS_BY_LENGTH = undefined
+    return Reflect.defineProperty(target, pattern, descriptor)
+  },
+  deleteProperty (target, pattern) {
+    PATTERNS_BY_LENGTH = undefined
+    return Reflect.deleteProperty(target, pattern)
+  }
+})
+
+function getPatternsByLength (): Map<number, IndexedPattern[]> {
+  if (PATTERNS_BY_LENGTH) return PATTERNS_BY_LENGTH
+  const byLength = new Map<number, IndexedPattern[]>()
+  for (const pattern in models) {
+    const patternSegments = pattern.split('.')
+    let patterns = byLength.get(patternSegments.length)
+    if (!patterns) byLength.set(patternSegments.length, patterns = [])
+    patterns.push({ patternSegments, Model: models[pattern] })
+  }
+  PATTERNS_BY_LENGTH = byLength
+  return byLength
+}
 
 type UnionToIntersection<TValue> =
   (TValue extends unknown ? (value: TValue) => void : never) extends (value: infer Intersection) => void
@@ -37,9 +76,9 @@ export function findModel (segments: PathSegment[]): SignalClass<any> | undefine
   // if segments is an empty array, treat it as a top-level signal.
   // Top-level signal class is the one that has an empty string as a pattern.
   if (segments.length === 0) segments = ['']
-  for (const pattern in MODELS) {
-    const patternSegments = pattern.split('.')
-    if (segments.length !== patternSegments.length) continue
+  const patterns = getPatternsByLength().get(segments.length)
+  if (!patterns) return
+  for (const { patternSegments, Model } of patterns) {
     let match = true
     for (let i = 0; i < segments.length; i++) {
       if (patternSegments[i] !== '*' && patternSegments[i] !== segments[i]) {
@@ -47,6 +86,6 @@ export function findModel (segments: PathSegment[]): SignalClass<any> | undefine
         break
       }
     }
-    if (match) return MODELS[pattern]
+    if (match) return Model
   }
 }
