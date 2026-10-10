@@ -554,8 +554,9 @@ stays in the hook's cache until the observer is destroyed, so the same target
 is not subscribed again while the component keeps it: React pings a suspended
 render when its promise rejects, and throwing a rejected promise again would
 retry the render without end. Another target gets a new lease, and a remount
-(an error boundary reset) a new cache. A failure is logged once in
-development.
+(an error boundary reset) a new cache. In development a failure is
+reported once with `console.warn` and its target (React reports the error
+itself).
 
 Each hook remembers the lease of its last commit. An urgent render of the
 committed target while the deferred render waits for a new one is served by

@@ -760,8 +760,10 @@ function createSubscriptionLease (
   return lease
 }
 
+// A warning: React already reports the error it throws (console.error by
+// default); this adds what failed.
 function logSubscriptionFailure (lease: SubscriptionLease, err: unknown): void {
-  console.error(
+  console.warn(
     `[teamplay] useSub(): subscribing to ${describeLeaseTarget(lease)} failed. ` +
     'The component throws the error to the nearest error boundary.',
     err

@@ -60,17 +60,20 @@ beforeAll(async () => {
 })
 
 let consoleError
+let consoleWarn
 let previousGcDelay
 beforeEach(() => {
   attempts[DENIED] = 0
   renders = 0
   consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+  consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => {})
   previousGcDelay = setSubscriptionGcDelay(200)
 })
 afterEach(async () => {
   cleanup()
   setForceDefer(null)
   consoleError.mockRestore()
+  consoleWarn.mockRestore()
   setSubscriptionGcDelay(previousGcDelay)
   // let lease releases and transport graces run out between tests
   await wait(300)
@@ -103,8 +106,11 @@ async function waitForResult (container, text, timeout = 2000) {
   expect(container.querySelector('#result')?.textContent).toBe(text)
 }
 
-function teamplayErrorLogs () {
-  return consoleError.mock.calls.filter(args => String(args[0]).startsWith('[teamplay]'))
+// teamplay warns (React itself reports the error it throws with console.error)
+function teamplayFailureLogs () {
+  const isFailureLog = args => String(args[0]).startsWith('[teamplay] useSub()')
+  expect(consoleError.mock.calls.filter(isFailureLog)).toEqual([])
+  return consoleWarn.mock.calls.filter(isFailureLog)
 }
 
 function expectNoDeniedSubscriptions () {
@@ -155,8 +161,8 @@ describe('a subscription the server denies', () => {
       expect(container.querySelector('#result')?.textContent).toBe('threw ERR_ACCESS_DENY_READ')
       expect(attempts[DENIED]).toBe(1)
       expect(renders).toBe(rendersAfterError)
-      expect(teamplayErrorLogs()).toHaveLength(1)
-      expect(String(teamplayErrorLogs()[0][0])).toContain(DENIED)
+      expect(teamplayFailureLogs()).toHaveLength(1)
+      expect(String(teamplayFailureLogs()[0][0])).toContain(DENIED)
       expectNoDeniedSubscriptions()
     })
   }

@@ -182,7 +182,8 @@ deny) makes `sub()` reject with the ShareDB error, such as
 `{ code: 'ERR_ACCESS_DENY_READ' }`. The hooks follow React's data-fetching
 semantics: once the subscription fails, `useSub()`, `useBatchSub()` and
 `useAsyncSub()` throw that error from render, so the nearest error boundary
-catches it. In development the failure is also logged once with its target.
+catches it. In development teamplay also warns once (`console.warn`) with the
+failed target; React itself reports the error it throws.
 
 ```javascript
 const Games = observer(() => {
