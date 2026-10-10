@@ -90,6 +90,10 @@ for (const $user of $activeUsers) {
   current data. A result deleted on this client, by another client, or after
   the server read the results is left out of all of them (never listed as a
   hole) until it exists again: a result created again comes back at its
-  place. The array keeps its identity, and so does the object of a result
-  that did not change.
+  place.
+- An array `$query.get()` or `getIds()` returned is a snapshot: it never
+  changes afterwards, so a loop can delete the documents it lists. When the
+  listed documents change, `$query.get()` returns a new array (a new
+  dependency for `useMemo()`); otherwise it returns the same array, with the
+  same objects for unchanged documents.
 - `ids` and `extra` are reserved metadata properties on query signals. Use the collection path, such as `$.users['ids']`, when you need a document whose id has one of those names.
