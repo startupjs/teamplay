@@ -3,6 +3,7 @@ import { set as _set, getRaw } from './dataTree.js'
 import getSignal from './getSignal.ts'
 import { getConnection } from './connection.ts'
 import { docSubscriptions } from './Doc.js'
+import { isMissingShareDoc } from './missingDoc.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
@@ -221,6 +222,9 @@ export class Query {
 
   _mapShareDocsToRaw (shareDocs) {
     return shareDocs.map(doc => {
+      // a result deleted on this client before the server removed it from
+      // the query reads as undefined, like its doc signal
+      if (isMissingShareDoc(doc)) return undefined
       const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
       if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
       return raw(doc.data)
@@ -923,7 +927,11 @@ export const querySubscriptions = new QuerySubscriptions()
 
 function maybeMaterializeQueryDocsToCollection (collectionName, shareDocs) {
   for (const doc of shareDocs) {
-    if (!doc?.id || doc.data == null) continue
+    // A query result can be a missing doc: deleted on this client (or by an
+    // op it received) after the server read the query results. ShareDB keeps
+    // the deleted doc (it ignores the older snapshot) in the results until
+    // the server sends the removal; a fetch query keeps it for good.
+    if (!doc?.id || isMissingShareDoc(doc) || doc.data == null) continue
     const existing = getRaw([collectionName, doc.id])
     if (existing != null) continue
     const idFields = getIdFieldsForSegments([collectionName, doc.id])
@@ -941,10 +949,17 @@ export function materializeQueryDataDocsToCollection (collectionName, docs) {
     if (docId == null) continue
     const existing = getRaw([collectionName, docId])
     if (existing != null) continue
+    // the list can still hold a doc deleted after it was read: never bring
+    // it back
+    if (isMissingShareDoc(getExistingShareDoc(collectionName, docId))) continue
     const idFields = getIdFieldsForSegments([collectionName, docId])
     injectIdFields(rawDoc, idFields, docId)
     _set([collectionName, docId], rawDoc)
   }
+}
+
+function getExistingShareDoc (collectionName, docId) {
+  return getConnection().collections?.[collectionName]?.[docId]
 }
 
 export function hashQuery (collectionName, params) {

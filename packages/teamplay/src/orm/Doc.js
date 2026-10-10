@@ -191,8 +191,9 @@ class Doc {
     // - missing doc => keep model path undefined
     // - but make shareDoc.data truthy/observable so direct ShareDB consumers behave
     //   the same way they do under Racer.
-    if (isMissingShareDoc(doc) && doc.data === undefined) {
-      if (!isObservable(doc.data)) doc.data = observable(undefined)
+    // - and never materialize a missing doc, whatever its placeholder holds.
+    if (isMissingShareDoc(doc)) {
+      if (doc.data == null) doc.data = observable(undefined)
       return
     }
     if (doc.data == null) return
