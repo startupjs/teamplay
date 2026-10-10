@@ -5,7 +5,7 @@ import { $, sub, unsub, reaction } from '../src/index.ts'
 import connect from '../src/connect/test.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { get as _get } from '../src/orm/dataTree.js'
-import { materializeQueryDataDocsToCollection, querySubscriptions } from '../src/orm/Query.js'
+import { HASH, materializeQueryDataDocsToCollection, querySubscriptions } from '../src/orm/Query.js'
 import { getQueryDocIndexSize } from '../src/orm/queryDocIndex.js'
 
 before(connect)
@@ -44,17 +44,19 @@ describe('a doc deleted while a query including it is in flight', () => {
         holder.release()
         const $query = await queryPromise
 
-        assert.deepEqual($query.getIds(), [id], 'the query results still list the deleted doc')
+        assert.deepEqual(getQueryResultIds($query), [id], 'ShareDB still lists the deleted doc')
+        assert.deepEqual($query.getIds(), [], 'the query leaves the deleted doc out')
         assert.equal($doc.get(), undefined, 'the doc stays deleted after the query results arrive')
         assert.equal(_get([collection, id]), undefined, 'nothing is materialized in the data tree')
         const shareDoc = getConnection().get(collection, id)
         assert.equal(shareDoc.type, null)
         assert.deepEqual(Object.keys(shareDoc.data), [], 'the missing-doc placeholder stays empty')
-        assert.deepEqual($query.get(), [undefined], 'the query lists the deleted doc as undefined')
-        assert.deepEqual($query.map($item => $item.get()), [undefined])
+        assert.deepEqual($query.get(), [], 'never a hole for the deleted doc')
+        assert.deepEqual($query.map($item => $item.get()), [])
 
         diffs.release()
-        if (mode === 'subscribe') await waitFor(() => $query.getIds().length === 0)
+        if (mode === 'subscribe') await waitFor(() => getQueryResultIds($query).length === 0)
+        assert.deepEqual($query.getIds(), [])
         assert.equal($doc.get(), undefined, 'still undefined once the query settles')
         assert.equal(_get([collection, id]), undefined)
       })
@@ -104,14 +106,15 @@ describe('a doc deleted while a query including it is in flight', () => {
     assert.equal($doc.get(), undefined)
   })
 
-  // $query.get() lists the current data of each result, like the query's
-  // doc signals: never the old object of a doc deleted after the server read
-  // the results (until the server removes it from a subscribe query, for
-  // good in a fetch query), and the new one of a doc created again. The list
+  // $query.get(), $query.getIds() and the doc signals of the query list the
+  // results whose docs exist, with their current data: a doc deleted after
+  // the server read the results is left out (until the server removes it
+  // from a subscribe query, for good in a fetch query), never listed as a
+  // hole or as its old object, and a doc created again comes back. The list
   // and the objects of unchanged results keep their identity.
   describe('$query.get() after a doc of the results is deleted', () => {
     for (const mode of ['subscribe', 'fetch']) {
-      it(`lists a doc deleted on this client as undefined (${mode} query)`, async () => {
+      it(`leaves out a doc deleted on this client (${mode} query)`, async () => {
         const { $a, $b, $query, idA, idB } = await subscribeTwoDocs(`local_${mode}`, mode)
         const docs = raw($query.get())
         const docB = docs[1]
@@ -121,36 +124,39 @@ describe('a doc deleted while a query including it is in flight', () => {
         try {
           await $a.del()
           await tick()
-          assert.deepEqual($query.getIds(), [idA, idB], 'the server has not removed it yet')
+          assert.deepEqual(getQueryResultIds($query), [idA, idB], 'the server has not removed it yet')
+          assert.deepEqual($query.getIds(), [idB])
           assert.equal(raw($query.get()), docs, 'the same list')
-          assert.equal($query.get()[0], undefined, 'never the old object of the deleted doc')
-          assert.equal(raw($query.get()[1]), docB, 'an unchanged result keeps its object')
-          assert.deepEqual(seen.at(-1), [undefined, 'B'], 'readers of $query.get() re-run')
+          assert.equal($query.get().length, 1, 'neither a hole nor the old object of the deleted doc')
+          assert.equal(raw($query.get()[0]), docB, 'an unchanged result keeps its object')
+          assert.deepEqual(seen.at(-1), ['B'], 'readers of $query.get() re-run')
         } finally {
           handle.dispose()
           diffs.release()
         }
-        if (mode === 'subscribe') {
-          await waitFor(() => $query.getIds().length === 1)
-          assert.deepEqual($query.get().map(doc => doc.name), ['B'])
-          assert.equal(raw($query.get()[0]), docB)
-        }
+        if (mode === 'subscribe') await waitFor(() => getQueryResultIds($query).length === 1)
+        assert.deepEqual($query.getIds(), [idB])
+        assert.equal(raw($query.get()), docs)
+        assert.deepEqual($query.get().map(doc => doc.name), ['B'])
+        assert.equal(raw($query.get()[0]), docB)
         assert.equal(raw($b.get()), docB)
       })
     }
 
-    it('lists a doc created again with its new data (fetch query)', async () => {
-      const { $a, $query } = await subscribeTwoDocs('recreate', 'fetch')
+    it('lists a doc created again, at its place, with its new data (fetch query)', async () => {
+      const { $a, $b, $query, idA, idB } = await subscribeTwoDocs('recreate', 'fetch')
       const kind = $a.kind.get()
       await $a.del()
-      assert.equal($query.get()[0], undefined)
+      assert.deepEqual($query.getIds(), [idB])
       await $a.set({ kind, name: 'A again', n: 1 })
+      assert.deepEqual($query.getIds(), [idA, idB])
       assert.equal(raw($query.get()[0]), raw($a.get()), 'the current object of the doc')
       assert.equal($query.get()[0].name, 'A again')
+      assert.equal(raw($query.get()[1]), raw($b.get()))
     })
 
-    it('lists a doc deleted by another client as undefined (fetch query)', async () => {
-      const { $a, $b, $query, idA } = await subscribeTwoDocs('remote', 'fetch')
+    it('leaves out a doc deleted by another client (fetch query)', async () => {
+      const { $a, $b, $query, idA, idB } = await subscribeTwoDocs('remote', 'fetch')
       const writer = getConnection().agent.backend.connect()
       try {
         const doc = writer.get(collection, idA)
@@ -160,8 +166,9 @@ describe('a doc deleted while a query including it is in flight', () => {
         writer.close()
       }
       await waitFor(() => $a.get() === undefined)
-      assert.equal($query.get()[0], undefined)
-      assert.equal(raw($query.get()[1]), raw($b.get()))
+      assert.deepEqual($query.getIds(), [idB])
+      assert.equal($query.get().length, 1)
+      assert.equal(raw($query.get()[0]), raw($b.get()))
     })
 
     async function subscribeTwoDocs (name, mode) {
@@ -239,6 +246,12 @@ describe('a doc deleted while a query including it is in flight', () => {
     return holder
   }
 })
+
+// the ids ShareDB lists in the query results (deleted docs included)
+function getQueryResultIds ($query) {
+  const entry = querySubscriptions.entries.get($query[HASH])
+  return entry.runtime.shareQuery.results.map(doc => doc.id)
+}
 
 function tick () {
   return new Promise(resolve => setTimeout(resolve, 0))
