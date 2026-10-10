@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.6.2](https://github.com/startupjs/teamplay/compare/v0.6.1...v0.6.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* query lists are snapshots (copy-on-write), loops deleting the listed docs delete all of them ([#57](https://github.com/startupjs/teamplay/issues/57)) ([e99934d](https://github.com/startupjs/teamplay/commit/e99934d89b41a77ab4754560876c23c5dca488e8)), closes [#56](https://github.com/startupjs/teamplay/issues/56) [#56](https://github.com/startupjs/teamplay/issues/56)
+
+
+
+
+
 ## [0.6.1](https://github.com/startupjs/teamplay/compare/v0.6.0...v0.6.1) (2026-10-10)
 
 
