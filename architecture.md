@@ -407,17 +407,21 @@ deleted after the server read the results stays in them until the server
 sends its removal, and for good in a fetch query. Its `data` can be the empty
 racer-style placeholder that `Doc.js` keeps on missing docs, so missing docs
 are told by `isMissingShareDoc()` (`orm/missingDoc.js`), never by `data`:
-they are never materialized into the data tree (the doc reads as `undefined`)
-and `docs` lists them as `undefined`.
+they are never materialized into the data tree (the doc reads as `undefined`).
 
-Each `docs` entry is the data-tree object of its id, what the doc signal
-reads. `orm/queryDocIndex.js` maps each doc to the query runtimes that list it
-(registered and removed with the query's doc retains); when a doc's
-data-tree object is replaced (deleted, created again, loaded anew) `Doc.js`
-and the doc-root writes in `dataTree.js` call `refreshQueryDocs()`, which
-updates only those entries in place. The array keeps its identity, reads
-allocate nothing, and in-place updates of a doc (ops, `set()` diffs) need no
-refresh because the entry is the same object.
+`ids` and `docs` list the results whose docs exist, in the order of the
+results: a missing result is left out of both (and so out of iteration over
+the query), never a hole, until it exists again. Each `docs` entry is the
+data-tree object of its id, what the doc signal reads.
+`orm/queryDocIndex.js` maps each doc to the query runtimes that have it in
+their results (registered and removed with the query's doc retains); when a
+doc's data-tree object is replaced (deleted, created again, loaded anew)
+`Doc.js` and the doc-root writes in `dataTree.js` call `refreshQueryDocs()`
+in the same batch. The query then brings both lists of each root to the
+listed results by splicing only the changed range, the same way it applies
+the insert, move and remove diffs of ShareDB. The lists keep their identity,
+unchanged results keep their objects, reads allocate nothing, and in-place
+updates of a doc (ops, `set()` diffs) need no refresh.
 
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 

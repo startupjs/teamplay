@@ -7,6 +7,7 @@ import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idField
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
 import { refreshQueryDocs } from './queryDocIndex.js'
+import { runInBatch } from './batchScheduler.js'
 import unrefTimer from '../utils/unrefTimer.ts'
 import {
   addOwnerToken,
@@ -175,10 +176,13 @@ class Doc {
   }
 
   _refMissingData () {
-    _del([this.collection, this.docId])
+    // the queries listing the doc leave it out in the same batch
+    runInBatch(() => {
+      _del([this.collection, this.docId])
+      refreshQueryDocs(this.collection, this.docId)
+    })
     const doc = getConnection().get(this.collection, this.docId)
     doc.data = observable(undefined)
-    refreshQueryDocs(this.collection, this.docId)
   }
 
   _refData () {
@@ -209,13 +213,17 @@ class Doc {
       if (!isObservable(doc.data)) doc.data = observable(doc.data)
       return
     }
-    _set(path, data)
-    const synced = _getRaw(path)
+    // set() updates an existing object in place: only a new object (a doc
+    // created again) changes what the queries listing the doc hold, and they
+    // list it in the same batch
+    const synced = runInBatch(() => {
+      _set(path, data)
+      const synced = _getRaw(path)
+      if (synced !== current) refreshQueryDocs(this.collection, this.docId)
+      return synced
+    })
     if (synced != null && synced !== raw(doc.data)) doc.data = synced
     if (!isObservable(doc.data)) doc.data = observable(doc.data)
-    // set() updates an existing object in place: only a new object (a doc
-    // created again) changes what the queries listing the doc hold
-    if (synced !== current) refreshQueryDocs(this.collection, this.docId)
   }
 
   _removeData () {

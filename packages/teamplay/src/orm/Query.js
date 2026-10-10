@@ -6,6 +6,7 @@ import { docSubscriptions } from './Doc.js'
 import { isMissingShareDoc } from './missingDoc.js'
 import { addQueryDoc, removeQueryDoc } from './queryDocIndex.js'
 import { SEGMENTS } from './signalSymbols.ts'
+import { runInBatch } from './batchScheduler.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
@@ -134,49 +135,23 @@ export class Query {
     for (const doc of this.shareQuery.results) this._addDoc(doc.id)
     this._syncAllRootsData()
 
-    this.shareQuery.on('insert', (shareDocs, index) => {
+    // ShareDB has already applied the diff to shareQuery.results
+    this.shareQuery.on('insert', shareDocs => {
       maybeMaterializeQueryDocsToCollection(this.collectionName, shareDocs)
-      const newDocs = this._mapShareDocsToRaw(shareDocs)
-      const ids = shareDocs.map(doc => doc.id)
-      for (const docId of ids) this._addDoc(docId)
-      this._forEachRoot(rootId => {
-        const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
-        const idsState = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
-        if (!Array.isArray(docs) || !Array.isArray(idsState)) return
-        docs.splice(index, 0, ...newDocs)
-        idsState.splice(index, 0, ...ids)
-      })
+      for (const doc of shareDocs) this._addDoc(doc.id)
+      this._syncListedResults()
     })
-    this.shareQuery.on('move', (shareDocs, from, to) => {
-      const movedDocs = this._mapShareDocsToRaw(shareDocs)
-      const movedIds = shareDocs.map(doc => doc.id)
-      this._forEachRoot(rootId => {
-        const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
-        const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
-        if (!Array.isArray(docs) || !Array.isArray(ids)) return
-        docs.splice(from, shareDocs.length)
-        docs.splice(to, 0, ...movedDocs)
-
-        ids.splice(from, shareDocs.length)
-        ids.splice(to, 0, ...movedIds)
-      })
+    this.shareQuery.on('move', () => {
+      this._syncListedResults()
     })
-    this.shareQuery.on('remove', (shareDocs, index) => {
-      const docIds = shareDocs.map(doc => doc.id)
-      for (const docId of docIds) {
-        const $doc = getSignal(undefined, [this.collectionName, docId])
+    this.shareQuery.on('remove', shareDocs => {
+      for (const doc of shareDocs) {
+        const $doc = getSignal(undefined, [this.collectionName, doc.id])
         docSubscriptions.release($doc).catch(ignoreDestroyError)
         this.docSignals.delete($doc)
-        removeQueryDoc(this.collectionName, docId, this)
+        removeQueryDoc(this.collectionName, doc.id, this)
       }
-      this._forEachRoot(rootId => {
-        const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
-        const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
-        if (!Array.isArray(docs) || !Array.isArray(ids)) return
-        docs.splice(index, shareDocs.length)
-
-        ids.splice(index, docIds.length)
-      })
+      this._syncListedResults()
     })
     this.shareQuery.on('extra', extra => {
       extra = raw(extra)
@@ -194,10 +169,9 @@ export class Query {
   _syncRootData (rootId) {
     if (!this.shareQuery) return
     maybeMaterializeQueryDocsToCollection(this.collectionName, this.shareQuery.results)
-    const docs = this._mapShareDocsToRaw(this.shareQuery.results)
+    // each root gets its own lists: they are updated in place
+    const { ids, docs } = this._getListedResults()
     setPrivateData(rootId, [QUERIES, this.hash, 'docs'], docs)
-
-    const ids = this.shareQuery.results.map(doc => doc.id)
     setPrivateData(rootId, [QUERIES, this.hash, 'ids'], ids)
 
     if (this.shareQuery.extra !== undefined) {
@@ -214,34 +188,47 @@ export class Query {
     for (const rootId of this.rootIds) fn(rootId)
   }
 
-  // The results' docs are materialized (maybeMaterializeQueryDocsToCollection)
-  // before they are listed: a listed result is its doc's data-tree object,
-  // what its doc signal reads, and refreshDoc() keeps it so. A result
-  // deleted on this client before the server removed it from the query
-  // reads as undefined.
-  _mapShareDocsToRaw (shareDocs) {
-    return shareDocs.map(doc => {
-      if (isMissingShareDoc(doc)) return undefined
-      return getRaw([this.collectionName, doc.id])
+  // The results whose docs exist, in the order of the results: their ids and
+  // their data-tree objects (what their doc signals read). A result whose doc
+  // is missing (deleted on this client or by another one after the server
+  // read the results: until the server removes it, for good in a fetch
+  // query) is left out of both, never a hole, until it exists again.
+  _getListedResults () {
+    const ids = []
+    const docs = []
+    for (const shareDoc of this.shareQuery.results) {
+      if (isMissingShareDoc(shareDoc)) continue
+      const doc = getRaw([this.collectionName, shareDoc.id])
+      if (doc == null) continue
+      ids.push(shareDoc.id)
+      docs.push(doc)
+    }
+    return { ids, docs }
+  }
+
+  // Brings the lists of every root to the listed results, in place: only the
+  // changed range is spliced, so the lists keep their identity and unchanged
+  // results their objects. Both lists change in one batch, so a reaction
+  // never sees one updated without the other.
+  _syncListedResults () {
+    if (!this.shareQuery) return
+    let listed
+    runInBatch(() => {
+      this._forEachRoot(rootId => {
+        const rawIds = getPrivateData(rootId, [QUERIES, this.hash, 'ids'], true)
+        const rawDocs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'], true)
+        if (!Array.isArray(rawIds) || !Array.isArray(rawDocs)) return
+        listed ??= this._getListedResults()
+        spliceChangedRange(rootId, [QUERIES, this.hash, 'docs'], rawDocs, listed.docs)
+        spliceChangedRange(rootId, [QUERIES, this.hash, 'ids'], rawIds, listed.ids)
+      })
     })
   }
 
-  // The data-tree object of a listed doc was replaced (deleted, created
-  // again, loaded anew): list the current one. The list itself and the other
-  // results keep their identity.
-  refreshDoc (docId) {
-    const value = getRaw([this.collectionName, docId])
-    this._forEachRoot(rootId => {
-      const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'], true)
-      const rawDocs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'], true)
-      if (!Array.isArray(ids) || !Array.isArray(rawDocs)) return
-      let docs
-      for (let index = ids.indexOf(docId); index !== -1; index = ids.indexOf(docId, index + 1)) {
-        if (rawDocs[index] === value) continue
-        docs ??= getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
-        docs[index] = value
-      }
-    })
+  // The data-tree object of a listed doc was replaced: deleted (it leaves the
+  // lists), created again (it comes back at its place) or loaded anew.
+  refreshDoc () {
+    this._syncListedResults()
   }
 
   _addDoc (docId) {
@@ -977,6 +964,23 @@ export function materializeQueryDataDocsToCollection (collectionName, docs) {
     injectIdFields(rawDoc, idFields, docId)
     _set([collectionName, docId], rawDoc)
   }
+}
+
+// Splices the range where `rawList` and `next` differ (after their common
+// prefix and suffix) through the observable list, so readers re-run.
+function spliceChangedRange (rootId, segments, rawList, next) {
+  const length = rawList.length
+  const nextLength = next.length
+  let start = 0
+  while (start < length && start < nextLength && rawList[start] === next[start]) start++
+  if (start === length && start === nextLength) return
+  let end = 0
+  while (
+    end < length - start && end < nextLength - start &&
+    rawList[length - 1 - end] === next[nextLength - 1 - end]
+  ) end++
+  const list = getPrivateData(rootId, segments)
+  list.splice(start, length - start - end, ...next.slice(start, nextLength - end))
 }
 
 function getExistingShareDoc (collectionName, docId) {

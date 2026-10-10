@@ -85,11 +85,11 @@ for (const $user of $activeUsers) {
 - Query signals are reactive. Changes to the underlying data or to the query result will automatically update components using the query signal.
 - The documents within a query signal are themselves signals, allowing for nested reactivity.
 - For public documents in query results, configured identity fields are available in `get()` results and match the document id. `idFields` defaults to `['_id']`.
-- `$query.get()` lists the current data of each result, as its document
-  signal reads it, and keeps the same array (and the same object for an
-  unchanged result). A result deleted on this client, by another client, or
-  after the server read the results stays one of the query's `ids` until the
-  server removes it from the results (a fetch-only query keeps it); meanwhile
-  it is `undefined` in `$query.get()` and through its document signal. A
-  result created again lists its new data.
+- `$query.get()`, `getIds()` and iteration over the query list the same
+  documents, in the same order: the results whose documents exist, with their
+  current data. A result deleted on this client, by another client, or after
+  the server read the results is left out of all of them (never listed as a
+  hole) until it exists again: a result created again comes back at its
+  place. The array keeps its identity, and so does the object of a result
+  that did not change.
 - `ids` and `extra` are reserved metadata properties on query signals. Use the collection path, such as `$.users['ids']`, when you need a document whose id has one of those names.
