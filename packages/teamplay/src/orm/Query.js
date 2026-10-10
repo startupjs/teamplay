@@ -4,6 +4,8 @@ import getSignal from './getSignal.ts'
 import { getConnection } from './connection.ts'
 import { docSubscriptions } from './Doc.js'
 import { isMissingShareDoc } from './missingDoc.js'
+import { addQueryDoc, removeQueryDoc } from './queryDocIndex.js'
+import { SEGMENTS } from './signalSymbols.ts'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
@@ -129,23 +131,14 @@ export class Query {
   _initData () {
     // reference fetched docs once per transport query
     maybeMaterializeQueryDocsToCollection(this.collectionName, this.shareQuery.results)
-    const ids = this.shareQuery.results.map(doc => doc.id)
-    for (const docId of ids) {
-      const $doc = getSignal(undefined, [this.collectionName, docId])
-      docSubscriptions.retain($doc)
-      this.docSignals.add($doc)
-    }
+    for (const doc of this.shareQuery.results) this._addDoc(doc.id)
     this._syncAllRootsData()
 
     this.shareQuery.on('insert', (shareDocs, index) => {
       maybeMaterializeQueryDocsToCollection(this.collectionName, shareDocs)
       const newDocs = this._mapShareDocsToRaw(shareDocs)
       const ids = shareDocs.map(doc => doc.id)
-      for (const docId of ids) {
-        const $doc = getSignal(undefined, [this.collectionName, docId])
-        docSubscriptions.retain($doc)
-        this.docSignals.add($doc)
-      }
+      for (const docId of ids) this._addDoc(docId)
       this._forEachRoot(rootId => {
         const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
         const idsState = getPrivateData(rootId, [QUERIES, this.hash, 'ids'])
@@ -174,6 +167,7 @@ export class Query {
         const $doc = getSignal(undefined, [this.collectionName, docId])
         docSubscriptions.release($doc).catch(ignoreDestroyError)
         this.docSignals.delete($doc)
+        removeQueryDoc(this.collectionName, docId, this)
       }
       this._forEachRoot(rootId => {
         const docs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
@@ -220,20 +214,47 @@ export class Query {
     for (const rootId of this.rootIds) fn(rootId)
   }
 
+  // The results' docs are materialized (maybeMaterializeQueryDocsToCollection)
+  // before they are listed: a listed result is its doc's data-tree object,
+  // what its doc signal reads, and refreshDoc() keeps it so. A result
+  // deleted on this client before the server removed it from the query
+  // reads as undefined.
   _mapShareDocsToRaw (shareDocs) {
     return shareDocs.map(doc => {
-      // a result deleted on this client before the server removed it from
-      // the query reads as undefined, like its doc signal
       if (isMissingShareDoc(doc)) return undefined
-      const idFields = getIdFieldsForSegments([this.collectionName, doc.id])
-      if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, doc.id)
-      return raw(doc.data)
+      return getRaw([this.collectionName, doc.id])
     })
+  }
+
+  // The data-tree object of a listed doc was replaced (deleted, created
+  // again, loaded anew): list the current one. The list itself and the other
+  // results keep their identity.
+  refreshDoc (docId) {
+    const value = getRaw([this.collectionName, docId])
+    this._forEachRoot(rootId => {
+      const ids = getPrivateData(rootId, [QUERIES, this.hash, 'ids'], true)
+      const rawDocs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'], true)
+      if (!Array.isArray(ids) || !Array.isArray(rawDocs)) return
+      let docs
+      for (let index = ids.indexOf(docId); index !== -1; index = ids.indexOf(docId, index + 1)) {
+        if (rawDocs[index] === value) continue
+        docs ??= getPrivateData(rootId, [QUERIES, this.hash, 'docs'])
+        docs[index] = value
+      }
+    })
+  }
+
+  _addDoc (docId) {
+    const $doc = getSignal(undefined, [this.collectionName, docId])
+    docSubscriptions.retain($doc)
+    this.docSignals.add($doc)
+    addQueryDoc(this.collectionName, docId, this)
   }
 
   _detachTransportData ({ keepRoots = true } = {}) {
     for (const $doc of this.docSignals) {
       docSubscriptions.release($doc).catch(ignoreDestroyError)
+      removeQueryDoc(this.collectionName, $doc[SEGMENTS][1], this)
     }
     this.docSignals.clear()
     this._forEachRoot(rootId => this._removeRootData(rootId))

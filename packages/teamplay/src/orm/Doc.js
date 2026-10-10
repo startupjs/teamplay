@@ -6,6 +6,7 @@ import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
 import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idFields.ts'
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
+import { refreshQueryDocs } from './queryDocIndex.js'
 import unrefTimer from '../utils/unrefTimer.ts'
 import {
   addOwnerToken,
@@ -177,6 +178,7 @@ class Doc {
     _del([this.collection, this.docId])
     const doc = getConnection().get(this.collection, this.docId)
     doc.data = observable(undefined)
+    refreshQueryDocs(this.collection, this.docId)
   }
 
   _refData () {
@@ -211,6 +213,9 @@ class Doc {
     const synced = _getRaw(path)
     if (synced != null && synced !== raw(doc.data)) doc.data = synced
     if (!isObservable(doc.data)) doc.data = observable(doc.data)
+    // set() updates an existing object in place: only a new object (a doc
+    // created again) changes what the queries listing the doc hold
+    if (synced !== current) refreshQueryDocs(this.collection, this.docId)
   }
 
   _removeData () {

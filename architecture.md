@@ -410,6 +410,15 @@ are told by `isMissingShareDoc()` (`orm/missingDoc.js`), never by `data`:
 they are never materialized into the data tree (the doc reads as `undefined`)
 and `docs` lists them as `undefined`.
 
+Each `docs` entry is the data-tree object of its id, what the doc signal
+reads. `orm/queryDocIndex.js` maps each doc to the query runtimes that list it
+(registered and removed with the query's doc retains); when a doc's
+data-tree object is replaced (deleted, created again, loaded anew) `Doc.js`
+and the doc-root writes in `dataTree.js` call `refreshQueryDocs()`, which
+updates only those entries in place. The array keeps its identity, reads
+allocate nothing, and in-place updates of a doc (ops, `set()` diffs) need no
+refresh because the entry is the same object.
+
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
 Queries share the transport grace. A released owner keeps its root attached

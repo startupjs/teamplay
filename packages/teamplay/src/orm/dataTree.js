@@ -5,6 +5,7 @@ import { getConnection } from './connection.ts'
 import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.ts'
 import { isMissingShareDoc } from './missingDoc.js'
+import { refreshQueryDocs } from './queryDocIndex.js'
 import {
   getLogicalRootSnapshot as getLogicalRootSnapshotFromTree
 } from './rootScope.ts'
@@ -335,6 +336,7 @@ async function createPublicDocAndHydrateLocal ({
     const localDoc = JSON.parse(JSON.stringify(newDoc || {}))
     if (isPlainObject(localDoc)) injectIdFields(localDoc, idFields, docId)
     setReplace([collection, docId], localDoc)
+    refreshQueryDocs(collection, docId)
     // Keep ShareDB doc shape consistent for same-tick setPublicDoc checks.
     doc.data = localDoc
     return
@@ -413,6 +415,7 @@ function ensureLocalDocSyncedWithShareDoc ({
   const shared = raw(doc.data)
   if (getRaw([collection, docId]) === shared) return
   setReplace([collection, docId], shared)
+  refreshQueryDocs(collection, docId)
 }
 
 function syncLocalDocAfterPublicWrite ({
