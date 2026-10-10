@@ -417,11 +417,14 @@ data-tree object of its id, what the doc signal reads.
 their results (registered and removed with the query's doc retains); when a
 doc's data-tree object is replaced (deleted, created again, loaded anew)
 `Doc.js` and the doc-root writes in `dataTree.js` call `refreshQueryDocs()`
-in the same batch. The query then brings both lists of each root to the
-listed results by splicing only the changed range, the same way it applies
-the insert, move and remove diffs of ShareDB. The lists keep their identity,
-unchanged results keep their objects, reads allocate nothing, and in-place
-updates of a doc (ops, `set()` diffs) need no refresh.
+in the same batch. The query then compares both lists of each root with the
+listed results, the same way it applies the insert, move and remove diffs of
+ShareDB. The lists are copy-on-write: a list `get()` or `ids` handed out is
+never changed afterwards (callers delete the listed docs while they loop
+over it, or keep it as a memo dependency), so a change of the listed
+results assigns new lists. Without one the current lists stay: reads
+allocate nothing, unchanged results keep their objects, and in-place updates
+of a doc (ops, `set()` diffs) change no list.
 
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 

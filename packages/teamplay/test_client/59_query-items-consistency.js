@@ -4,7 +4,7 @@
 // doc does not exist (deleted on this client or by another one, or deleted
 // while the query results were on their way) is left out of all of them
 // until it exists again; it is never a hole in the list.
-import { createElement as el } from 'react'
+import { createElement as el, useMemo } from 'react'
 import { afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals'
 import { act, cleanup, render } from '@testing-library/react'
 import { raw } from '@nx-js/observer-util'
@@ -152,6 +152,40 @@ describe('the items of a query agree at every render', () => {
     await wait(100)
     await waitForResult(container, 'A again,C')
     expect(problems).toEqual([])
+    await unsub($a)
+  })
+
+  it('a memo on $query.get() sees a new array when the listed docs change, the same one otherwise', async () => {
+    const kind = `kind_memo_${Date.now()}`
+    const ids = ['a', 'b', 'c'].map(name => `${name}_${kind}`)
+    await writeDoc(ids[0], { kind, name: 'A', n: 1 })
+    await writeDoc(ids[1], { kind, name: 'B', n: 2 })
+    let computed = 0
+    const Games = observer(function Games ({ tick }) {
+      const $games = useSub($[COLLECTION], { kind, $sort: { n: 1 } })
+      const docs = $games.get()
+      const names = useMemo(() => {
+        computed += 1
+        return docs.map(doc => doc.name).join(',')
+      }, [docs])
+      return el('span', { id: 'result' }, names + ':' + tick)
+    }, { suspenseProps: { fallback: el('span', { id: 'result' }, 'loading') } })
+    const { container, rerender } = render(el(Games, { tick: 0 }))
+    await waitForResult(container, 'A,B:0')
+    const computedOnLoad = computed
+
+    rerender(el(Games, { tick: 1 }))
+    await waitForResult(container, 'A,B:1')
+    expect(computed).toBe(computedOnLoad)
+
+    const $a = await sub($[COLLECTION][ids[0]])
+    await act(async () => { await $a.del() })
+    await waitForResult(container, 'B:1')
+    expect(computed).toBe(computedOnLoad + 1)
+
+    await act(async () => { await writeDoc(ids[2], { kind, name: 'C', n: 3 }) })
+    await waitForResult(container, 'B,C:1')
+    expect(computed).toBe(computedOnLoad + 2)
     await unsub($a)
   })
 

@@ -29,7 +29,8 @@ import {
 import {
   delPrivateData,
   getPrivateData,
-  setPrivateData
+  setPrivateData,
+  setReplacePrivateData
 } from './privateData.js'
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
@@ -169,10 +170,10 @@ export class Query {
   _syncRootData (rootId) {
     if (!this.shareQuery) return
     maybeMaterializeQueryDocsToCollection(this.collectionName, this.shareQuery.results)
-    // each root gets its own lists: they are updated in place
+    // assigned, never diffed into lists handed out before (see _syncListedResults())
     const { ids, docs } = this._getListedResults()
-    setPrivateData(rootId, [QUERIES, this.hash, 'docs'], docs)
-    setPrivateData(rootId, [QUERIES, this.hash, 'ids'], ids)
+    setReplacePrivateData(rootId, [QUERIES, this.hash, 'docs'], docs)
+    setReplacePrivateData(rootId, [QUERIES, this.hash, 'ids'], ids)
 
     if (this.shareQuery.extra !== undefined) {
       const extra = raw(this.shareQuery.extra)
@@ -206,10 +207,13 @@ export class Query {
     return { ids, docs }
   }
 
-  // Brings the lists of every root to the listed results, in place: only the
-  // changed range is spliced, so the lists keep their identity and unchanged
-  // results their objects. Both lists change in one batch, so a reaction
-  // never sees one updated without the other.
+  // Copy-on-write: a list handed out by $query.get() or getIds() is a
+  // snapshot, never changed afterwards (a caller may delete the listed docs
+  // while it loops over it, or keep it as a memo dependency). When the listed
+  // results change, every root gets new lists (shared between roots: nothing
+  // changes them); otherwise the current lists stay, so reads and in-place
+  // updates of a doc allocate nothing. Both lists change in one batch, so a
+  // reaction never sees one updated without the other.
   _syncListedResults () {
     if (!this.shareQuery) return
     let listed
@@ -219,8 +223,8 @@ export class Query {
         const rawDocs = getPrivateData(rootId, [QUERIES, this.hash, 'docs'], true)
         if (!Array.isArray(rawIds) || !Array.isArray(rawDocs)) return
         listed ??= this._getListedResults()
-        spliceChangedRange(rootId, [QUERIES, this.hash, 'docs'], rawDocs, listed.docs)
-        spliceChangedRange(rootId, [QUERIES, this.hash, 'ids'], rawIds, listed.ids)
+        if (!isSameList(rawDocs, listed.docs)) setReplacePrivateData(rootId, [QUERIES, this.hash, 'docs'], listed.docs)
+        if (!isSameList(rawIds, listed.ids)) setReplacePrivateData(rootId, [QUERIES, this.hash, 'ids'], listed.ids)
       })
     })
   }
@@ -966,21 +970,12 @@ export function materializeQueryDataDocsToCollection (collectionName, docs) {
   }
 }
 
-// Splices the range where `rawList` and `next` differ (after their common
-// prefix and suffix) through the observable list, so readers re-run.
-function spliceChangedRange (rootId, segments, rawList, next) {
-  const length = rawList.length
-  const nextLength = next.length
-  let start = 0
-  while (start < length && start < nextLength && rawList[start] === next[start]) start++
-  if (start === length && start === nextLength) return
-  let end = 0
-  while (
-    end < length - start && end < nextLength - start &&
-    rawList[length - 1 - end] === next[nextLength - 1 - end]
-  ) end++
-  const list = getPrivateData(rootId, segments)
-  list.splice(start, length - start - end, ...next.slice(start, nextLength - end))
+function isSameList (list, next) {
+  if (list.length !== next.length) return false
+  for (let i = 0; i < list.length; i++) {
+    if (list[i] !== next[i]) return false
+  }
+  return true
 }
 
 function getExistingShareDoc (collectionName, docId) {

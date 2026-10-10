@@ -110,8 +110,8 @@ describe('a doc deleted while a query including it is in flight', () => {
   // results whose docs exist, with their current data: a doc deleted after
   // the server read the results is left out (until the server removes it
   // from a subscribe query, for good in a fetch query), never listed as a
-  // hole or as its old object, and a doc created again comes back. The list
-  // and the objects of unchanged results keep their identity.
+  // hole or as its old object, and a doc created again comes back. A list
+  // handed out before is never changed; unchanged results keep their objects.
   describe('$query.get() after a doc of the results is deleted', () => {
     for (const mode of ['subscribe', 'fetch']) {
       it(`leaves out a doc deleted on this client (${mode} query)`, async () => {
@@ -126,7 +126,8 @@ describe('a doc deleted while a query including it is in flight', () => {
           await tick()
           assert.deepEqual(getQueryResultIds($query), [idA, idB], 'the server has not removed it yet')
           assert.deepEqual($query.getIds(), [idB])
-          assert.equal(raw($query.get()), docs, 'the same list')
+          assert.notEqual(raw($query.get()), docs, 'a new list')
+          assert.deepEqual(docs.map(doc => doc.name), ['A', 'B'], 'the list handed out before is unchanged')
           assert.equal($query.get().length, 1, 'neither a hole nor the old object of the deleted doc')
           assert.equal(raw($query.get()[0]), docB, 'an unchanged result keeps its object')
           assert.deepEqual(seen.at(-1), ['B'], 'readers of $query.get() re-run')
@@ -136,7 +137,6 @@ describe('a doc deleted while a query including it is in flight', () => {
         }
         if (mode === 'subscribe') await waitFor(() => getQueryResultIds($query).length === 1)
         assert.deepEqual($query.getIds(), [idB])
-        assert.equal(raw($query.get()), docs)
         assert.deepEqual($query.get().map(doc => doc.name), ['B'])
         assert.equal(raw($query.get()[0]), docB)
         assert.equal(raw($b.get()), docB)
