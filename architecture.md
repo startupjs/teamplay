@@ -402,6 +402,14 @@ $queries.<hash>.ids
 $queries.<hash>.extra
 ```
 
+A query result can be a ShareDB doc that is not created (type `null`): one
+deleted after the server read the results stays in them until the server
+sends its removal, and for good in a fetch query. Its `data` can be the empty
+racer-style placeholder that `Doc.js` keeps on missing docs, so missing docs
+are told by `isMissingShareDoc()` (`orm/missingDoc.js`), never by `data`:
+they are never materialized into the data tree (the doc reads as `undefined`)
+and `docs` lists them as `undefined`.
+
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
 Queries share the transport grace. A released owner keeps its root attached
