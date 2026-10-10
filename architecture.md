@@ -556,7 +556,9 @@ render when its promise rejects, and throwing a rejected promise again would
 retry the render without end. Another target gets a new lease, and a remount
 (an error boundary reset) a new cache. In development a failure is
 reported once with `console.warn` and its target (React reports the error
-itself).
+itself). `useSuspendMemo()` follows the same rule: when the promise its
+factory threw rejects, the entry for those deps keeps the rejection and
+throws it, instead of running the factory again on every retry.
 
 Each hook remembers the lease of its last commit. An urgent render of the
 committed target while the deferred render waits for a new one is served by
