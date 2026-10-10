@@ -23,6 +23,7 @@ import { AGGREGATIONS, IS_AGGREGATION, aggregationSubscriptions } from '../orm/A
 import { SEGMENTS } from '../orm/signalSymbols.ts'
 import { getSubscriptionGcDelay } from '../orm/subscriptionGcDelay.ts'
 import unrefTimer from '../utils/unrefTimer.ts'
+import isDevMode from '../utils/isDevMode.ts'
 import { diag } from '../diagnostics/hooks.ts'
 import {
   isPublicDocumentSignal,
@@ -506,6 +507,10 @@ const NOT_DEFERRED = Symbol('teamplay.notDeferred')
 //   once.
 // - defer: false: an urgent re-subscribe suspends to the Suspense fallback.
 // - forceDefer (setForceDefer(), runtime config): defer: false is ignored.
+//
+// A subscription that fails (sub() rejects, e.g. the server access rules deny
+// the read) throws its error from render, in every mode, so the nearest error
+// boundary catches it (see useSubscriptionLease()).
 export function useSubDeferred (
   signal: unknown,
   params?: unknown,
@@ -538,6 +543,12 @@ export function useSubDeferred (
   }
   // deferred params are passed as JSON (parsed only to acquire a new lease)
   const subscriptionLease = useSubscriptionLease(signal, serializedParams, paramsAsJson ? undefined : params, hook)
+  // Every render of a failed lease throws its error: the target is not
+  // subscribed again while the component keeps it (React pings a suspended
+  // render when the promise rejects; rethrowing a rejected promise would
+  // retry the render in a loop). Another target, or a remount after the
+  // error boundary resets, gets a new lease and subscribes again.
+  if (subscriptionLease.failed) throw subscriptionLease.error
   const promiseOrSignal = subscriptionLease.value
   // 1. if it's a promise, throw it so that Suspense can catch it and wait for subscription to finish
   if (isThenable(promiseOrSignal)) {
@@ -546,16 +557,16 @@ export function useSubDeferred (
     scheduleRenderAttemptLeaseCleanup(subscriptionLease, readyPromise, batch)
     if (async) {
       // never suspends: undefined (or, batched, the previous signal) until
-      // ready, then re-renders
+      // ready, then re-renders (and throws if the subscription failed)
       if (batch) {
         if (!hook.$signal) {
           promiseBatcher.add(promise)
           addBatchReadinessCheck(promise, subscriptionLease)
         }
-        scheduleUpdate(readyPromise)
+        scheduleUpdate(whenSettled(readyPromise))
         return hook.$signal
       }
-      scheduleUpdate(readyPromise)
+      scheduleUpdate(whenSettled(readyPromise))
       return
     }
     // A component that has committed keeps its observer reaction while this
@@ -599,6 +610,10 @@ export function setDefaultDefer (value: boolean): void {
 
 interface SubscriptionLease {
   value: unknown
+  // the subscription failed (sub() rejected with `error`); its sub() record
+  // is already released
+  failed: boolean
+  error?: unknown
   signal?: unknown
   // releases exactly this lease's acquisition (not another sub() of the signal)
   release?: (options?: SubReleaseOptions) => Promise<void> | void
@@ -722,7 +737,8 @@ function createSubscriptionLease (
     targetParams: serializedParams,
     releasedUncommitted: false,
     uncommittedReacquires: 0,
-    sticky: false
+    sticky: false,
+    failed: false
   }
 
   if (isThenable(value)) {
@@ -732,10 +748,30 @@ function createSubscriptionLease (
       if (lease.released) {
         disposeSubscriptionLeaseSignal(lease)
       }
-    }, ignoreSubscriptionCleanupError)
+    }, (err: unknown) => {
+      // set before React retries the render: the retry is pinged by a
+      // promise derived from `value`
+      lease.failed = true
+      lease.error = err
+      if (!lease.released && isDevMode()) logSubscriptionFailure(lease, err)
+    })
   }
 
   return lease
+}
+
+function logSubscriptionFailure (lease: SubscriptionLease, err: unknown): void {
+  console.error(
+    `[teamplay] useSub(): subscribing to ${describeLeaseTarget(lease)} failed. ` +
+    'The component throws the error to the nearest error boundary.',
+    err
+  )
+}
+
+function describeLeaseTarget (lease: SubscriptionLease): string {
+  const segments = (lease.signal as SignalBaseInstance | undefined)?.[SEGMENTS]
+  const path = Array.isArray(segments) ? segments.join('.') : 'a subscription'
+  return lease.serializedParams != null ? `${path} ${lease.serializedParams}` : path
 }
 
 function scheduleUncommittedLeaseCleanupAfter (
@@ -823,6 +859,14 @@ function disposeSubscriptionLeaseSignal (lease: SubscriptionLease, options?: Sub
 
 function ignoreSubscriptionCleanupError (): void {}
 
+// Settles (never rejects) when `promise` settles: an observer update scheduled
+// with it re-renders on a failure too.
+function whenSettled (promise: PromiseLike<unknown>): Promise<void> {
+  return Promise.resolve(promise).then(noop, noop)
+}
+
+function noop (): void {}
+
 // throttle to simulate slow network
 function maybeThrottle<TValue> (promise: Promise<TValue>): Promise<TValue> {
   const delay = TEST_THROTTLING
@@ -858,10 +902,15 @@ function getSubscriptionReadyPromise (
   promise: PromiseLike<unknown>,
   lease?: SubscriptionLease
 ): Promise<unknown> {
-  return Promise.resolve(promise).then(async signal => {
+  const readyPromise = Promise.resolve(promise).then(async signal => {
     await waitForSubscriptionSignalReady(signal, lease)
     return signal
   })
+  // It only wakes React or the observer: a failure reaches the component
+  // through its lease. A batched render does not use it once the barrier
+  // exists, so an unobserved rejection must not be reported.
+  readyPromise.catch(noop)
+  return readyPromise
 }
 
 async function waitForSubscriptionSignalReady (

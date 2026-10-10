@@ -536,6 +536,18 @@ committing a link that does not match the one it depends on:
   urgent render that turns deferring on renders the committed lease's target
   (what `useDeferredValue()` would have returned).
 
+A subscription that fails (`sub()` rejects, e.g. the access rules deny the
+read) marks its lease failed before React retries the suspended render, and
+every render of that lease throws the error, in every mode (`useAsyncSub()`
+re-renders when the subscription settles, then throws), so the nearest error
+boundary catches it. Its `sub()` record is already released. The failed lease
+stays in the hook's cache until the observer is destroyed, so the same target
+is not subscribed again while the component keeps it: React pings a suspended
+render when its promise rejects, and throwing a rejected promise again would
+retry the render without end. Another target gets a new lease, and a remount
+(an error boundary reset) a new cache. A failure is logged once in
+development.
+
 Each hook remembers the lease of its last commit. An urgent render of the
 committed target while the deferred render waits for a new one is served by
 that lease, and the pending one stays in the cache for the deferred render
