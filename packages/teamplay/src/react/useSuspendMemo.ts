@@ -7,9 +7,10 @@ const IN_FLIGHT_BY_KEY = new Map<unknown, Promise<unknown>>()
 
 type CacheEntry<TValue> = {
   deps: unknown[]
-  status: 'cold' | 'pending' | 'done'
+  status: 'cold' | 'pending' | 'done' | 'failed'
   value?: TValue
   promise?: Promise<unknown>
+  error?: unknown
 }
 
 export default function useSuspendMemo<TValue> (
@@ -36,6 +37,10 @@ export default function useSuspendMemo<TValue> (
   }
 
   if (entry.status === 'done') return entry.value as TValue
+  // The promise the factory threw rejected: throw the rejection to the
+  // nearest error boundary instead of running the factory again on every
+  // retry. New deps or a remount (a new cache) run it again.
+  if (entry.status === 'failed') throw entry.error
   if (entry.status === 'pending') {
     renderAttemptDestroyer.armSuspenseGate()
     scheduleGroupUpdate?.(entry.promise as Promise<unknown>)
@@ -49,9 +54,17 @@ export default function useSuspendMemo<TValue> (
     return value
   } catch (err) {
     if (!isThenable(err)) throw err
-    const promise = Promise.resolve(err).finally(() => {
+    const promise = Promise.resolve(err)
+    // registered before React's listeners (the promise is thrown below), so
+    // the entry is settled when React retries the render
+    promise.then(() => {
       if (entry.promise !== promise) return
       entry.status = 'cold'
+      entry.promise = undefined
+    }, (error: unknown) => {
+      if (entry.promise !== promise) return
+      entry.status = 'failed'
+      entry.error = error
       entry.promise = undefined
     })
     entry.status = 'pending'

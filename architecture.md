@@ -402,6 +402,27 @@ $queries.<hash>.ids
 $queries.<hash>.extra
 ```
 
+A query result can be a ShareDB doc that is not created (type `null`): one
+deleted after the server read the results stays in them until the server
+sends its removal, and for good in a fetch query. Its `data` can be the empty
+racer-style placeholder that `Doc.js` keeps on missing docs, so missing docs
+are told by `isMissingShareDoc()` (`orm/missingDoc.js`), never by `data`:
+they are never materialized into the data tree (the doc reads as `undefined`).
+
+`ids` and `docs` list the results whose docs exist, in the order of the
+results: a missing result is left out of both (and so out of iteration over
+the query), never a hole, until it exists again. Each `docs` entry is the
+data-tree object of its id, what the doc signal reads.
+`orm/queryDocIndex.js` maps each doc to the query runtimes that have it in
+their results (registered and removed with the query's doc retains); when a
+doc's data-tree object is replaced (deleted, created again, loaded anew)
+`Doc.js` and the doc-root writes in `dataTree.js` call `refreshQueryDocs()`
+in the same batch. The query then brings both lists of each root to the
+listed results by splicing only the changed range, the same way it applies
+the insert, move and remove diffs of ShareDB. The lists keep their identity,
+unchanged results keep their objects, reads allocate nothing, and in-place
+updates of a doc (ops, `set()` diffs) need no refresh.
+
 Array readers on query signals map query ids back to document signals. This keeps query items behaving like document model signals instead of anonymous plain objects.
 
 Queries share the transport grace. A released owner keeps its root attached
@@ -527,6 +548,21 @@ committing a link that does not match the one it depends on:
   defer, so the hook order is the same when the mode changes at runtime; the
   urgent render that turns deferring on renders the committed lease's target
   (what `useDeferredValue()` would have returned).
+
+A subscription that fails (`sub()` rejects, e.g. the access rules deny the
+read) marks its lease failed before React retries the suspended render, and
+every render of that lease throws the error, in every mode (`useAsyncSub()`
+re-renders when the subscription settles, then throws), so the nearest error
+boundary catches it. Its `sub()` record is already released. The failed lease
+stays in the hook's cache until the observer is destroyed, so the same target
+is not subscribed again while the component keeps it: React pings a suspended
+render when its promise rejects, and throwing a rejected promise again would
+retry the render without end. Another target gets a new lease, and a remount
+(an error boundary reset) a new cache. In development a failure is
+reported once with `console.warn` and its target (React reports the error
+itself). `useSuspendMemo()` follows the same rule: when the promise its
+factory threw rejects, the entry for those deps keeps the rejection and
+throws it, instead of running the factory again on every retry.
 
 Each hook remembers the lease of its last commit. An urgent render of the
 committed target while the deferred render waits for a new one is served by

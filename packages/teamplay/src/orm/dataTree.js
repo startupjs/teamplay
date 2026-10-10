@@ -5,6 +5,8 @@ import { getConnection } from './connection.ts'
 import setDiffDeep from '../utils/setDiffDeep.js'
 import { getIdFieldsForSegments, injectIdFields, stripIdFields, isPlainObject, isIdFieldPath } from './idFields.ts'
 import { isMissingShareDoc } from './missingDoc.js'
+import { refreshQueryDocs } from './queryDocIndex.js'
+import { runInBatch } from './batchScheduler.js'
 import {
   getLogicalRootSnapshot as getLogicalRootSnapshotFromTree
 } from './rootScope.ts'
@@ -334,7 +336,7 @@ async function createPublicDocAndHydrateLocal ({
   if (doc?.data == null) {
     const localDoc = JSON.parse(JSON.stringify(newDoc || {}))
     if (isPlainObject(localDoc)) injectIdFields(localDoc, idFields, docId)
-    setReplace([collection, docId], localDoc)
+    replacePublicDocRoot(collection, docId, localDoc)
     // Keep ShareDB doc shape consistent for same-tick setPublicDoc checks.
     doc.data = localDoc
     return
@@ -412,7 +414,16 @@ function ensureLocalDocSyncedWithShareDoc ({
   if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, docId)
   const shared = raw(doc.data)
   if (getRaw([collection, docId]) === shared) return
-  setReplace([collection, docId], shared)
+  replacePublicDocRoot(collection, docId, shared)
+}
+
+// A new object for a doc: the queries listing it switch to it in the same
+// batch.
+function replacePublicDocRoot (collection, docId, value) {
+  runInBatch(() => {
+    setReplace([collection, docId], value)
+    refreshQueryDocs(collection, docId)
+  })
 }
 
 function syncLocalDocAfterPublicWrite ({

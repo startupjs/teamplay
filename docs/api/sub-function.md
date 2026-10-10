@@ -64,6 +64,20 @@ Fetch-only query:
 const $activeUsers = await sub($.users, { status: 'active' }, { mode: 'fetch' })
 ```
 
+## Errors
+
+`sub()` rejects with the ShareDB error when the server refuses the
+subscription, for example `{ code: 'ERR_ACCESS_DENY_READ' }` when the access
+rules deny the read. Nothing stays subscribed after a rejection.
+
+```javascript
+try {
+  await sub($.games, { active: true })
+} catch (err) {
+  if (err.code !== 'ERR_ACCESS_DENY_READ') throw err
+}
+```
+
 ## Parallel Subscriptions
 
 Use `Promise.all()` for independent subscriptions:

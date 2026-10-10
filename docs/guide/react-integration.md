@@ -45,6 +45,11 @@ const UserProfile = observer(({ userId }) => {
 3. The `observer()` wrapper shows a loading state.
 4. Once the data is ready, the component renders with the data.
 
+If the server refuses the subscription (for example the access rules deny the
+read), the component throws the error once the subscription fails, so the
+nearest error boundary shows it. See
+[Errors](../api/use-sub-hook.md#errors).
+
 ### Switching subscriptions
 
 When a hook's signal or params change, the component keeps showing the

@@ -175,6 +175,34 @@ back to the config; `getForceDefer()` returns the value in effect). The setter
 takes precedence over the config. A mounted component picks the change up on
 its next render.
 
+## Errors
+
+A subscription the server refuses (for example a read that the access rules
+deny) makes `sub()` reject with the ShareDB error, such as
+`{ code: 'ERR_ACCESS_DENY_READ' }`. The hooks follow React's data-fetching
+semantics: once the subscription fails, `useSub()`, `useBatchSub()` and
+`useAsyncSub()` throw that error from render, so the nearest error boundary
+catches it. In development teamplay also warns once (`console.warn`) with the
+failed target; React itself reports the error it throws.
+
+```javascript
+const Games = observer(() => {
+  const $games = useSub($.games, { active: true })
+  return <div>{$games.getIds().length} games</div>
+})
+
+<ErrorBoundary fallback={<div>You cannot see the games</div>}>
+  <Games />
+</ErrorBoundary>
+```
+
+The failed target is not subscribed again while the component keeps it, so a
+failure never turns into a retry loop. A remount subscribes again: reset the
+error boundary (for example with a `key`, or `resetKeys` of
+`react-error-boundary`) when the target or the user's permissions change. A
+re-subscribe that fails (a changed id or params) throws to the error boundary
+too, also when it is deferred, instead of keeping the previous content.
+
 ## Features
 
 1. **Automatic Subscription Management**: Hooks handle subscribing when the component mounts and unsubscribing when it unmounts.
