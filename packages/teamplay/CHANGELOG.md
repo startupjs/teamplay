@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.6.1](https://github.com/startupjs/teamplay/compare/v0.6.0...v0.6.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* deleted docs in queries, failed subscriptions throw to the error boundary ([#56](https://github.com/startupjs/teamplay/issues/56)) ([4d50827](https://github.com/startupjs/teamplay/commit/4d50827da4c9a87de5aa5185d40f80c99693379c))
+
+
+
+
+
 # [0.6.0](https://github.com/startupjs/teamplay/compare/v0.5.12...v0.6.0) (2026-10-09)
 
 
