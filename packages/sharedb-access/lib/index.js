@@ -9,6 +9,13 @@ const debug = debugModule('access')
 // when their next op comes.
 const DEFAULT_READ_GRANTS_LIMIT = 10000
 const CURRENT_SNAPSHOT = 'current'
+// The messages ShareDB answers with documents' data (sharedb/lib/agent.js):
+// fetch, subscribe, their bulk forms, query fetch and subscribe, snapshot
+// fetch by version and by timestamp
+const READ_ACTIONS = new Set(['f', 's', 'bf', 'bs', 'qf', 'qs', 'nf', 'nt'])
+// The fields of an op that carry no document content (see refuseOp())
+const OP_IDENTITY_FIELDS = new Set(['src', 'seq', 'v', 'c', 'd', 'i'])
+const HIDDEN = '<hidden>'
 const operations = [
   'Read',
   'Create',
@@ -85,6 +92,9 @@ export class ShareDBAccess {
     // agent -> { granted: Set of document keys, pending: Map of key -> check }
     this.readGrants = new WeakMap()
     this.readGrantsLimit = options.readGrantsLimit ?? DEFAULT_READ_GRANTS_LIMIT
+    // agent -> the messages received while a check of an earlier one is in
+    // flight, in order (see receiveHandler())
+    this.receiveQueues = new WeakMap()
 
     backend.use('receive', this.receiveHandler.bind(this))
     backend.use('readSnapshots', this.readSnapshotsHandler.bind(this))
@@ -128,9 +138,11 @@ export class ShareDBAccess {
     }
 
     // Export functions
+    // collection name -> rules; no prototype, so a collection named like an
+    // Object.prototype property ('constructor', 'toString') is a plain name
     operations.forEach(function (op) {
-      allow[op] = allow[op] || {}
-      deny[op] = deny[op] || {}
+      allow[op] = allow[op] || Object.create(null)
+      deny[op] = deny[op] || Object.create(null)
       registerAllowHandler(op)
       registerDenyHandler(op)
     })
@@ -266,12 +278,12 @@ export class ShareDBAccess {
     debug('read', ok, collection, [docId, doc, session])
 
     // Remember what this connection may read now, for the ops that follow.
-    // An empty document (deleted, or not created yet) grants none of the ops
-    // that make it a document again.
+    // An empty document (deleted, or not created yet) grants no ops: not the
+    // ones that make it a document again, and not a deleted document's
+    // earlier ones, which are judged by its last state (checkDocReadAsync())
     if (shareRequest.snapshotType === CURRENT_SNAPSHOT && this.needsReadCheck(collection)) {
       const snapshot = shareRequest.snapshot
-      const until = snapshot && snapshot.type != null ? Infinity : (snapshot && snapshot.v) || 0
-      if (ok) this.grantRead(agent, collection, docId, until)
+      if (ok && snapshot && snapshot.type != null) this.grantRead(agent, collection, docId)
       else this.revokeRead(agent, collection, docId)
     }
 
@@ -293,62 +305,127 @@ export class ShareDBAccess {
   //   documents do. A query resubscribe is not refused: the documents of its
   //   results the client may not read are resubscribed from their current
   //   version, so it gets none of their ops (and the next poll drops the ones
-  //   that left the query);
+  //   that left the query). A request whose fields are not in the shape
+  //   ShareDB's client sends is refused (ERR_MESSAGE_BADLY_FORMED): ShareDB
+  //   reads array-likes and strings as lists as well, so passing it on would
+  //   let it read ops nothing checked;
   // - opHandler checks every op sent to a client. A document this connection
   //   was allowed to read (its snapshot passed the rule, or a check above
   //   did) passes at once: that is every live op of its subscribed documents
   //   and queries. Any other document is checked once against its current
   //   snapshot, the check shared by all its ops in flight.
   // A deletion carries no data and always passes. A deleted document's
-  // earlier ops are judged by its last state before the deletion.
+  // earlier ops are judged by its last state before the deletion, never by
+  // its empty state (a rule may pass an empty document).
+  //
+  // A check that fails (the database, a rule that throws) refuses the request
+  // or the op with ERR_ACCESS_CHECK_FAILED and logs the cause on the server.
   //
   // Not covered: a document a connection could read stays readable to it, its
   // live ops included, until it reads the document again and is refused, or
   // reconnects (read rules are not re-run for every live op). And the ops of
   // a document readable now are all sent, older states included.
 
+  // ShareDB handles a message once every 'receive' middleware has passed it,
+  // so a check that waits for the database would let the connection's later
+  // messages overtake the message it checks. While a check of an agent's
+  // message is in flight, the agent's later messages wait behind it (each is
+  // checked at once and passed on in the order they came); with none in
+  // flight, a message that needs no check passes at once.
   receiveHandler (request, done) {
     const agent = request.agent
-    const message = request.data
-    if (!this.isClientAgent(agent) || !message || typeof message !== 'object') return done()
-
-    // ShareDB checks the collection name of doc messages but not of queries,
-    // and a database adapter may read ['items'] as 'items'
-    if (message.c != null && typeof message.c !== 'string') {
-      const session = agent.connectSession || {}
-      const collection = `<${typeof message.c}>`
-      return done(new ShareDBAccessError('ERR_ACCESS_DENY_READ', ERRORS.readDenied({ collection, session })))
+    if (!this.isClientAgent(agent)) return done()
+    const action = request.data?.a
+    let result
+    try {
+      result = this.checkReceivedMessage(agent, request.data)
+    } catch (err) {
+      result = this.checkFailed(err, { action })
     }
+    let queue = this.receiveQueues.get(agent)
+    if (!queue) {
+      if (!isThenable(result)) return done(result)
+      queue = { entries: [], flushing: false }
+      this.receiveQueues.set(agent, queue)
+    }
+    const entry = { done, settled: !isThenable(result), result }
+    queue.entries.push(entry)
+    if (entry.settled) return
+    // settled whatever happens: the agent's later messages wait for it
+    const settle = reason => {
+      entry.settled = true
+      entry.result = reason
+      this.flushReceiveQueue(agent, queue)
+    }
+    result.then(settle, err => settle(this.checkFailed(err, { action })))
+  }
+
+  flushReceiveQueue (agent, queue) {
+    // a message passed on can make the agent receive another one at once
+    if (queue.flushing) return
+    queue.flushing = true
+    while (queue.entries.length && queue.entries[0].settled) {
+      const { done, result } = queue.entries.shift()
+      try {
+        done(result)
+      } catch (err) {
+        // what it would have done outside the queue: an uncaught exception
+        queueMicrotask(() => { throw err })
+      }
+    }
+    queue.flushing = false
+    if (!queue.entries.length && this.receiveQueues.get(agent) === queue) this.receiveQueues.delete(agent)
+  }
+
+  // Returns nothing when the message passes, the error that refuses it, or a
+  // promise (never rejected) of either when it waits for the read rules
+  checkReceivedMessage (agent, message) {
+    if (!message || typeof message !== 'object') return
+    // ShareDB's agent handles the message after every 'receive' middleware,
+    // and its own _checkRequest leaves some shapes unchecked: a bulk `b`
+    // beyond `typeof === 'object'` (so a bulk unsubscribe with a huge
+    // `length` loops, and a bulk fetch/subscribe with a duplicated or
+    // non-string id leaks a pubsub stream per id), and the snapshot-fetch
+    // `d` not at all (so an operator object reaches the database as a query
+    // and the read rule as a non-string id). Those shapes are refused here
+    if (!isValidMessageShape(message)) {
+      return new ShareDBAccessError('ERR_MESSAGE_BADLY_FORMED', ERRORS.badlyFormed(message.a))
+    }
+    const reading = READ_ACTIONS.has(message.a)
+    // ShareDB checks the collection name of doc messages only when there is
+    // one, and not at all for queries; this runs first anyway. A database
+    // adapter may read ['items'] as 'items'
+    if (reading ? !isCollectionName(message.c) : (message.c != null && typeof message.c !== 'string')) {
+      return this.readDenied(agent, typeof message.c === 'string' ? message.c : `<${typeof message.c}>`)
+    }
+    if (!reading) return
 
     const reads = getOpReads(message)
-    if (!reads) return done()
+    if (reads === MALFORMED) {
+      return new ShareDBAccessError('ERR_MESSAGE_BADLY_FORMED', ERRORS.badlyFormed(message.a))
+    }
+    if (!reads || !reads.length) return
 
     const projection = this.backend.projections && this.backend.projections[message.c]
     const collection = projection ? projection.target : message.c
-    if (!this.needsReadCheck(collection)) return done()
+    if (!this.needsReadCheck(collection)) return
 
-    this.checkOpReadsAsync(agent, collection, reads)
-      .then(denied => done(this.applyDenials(agent, message, denied)))
-      .catch(err => done(err))
+    return this.checkOpReadsAsync(agent, collection, reads).then(
+      denied => this.applyDenials(agent, message, denied),
+      err => this.checkFailed(err, { action: message.a, collection })
+    )
   }
 
-  // reads: [[docId, version]] of one request.
+  // reads: [[docId, version]] of one request (see getOpReads()).
   // Returns a Map of the refused docId -> { reason, snapshot }
   async checkOpReadsAsync (agent, collection, reads) {
     const denied = new Map()
     // the lowest version each document is read from (-Infinity: from the start)
     const fromVersions = new Map()
     for (const [docId, version] of reads) {
-      if (typeof docId !== 'string') {
-        const session = agent.connectSession || {}
-        const reason = new ShareDBAccessError('ERR_ACCESS_DENY_READ', ERRORS.readDenied({ collection, docId: `<${typeof docId}>`, session }))
-        denied.set(docId, { reason })
-        return denied
-      }
-      const from = typeof version === 'number' ? version : -Infinity
+      const from = version == null ? -Infinity : version
       fromVersions.set(docId, Math.min(from, fromVersions.get(docId) ?? Infinity))
     }
-    if (!fromVersions.size) return denied
 
     const snapshots = await this.getSnapshots(agent, collection, [...fromVersions.keys()])
     await Promise.all([...fromVersions].map(async ([docId, from]) => {
@@ -398,18 +475,27 @@ export class ShareDBAccess {
   opHandler (request, done) {
     const { agent, collection, id, op } = request
     if (!this.isClientAgent(agent) || !this.needsReadCheck(collection)) return done()
-    if (op && op.del && !('op' in op) && !op.create) return done()
+    if (op && op.del && !('op' in op) && !op.create) {
+      // A document deleted now may be created again with content this
+      // connection may not read. End its grant at the deletion so the
+      // recreate op (and anything after) is checked against the new snapshot,
+      // instead of riding the grant the readable document had.
+      if (typeof op.v === 'number' && this.hasReadGrant(agent, collection, id, op)) {
+        this.grantRead(agent, collection, id, op.v + 1)
+      }
+      return done()
+    }
     if (this.hasReadGrant(agent, collection, id, op)) return done()
 
-    this.checkCurrentReadAsync(agent, collection, id)
-      .then(reason => {
-        if (reason || this.hasReadGrant(agent, collection, id, op)) return done(reason)
-        // granted only up to a deletion, and the op is past it: a document
-        // created again that the snapshot read does not show yet
-        const session = agent.connectSession || {}
-        done(new ShareDBAccessError('ERR_ACCESS_DENY_READ', ERRORS.readDenied({ collection, docId: id, session })))
-      })
-      .catch(err => done(err))
+    this.checkCurrentReadAsync(agent, collection, id).then(reason => {
+      if (reason) return refuseOp(request, reason, done)
+      if (this.hasReadGrant(agent, collection, id, op)) return done()
+      // granted only up to a deletion, and the op is past it: a document
+      // created again that the snapshot read does not show yet
+      refuseOp(request, this.readDenied(agent, collection, id), done)
+    }, err => {
+      refuseOp(request, this.checkFailed(err, { action: 'op', collection, docId: id }), done)
+    })
   }
 
   checkCurrentReadAsync (agent, collection, docId) {
@@ -426,15 +512,35 @@ export class ShareDBAccess {
   }
 
   // The read rule on the document as it is now (`snapshot`); allowed, the
-  // connection is granted its ops
+  // connection is granted its ops. A deleted document is judged by its last
+  // state before the deletion, read through ShareDB (so every 'readSnapshots'
+  // middleware applies), whatever the rule says of its empty state; allowed,
+  // the connection is granted its ops up to the deletion.
   async checkDocReadAsync (agent, collection, docId, snapshot) {
-    const reason = await this.docHandlerAsync({ collection, id: docId, snapshot, snapshotType: CURRENT_SNAPSHOT, agent })
-    if (!reason || !snapshot || snapshot.type != null || !(snapshot.v > 0)) return reason
-    // Deleted: its ops up to the deletion are judged by its state before it
-    // (read through ShareDB, so every 'readSnapshots' middleware applies)
-    const lastState = await this.fetchSnapshotAsync(agent, collection, docId, snapshot.v - 1).catch(() => null)
-    if (!lastState) return reason
+    if (!snapshot || snapshot.type != null || !(snapshot.v > 0)) {
+      return this.docHandlerAsync({ collection, id: docId, snapshot, snapshotType: CURRENT_SNAPSHOT, agent })
+    }
+    this.revokeRead(agent, collection, docId)
+    try {
+      await this.fetchSnapshotAsync(agent, collection, docId, snapshot.v - 1)
+    } catch (err) {
+      if (isReadRefusal(err)) return this.readDenied(agent, collection, docId)
+      throw err
+    }
     this.grantRead(agent, collection, docId, snapshot.v)
+  }
+
+  readDenied (agent, collection, docId) {
+    const session = agent.connectSession || {}
+    return new ShareDBAccessError('ERR_ACCESS_DENY_READ', ERRORS.readDenied({ collection, docId, session }))
+  }
+
+  // A check that could not be made refuses what it was checking. The client
+  // gets a generic error; the cause (a database or rule error) is logged
+  // here, with no document data
+  checkFailed (err, context) {
+    console.error('[@teamplay/sharedb-access] An access check failed; refused.', context, err)
+    return new ShareDBAccessError('ERR_ACCESS_CHECK_FAILED', ERRORS.checkFailed())
   }
 
   getSnapshots (agent, collection, docIds) {
@@ -508,18 +614,13 @@ export class ShareDBAccess {
 
     if (this.options.openByDefault && !this.protectedCollections.has(collection)) return true
 
-    // First, check pattern matching collections
-    allow[operation]['**'] = allow[operation]['**'] || []
-    deny[operation]['**'] = deny[operation]['**'] || []
+    // First, check pattern matching collections. Lookups only: a rule map
+    // gets no entry for a collection a client names
+    const allowPatterns = allow[operation]['**'] || NO_RULES
+    const denyPatterns = deny[operation]['**'] || NO_RULES
 
-    const allowPatterns = allow[operation]['**']
-    const denyPatterns = deny[operation]['**']
-
-    allow[operation][collection] = allow[operation][collection] || []
-    deny[operation][collection] = deny[operation][collection] || []
-
-    const allowValidators = allow[operation][collection]
-    const denyValidators = deny[operation][collection]
+    const allowValidators = allow[operation][collection] || NO_RULES
+    const denyValidators = deny[operation][collection] || NO_RULES
 
     let isAllowed = false
 
@@ -572,6 +673,8 @@ export class ShareDBAccess {
   }
 }
 
+const NO_RULES = Object.freeze([])
+
 async function defaultValidator (validator, props) {
   if (typeof validator === 'function') return await validator(props)
   if (typeof validator === 'boolean') return validator
@@ -579,36 +682,184 @@ async function defaultValidator (validator, props) {
   throw Error(ERRORS.incorrectValidator(validator))
 }
 
-// The documents a client message reads through ops, as [[docId, version]],
-// the way ShareDB's agent reads the message (sharedb/lib/agent.js):
-// fetch/subscribe with a version, bulk fetch/subscribe with a versions map,
+// The documents a client message reads through ops, as [[docId, version]]
+// (a null version: from the start), read the way ShareDB's agent reads the
+// message (sharedb/lib/agent.js): fetch/subscribe with a version, bulk
+// fetch/subscribe with a versions map (an array of ids is a snapshot read),
 // a query subscribe with the client's results ('r', every id: ShareDB
-// forwards the ops of all of them to the query until it polls)
+// forwards the ops of all of them to the query until it polls). Nothing:
+// the message reads no ops. MALFORMED: ShareDB would read ops for it, but
+// it is not in the shape ShareDB's client sends (ShareDB reads array-likes,
+// strings and other versions too): refused, never passed on.
 function getOpReads (message) {
   switch (message.a) {
     case 'f':
     case 's':
       if (message.v == null) return
+      if (!isDocId(message.d) || !isVersion(message.v)) return MALFORMED
       return [[message.d, message.v]]
     case 'bf':
     case 'bs': {
       const versions = message.b
-      if (versions == null || typeof versions !== 'object' || Array.isArray(versions)) return
+      if (Array.isArray(versions)) return
+      if (versions === null || typeof versions !== 'object') return MALFORMED
       const reads = []
-      for (const docId in versions) reads.push([docId, versions[docId]])
+      for (const docId of Object.keys(versions)) {
+        const version = versions[docId]
+        if (!isDocId(docId) || (version != null && !isVersion(version))) return MALFORMED
+        reads.push([docId, version])
+      }
       return reads
     }
     case 'qs': {
       const results = message.r
+      // ShareDB reads `r` when it is truthy
       if (!results) return
+      if (!Array.isArray(results)) return MALFORMED
       const reads = []
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i]
-        reads.push(result == null ? [] : [result[0], result[1]])
+      for (const result of results) {
+        if (!Array.isArray(result) || !isDocId(result[0])) return MALFORMED
+        const version = result[1]
+        if (version != null && !isVersion(version)) return MALFORMED
+        reads.push([result[0], version])
       }
       return reads
     }
   }
+}
+
+const MALFORMED = Symbol('malformed')
+
+// The shape ShareDB's agent needs for the message types its own _checkRequest
+// does not fully validate (see checkReceivedMessage). Everything else passes
+// here and ShareDB validates it next (query ids, doc-message collection and
+// id, presence). Returns false for a shape that would be mishandled.
+function isValidMessageShape (message) {
+  switch (message.a) {
+    // bulk unsubscribe: ShareDB iterates `b` as an array of ids
+    case 'bu':
+      return isIdList(message.b)
+    // bulk fetch/subscribe: an array of ids (snapshots) or a versions map (ops)
+    case 'bf':
+    case 'bs':
+      return Array.isArray(message.b) ? isIdList(message.b) : isVersionsMap(message.b)
+    // snapshot fetch by version / by timestamp: `d` is not checked by ShareDB
+    case 'nf':
+      return isDocId(message.d) && (message.v == null || isVersion(message.v))
+    case 'nt':
+      return isDocId(message.d) && (message.ts == null || Number.isFinite(message.ts))
+    // query fetch/subscribe: ShareDB reads `r` (the client's results) as an
+    // array of [id, version]; a query fetch never reaches getOpReads, so its
+    // `r` is checked here too
+    case 'qf':
+    case 'qs':
+      return message.r == null || isResultList(message.r)
+    // doc messages: `d` must be a string id when present (ShareDB checks too).
+    // A write too: a doc stored under an id a read refuses (`length`,
+    // `prototype`) could never be fetched or subscribed
+    case 'f':
+    case 's':
+    case 'u':
+    case 'op':
+      return message.d == null || isDocId(message.d)
+    default:
+      return true
+  }
+}
+
+// An array of distinct doc ids (ShareDB's client builds these from object
+// keys, so it never repeats one or sends a non-string)
+function isIdList (value) {
+  if (!Array.isArray(value)) return false
+  for (const id of value) if (!isDocId(id)) return false
+  return new Set(value).size === value.length
+}
+
+// An array of [docId, version?] result rows (a query's current results)
+function isResultList (value) {
+  if (!Array.isArray(value)) return false
+  for (const row of value) {
+    if (!Array.isArray(row) || !isDocId(row[0])) return false
+    if (row[1] != null && !isVersion(row[1])) return false
+  }
+  return true
+}
+
+// A map of doc id -> version (null means from the start). Not an array, and
+// not array-like: a `length` property (even a string-keyed one) makes async
+// (sharedb's bulk path) and lodash iterate it `length` times, so a
+// `{ length: 1e7 }` would loop. Its keys are doc ids, which refuse `length`
+// and prototype names, so the key check alone is enough; the array-like
+// guard is kept as defence in depth.
+function isVersionsMap (value) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false
+  if (looksArrayLike(value)) return false
+  for (const id of Object.keys(value)) {
+    if (!isDocId(id)) return false
+    const version = value[id]
+    if (version != null && !isVersion(version)) return false
+  }
+  return true
+}
+
+// What async/lodash take for an array (and iterate by index, `length` times)
+function looksArrayLike (value) {
+  return typeof value.length === 'number'
+}
+
+function isVersion (value) {
+  return Number.isSafeInteger(value) && value >= 0
+}
+
+function isDocId (value) {
+  return typeof value === 'string' && !isUnsafeKey(value)
+}
+
+// What ShareDB takes for a collection name: a string, and not a name of
+// Object.prototype (ShareDB refuses those for doc messages, after this)
+function isCollectionName (value) {
+  return typeof value === 'string' && !isObjectPrototypeName(value)
+}
+
+// A key that pollutes a prototype, names a prototype, or makes an object
+// array-like. ShareDB builds maps and runs iterators over client ids, so an
+// id that is one of these turns a one-doc request into a prototype write or
+// an N-length loop.
+function isUnsafeKey (name) {
+  return name === '__proto__' || name === 'prototype' || name === 'length' ||
+    Object.hasOwn(Object.prototype, name)
+}
+
+function isObjectPrototypeName (name) {
+  return name === '__proto__' || name === 'prototype' || Object.hasOwn(Object.prototype, name)
+}
+
+// The errors a snapshot read refused by a 'readSnapshots' middleware ends with
+function isReadRefusal (err) {
+  return !!err && (
+    err.code === 'ERR_ACCESS_DENY_READ' ||
+    err.code === 'ERR_SNAPSHOT_READS_REJECTED' ||
+    err.code === 'ERR_SNAPSHOT_READ_SILENT_REJECTION'
+  )
+}
+
+function isThenable (value) {
+  return !!value && typeof value.then === 'function'
+}
+
+// Refuses an op on its way to a client. ShareDB logs a refused live op
+// (sharedb/lib/agent.js, _onOp()) with the op it was sanitizing: this
+// client's shallow copy, whose fields hold values every client's copy shares.
+// Its fields that may carry document data are replaced on the copy, never
+// changed in place, so the log names the op without its content.
+function refuseOp (request, reason, done) {
+  const op = request.op
+  if (op && typeof op === 'object') {
+    for (const key of Object.keys(op)) {
+      if (!OP_IDENTITY_FIELDS.has(key) && op[key] !== undefined) op[key] = HIDDEN
+    }
+  }
+  done(reason)
 }
 
 function getDocKey (collection, docId) {
@@ -625,6 +876,8 @@ const ERRORS = {
       Type: ${typeof validator}
       Value: ${validator.toString()}
   `,
+  badlyFormed: action => `Invalid '${action}' message: not in the shape ShareDB's client sends`,
+  checkFailed: () => 'Access check failed',
   readDenied: ({ collection, docId, session }) => `
     403: Permission denied (read)
          - collection: ${collection}

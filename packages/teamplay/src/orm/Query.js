@@ -5,6 +5,12 @@ import { getConnection } from './connection.ts'
 import { docSubscriptions } from './Doc.js'
 import { isMissingShareDoc } from './missingDoc.js'
 import { addQueryDoc, removeQueryDoc } from './queryDocIndex.js'
+import {
+  clearSubscriptionFailure,
+  getSubscriptionFailureKey,
+  reportSubscriptionError,
+  setSubscriptionFailure
+} from './subscriptionFailures.js'
 import { SEGMENTS } from './signalSymbols.ts'
 import { runInBatch } from './batchScheduler.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
@@ -62,6 +68,9 @@ export class Query {
     this.docSignals = new Set()
     this.requestedTransportMode = 'subscribe'
     this.activeTransportMode = 'idle'
+    // set by the manager: (err, { stopped }) => void (see _onShareQueryError())
+    this.onTransportError = undefined
+    this._onShareQueryError = this._onShareQueryError.bind(this)
   }
 
   // Transport calls are made only by the manager's reconcile loop, which runs
@@ -107,11 +116,18 @@ export class Query {
     const mode = this.requestedTransportMode
     await new Promise((resolve, reject) => {
       const method = mode === 'fetch' ? 'createFetchQuery' : 'createSubscribeQuery'
-      this.shareQuery = getConnection()[method](this.collectionName, this.params, {}, err => {
-        if (err) return reject(err)
+      const shareQuery = getConnection()[method](this.collectionName, this.params, {}, err => {
+        if (err) {
+          if (this.shareQuery === shareQuery) this._releaseShareQuery()
+          return reject(err)
+        }
         this.activeTransportMode = mode
         resolve()
       })
+      this.shareQuery = shareQuery
+      // ShareDB emits 'error' when a request it makes on its own fails (the
+      // re-subscribe after a reconnect); with no listener the emit throws
+      shareQuery.on('error', this._onShareQueryError)
     })
   }
 
@@ -121,6 +137,7 @@ export class Query {
       return
     }
     await new Promise((resolve, reject) => {
+      this.shareQuery.removeListener('error', this._onShareQueryError)
       this.shareQuery.destroy(err => {
         if (err) return reject(err)
         this.activeTransportMode = 'idle'
@@ -128,6 +145,41 @@ export class Query {
       })
       this.shareQuery = undefined
     })
+  }
+
+  // A query ShareDB has given up on (its subscribe was refused): ShareDB
+  // drops it from the connection without telling the server, which may keep
+  // the query running for this connection; destroy() tells it.
+  _releaseShareQuery () {
+    const shareQuery = this.shareQuery
+    this.shareQuery = undefined
+    if (!shareQuery) return
+    shareQuery.removeListener('error', this._onShareQueryError)
+    shareQuery.destroy()
+  }
+
+  // The server refused the re-subscribe ShareDB made after a reconnect (the
+  // only request teamplay makes without a callback): ShareDB has dropped the
+  // query, so the subscription is gone. The query becomes idle (its results
+  // are detached, as when it is unsubscribed); the next subscribe() asks the
+  // server again. Anything else is only reported.
+  _onShareQueryError (err) {
+    const shareQuery = this.shareQuery
+    const stopped = this.activeTransportMode !== 'idle' && !!shareQuery &&
+      getConnection().queries?.[shareQuery.id] !== shareQuery
+    if (stopped) {
+      this._releaseShareQuery()
+      this.activeTransportMode = 'idle'
+    }
+    if (this.onTransportError) {
+      this.onTransportError(err, { stopped })
+    } else {
+      reportSubscriptionError(err, { path: describeQuery(this), stopped, owned: false })
+    }
+    if (stopped && this.initialized) {
+      this.initialized = undefined
+      this._detachTransportData({ keepRoots: true })
+    }
   }
 
   _initData () {
@@ -363,7 +415,9 @@ export class QuerySubscriptions {
         owners: new Set(),
         pendingDestroyByOwner: new Map(),
         downgradeGrace: null,
-        reconcilePromise: null
+        reconcilePromise: null,
+        // the server stopped its subscription (see handleTransportError())
+        stopped: false
       }
       this.entries.set(transportHash, entry)
     }
@@ -446,7 +500,9 @@ export class QuerySubscriptions {
     const entry = this.getOrCreateEntry(transportHash)
     if (!entry.runtime) {
       const { collectionName, params } = this.getEntryMeta(transportHash)
-      entry.runtime = new this.QueryClass(collectionName, params, { hash: transportHash })
+      const runtime = new this.QueryClass(collectionName, params, { hash: transportHash })
+      runtime.onTransportError = (err, details) => this.handleTransportError(transportHash, runtime, err, details)
+      entry.runtime = runtime
     }
     this.syncRuntimeRoots(entry)
     this.syncEntryMirror(entry)
@@ -483,6 +539,9 @@ export class QuerySubscriptions {
       this.fr.register($query, { ownerKey, token }, token)
     }
 
+    // A subscription the server stopped is asked for again by a new owner
+    // only (see handleTransportError())
+    entry.stopped = false
     // A subscriber arriving in a downgrade grace keeps the transport live.
     if (this.getDesiredTransportMode(transportHash) === 'subscribe') clearDowngradeGrace(entry)
     // Join a settled transport synchronously, including one lingering ownerless
@@ -659,11 +718,44 @@ export class QuerySubscriptions {
         continue
       }
       query = this.ensureRuntime(transportHash)
-      await subscribeQueryTransport(query, desiredMode)
+      try {
+        await subscribeQueryTransport(query, desiredMode)
+      } catch (err) {
+        this.stopTransport(transportHash, entry, err)
+        throw err
+      }
+      clearSubscriptionFailure(getSubscriptionFailureKey(this.runtimeKind, transportHash))
       entry.runtime = query
       entry.mode = query.activeTransportMode || desiredMode
       this.syncEntryMirror(entry)
     }
+  }
+
+  // ShareDB reported an error on the runtime's query. A subscription the
+  // server stopped fails like a refused subscribe: the entry stays idle (the
+  // owners it has are not subscribed again: a new owner asks the server
+  // again), and the components using it throw the error (see
+  // subscriptionFailures.js). An entry nothing owns any more (lingering in
+  // its GC grace) only logs it.
+  handleTransportError (transportHash, runtime, err, { stopped }) {
+    const entry = this.entries.get(transportHash)
+    const current = entry?.runtime === runtime
+    const owned = current && entry.owners.size > 0
+    if (stopped && current) {
+      entry.mode = 'idle'
+      if (owned) this.stopTransport(transportHash, entry, err)
+    }
+    reportSubscriptionError(err, { path: describeQuery(runtime), stopped, owned })
+  }
+
+  stopTransport (transportHash, entry, err) {
+    entry.stopped = true
+    setSubscriptionFailure(getSubscriptionFailureKey(this.runtimeKind, transportHash), err)
+  }
+
+  // The key of the query's record in subscriptionFailures.js
+  getSubscriptionFailureKey ($query) {
+    return getSubscriptionFailureKey(this.runtimeKind, $query[HASH])
   }
 
   getOwnerIntentCount (record, intent) {
@@ -714,6 +806,7 @@ export class QuerySubscriptions {
   // downgrade grace while owners remain (see subscriptionTransport.js).
   getTargetTransportMode (transportHash) {
     const entry = this.entries.get(transportHash)
+    if (entry?.stopped) return 'idle'
     const lingering = !!entry && (entry.owners.size === 0
       ? entry.pendingDestroyByOwner.size > 0
       : !!entry.downgradeGrace)
@@ -736,11 +829,13 @@ export class QuerySubscriptions {
       await unsubscribeQueryTransport(activeRuntime, { keepRoots: true })
     }
     activeRuntime._detachTransportData?.({ keepRoots: false })
+    clearSubscriptionFailure(getSubscriptionFailureKey(this.runtimeKind, transportHash))
     const finalEntry = this.entries.get(transportHash)
     if (finalEntry && finalEntry.owners.size > 0) return
     if (finalEntry) {
       finalEntry.runtime = null
       finalEntry.mode = 'idle'
+      finalEntry.stopped = false
     }
     this.deleteEntryIfEmpty(transportHash)
   }
@@ -1028,6 +1123,10 @@ const ERRORS = {
 }
 
 function ignoreDestroyError () {}
+
+function describeQuery (query) {
+  return query.collectionName + ' ' + JSON.stringify(query.params)
+}
 
 function attachQueryRoot (query, rootId) {
   if (rootId == null || !query) return

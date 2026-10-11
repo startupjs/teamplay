@@ -6,6 +6,7 @@ import { querySubscriptions, getQuerySignal } from './Query.js'
 import type { QuerySignalOptions } from './Query.js'
 import { aggregationSubscriptions, getAggregationSignal } from './Aggregation.js'
 import { getRoot, ROOT_ID } from './Root.ts'
+import { getSubscriptionFailure } from './subscriptionFailures.js'
 import { isRootContextClosed } from './rootContext.ts'
 import isServer from '../utils/isServer.ts'
 import { diag } from '../diagnostics/hooks.ts'
@@ -85,6 +86,12 @@ export interface SubAcquisition {
   value: SubValue
   signal: SignalBaseInstance
   release: (options?: SubReleaseOptions) => Promise<void> | void
+  /**
+   * The error of the subscription when the server stopped it (it refused the
+   * re-subscribe after a reconnect), undefined while it is live. A tracked
+   * read: the running reaction re-runs when it changes.
+   */
+  getFailure: () => unknown
 }
 
 /**
@@ -190,6 +197,7 @@ export default function sub ($signal: unknown, params?: unknown, options?: SubOp
 export function acquireSub (...args: unknown[]): SubAcquisition {
   const { value, signal, record } = acquire(args)
   let released = false
+  let failureKey: string | undefined
   return {
     value,
     signal,
@@ -197,8 +205,18 @@ export function acquireSub (...args: unknown[]): SubAcquisition {
       if (released) return
       released = true
       return releaseSubRecord(signal, record, options)
+    },
+    getFailure () {
+      failureKey ??= getSubscriptionFailureKey(record.kind, signal)
+      return getSubscriptionFailure(failureKey)
     }
   }
+}
+
+function getSubscriptionFailureKey (kind: SubRecordKind, $signal: SignalBaseInstance): string {
+  if (kind === 'doc') return docSubscriptions.getSubscriptionFailureKey($signal)
+  if (kind === 'query') return querySubscriptions.getSubscriptionFailureKey($signal)
+  return aggregationSubscriptions.getSubscriptionFailureKey($signal)
 }
 
 function acquire (args: unknown[]): Acquired {

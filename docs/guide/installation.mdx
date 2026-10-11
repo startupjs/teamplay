@@ -55,6 +55,8 @@ const { upgrade } = initConnection(backend)
 server.on('upgrade', upgrade) // Node's 'http' server instance
 ```
 
+A client may send messages of up to 16 MiB by default (MongoDB's document limit, so a write that fits in the database is never refused for its size). To use a different limit, pass the same `maxMessageSize` (in bytes) to both sides: `initConnection(backend, { maxMessageSize })` and `connect({ maxMessageSize })`.
+
 ## Production Setup
 
 For development, no extra database setup is needed. If `MONGO_URL` is not set, TeamPlay stores server data in an SQLite file named `local.db` in the root of your project.

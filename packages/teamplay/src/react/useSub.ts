@@ -587,6 +587,15 @@ export function useSubDeferred (
   // 2. if it's a signal, we save it into ref to make sure it's not garbage collected while component exists
   } else {
     const $signal = promiseOrSignal
+    // A subscription the server stopped (it refused the re-subscribe after a
+    // reconnect) fails the lease like a refused sub(). A tracked read: when
+    // the server stops it, the component re-renders and throws.
+    const failure = subscriptionLease.getFailure?.()
+    if (failure !== undefined) {
+      subscriptionLease.failed = true
+      subscriptionLease.error = failure
+      throw failure
+    }
     // a batched target this hook has not committed yet (subscribed
     // elsewhere) can still be materializing
     if (batch && !subscriptionLease.committed) addBatchReadinessCheckForSignal($signal, subscriptionLease)
@@ -617,6 +626,8 @@ interface SubscriptionLease {
   signal?: unknown
   // releases exactly this lease's acquisition (not another sub() of the signal)
   release?: (options?: SubReleaseOptions) => Promise<void> | void
+  // the error of the subscription once the server stopped it (tracked read)
+  getFailure?: () => unknown
   signalDisposed: boolean
   // target identity kept after release, to detect re-acquire loops
   target: unknown
@@ -727,6 +738,7 @@ function createSubscriptionLease (
     value,
     signal: acquisition.signal,
     release: acquisition.release,
+    getFailure: acquisition.getFailure,
     inputSignal: signal,
     serializedParams,
     previousLease: previousLease?.released ? undefined : previousLease,
@@ -848,6 +860,7 @@ function scheduleSubscriptionLeaseRelease (lease: SubscriptionLease): void {
 function disposeSubscriptionLeaseSignal (lease: SubscriptionLease, options?: SubReleaseOptions): void {
   const release = lease.release
   lease.release = undefined
+  lease.getFailure = undefined
   lease.signal = undefined
   lease.inputSignal = undefined
   lease.serializedParams = undefined
@@ -895,7 +908,10 @@ function addBatchReadinessCheck (
   promiseBatcher.addCheck({
     key: promise,
     type: 'subscription',
-    isReady: () => !!lease?.released || (resolved && isSubscriptionSignalReady(resolvedSignal)),
+    // a subscription the server stopped meanwhile never gets ready: the
+    // render retries and throws its error
+    isReady: () => !!lease?.released || lease?.getFailure?.() !== undefined ||
+      (resolved && isSubscriptionSignalReady(resolvedSignal)),
     getState: () => getBatchSignalState(resolvedSignal)
   })
 }
@@ -920,7 +936,9 @@ async function waitForSubscriptionSignalReady (
   lease?: SubscriptionLease
 ): Promise<void> {
   let poller: number | undefined
-  while (!lease?.released && !isSubscriptionSignalReady(signal)) {
+  // a subscription the server stopped meanwhile never gets ready: the
+  // render retries and throws its error
+  while (!lease?.released && lease?.getFailure?.() === undefined && !isSubscriptionSignalReady(signal)) {
     if (diag.on && poller == null) poller = diag.pollerStart('react.readinessPoll', diag.describeSubTarget(signal))
     await new Promise(resolve => setTimeout(resolve, 16))
   }

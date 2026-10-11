@@ -7,6 +7,12 @@ import { getIdFieldsForSegments, injectIdFields, isPlainObject } from './idField
 import { getSubscriptionGcDelay } from './subscriptionGcDelay.ts'
 import { isMissingShareDoc } from './missingDoc.js'
 import { refreshQueryDocs } from './queryDocIndex.js'
+import {
+  clearSubscriptionFailure,
+  getSubscriptionFailureKey,
+  reportSubscriptionError,
+  setSubscriptionFailure
+} from './subscriptionFailures.js'
 import { runInBatch } from './batchScheduler.js'
 import unrefTimer from '../utils/unrefTimer.ts'
 import {
@@ -89,6 +95,10 @@ class Doc {
     this.docId = docId
     this.requestedTransportMode = 'subscribe'
     this.activeTransportMode = 'idle'
+    // set by the manager: (err, { stopped }) => void (see _onShareDocError())
+    this.onTransportError = undefined
+    this._errorListenerDoc = undefined
+    this._onShareDocError = this._onShareDocError.bind(this)
     this.init()
   }
 
@@ -164,6 +174,8 @@ class Doc {
 
   dispose () {
     this.initialized = undefined
+    this._errorListenerDoc?.removeListener('error', this._onShareDocError)
+    this._errorListenerDoc = undefined
     this._removeData()
   }
 
@@ -173,6 +185,32 @@ class Doc {
     doc.on('load', () => this._refData())
     doc.on('create', () => this._refData())
     doc.on('del', () => this._refMissingData())
+    // ShareDB emits 'error' when a request it makes on its own fails (the
+    // re-subscribe after a reconnect); with no listener the emit throws
+    if (this._errorListenerDoc !== doc) {
+      this._errorListenerDoc?.removeListener('error', this._onShareDocError)
+      doc.on('error', this._onShareDocError)
+      this._errorListenerDoc = doc
+    }
+  }
+
+  // The server refused the re-subscribe ShareDB made after a reconnect (the
+  // only request teamplay makes without a callback): the subscription is gone.
+  // ShareDB would ask again after every reconnect; it is unsubscribed instead,
+  // so the transport is idle on both sides and the next subscribe() asks the
+  // server again. The doc keeps its last data. Anything else is only reported.
+  _onShareDocError (err) {
+    const doc = this._errorListenerDoc
+    const stopped = this.activeTransportMode === 'subscribe' && !!doc && !doc.subscribed
+    if (stopped) {
+      this.activeTransportMode = 'idle'
+      doc.unsubscribe(ignoreDestroyError)
+    }
+    if (this.onTransportError) {
+      this.onTransportError(err, { stopped })
+    } else {
+      reportSubscriptionError(err, { path: this.collection + '.' + this.docId, stopped, owned: false })
+    }
   }
 
   _refMissingData () {
@@ -325,7 +363,9 @@ export class DocSubscriptions {
         retainCount: 0,
         pendingDestroy: null,
         downgradeGrace: null,
-        reconcilePromise: null
+        reconcilePromise: null,
+        // the server stopped its subscription (see handleTransportError())
+        stopped: false
       }
       this.entries.set(hash, entry)
     } else if (segments && !entry.segments?.length) {
@@ -378,7 +418,9 @@ export class DocSubscriptions {
     const entry = this.getOrCreateEntry(hash, segments)
     if (!entry.runtime) {
       const runtimeSegments = entry.segments?.length ? entry.segments : parseDocHash(hash)
-      entry.runtime = new this.DocClass(...runtimeSegments)
+      const runtime = new this.DocClass(...runtimeSegments)
+      runtime.onTransportError = (err, details) => this.handleTransportError(hash, runtime, err, details)
+      entry.runtime = runtime
     }
     entry.runtime.init()
     entry.mode = entry.runtime.activeTransportMode || entry.mode
@@ -425,6 +467,9 @@ export class DocSubscriptions {
       this.fr.register($doc, { hash, ownerKey, token }, token)
     }
     this.ensureRuntime(hash, segments)
+    // A subscription the server stopped is asked for again by a new owner
+    // only (see handleTransportError())
+    entry.stopped = false
     // A subscriber arriving in a downgrade grace keeps the transport live.
     if (this.getDesiredTransportMode(hash) === 'subscribe') clearDowngradeGrace(entry)
     // Join a settled transport synchronously, including one lingering ownerless
@@ -689,10 +734,42 @@ export class DocSubscriptions {
         continue
       }
       doc = this.ensureRuntime(hash)
-      await doc.subscribe({ mode: desiredMode })
+      try {
+        await doc.subscribe({ mode: desiredMode })
+      } catch (err) {
+        this.stopTransport(hash, entry, err)
+        throw err
+      }
+      clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
       entry.runtime = doc
       entry.mode = doc.activeTransportMode || desiredMode
     }
+  }
+
+  // ShareDB reported an error on the runtime's doc. A subscription the server
+  // stopped fails like a refused subscribe: the entry stays idle (the owners
+  // it has are not subscribed again: a new owner asks the server again), and
+  // the components using it throw the error (see subscriptionFailures.js).
+  // An entry nothing owns any more (lingering in its GC grace) only logs it.
+  handleTransportError (hash, runtime, err, { stopped }) {
+    const entry = this.entries.get(hash)
+    const current = entry?.runtime === runtime
+    const owned = current && entry.owners.size > 0
+    if (stopped && current) {
+      entry.mode = 'idle'
+      if (owned) this.stopTransport(hash, entry, err)
+    }
+    reportSubscriptionError(err, { path: runtime.collection + '.' + runtime.docId, stopped, owned })
+  }
+
+  stopTransport (hash, entry, err) {
+    entry.stopped = true
+    setSubscriptionFailure(getSubscriptionFailureKey('doc', hash), err)
+  }
+
+  // The key of the doc's record in subscriptionFailures.js
+  getSubscriptionFailureKey ($doc) {
+    return getSubscriptionFailureKey('doc', hashDoc($doc[SEGMENTS]))
   }
 
   async destroyByHash (hash, options = {}) {
@@ -771,8 +848,10 @@ export class DocSubscriptions {
       if (finalEntry) {
         finalEntry.runtime = null
         finalEntry.mode = 'idle'
+        finalEntry.stopped = false
         this.deleteEntryIfEmpty(hash)
       }
+      clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
       settlePending()
     } catch (err) {
       settlePending(err)
@@ -862,6 +941,7 @@ export class DocSubscriptions {
   // (see subscriptionTransport.js).
   getTargetTransportMode (hash) {
     const entry = this.entries.get(hash)
+    if (entry?.stopped) return 'idle'
     const lingering = this.getEntryTotalCount(entry) === 0
       ? !!entry?.pendingDestroy
       : !!entry?.downgradeGrace
@@ -913,11 +993,13 @@ export class DocSubscriptions {
     }
     if (typeof activeDoc.destroy === 'function') await activeDoc.destroy()
     if (typeof activeDoc.dispose === 'function') activeDoc.dispose()
+    clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
     const finalEntry = this.entries.get(hash)
     if (finalEntry && finalEntry.owners.size > 0) return
     if (finalEntry) {
       finalEntry.runtime = null
       finalEntry.mode = 'idle'
+      finalEntry.stopped = false
     }
     this.deleteEntryIfEmpty(hash)
   }

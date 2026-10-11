@@ -203,6 +203,15 @@ error boundary (for example with a `key`, or `resetKeys` of
 re-subscribe that fails (a changed id or params) throws to the error boundary
 too, also when it is deferred, instead of keeping the previous content.
 
+The server can also stop a subscription that was working: after a reconnect
+ShareDB subscribes to every doc and query again, and the server may refuse it
+(the user lost read access while offline, or a doc the user may not read now
+matches the query). Such a subscription fails the same way: the components
+that use it re-render and throw the error to their error boundary, and in
+development teamplay warns once with the target. A doc keeps its last data,
+a query its results are dropped, and nothing is subscribed again until a new
+`sub()` or a remount asks for it. Nothing is thrown outside React.
+
 ## Features
 
 1. **Automatic Subscription Management**: Hooks handle subscribing when the component mounts and unsubscribing when it unmounts.

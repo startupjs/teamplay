@@ -75,9 +75,15 @@ A client also gets a document's data as ops: when it fetches or subscribes from 
 * a fetch or subscribe from a version is refused like a snapshot read; in a bulk request only the refused documents get the error;
 * a query resubscribe is not refused: documents of its results the client may no longer read are resubscribed from their current version, so it gets none of their ops;
 * an op of a document the connection was allowed to read passes at once (live updates cost nothing extra); any other document is checked once against its current snapshot;
-* a deletion carries no data and always passes; a deleted document's earlier ops are judged by its last state.
+* a deletion carries no data and always passes; a deleted document's earlier ops are judged by its last state before the deletion, never by its empty state (a rule may well pass an empty document).
 
 A document a connection was allowed to read stays readable to it, with its live updates, until it reads the document again and is refused, or reconnects.
+
+Every message is checked before ShareDB handles it, so its shape is checked here too: a fetch or subscribe version, a bulk request (an array of ids, or a versions map), a query resubscribe's results and a snapshot fetch's id must be in the form ShareDB's client sends them (string ids with no duplicates in a bulk array, non-negative integer versions, real arrays). Any other shape is refused with `ERR_MESSAGE_BADLY_FORMED` rather than passed on: ShareDB's own check leaves some of these unvalidated (a bulk `b` beyond `typeof === 'object'`, so a bulk unsubscribe with a huge `length` would loop and a duplicated id would leak a stream; the snapshot-fetch id not at all, so an operator object would reach the database as a query), and it reads array-likes and strings as lists too. A doc id may not be `length`, `prototype`, `__proto__` or an `Object.prototype` name, nor may a versions map be array-like (a numeric `length`): ShareDB builds maps and runs iterators over these ids, so one would turn a one-doc request into an N-length loop. A client write (create, op, delete) to such an id is refused the same way, since that doc could never be read back. A reading request without a collection name (or with one ShareDB refuses, such as `__proto__`) is refused with `ERR_ACCESS_DENY_READ` before anything is read. The work a request costs is linear in its size; bound the size of the messages your transport accepts (`maxMessageSize` of `@teamplay/channel`, 16 MiB by default).
+
+A connection's messages reach ShareDB in the order they came, also while some of them wait for this check.
+
+When one of these checks cannot be made (the database fails, a rule throws), the request or the op is refused with `ERR_ACCESS_CHECK_FAILED`; the cause is logged on the server (`console.error`), never sent to the client. The log line ShareDB writes for a refused live op names the op without its content.
 
 #### Delete
 

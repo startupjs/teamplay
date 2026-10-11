@@ -7,16 +7,29 @@
 // Every client here is a remote one (its stream is not a server stream), with
 // the session the 'connect' middleware attaches, as @teamplay/channel does.
 import assert from 'node:assert/strict'
+import util from 'node:util'
 import { afterEach, beforeEach, describe, it } from 'mocha'
 import ShareDB from 'sharedb'
-import { Connection } from 'sharedb/lib/client/index.js'
-import StreamSocket from 'sharedb/lib/stream-socket.js'
-import ShareDbMingo from '@startupjs/sharedb-mingo-memory'
-import { accessControl } from '@teamplay/utils/accessControl'
-import initAccessControl from '../../backend/features/accessControl.js'
-
-const PRIVATE_PHONE = '+380509999999'
-const PRIVATE_NOTE = 'private note'
+import {
+  PRIVATE_NOTE,
+  PRIVATE_PHONE,
+  assertNoPrivateData,
+  connectClient,
+  countSnapshotReads,
+  create,
+  createBackendWithRules,
+  del,
+  fetch,
+  holdSnapshotReads,
+  onceReady,
+  recordMessages,
+  sendRaw,
+  settle,
+  silenceShareDbLogger,
+  submit,
+  subscribe,
+  waitUntil
+} from './_accessControl.js'
 
 describe('access control: reads through ops (versioned fetch and subscribe)', () => {
   let backend, server, snapshotReads, restoreLogger
@@ -189,6 +202,143 @@ describe('access control: reads through ops (versioned fetch and subscribe)', ()
     })
   })
 
+  describe('the history of a deleted doc', () => {
+    // The post rule passes an empty doc (it reads only `hidden`), so the
+    // empty state of a deleted post says nothing about its earlier states
+    async function seedDeletedHiddenPost (id = 'p1') {
+      const post = server.get('posts', id)
+      await create(post, { hidden: true, text: PRIVATE_NOTE })
+      await submit(post, [{ p: ['phone'], oi: PRIVATE_PHONE }])
+      await del(post)
+      assert.equal(post.version, 3)
+      return post
+    }
+
+    it('is judged by its state before the deletion: fetch and subscribe from a version', async () => {
+      await seedDeletedHiddenPost()
+      const bob = connectClient(backend, { userId: 'bob' })
+      const received = recordMessages(bob)
+      for (const a of ['f', 's']) {
+        const reply = await sendRaw(bob, { a, c: 'posts', d: 'p1', v: 0 })
+        assert.equal(reply.error?.code, 'ERR_ACCESS_DENY_READ', a)
+      }
+      for (const a of ['bf', 'bs']) {
+        const reply = await sendRaw(bob, { a, c: 'posts', b: { p1: 0 } })
+        assert.equal(reply.error?.code, 'ERR_ACCESS_DENY_READ', a)
+      }
+      const reply = await sendRaw(bob, { a: 'qs', id: 1, c: 'posts', q: {}, r: [['p1', 0]] })
+      assert.equal(reply.error, undefined)
+      await settle()
+      assertNoPrivateData(received)
+      assert.equal(received.filter(message => message.a === 'op' && message.d === 'p1').length, 0)
+    })
+
+    it('is judged by its state before the deletion: a live op checked after the deletion', async () => {
+      // bob subscribed before the post existed (an empty doc passes the rule);
+      // the post is created hidden and deleted before bob's check reads it
+      const bob = connectClient(backend, { userId: 'bob' })
+      const doc = bob.get('posts', 'p2')
+      doc.on('error', () => {})
+      await subscribe(doc)
+      const received = recordMessages(bob)
+      const gate = holdSnapshotReads(backend, 'posts')
+      const post = server.get('posts', 'p2')
+      await create(post, { hidden: true, text: PRIVATE_NOTE })
+      await del(post)
+      gate.release()
+      await settle()
+      assertNoPrivateData(received)
+      assert.equal(received.filter(message => message.a === 'op' && message.create).length, 0)
+    })
+
+    it('a deleted doc whose last state is readable still syncs after a reconnect', async () => {
+      const post = server.get('posts', 'p3')
+      await create(post, { text: 'visible' })
+      const alice = connectClient(backend, { userId: 'alice' })
+      const doc = alice.get('posts', 'p3')
+      await subscribe(doc)
+      alice.close()
+      await submit(post, [{ p: ['text'], od: 'visible', oi: 'last words' }])
+      await del(post)
+      const errors = []
+      doc.on('error', error => errors.push(error))
+      connectClient(backend, { userId: 'alice' }, alice)
+      await waitUntil(() => doc.type === null && doc.version === 3)
+      assert.deepEqual(errors, [])
+    })
+  })
+
+  describe('a refused live op', () => {
+    it('reaches the server log without the document content; other clients get it whole', async () => {
+      const contact = await seedContact()
+      const alice = connectClient(backend, { userId: 'alice' })
+      const aliceDoc = alice.get('contacts', 'c1')
+      await subscribe(aliceDoc)
+      const bob = connectClient(backend, { userId: 'bob' })
+      // ShareDB forwards the ops of every id of a query resubscribe until it
+      // polls; bob's are refused, and ShareDB logs each refused live op
+      await sendRaw(bob, { a: 'qs', id: 1, c: 'contacts', q: { name: 'Contact' }, r: [['c1', 0]] })
+      const logged = []
+      ShareDB.logger.setMethods({ error: (...args) => logged.push(util.inspect(args, { depth: 10 })) })
+      await submit(contact, [{ p: ['phone2'], oi: PRIVATE_PHONE }])
+      await waitUntil(() => aliceDoc.data.phone2 === PRIVATE_PHONE)
+      await settle()
+      assert.ok(logged.some(entry => entry.includes('ERR_ACCESS_DENY_READ')), 'the refusal is logged')
+      for (const entry of logged) {
+        assert.ok(!entry.includes(PRIVATE_PHONE) && !entry.includes(PRIVATE_NOTE), entry)
+      }
+    })
+  })
+
+  describe('a document deleted and created again, hidden', () => {
+    // A client subscribed to the readable document holds a read grant for its
+    // live ops. The deletion ends the grant, so the create op that follows
+    // (the document is a different, hidden one now) is checked afresh.
+    it('does not reach a client subscribed to its earlier, readable version', async () => {
+      const post = server.get('posts', 'p1')
+      await create(post, { text: 'public' })
+      const bob = connectClient(backend, { userId: 'bob' })
+      const doc = bob.get('posts', 'p1')
+      doc.on('error', () => {})
+      await subscribe(doc)
+      assert.equal(doc.data.text, 'public')
+      const received = recordMessages(bob)
+      await del(post)
+      await create(post, { hidden: true, text: PRIVATE_NOTE })
+      await settle()
+      assertNoPrivateData(received)
+      // a fresh fetch is refused too (the rule denies the new document)
+      const other = connectClient(backend, { userId: 'bob' })
+      await assert.rejects(fetch(other.get('posts', 'p1')), { code: 'ERR_ACCESS_DENY_READ' })
+    })
+
+    it('does not reach it through a query subscription either', async () => {
+      const post = server.get('posts', 'p2')
+      await create(post, { text: 'public', tag: 'shared' })
+      const bob = connectClient(backend, { userId: 'bob' })
+      const query = bob.createSubscribeQuery('posts', { tag: 'shared' })
+      await onceReady(query)
+      assert.equal(query.results.length, 1)
+      const received = recordMessages(bob)
+      await del(post)
+      await create(post, { hidden: true, tag: 'shared', text: PRIVATE_NOTE })
+      await settle()
+      assertNoPrivateData(received)
+    })
+
+    it('still reaches a client that may read the new document', async () => {
+      // alice owns her contact; it is deleted and created again, still hers
+      const contact = await seedContact()
+      const alice = connectClient(backend, { userId: 'alice' })
+      const doc = alice.get('contacts', 'c1')
+      await subscribe(doc)
+      await del(contact)
+      await create(server.get('contacts', 'c1'), { ownerId: 'alice', name: 'Reborn' })
+      await waitUntil(() => doc.data && doc.data.name === 'Reborn')
+      assert.equal(doc.data.name, 'Reborn')
+    })
+  })
+
   describe('a client with read access', () => {
     it('catches up on a doc and a query after a reconnect and keeps receiving ops', async () => {
       const contact = await seedContact()
@@ -343,173 +493,3 @@ describe('access control: reads through ops (versioned fetch and subscribe)', ()
     })
   })
 })
-
-// The setup @teamplay/backend makes without `secure` (open by default) plus
-// forced rules: only the owner reads a contact; the owner, or a session that
-// may annotate, updates it. A post is read unless it is hidden.
-function createBackendWithRules () {
-  const backend = new ShareDB({ db: new ShareDbMingo() })
-  backend.use('connect', (context, next) => {
-    context.agent.connectSession = context.req?.session
-    next()
-  })
-  const models = {
-    contacts: {
-      access: accessControl({
-        create: () => true,
-        read: ({ doc, session }) => doc.ownerId === session.userId,
-        update: ({ doc, session }) => doc.ownerId === session.userId || session.mayAnnotate === true,
-        delete: ({ doc, session }) => doc.ownerId === session.userId
-      }, { force: true })
-    },
-    posts: {
-      access: accessControl({
-        create: () => true,
-        read: ({ doc }) => !doc.hidden
-      }, { force: true })
-    }
-  }
-  const log = console.log
-  console.log = () => {}
-  try {
-    initAccessControl(backend, { models, forceOnly: true, openByDefault: true })
-  } finally {
-    console.log = log
-  }
-  return backend
-}
-
-// A remote client: its stream is not a server stream
-function connectClient (backend, session, connection) {
-  const socket = new StreamSocket()
-  socket.stream.isServer = false
-  if (connection) connection.bindToSocket(socket)
-  else connection = new Connection(socket)
-  socket._open()
-  connection.agent = backend.listen(socket.stream, { session })
-  return connection
-}
-
-function countSnapshotReads (backend) {
-  const db = backend.db
-  const counter = {
-    count: 0,
-    ids: 0,
-    reset () {
-      counter.count = 0
-      counter.ids = 0
-    }
-  }
-  const getSnapshot = db.getSnapshot
-  const getSnapshotBulk = db.getSnapshotBulk
-  db.getSnapshot = function (collection, id, fields, ...rest) {
-    // a submit reads the snapshot it applies the op to: not a read for a client
-    if (!fields?.$submit) {
-      counter.count++
-      counter.ids++
-    }
-    return getSnapshot.call(this, collection, id, fields, ...rest)
-  }
-  db.getSnapshotBulk = function (collection, ids, ...rest) {
-    counter.count++
-    counter.ids += ids.length
-    // the default bulk read calls getSnapshot per id: count the bulk once
-    const single = db.getSnapshot
-    db.getSnapshot = getSnapshot
-    try {
-      return getSnapshotBulk.call(this, collection, ids, ...rest)
-    } finally {
-      db.getSnapshot = single
-    }
-  }
-  return counter
-}
-
-function recordMessages (connection) {
-  const messages = []
-  connection.on('receive', request => messages.push(request.data))
-  return messages
-}
-
-function assertNoPrivateData (messages) {
-  const text = JSON.stringify(messages)
-  assert.ok(!text.includes(PRIVATE_PHONE), 'a message carries the phone: ' + text)
-  assert.ok(!text.includes(PRIVATE_NOTE), 'a message carries the note: ' + text)
-}
-
-// Sends a raw protocol message and resolves with its reply, which the client
-// connection then ignores (it did not make the request)
-function sendRaw (connection, message, isReply = defaultIsReply(message)) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('No reply to ' + JSON.stringify(message))), 2000)
-    connection.on('receive', function onReceive (request) {
-      const data = request.data
-      if (!data || !isReply(data)) return
-      clearTimeout(timer)
-      connection.removeListener('receive', onReceive)
-      request.data = null
-      resolve(data)
-    })
-    whenConnected(connection, () => connection.send(message))
-  })
-}
-
-function defaultIsReply (message) {
-  return reply => {
-    if (reply.a !== message.a) return false
-    if (message.id != null) return reply.id === message.id
-    if (message.b != null) return reply.c === message.c && !('d' in reply)
-    return reply.c === message.c && reply.d === message.d && !('v' in reply && 'op' in reply)
-  }
-}
-
-function whenConnected (connection, fn) {
-  if (connection.canSend) return fn()
-  connection.once('connected', fn)
-}
-
-function create (doc, data) {
-  return new Promise((resolve, reject) => doc.create(data, error => error ? reject(error) : resolve()))
-}
-
-function submit (doc, op) {
-  return new Promise((resolve, reject) => doc.submitOp(op, error => error ? reject(error) : resolve()))
-}
-
-function del (doc) {
-  return new Promise((resolve, reject) => doc.del(error => error ? reject(error) : resolve()))
-}
-
-function fetch (doc) {
-  return new Promise((resolve, reject) => doc.fetch(error => error ? reject(error) : resolve()))
-}
-
-function subscribe (doc) {
-  return new Promise((resolve, reject) => doc.subscribe(error => error ? reject(error) : resolve()))
-}
-
-function onceReady (query) {
-  return new Promise((resolve, reject) => {
-    query.once('ready', resolve)
-    query.once('error', reject)
-  })
-}
-
-async function waitUntil (condition, timeout = 2000) {
-  const start = Date.now()
-  while (!condition()) {
-    if (Date.now() - start > timeout) throw new Error('Timed out waiting for ' + condition)
-    await new Promise(resolve => setTimeout(resolve, 5))
-  }
-}
-
-// Lets in-flight ops reach the clients (in-memory transport, a few ticks)
-function settle () {
-  return new Promise(resolve => setTimeout(resolve, 50))
-}
-
-function silenceShareDbLogger () {
-  const methods = { info: ShareDB.logger.info, warn: ShareDB.logger.warn, error: ShareDB.logger.error }
-  ShareDB.logger.setMethods({ info () {}, warn () {}, error () {} })
-  return () => ShareDB.logger.setMethods(methods)
-}

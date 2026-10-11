@@ -47,6 +47,7 @@ export interface QueryRuntimeEntry {
   pendingDestroyByOwner: Map<string, PendingQueryDestroyEntry>
   downgradeGrace: { timer?: ReturnType<typeof setTimeout> } | null
   reconcilePromise: Promise<void> | null
+  stopped: boolean
 }
 
 export interface PendingQueryDestroyEntry extends PendingDestroyEntry {
@@ -110,6 +111,7 @@ export class QuerySubscriptions {
   getOwnerMeta (ownerKey: string): QueryOwnerMeta | undefined
   getOwnerKeys (transportHash: string): Set<string> | undefined
   getPendingDestroyOwnerKeys (): IterableIterator<string>
+  getSubscriptionFailureKey ($query: Signal): string
 }
 
 export const querySubscriptions: QuerySubscriptions

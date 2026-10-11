@@ -46,6 +46,7 @@ export interface DocRuntimeEntry {
   pendingDestroy: PendingDestroyEntry | null
   downgradeGrace: { timer?: ReturnType<typeof setTimeout> } | null
   reconcilePromise: Promise<void> | null
+  stopped: boolean
 }
 
 export class Doc {
@@ -95,6 +96,7 @@ export class DocSubscriptions {
   cancelDestroy (hash: string): void
   getOwnerMeta (ownerKey: string): DocOwnerMeta | undefined
   getOwnerKeys (hash: string): Set<string> | undefined
+  getSubscriptionFailureKey ($doc: Signal): string
 }
 
 export const docSubscriptions: DocSubscriptions

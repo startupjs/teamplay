@@ -1,5 +1,6 @@
-import WebSocket from 'ws'
+import { WebSocket } from 'ws'
 import { Duplex } from 'stream'
+import { isDisconnectError } from './isDisconnectError.js'
 
 /**
  * @param {EventEmitter} client is a websocket client session for each
@@ -11,12 +12,14 @@ import { Duplex } from 'stream'
 export default function createWebsocketStream (client) {
   const stream = new WebSocketClientStream(client)
 
+  // a text or a binary message (ws hands both over as a Buffer)
   client.on('message', function onMessage (message) {
     let data
     try {
-      data = JSON.parse(message)
+      data = JSON.parse(message.toString())
     } catch (err) {
-      stream.emit('error', err)
+      // JSON.parse()'s error quotes the message: not logged
+      stream.emit('error', new Error(INVALID_JSON))
       return
     }
     stream.push(data)
@@ -29,6 +32,8 @@ export default function createWebsocketStream (client) {
 
   return stream
 }
+
+const INVALID_JSON = 'A message is not valid JSON'
 
 export class WebSocketClientStream extends Duplex {
   static _type = 'websocket'
@@ -56,7 +61,11 @@ export class WebSocketClientStream extends Duplex {
     // Silently drop messages after the session is closed
     if (this.client.readyState !== WebSocket.OPEN) return cb()
     this.client.send(JSON.stringify(chunk), (err) => {
-      if (err) console.error('[@teamplay/channel] send:', err)
+      if (!err) return
+      // the client went away while the message was compressed or written:
+      // dropped like a send after the close (see isDisconnectError)
+      if (isDisconnectError(err, this.client.readyState === WebSocket.OPEN)) return
+      console.error('[@teamplay/channel] send:', err)
     })
     cb()
   }

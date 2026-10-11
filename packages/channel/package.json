@@ -14,7 +14,7 @@
   "dependencies": {
     "@teamplay/sockjs": "^0.4.0-rc.1",
     "sockjs-client": "^1.6.1",
-    "ws": "^1.1"
+    "ws": "^8.22.0"
   },
   "publishConfig": {
     "access": "public"

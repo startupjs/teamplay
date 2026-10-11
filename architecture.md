@@ -145,7 +145,7 @@ Important files:
 
 `teamplay/server` wraps `@teamplay/backend`. If `initModels()` has already registered models and `createBackend()` is called without an explicit `models` option, the wrapper passes the initialized model manifest into the backend.
 
-`initConnection(backend, options)` creates a server-side ShareDB connection through `backend.connect()`, stores it in the ORM singleton connection, sets default transport flags, applies runtime-wide ORM options such as `idFields`, and returns the server channel.
+`initConnection(backend, options)` creates a server-side ShareDB connection through `backend.connect()`, stores it in the ORM singleton connection, sets default transport flags, applies runtime-wide ORM options such as `idFields`, and returns the server channel. Its `maxMessageSize` option (16 MiB by default, MongoDB's document limit) caps what a client may send: a larger WebSocket message closes that connection (1009), and a larger message over the xhr-polling fallback is refused; the client's `connect({ maxMessageSize })` refuses to send a larger message and fails its request with `ERR_MESSAGE_TOO_BIG` (see [packages/channel](./packages/channel)). The SockJS xhr-polling fallback is served only outside production by default (`allowXhrFallback`, or `TEAMPLAY_ALLOW_XHR_FALLBACK`); its POSTs follow fixed batch limits that the client cuts to and the server enforces before parsing (1000 messages, 1 MiB for more than one message), and are handed to ShareDB a chunk at a time.
 
 The backend factory creates a ShareDB backend with:
 
@@ -567,6 +567,27 @@ itself). `useSuspendMemo()` follows the same rule: when the promise its
 factory threw rejects, the entry for those deps keeps the rejection and
 throws it, instead of running the factory again on every retry.
 
+The server can also stop a live subscription: ShareDB re-subscribes every doc
+and query after a reconnect, without a callback, and reports a refusal only
+with an `'error'` event on the doc or query (which throws when nothing
+listens). The doc and query runtimes listen while teamplay uses their ShareDB
+doc or query (`Doc._initData()` to `dispose()`, `Query._subscribe()` to
+`_unsubscribe()`). On a refusal the runtime becomes idle on both sides (the
+doc is unsubscribed so ShareDB does not ask again on every reconnect; ShareDB
+has dropped the query, and teamplay destroys it so the server drops its side
+too; the query's results are detached), and its manager marks the entry
+`stopped` (its target mode is idle, so the owners it still has are not
+subscribed again: a new owner clears it and subscribes on the wire) and
+records the error in [orm/subscriptionFailures.js](./packages/teamplay/src/orm/subscriptionFailures.js),
+an observable map keyed by manager kind and transport hash. A failed wire
+subscribe records it too, and a successful one or the runtime's destroy
+clears it. Every hook whose lease holds a signal reads that record in render
+(a tracked read), so the components using the subscription re-render and
+throw the error; the readiness polls of `useSub()` and the batch barrier end
+on it as well, so a hook waiting for the target throws instead of waiting for
+good. A doc keeps its last data. An entry nothing owns any more (lingering
+in its GC grace) only logs the refusal in development.
+
 Each hook remembers the lease of its last commit. An urgent render of the
 committed target while the deferred render waits for a new one is served by
 that lease, and the pending one stays in the cache for the deferred render
@@ -638,6 +659,8 @@ There are two backend modes:
 - Selective access control initializes the same middleware with `openByDefault` when global access control is off but at least one collection is explicitly protected. This is used for `serverOnlyCollections` and access rules declared with `accessControl(rules, { force: true })`.
 
 `serverOnlyCollections` are protected by calling `backend.protectAccessCollection(collectionName)`. They deny client read/create/update/delete even when the rest of the app is open. Forced access rules are registered in the same selective mode so framework/plugin-owned sensitive collections can be protected without requiring app-wide access control.
+
+Read rules also cover the ops ShareDB sends instead of snapshots (versioned fetches and subscribes, bulk versions maps, query resubscribes, ops a submit was transformed against). The middleware's `receive` hook runs before ShareDB checks a message, so it refuses a request that may read ops in any shape other than the one ShareDB's client sends (`ERR_MESSAGE_BADLY_FORMED`), keeps a connection's messages in arrival order while some wait for the check, and answers a check that fails with `ERR_ACCESS_CHECK_FAILED` (logging the cause on the server). A deleted document's history is judged by its state before the deletion. Details: [packages/sharedb-access/README.md](./packages/sharedb-access/README.md).
 
 ### Schema Validation
 
