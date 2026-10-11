@@ -20,6 +20,7 @@ new shareDbAccess(backend, options)
 * `options (optional)`:
   * `dontUseOldDocs`: if `true` then don't save unupdated docs for update action. **Default**: `false`.
   * `opCreatorUserIdPath`: path to `userId` for op's meta
+  * `readGrantsLimit`: how many documents a connection is remembered to be allowed to read (see "Reads through ops" below). **Default**: `10000`.
 
 
 Using `sharedb-access` you can control `create`, `read`, `update`, and `delete` database operation for every collection. You can use two types of rules: `allow` and `deny`. By default all operations are denied. So, you should add some rules to allow them. If at least one `allow` rule allows the write, and no `deny` rules deny the write, then the write is allowed to proceed.
@@ -66,6 +67,17 @@ backend.denyRead('items', async (docId, doc, session) => {
   return doc.ownerId !== session.userId
 })
 ```
+
+##### Reads through ops
+
+A client also gets a document's data as ops: when it fetches or subscribes from a version (a reconnect, a refetch), resubscribes a query with the versions of its results, or submits an op that is transformed against ops it had not seen. The `read` rules apply there too, to the document as it is now:
+
+* a fetch or subscribe from a version is refused like a snapshot read; in a bulk request only the refused documents get the error;
+* a query resubscribe is not refused: documents of its results the client may no longer read are resubscribed from their current version, so it gets none of their ops;
+* an op of a document the connection was allowed to read passes at once (live updates cost nothing extra); any other document is checked once against its current snapshot;
+* a deletion carries no data and always passes; a deleted document's earlier ops are judged by its last state.
+
+A document a connection was allowed to read stays readable to it, with its live updates, until it reads the document again and is refused, or reconnects.
 
 #### Delete
 
