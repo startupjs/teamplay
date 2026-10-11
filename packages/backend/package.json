@@ -1,6 +1,6 @@
 {
   "name": "@teamplay/backend",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Create new ShareDB backend instance",
   "type": "module",
   "main": "index.js",
@@ -15,7 +15,7 @@
     "@startupjs/sharedb-mingo-memory": "^4.0.0-2",
     "@teamplay/schema": "^0.6.0",
     "@teamplay/server-aggregate": "^0.6.0",
-    "@teamplay/sharedb-access": "^0.6.3",
+    "@teamplay/sharedb-access": "^0.6.4",
     "@teamplay/sharedb-schema": "^0.6.0",
     "@teamplay/utils": "^0.6.0",
     "@types/ioredis-mock": "^8.2.5",
