@@ -13,8 +13,10 @@ export async function loadSqliteDbToMingo (sqliteDb, mingo) {
         const docsOpsByDocId = opsRows.reduce((byId, row) => {
           const values = byId[`${row.collection}.${row.documentId}`] || []
           const op = JSON.parse(row.op)
-          return { ...byId, [`${row.collection}.${row.documentId}`]: [...values, op] }
-        }, {})
+          values.push(op)
+          byId[`${row.collection}.${row.documentId}`] = values
+          return byId
+        }, Object.create(null))
 
         for (const row of docsRows) {
           if (!mingo.docs[row.collection]) {
