@@ -99,6 +99,8 @@ class Doc {
     this.onTransportError = undefined
     // the ShareDB doc whose events the runtime follows (see _listen())
     this._shareDoc = undefined
+    // taken again before destroy() started (see keep())
+    this._kept = false
     this._onShareDocLoad = () => this._refData()
     this._onShareDocDel = () => this._refMissingData()
     this._onShareDocOp = this._onShareDocOp.bind(this)
@@ -167,6 +169,7 @@ class Doc {
   }
 
   async destroy () {
+    if (this._kept) return
     const doc = getConnection().get(this.collection, this.docId)
     await new Promise((resolve, reject) => {
       doc.destroy(err => {
@@ -174,6 +177,25 @@ class Doc {
         resolve()
       })
     })
+  }
+
+  // The doc is taken again while the manager destroys it (see
+  // DocSubscriptions#destroyRuntime()). ShareDB keeps a doc that
+  // connection.get() asks for before its destroy is done; a destroy that has
+  // not started yet does nothing.
+  keep () {
+    this._kept = true
+    const connection = getConnection()
+    if (!this._shareDoc || connection.collections?.[this.collection]?.[this.docId] !== this._shareDoc) return
+    connection.get(this.collection, this.docId)
+  }
+
+  // After a destroy the doc was taken again for: the runtime goes on with the
+  // ShareDB doc the connection holds, which is the same one unless ShareDB
+  // was done destroying it first.
+  resume () {
+    this._kept = false
+    this._initData()
   }
 
   dispose () {
@@ -188,7 +210,8 @@ class Doc {
   }
 
   // The runtime follows the events of the connection's ShareDB doc, and of
-  // that doc only: the listeners go with the runtime (dispose()).
+  // that doc only: the listeners go with the runtime (dispose()), and move to
+  // a new ShareDB doc of the same id (resume()).
   _listen (doc) {
     if (this._shareDoc === doc) return
     this._unlisten()
@@ -396,7 +419,9 @@ export class DocSubscriptions {
         downgradeGrace: null,
         reconcilePromise: null,
         // the server stopped its subscription (see handleTransportError())
-        stopped: false
+        stopped: false,
+        // the runtime's destroy in flight (see destroyRuntime())
+        destroying: null
       }
       this.entries.set(hash, entry)
     } else if (segments && !entry.segments?.length) {
@@ -498,6 +523,7 @@ export class DocSubscriptions {
       this.fr.register($doc, { hash, ownerKey, token }, token)
     }
     this.ensureRuntime(hash, segments)
+    this.takeDuringDestroy(entry)
     // A subscription the server stopped is asked for again by a new owner
     // only (see handleTransportError())
     entry.stopped = false
@@ -524,6 +550,7 @@ export class DocSubscriptions {
     this.cancelDestroy(hash)
     entry.retainCount += 1
     this.ensureRuntime(hash, segments)
+    this.takeDuringDestroy(entry)
     this.syncEntryMirror(entry)
     if (hadPendingDestroy) {
       // A live transport lingering ownerless keeps lingering when only query
@@ -764,6 +791,12 @@ export class DocSubscriptions {
         entry.mode = 'idle'
         continue
       }
+      if (entry.destroying) {
+        // An owner took the doc while its runtime is being destroyed: ShareDB
+        // would undo a subscribe made before its destroy is done
+        await entry.destroying.promise.catch(noop)
+        continue
+      }
       doc = this.ensureRuntime(hash)
       try {
         await doc.subscribe({ mode: desiredMode })
@@ -804,9 +837,16 @@ export class DocSubscriptions {
   }
 
   async destroyByHash (hash, options = {}) {
+    if (this.entries.get(hash)?.destroying) await this.whenNotDestroying(hash)
     let pendingDestroy = options._pendingDestroy
-    if (pendingDestroy) this.takePendingDestroy(hash, pendingDestroy)
-    else pendingDestroy = this.takePendingDestroy(hash)
+    if (pendingDestroy) {
+      // A destroy that waited for the doc's pending ops (below) goes on only
+      // if its pending destroy is still there: subscribe() and retain() of
+      // the doc meanwhile cancel it, and other destroys take it
+      if (!this.takePendingDestroy(hash, pendingDestroy)) return
+    } else {
+      pendingDestroy = this.takePendingDestroy(hash)
+    }
     if (pendingDestroy?.force) options.force = true
 
     const settlePending = err => {
@@ -860,29 +900,25 @@ export class DocSubscriptions {
       }
       if (typeof activeDoc.hasPending === 'function' && activeDoc.hasPending()) {
         if (typeof activeDoc.whenNothingPending === 'function') {
-          if (pendingDestroy) {
-            const nextEntry = this.getOrCreateEntry(hash)
-            nextEntry.pendingDestroy = pendingDestroy
+          // The destroy waits as a pending destroy, which a new owner or a
+          // query taking the doc meanwhile cancels (a forced one too)
+          if (!pendingDestroy) {
+            pendingDestroy = createPendingDestroyEntry()
+            pendingDestroy.force = !!options.force
           }
+          this.getOrCreateEntry(hash).pendingDestroy = pendingDestroy
           activeDoc.whenNothingPending(() => {
-            const nextOptions = pendingDestroy ? { ...options, _pendingDestroy: pendingDestroy } : options
-            this.destroyByHash(hash, nextOptions).catch(ignoreDestroyError)
+            this.destroyByHash(hash, { ...options, _pendingDestroy: pendingDestroy }).catch(ignoreDestroyError)
           })
         } else {
           settlePending()
         }
         return
       }
-      if (typeof activeDoc.destroy === 'function') await activeDoc.destroy()
-      if (typeof activeDoc.dispose === 'function') activeDoc.dispose()
-      const finalEntry = this.entries.get(hash)
-      if (finalEntry) {
-        finalEntry.runtime = null
-        finalEntry.mode = 'idle'
-        finalEntry.stopped = false
+      if (await this.destroyRuntime(hash, activeDoc)) {
         this.deleteEntryIfEmpty(hash)
+        clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
       }
-      clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
       settlePending()
     } catch (err) {
       settlePending(err)
@@ -1000,6 +1036,7 @@ export class DocSubscriptions {
   }
 
   async destroyTransportEntry (hash, runtime) {
+    if (this.entries.get(hash)?.destroying) await this.whenNotDestroying(hash)
     clearDowngradeGrace(this.entries.get(hash))
     // destroying now ends a grace the entry may still be lingering in
     this.takePendingDestroy(hash)?.resolve()
@@ -1022,17 +1059,61 @@ export class DocSubscriptions {
         await new Promise(resolve => activeDoc.whenNothingPending(resolve))
       }
     }
-    if (typeof activeDoc.destroy === 'function') await activeDoc.destroy()
-    if (typeof activeDoc.dispose === 'function') activeDoc.dispose()
+    // nothing held the doc when this destroy started: whoever holds it now
+    // (a query listing it, a retain) took it meanwhile
+    if (this.getEntryTotalCount(this.entries.get(hash)) > 0) return
+    if (!await this.destroyRuntime(hash, activeDoc)) return
     clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
-    const finalEntry = this.entries.get(hash)
-    if (finalEntry && finalEntry.owners.size > 0) return
-    if (finalEntry) {
-      finalEntry.runtime = null
-      finalEntry.mode = 'idle'
-      finalEntry.stopped = false
-    }
     this.deleteEntryIfEmpty(hash)
+  }
+
+  // Destroys the ShareDB doc of a runtime nothing holds, then disposes the
+  // runtime. ShareDB destroys asynchronously, and the doc can be taken
+  // meanwhile: a query lists it (on a server connection its results can
+  // arrive in the very tick ShareDB destroys the doc), an owner subscribes to
+  // it. A doc taken during its destroy stays, with its runtime and data
+  // (takeDuringDestroy()); whoever took it destroys it after its own release.
+  // One destroy runs per entry (whenNotDestroying()). Resolves with whether
+  // the runtime was disposed.
+  destroyRuntime (hash, runtime) {
+    const entry = this.getOrCreateEntry(hash)
+    if (entry.destroying) return entry.destroying.promise
+    const destroying = { runtime, taken: false, promise: undefined }
+    entry.destroying = destroying
+    destroying.promise = (async () => {
+      try {
+        if (typeof runtime.destroy === 'function') await runtime.destroy()
+      } finally {
+        if (entry.destroying === destroying) entry.destroying = null
+      }
+      if (destroying.taken) {
+        runtime.resume?.()
+        return false
+      }
+      if (typeof runtime.dispose === 'function') runtime.dispose()
+      if (entry.runtime === runtime) {
+        entry.runtime = null
+        entry.mode = 'idle'
+        entry.stopped = false
+      }
+      return true
+    })()
+    return destroying.promise
+  }
+
+  // A destroy waits for the one in flight, then decides from the doc's state
+  // then: what that destroy kept was taken, and the destroy that follows the
+  // taker's release (maybe this one) is the one that destroys it
+  async whenNotDestroying (hash) {
+    let destroying
+    while ((destroying = this.entries.get(hash)?.destroying)) await destroying.promise.catch(noop)
+  }
+
+  // subscribe() or retain() of a doc whose runtime is being destroyed
+  takeDuringDestroy (entry) {
+    if (!entry.destroying) return
+    entry.destroying.taken = true
+    entry.destroying.runtime.keep?.()
   }
 
   async destroyByOwnerKey (ownerKey, options = {}) {
@@ -1122,6 +1203,8 @@ function getDocOwnerKey (rootId, hash) {
 }
 
 function ignoreDestroyError () {}
+
+function noop () {}
 
 function createPendingDestroyEntry () {
   let resolvePending

@@ -386,6 +386,13 @@ aggregations (same file):
   what that root released last;
 - a garbage-collected signal that still held subscriptions releases only the
   counts it acquired (per-signal token), then goes through the normal grace.
+- a doc taken again while its runtime is being destroyed (a query lists it, an
+  owner subscribes to it: ShareDB destroys a doc asynchronously, and on a server
+  connection a query's results can arrive in the tick of the destroy) keeps its
+  runtime and data: ShareDB keeps the doc too (`connection.get()` during its
+  destroy), a subscribe waits for that destroy to end, and whoever took the doc
+  destroys it after its own release. A destroy that waits for the doc's pending
+  ops is a pending destroy that taking the doc cancels, a forced one too.
 - on Node the grace and destroy timers are `unref()`'d (`utils/unrefTimer.ts`):
   they never keep a process alive once its own work is done.
 
