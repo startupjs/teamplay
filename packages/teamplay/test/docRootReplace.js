@@ -1,7 +1,7 @@
 import { afterEach, before, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { raw } from '@nx-js/observer-util'
-import { $, getRootSignal, sub, unsub } from '../src/index.ts'
+import { $, getRootSignal, reaction, sub, unsub } from '../src/index.ts'
 import connect from '../src/connect/test.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { getRaw } from '../src/orm/dataTree.js'
@@ -219,6 +219,41 @@ describe('a doc replaced as a whole', () => {
     assert.deepEqual(await readJob(), [{ names: ['Ann', 'Bob', 'Cid'], startedAt: undefined }])
     await remoteOp(id, [{ p: ['names', 3], li: 'Dee' }])
     assert.deepEqual(await readJob(), [{ names: ['Ann', 'Bob', 'Cid', 'Dee'], startedAt: undefined }])
+  })
+
+  it('a reaction that writes to the doc as a replace arrives: the write stays, and so does the link', async () => {
+    // The re-link copies the replace into the data tree, which runs the
+    // reactions reading the doc: one that writes to the doc must find the
+    // doc linked already (it writes to ShareDB's doc.data, the tree's object)
+    const id = nextId('reaction_write')
+    await remoteCreate(id, { name: 'Ann', seen: 'Ann' })
+    const $doc = await own(sub($[collection][id]))
+    const seen = []
+    const writes = []
+    const handle = reaction(() => {
+      const name = $doc.name.get()
+      if (name === 'Ann' || seen.includes(name)) return
+      seen.push(name)
+      writes.push($doc.seen.set(name))
+    })
+    try {
+      const version = await remoteReplace(id, { name: 'Bob', seen: 'Ann' })
+      await received(id, version)
+      assert.equal(writes.length, 1, 'the reaction wrote once')
+      await writes[0]
+      assertLinked(id)
+      assert.equal($doc.seen.get(), 'Bob')
+      assert.equal(localShareDoc(id).data.seen, 'Bob', 'ShareDB holds the write')
+      const remote = writer.get(collection, id)
+      await callback(done => remote.fetch(done))
+      assert.deepEqual(remote.data, { name: 'Bob', seen: 'Bob' }, 'the server has the write')
+      const after = await remoteOp(id, [{ p: ['score'], oi: 1 }])
+      await received(id, after)
+      assert.equal($doc.score.get(), 1, 'a later remote op reaches the signals')
+      assertLinked(id)
+    } finally {
+      handle.dispose()
+    }
   })
 
   it('a local replace shows at once, before the server acknowledges it', async () => {

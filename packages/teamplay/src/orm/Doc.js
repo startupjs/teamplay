@@ -307,15 +307,16 @@ class Doc {
     }
     // set() updates an existing object in place: only a new object (a doc
     // created again) changes what the queries listing the doc hold, and they
-    // list it in the same batch
-    const synced = runInBatch(() => {
+    // list it in the same batch. ShareDB is linked to the tree's object in the
+    // batch too: the reactions it runs at its end can write to the doc, and
+    // those writes go to doc.data.
+    runInBatch(() => {
       _set(path, data)
       const synced = _getRaw(path)
       if (synced !== current) refreshQueryDocs(this.collection, this.docId)
-      return synced
+      if (synced != null && synced !== raw(doc.data)) doc.data = synced
+      if (!isObservable(doc.data)) doc.data = observable(doc.data)
     })
-    if (synced != null && synced !== raw(doc.data)) doc.data = synced
-    if (!isObservable(doc.data)) doc.data = observable(doc.data)
   }
 
   _removeData () {
