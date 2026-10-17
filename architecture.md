@@ -349,6 +349,14 @@ sub($.users[id])
 
 [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
 
+The data tree holds the same object as ShareDB's `doc.data`, so ShareDB applies
+ops to it in place. An op with a root component (`{ p: [] }`: the whole doc
+replaced, as `setReplace()` on a doc signal does, on any connection) makes
+ShareDB set `doc.data` to a new object; the runtime links the two again, as
+after a load (`_refData()`: the tree keeps its object, changed in place). The
+runtime's ShareDB listeners (load, create, del, op, error) go with it when it
+is disposed, and follow the connection's ShareDB doc of its id.
+
 The managers' reconcile loop in
 [packages/teamplay/src/orm/subscriptionTransport.js](./packages/teamplay/src/orm/subscriptionTransport.js)
 is the only coalescing layer for transports: it runs one transition per entry
@@ -378,6 +386,13 @@ aggregations (same file):
   what that root released last;
 - a garbage-collected signal that still held subscriptions releases only the
   counts it acquired (per-signal token), then goes through the normal grace.
+- a doc taken again while its runtime is being destroyed (a query lists it, an
+  owner subscribes to it: ShareDB destroys a doc asynchronously, and on a server
+  connection a query's results can arrive in the tick of the destroy) keeps its
+  runtime and data: ShareDB keeps the doc too (`connection.get()` during its
+  destroy), a subscribe waits for that destroy to end, and whoever took the doc
+  destroys it after its own release. A destroy that waits for the doc's pending
+  ops is a pending destroy that taking the doc cancels, a forced one too.
 - on Node the grace and destroy timers are `unref()`'d (`utils/unrefTimer.ts`):
   they never keep a process alive once its own work is done.
 
