@@ -97,7 +97,11 @@ class Doc {
     this.activeTransportMode = 'idle'
     // set by the manager: (err, { stopped }) => void (see _onShareDocError())
     this.onTransportError = undefined
-    this._errorListenerDoc = undefined
+    // the ShareDB doc whose events the runtime follows (see _listen())
+    this._shareDoc = undefined
+    this._onShareDocLoad = () => this._refData()
+    this._onShareDocDel = () => this._refMissingData()
+    this._onShareDocOp = this._onShareDocOp.bind(this)
     this._onShareDocError = this._onShareDocError.bind(this)
     this.init()
   }
@@ -174,23 +178,50 @@ class Doc {
 
   dispose () {
     this.initialized = undefined
-    this._errorListenerDoc?.removeListener('error', this._onShareDocError)
-    this._errorListenerDoc = undefined
+    this._unlisten()
     this._removeData()
   }
 
   _initData () {
-    const doc = getConnection().get(this.collection, this.docId)
+    this._listen(getConnection().get(this.collection, this.docId))
     this._refData()
-    doc.on('load', () => this._refData())
-    doc.on('create', () => this._refData())
-    doc.on('del', () => this._refMissingData())
+  }
+
+  // The runtime follows the events of the connection's ShareDB doc, and of
+  // that doc only: the listeners go with the runtime (dispose()).
+  _listen (doc) {
+    if (this._shareDoc === doc) return
+    this._unlisten()
+    doc.on('load', this._onShareDocLoad)
+    doc.on('create', this._onShareDocLoad)
+    doc.on('del', this._onShareDocDel)
+    doc.on('op', this._onShareDocOp)
     // ShareDB emits 'error' when a request it makes on its own fails (the
     // re-subscribe after a reconnect); with no listener the emit throws
-    if (this._errorListenerDoc !== doc) {
-      this._errorListenerDoc?.removeListener('error', this._onShareDocError)
-      doc.on('error', this._onShareDocError)
-      this._errorListenerDoc = doc
+    doc.on('error', this._onShareDocError)
+    this._shareDoc = doc
+  }
+
+  _unlisten () {
+    const doc = this._shareDoc
+    if (!doc) return
+    doc.removeListener('load', this._onShareDocLoad)
+    doc.removeListener('create', this._onShareDocLoad)
+    doc.removeListener('del', this._onShareDocDel)
+    doc.removeListener('op', this._onShareDocOp)
+    doc.removeListener('error', this._onShareDocError)
+    this._shareDoc = undefined
+  }
+
+  // An op with a root component (`{ p: [] }`: the whole doc replaced, as
+  // setReplace() on a doc signal does, here or on another connection) makes
+  // ShareDB set doc.data to a new object, which the data tree does not hold:
+  // they are linked again, as after a load. ShareDB applies every other op to
+  // doc.data, the tree's object, in place. A remote op of several components
+  // comes one component at a time.
+  _onShareDocOp (op) {
+    for (let i = 0; i < op.length; i++) {
+      if (op[i]?.p?.length === 0) return this._refData()
     }
   }
 
@@ -200,7 +231,7 @@ class Doc {
   // so the transport is idle on both sides and the next subscribe() asks the
   // server again. The doc keeps its last data. Anything else is only reported.
   _onShareDocError (err) {
-    const doc = this._errorListenerDoc
+    const doc = this._shareDoc
     const stopped = this.activeTransportMode === 'subscribe' && !!doc && !doc.subscribed
     if (stopped) {
       this.activeTransportMode = 'idle'
