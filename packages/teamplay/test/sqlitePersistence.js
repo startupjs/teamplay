@@ -146,25 +146,35 @@ describe('SQLite hydration', () => {
 
   it('keeps the op saved under the id of its version, leaves out a version older code saved twice, and reports what it skips', async () => {
     const op = (v, n) => ({ v, op: [{ p: ['n'], na: n }] })
-    const documents = [{ collection: 'notes', id: 'a', data: JSON.stringify({ v: 4, type: 'json0', data: { n: 7 } }) }]
+    const documents = [{ collection: 'notes', id: 'a', data: JSON.stringify({ v: 6, type: 'json0', data: { n: 9 } }) }]
+    const own = v => JSON.stringify(['notes', 'a', v])
     // in the order they were saved; older commit code saved the commits that
     // lost a race too, under random ids
     const ops = [
-      [JSON.stringify(['notes', 'a', 0]), op(0, 1)],
+      [own(0), op(0, 1)],
       // which of the two memory took is unknown: a gap
       ['legacy-1', op(1, 2)],
       ['legacy-2', op(1, 3)],
       // replaced by the op saved under the id of its version, after an upgrade
       ['legacy-3', op(2, 4)],
-      [JSON.stringify(['notes', 'a', 2]), op(2, 3)],
+      [own(2), op(2, 3)],
       // a single older op: loaded
       ['legacy-4', op(3, 2)],
+      // two older ops, then the op of that version committed after an upgrade
+      ['legacy-5', op(4, 1)],
+      ['legacy-6', op(4, 2)],
+      [own(4), op(4, 3)],
+      // an older op saved after the op of its version
+      [own(5), op(5, 1)],
+      ['legacy-7', op(5, 2)],
       // left by a failed document write: expected, not reported
-      [JSON.stringify(['notes', 'a', 4]), op(4, 6)],
+      [own(6), op(6, 6)],
       // at the document's version and past it, saved by older code
-      ['legacy-5', op(4, 7)],
-      ['legacy-6', op(6, 8)],
-      ['legacy-7', { v: 'x', op: [] }]
+      ['legacy-8', op(6, 7)],
+      ['legacy-9', op(8, 8)],
+      // malformed versions
+      ['legacy-10', { v: 'x', op: [] }],
+      ['legacy-11', { v: 1.5, op: [] }]
     ].map(([id, op]) => ({ id, collection: 'notes', documentId: 'a', op: JSON.stringify(op) }))
     const sqlite = {
       all (sql, params, callback) {
@@ -173,9 +183,9 @@ describe('SQLite hydration', () => {
     }
     const mingo = new ShareDbMingoMemory()
     const warnings = await captureConsole('warn', () => loadSqliteDbToMingo(sqlite, mingo))
-    assert.deepEqual(mingo.ops.notes.a, [op(0, 1), undefined, op(2, 3), op(3, 2)])
+    assert.deepEqual(mingo.ops.notes.a, [op(0, 1), undefined, op(2, 3), op(3, 2), op(4, 3), op(5, 1)])
     assert.equal(warnings.length, 1)
-    assert.match(warnings[0][0], /Did not load 6 ops from SQLite/)
+    assert.match(warnings[0][0], /Did not load 10 ops from SQLite/)
   })
 
   it('keeps the ops of each document apart, whatever its collection and id hold', async () => {
