@@ -24,7 +24,7 @@ describe('SQLite hydration', () => {
       const run = promisify(sqlite.run.bind(sqlite))
       const all = promisify(sqlite.all.bind(sqlite))
       await run('CREATE TABLE documents (collection TEXT, id TEXT, data TEXT)')
-      await run('CREATE TABLE ops (collection TEXT, documentId TEXT, op TEXT)')
+      await run('CREATE TABLE ops (id TEXT, collection TEXT, documentId TEXT, op TEXT)')
 
       const snapshots = [
         ['notes', 'shared', { v: 5, type: 'json0', data: { title: 'Ready' }, m: { ctime: 10, mtime: 20 } }],
@@ -47,7 +47,7 @@ describe('SQLite hydration', () => {
         ['notes', 'orphan', { v: 0, create: { type: 'json0', data: {} } }],
         ['notes', 'shared', ops[1]]
       ]) {
-        await run('INSERT INTO ops VALUES (?, ?, ?)', [collection, id, JSON.stringify(op)])
+        await run('INSERT INTO ops (collection, documentId, op) VALUES (?, ?, ?)', [collection, id, JSON.stringify(op)])
       }
       const before = [await all('SELECT * FROM documents'), await all('SELECT * FROM ops')]
       const mingo = new ShareDbMingoMemory()
@@ -108,7 +108,7 @@ describe('SQLite hydration', () => {
       const error = new Error('SQLite read failed')
       const sqlite = {
         all (sql, params, callback) {
-          queueMicrotask(() => callback(sql.endsWith(failedTable) ? error : null, []))
+          queueMicrotask(() => callback(sql.includes(`FROM ${failedTable}`) ? error : null, []))
         }
       }
       const mingo = new ShareDbMingoMemory()
@@ -136,9 +136,39 @@ describe('SQLite hydration', () => {
       }
     }
     const mingo = new ShareDbMingoMemory()
-    await loadSqliteDbToMingo(sqlite, mingo)
+    const warnings = await captureConsole('warn', () => loadSqliteDbToMingo(sqlite, mingo))
     assert.deepEqual(mingo.ops.notes.leftover, [op(0), op(1)])
     assert.deepEqual(mingo.ops.notes.unsaved, [op(0), op(1), op(2), undefined])
+    assert.deepEqual(warnings, [], 'an op left at the document version is expected')
+  })
+
+  it('keeps the op saved under the id of its version, and reports the ops it leaves out', async () => {
+    const op = (v, n) => ({ v, op: [{ p: ['n'], na: n }] })
+    const documents = [{ collection: 'notes', id: 'a', data: JSON.stringify({ v: 3, type: 'json0', data: { n: 6 } }) }]
+    // in the order they were saved
+    const ops = [
+      [JSON.stringify(['notes', 'a', 0]), op(0, 1)],
+      // older commit code saved the commits that lost a race too
+      ['legacy-1', op(1, 2)],
+      ['legacy-2', op(1, 3)],
+      ['legacy-3', op(2, 4)],
+      // the commit of version 2 after an upgrade
+      [JSON.stringify(['notes', 'a', 2]), op(2, 3)],
+      // left by a failed document write: expected
+      [JSON.stringify(['notes', 'a', 3]), op(3, 6)],
+      // past the document's version: saved by older commit code
+      ['legacy-4', op(5, 7)]
+    ].map(([id, op]) => ({ id, collection: 'notes', documentId: 'a', op: JSON.stringify(op) }))
+    const sqlite = {
+      all (sql, params, callback) {
+        queueMicrotask(() => callback(null, sql.includes('FROM documents') ? documents : ops))
+      }
+    }
+    const mingo = new ShareDbMingoMemory()
+    const warnings = await captureConsole('warn', () => loadSqliteDbToMingo(sqlite, mingo))
+    assert.deepEqual(mingo.ops.notes.a, [op(0, 1), op(1, 2), op(2, 3)])
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0][0], /Skipped 3 ops in SQLite/)
   })
 })
 
@@ -173,6 +203,18 @@ describe('SQLite commits', () => {
     return new Promise((resolve, reject) => target[method](...args, err => err ? reject(err) : resolve()))
   }
 
+  // the server's error logs made by fn; ShareDB's own log of an error it
+  // returns to a client (its stack) is left out
+  async function captureServerErrors (fn) {
+    const { info } = ShareDB.logger
+    ShareDB.logger.setMethods({ info () {} })
+    try {
+      return await captureConsole('error', fn)
+    } finally {
+      ShareDB.logger.setMethods({ info })
+    }
+  }
+
   it('saves each op and the document, which load back as memory has them', async () => {
     const sqlite = await open('app.db')
     const { mingo, backend } = serve(sqlite)
@@ -203,19 +245,10 @@ describe('SQLite commits', () => {
     const doc = backend.connect().get('notes', 'a')
     await call(doc, 'create', { n: 1 })
 
-    const logged = []
-    const { error } = console
-    const { info } = ShareDB.logger
-    console.error = (...args) => logged.push(args)
-    // ShareDB logs the stack of an error it returns to a client
-    ShareDB.logger.setMethods({ info () {} })
-    try {
-      failDocumentWrite = true
-      await assert.rejects(call(doc, 'submitOp', [{ p: ['n'], na: 10 }]), /Error saving to SQLite: SQLITE_FULL/)
-    } finally {
-      console.error = error
-      ShareDB.logger.setMethods({ info })
-    }
+    failDocumentWrite = true
+    const logged = await captureServerErrors(() =>
+      assert.rejects(call(doc, 'submitOp', [{ p: ['n'], na: 10 }]), /Error saving to SQLite: SQLITE_FULL/)
+    )
     assert.ok(logged.some(args => /Error saving notes\.a v2 to SQLite/.test(args[0])), 'logged on the server')
     assert.equal(mingo._getVersionSync('notes', 'a'), 1, 'memory did not take the op')
     assert.equal((await dump(sqlite)).ops.length, 2, 'the op is left at the document version')
@@ -229,6 +262,31 @@ describe('SQLite commits', () => {
     assert.deepEqual(JSON.parse(rows.ops[1].op).op, [{ p: ['n'], na: 2 }])
     assert.deepEqual(contents(await reload(sqlite)), contents(mingo))
     assert.deepEqual(mingo.docs.notes.a.data, { n: 3 })
+  })
+
+  it('answers a commit that throws, and the next commit of the doc runs', async () => {
+    const sqlite = await open('app.db')
+    const mingo = new ShareDbMingoMemory()
+    const memoryCommit = mingo.commit
+    let throwOnCommit = false
+    mingo.commit = function (...args) {
+      if (!throwOnCommit) return memoryCommit.apply(this, args)
+      throwOnCommit = false
+      throw Error('memory commit failed')
+    }
+    const { backend } = serve(sqlite, mingo)
+    const doc = backend.connect().get('notes', 'a')
+    await call(doc, 'create', { n: 1 })
+
+    throwOnCommit = true
+    const logged = await captureServerErrors(() =>
+      assert.rejects(call(doc, 'submitOp', [{ p: ['n'], na: 10 }]), /memory commit failed/)
+    )
+    assert.ok(logged.some(args => /Error committing notes\.a v2/.test(args[0])), 'logged on the server')
+    await call(doc, 'fetch')
+    await call(doc, 'submitOp', [{ p: ['n'], na: 2 }])
+    assert.deepEqual(mingo.docs.notes.a.data, { n: 3 })
+    assert.deepEqual(contents(await reload(sqlite)), contents(mingo))
   })
 
   it('saves the commits several clients make to one document at once in their order', async () => {
@@ -258,6 +316,19 @@ describe('SQLite commits', () => {
     assert.deepEqual((await reload(sqlite)).docs.notes.a.data, { n: 3 })
   })
 })
+
+// What fn logs with console[method], which is restored after
+async function captureConsole (method, fn) {
+  const logged = []
+  const original = console[method]
+  console[method] = (...args) => logged.push(args)
+  try {
+    await fn()
+  } finally {
+    console[method] = original
+  }
+  return logged
+}
 
 // SQLite files in a temporary directory, with the tables getOrCreateSqliteDb()
 // in mingo-sqlite.js creates; closed and removed after each test
@@ -289,12 +360,14 @@ function useSqliteFiles () {
     databases.push(sqlite)
     const run = promisify(sqlite.run.bind(sqlite))
     for (const sql of SCHEMA) await run(sql)
+    await run('BEGIN')
     for (const [table, rows] of Object.entries(rowsByTable)) {
       for (const row of rows) {
         const columns = Object.keys(row)
         await run(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`, Object.values(row))
       }
     }
+    await run('COMMIT')
     return sqlite
   }
 
@@ -348,5 +421,24 @@ describe('SQLite snapshot clone', () => {
     // read through the target's own connection, which would see the rows of a
     // transaction left open
     assert.deepEqual(await dump(target), before)
+  })
+
+  it('leaves the target as it was when its disk fills up during the copy', async () => {
+    const source = await open('source.db', {
+      documents: Array.from({ length: 2000 }, (_, i) => ({
+        collection: 'notes', id: 'd' + i, data: JSON.stringify({ v: 1, data: { text: 'x'.repeat(200) } })
+      }))
+    })
+    const target = await open('target.db', {
+      documents: [{ collection: 'notes', id: 'kept', data: '{"v":1}' }]
+    })
+    const before = await dump(target)
+    const all = promisify(target.all.bind(target))
+    // SQLite rolls a transaction back by itself when the disk is full
+    const [{ page_count: pageCount }] = await all('PRAGMA page_count')
+    await promisify(target.run.bind(target))(`PRAGMA max_page_count = ${pageCount + 40}`)
+    await assert.rejects(cloneSqliteDb(source, target), /SQLITE_FULL/)
+    assert.deepEqual(await dump(target), before)
+    assert.deepEqual((await all('PRAGMA database_list')).map(({ name }) => name), ['main'], 'the source is detached')
   })
 })
