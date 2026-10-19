@@ -10,12 +10,12 @@ export async function loadSqliteDbToMingo (sqliteDb, mingo) {
       sqliteDb.all('SELECT id, collection, documentId, op FROM ops ORDER BY rowid', [], (err, opsRows) => {
         if (err) return reject(err)
 
-        const docsOpsByDocId = opsRows.reduce((byId, row) => {
-          const values = byId[`${row.collection}.${row.documentId}`] || []
-          values.push({ id: row.id, op: JSON.parse(row.op) })
-          byId[`${row.collection}.${row.documentId}`] = values
-          return byId
-        }, Object.create(null))
+        // collection -> document id -> its op rows, in the order they were saved
+        const opsByDoc = Object.create(null)
+        for (const row of opsRows) {
+          const docs = opsByDoc[row.collection] ??= Object.create(null)
+          ;(docs[row.documentId] ??= []).push({ id: row.id, op: JSON.parse(row.op) })
+        }
 
         let skipped = 0
         for (const row of docsRows) {
@@ -24,30 +24,51 @@ export async function loadSqliteDbToMingo (sqliteDb, mingo) {
             mingo.ops[row.collection] = {}
           }
 
-          // The document decides (see patchMingoForSQLitePersistence()): an op
-          // at its version is left from a commit whose document write failed,
-          // and an op missing below it (pruned history) leaves a gap. Ops past
-          // it, and a second op of one version, come from the commit code of
-          // older versions, which saved the commits that lost a race too: the
-          // op saved under the id of its version wins, or else the first saved.
+          // The document decides (see patchMingoForSQLitePersistence()), which
+          // saves each op under the id of its version: an op at the document's
+          // version is left from a commit whose document write failed, and an
+          // op missing below it (pruned history) leaves a gap. The commit code
+          // of older teamplay versions saved the commits that lost a race too:
+          // ops past the document's version, and several ops of one version.
+          // The op saved under the id of its version wins; of several older
+          // ones, which memory took is unknown, and none is loaded (a gap).
           const snapshot = JSON.parse(row.data)
           const version = Number.isInteger(snapshot.v) && snapshot.v > 0 ? snapshot.v : 0
           const docOps = new Array(version).fill(undefined)
-          for (const { id, op } of docsOpsByDocId[`${row.collection}.${row.id}`] || []) {
-            if (op.v > version) skipped++
-            if (!(op.v < version)) continue
-            if (docOps[op.v] !== undefined) {
+          // the id of an op of version v is ownIdPrefix + v + ']'
+          const ownIdPrefix = JSON.stringify([row.collection, row.id]).slice(0, -1) + ','
+          const ownVersions = new Set()
+          const repeatedVersions = new Set()
+          for (const { id, op } of opsByDoc[row.collection]?.[row.id] || []) {
+            const v = op.v
+            const own = id === ownIdPrefix + v + ']'
+            if (v === version && own) continue
+            if (!(Number.isInteger(v) && v >= 0 && v < version)) {
               skipped++
-              if (id !== JSON.stringify([row.collection, row.id, op.v])) continue
+            } else if (own) {
+              if (docOps[v] !== undefined) skipped++
+              docOps[v] = op
+              ownVersions.add(v)
+            } else if (ownVersions.has(v)) {
+              skipped++
+            } else if (docOps[v] === undefined && !repeatedVersions.has(v)) {
+              docOps[v] = op
+            } else {
+              skipped++
+              repeatedVersions.add(v)
             }
-            docOps[op.v] = op
+          }
+          for (const v of repeatedVersions) {
+            if (ownVersions.has(v) || docOps[v] === undefined) continue
+            docOps[v] = undefined
+            skipped++
           }
 
           mingo.ops[row.collection][row.id] = docOps
           mingo.docs[row.collection][row.id] = snapshot
         }
         if (skipped) {
-          console.warn(`[mingo] Skipped ${skipped} ops in SQLite that are past their document's version or repeat a version (saved by older versions)`)
+          console.warn(`[mingo] Did not load ${skipped} ops from SQLite: past their document's version, of a version saved more than once, or malformed (left by an older teamplay version)`)
         }
         resolve()
         console.log('DB data was loaded from SQLite to shareDbMingo')
@@ -86,6 +107,9 @@ export function patchMingoForSQLitePersistence (sqliteDb, shareDbMingo) {
         console.error(`[mingo] Error saving ${collection}.${docId} v${snapshot.v} to SQLite:`, err)
         return [Error('Error saving to SQLite: ' + err.message, { cause: err })]
       }
+      // MemoryDB's commit does not fail once its version check passed (ShareDB
+      // 5.2.2). If it did, the client would get the error while SQLite keeps
+      // the op until the doc's next commit of that version replaces it.
       return await new Promise(resolve => {
         originalCommit.call(this, collection, docId, op, snapshot, options, (...args) => resolve(args))
       })
@@ -122,6 +146,9 @@ const CLONED_TABLES = {
 // table in memory), and a failed statement adds no row. A failed clone leaves
 // target as it was, also when SQLite rolls the transaction back by itself (a
 // full disk or an I/O error), since no statement follows the failed one.
+// Target reads the file source was opened with (source.filename), which must
+// be a file database at an absolute path, as getExistingSqliteDb() opens:
+// source's own connection is not used.
 export async function cloneSqliteDb (source, target) {
   try {
     await runSql(target, 'ATTACH DATABASE ? AS snapshot', [source.filename])

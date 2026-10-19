@@ -126,7 +126,9 @@ describe('SQLite hydration', () => {
     ]
     const ops = [
       // a commit whose document write failed left its op at the document's version
-      ...[0, 1, 2].map(v => ({ collection: 'notes', documentId: 'leftover', op: JSON.stringify(op(v)) })),
+      ...[0, 1, 2].map(v => ({
+        id: JSON.stringify(['notes', 'leftover', v]), collection: 'notes', documentId: 'leftover', op: JSON.stringify(op(v))
+      })),
       // the document was saved before its op, which never was
       ...[2, 0, 1].map(v => ({ collection: 'notes', documentId: 'unsaved', op: JSON.stringify(op(v)) }))
     ]
@@ -142,22 +144,27 @@ describe('SQLite hydration', () => {
     assert.deepEqual(warnings, [], 'an op left at the document version is expected')
   })
 
-  it('keeps the op saved under the id of its version, and reports the ops it leaves out', async () => {
+  it('keeps the op saved under the id of its version, leaves out a version older code saved twice, and reports what it skips', async () => {
     const op = (v, n) => ({ v, op: [{ p: ['n'], na: n }] })
-    const documents = [{ collection: 'notes', id: 'a', data: JSON.stringify({ v: 3, type: 'json0', data: { n: 6 } }) }]
-    // in the order they were saved
+    const documents = [{ collection: 'notes', id: 'a', data: JSON.stringify({ v: 4, type: 'json0', data: { n: 7 } }) }]
+    // in the order they were saved; older commit code saved the commits that
+    // lost a race too, under random ids
     const ops = [
       [JSON.stringify(['notes', 'a', 0]), op(0, 1)],
-      // older commit code saved the commits that lost a race too
+      // which of the two memory took is unknown: a gap
       ['legacy-1', op(1, 2)],
       ['legacy-2', op(1, 3)],
+      // replaced by the op saved under the id of its version, after an upgrade
       ['legacy-3', op(2, 4)],
-      // the commit of version 2 after an upgrade
       [JSON.stringify(['notes', 'a', 2]), op(2, 3)],
-      // left by a failed document write: expected
-      [JSON.stringify(['notes', 'a', 3]), op(3, 6)],
-      // past the document's version: saved by older commit code
-      ['legacy-4', op(5, 7)]
+      // a single older op: loaded
+      ['legacy-4', op(3, 2)],
+      // left by a failed document write: expected, not reported
+      [JSON.stringify(['notes', 'a', 4]), op(4, 6)],
+      // at the document's version and past it, saved by older code
+      ['legacy-5', op(4, 7)],
+      ['legacy-6', op(6, 8)],
+      ['legacy-7', { v: 'x', op: [] }]
     ].map(([id, op]) => ({ id, collection: 'notes', documentId: 'a', op: JSON.stringify(op) }))
     const sqlite = {
       all (sql, params, callback) {
@@ -166,9 +173,31 @@ describe('SQLite hydration', () => {
     }
     const mingo = new ShareDbMingoMemory()
     const warnings = await captureConsole('warn', () => loadSqliteDbToMingo(sqlite, mingo))
-    assert.deepEqual(mingo.ops.notes.a, [op(0, 1), op(1, 2), op(2, 3)])
+    assert.deepEqual(mingo.ops.notes.a, [op(0, 1), undefined, op(2, 3), op(3, 2)])
     assert.equal(warnings.length, 1)
-    assert.match(warnings[0][0], /Skipped 3 ops in SQLite/)
+    assert.match(warnings[0][0], /Did not load 6 ops from SQLite/)
+  })
+
+  it('keeps the ops of each document apart, whatever its collection and id hold', async () => {
+    const documents = [['a', 'b.c'], ['a.b', 'c']].map(([collection, id]) => ({
+      collection, id, data: JSON.stringify({ v: 1, type: 'json0', data: {} })
+    }))
+    const ops = documents.map(({ collection, id }) => ({
+      id: JSON.stringify([collection, id, 0]),
+      collection,
+      documentId: id,
+      op: JSON.stringify({ v: 0, create: { type: 'json0', data: { collection } } })
+    }))
+    const sqlite = {
+      all (sql, params, callback) {
+        queueMicrotask(() => callback(null, sql.includes('FROM documents') ? documents : ops))
+      }
+    }
+    const mingo = new ShareDbMingoMemory()
+    const warnings = await captureConsole('warn', () => loadSqliteDbToMingo(sqlite, mingo))
+    assert.deepEqual(mingo.ops.a['b.c'].map(op => op.create.data.collection), ['a'])
+    assert.deepEqual(mingo.ops['a.b'].c.map(op => op.create.data.collection), ['a.b'])
+    assert.deepEqual(warnings, [])
   })
 })
 
