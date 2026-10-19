@@ -275,6 +275,54 @@ describe('a doc replaced as a whole', () => {
     assert.equal($doc.level.get(), 3)
   })
 
+  it('a local replace changes the doc\'s objects in place, as field ops do: the doc and the queries listing it keep them', async () => {
+    // As for a load or a replace from another client: the tree keeps its
+    // objects and takes the new values, so what reads a changed value runs
+    // again, and what holds an object (or a query's list) keeps it
+    const id = nextId('in_place')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, name: 'Ann', profile: { city: 'Kyiv', zip: '01001' } })
+    const $root = getRootSignal({ rootId: nextId('in_place_root') })
+    roots.push($root)
+    const $query = await sub($root[collection], { kind })
+    const $doc = $root[collection][id]
+    const doc = tree(id)
+    const profile = doc.profile
+    const list = $query.get()
+    const cities = []
+    const zips = []
+    const handles = [
+      reaction(() => { cities.push($doc.profile.city.get()) }),
+      reaction(() => { zips.push($doc.profile.zip.get()) })
+    ]
+    try {
+      await $doc.setReplace({ kind, name: 'Bob', profile: { city: 'Lviv', zip: '01001' } })
+      assert.equal(tree(id), doc, 'the doc keeps its object')
+      assert.equal(tree(id).profile, profile, 'and its nested objects')
+      assert.equal($query.get(), list, 'the query keeps its list')
+      assert.deepEqual($query.get().map(({ name }) => name), ['Bob'])
+      assert.deepEqual(cities, ['Kyiv', 'Lviv'], 'a changed value runs its readers')
+      assert.deepEqual(zips, ['01001'], 'an unchanged one does not')
+      assertLinked(id)
+    } finally {
+      for (const handle of handles) handle.dispose()
+    }
+  })
+
+  it('a replace with null from another client leaves the doc without data, and a later replace brings data back', async () => {
+    const id = nextId('null')
+    await remoteCreate(id, { name: 'Ann' })
+    const $doc = await own(sub($[collection][id]))
+    const cleared = await remoteReplace(id, null)
+    await received(id, cleared)
+    assert.equal($doc.get(), undefined)
+    assert.equal(tree(id), undefined)
+    const next = await remoteReplace(id, { name: 'Bob' })
+    await received(id, next)
+    assert.deepEqual($doc.get(), { _id: id, name: 'Bob' })
+    assertLinked(id)
+  })
+
   it('a replace by a different shape: keys removed, added, nested objects and arrays', async () => {
     const id = nextId('shape')
     await remoteCreate(id, { name: 'Ann', score: 1, profile: { city: 'Kyiv' }, tags: ['a', 'b'] })

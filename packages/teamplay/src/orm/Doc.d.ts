@@ -47,13 +47,7 @@ export interface DocRuntimeEntry {
   downgradeGrace: { timer?: ReturnType<typeof setTimeout> } | null
   reconcilePromise: Promise<void> | null
   stopped: boolean
-  destroying: DocRuntimeDestroy | null
-}
-
-export interface DocRuntimeDestroy {
-  runtime: Doc
-  taken: boolean
-  promise: Promise<boolean>
+  destroying: { promise: Promise<void> } | null
 }
 
 export class Doc {
@@ -70,8 +64,7 @@ export class Doc {
   hasPending (): boolean
   whenNothingPending (fn: () => void): void
   destroy (): Promise<void>
-  keep (): void
-  resume (): void
+  detach (): void
   dispose (): void
 }
 

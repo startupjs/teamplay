@@ -7,13 +7,21 @@ import { getRaw } from '../src/orm/dataTree.js'
 import { docSubscriptions } from '../src/orm/Doc.js'
 import { HASH, querySubscriptions } from '../src/orm/Query.js'
 import { getSubscriptionGcDelay, setSubscriptionGcDelay } from '../src/orm/subscriptionGcDelay.ts'
+import {
+  clearSubscriptionFailure,
+  getSubscriptionFailure,
+  getSubscriptionFailureKey,
+  setSubscriptionFailure
+} from '../src/orm/subscriptionFailures.js'
 import { assertDocSubscriptionsConsistent, assertQuerySubscriptionsConsistent } from './_subscriptionAssertions.js'
 
 before(connect)
 
 // Where in a destroy the doc is taken again (onDestroy())
 const DESTROY_POINTS = {
-  // the runtime's destroy started, ShareDB's has not
+  // the runtime's destroy started, ShareDB's has not (teamplay starts
+  // ShareDB's destroy in the same tick: onDestroy() inserts an await there,
+  // an ordering production does not have, kept as a robustness check)
   before: 'before ShareDB destroys it',
   // in the tick ShareDB's destroy starts, just before it (teamplay sees
   // the doc taken only once ShareDB's destroy started)
@@ -25,13 +33,14 @@ const DESTROY_POINTS = {
 }
 
 // A doc nothing holds is destroyed after the subscription GC delay: its
-// transport is closed, then ShareDB destroys the doc (asynchronously: after a
-// tick, and after the doc's pending ops), then the runtime is disposed and the
-// doc leaves the data tree. The doc can be taken again while ShareDB destroys
-// it: a query lists it, an owner subscribes to it. On a server connection
-// (backend.connect()) the replies arrive in ticks too, so a query's results
-// can land in the very tick of the destroy. A doc taken that way must keep its
-// data and stay usable: readable, writable, live.
+// transport is closed, its runtime stops following ShareDB's doc, then
+// ShareDB destroys the doc (asynchronously: after a tick, and after the doc's
+// pending ops), then the doc leaves the data tree. The doc can be taken again
+// while ShareDB destroys it: a query lists it, an owner subscribes to it. On a
+// server connection (backend.connect()) the replies arrive in ticks too, so a
+// query's results can land in the very tick of the destroy. A doc taken that
+// way gets a new runtime; it must keep its data and stay usable: readable,
+// writable, live.
 describe('a doc taken again while it is destroyed', () => {
   const collection = 'docDestroyRaceGames'
   const roots = []
@@ -99,9 +108,9 @@ describe('a doc taken again while it is destroyed', () => {
     await $root.close()
   }
 
-  // Holds the replies of this connection's queries of the collection (they
+  // Holds the messages this connection receives that match(message) (they
   // reached the client, ShareDB has not handled them) until deliver()
-  function holdQueryReplies () {
+  function holdReplies (match) {
     const connection = getConnection()
     const handleMessage = connection.handleMessage
     const held = []
@@ -117,9 +126,7 @@ describe('a doc taken again while it is destroyed', () => {
       }
     }
     connection.handleMessage = function (message) {
-      // query replies and diffs name the query, not the collection
-      const query = (message?.a === 'qs' || message?.a === 'q') && connection.queries[message.id]
-      if (holding && query?.collection === collection) {
+      if (holding && match(message)) {
         held.push(message)
         reached()
         return
@@ -128,6 +135,16 @@ describe('a doc taken again while it is destroyed', () => {
     }
     restores.push(() => holder.deliver())
     return holder
+  }
+
+  // Holds the replies of this connection's queries of the collection
+  function holdQueryReplies () {
+    const connection = getConnection()
+    // query replies and diffs name the query, not the collection
+    return holdReplies(message => {
+      const query = (message?.a === 'qs' || message?.a === 'q') && connection.queries[message.id]
+      return query?.collection === collection
+    })
   }
 
   // When the doc's runtime is destroyed, runs `fn` at one point of the
@@ -310,8 +327,45 @@ describe('a doc taken again while it is destroyed', () => {
     })
   }
 
-  // ShareDB's destroy of the doc calls back only on finish(), as when it
-  // waits for the doc's pending ops or its unsubscribe
+  // No await inserted into the runtime's destroy: the first destroy's ShareDB
+  // callback is held (ShareDB has removed the doc), a query takes the doc (a
+  // new ShareDB doc) and releases it (a second destroy, which waits for the
+  // first), and a third root's query takes the doc meanwhile. The doc must
+  // stay live for that query.
+  it('a query taking it while a second destroy waits for the first one keeps it live', async () => {
+    useGcDelay(20)
+    const id = nextId('chained')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, name: 'Ann' })
+    await readAndRelease({ kind })
+    useGcDelay(0)
+    const shareDestroy = holdShareDbDestroy(id)
+    const flushed = docSubscriptions.flushPendingDestroys()
+    await shareDestroy.started
+    const $first = getRootSignal({ rootId: nextId('first') })
+    await sub($first[collection], { kind })
+    const closed = $first.close()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const $job = root()
+    const $query = await sub($job[collection], { kind })
+    shareDestroy.finish()
+    await flushed
+    await closed
+    await new Promise(resolve => setTimeout(resolve, 5))
+    assert.deepEqual($query.getIds(), [id])
+    assert.equal(getQueryResultDocs($query)[0], getConnection().collections[collection]?.[id], 'ShareDB keeps the doc the query lists')
+    const version = await remoteOp(id, [{ p: ['name'], od: 'Ann', oi: 'Bob' }])
+    await waitFor(() => $job[collection][id].name.get() === 'Bob', 'the query\'s doc is live')
+    assert.ok(getConnection().get(collection, id).version >= version)
+    await $job.close()
+    roots.splice(roots.indexOf($job), 1)
+    await querySubscriptions.flushPendingDestroys()
+    await docSubscriptions.flushPendingDestroys()
+    assertNoRuntimeLeft(id)
+  })
+
+  // ShareDB destroys the doc (it leaves the connection) but calls back only on
+  // finish(): teamplay's destroy of the doc is still in flight until then
   function holdShareDbDestroy (id) {
     let started
     let finish
@@ -330,6 +384,95 @@ describe('a doc taken again while it is destroyed', () => {
     })
     return holder
   }
+
+  it('the entry stays while ShareDB destroys the doc, so a query that takes the doc then keeps its data', async () => {
+    // A path that drops an empty entry (a pending destroy taken, a closing
+    // root's destroy of an entry with no runtime) runs while ShareDB destroys
+    // the doc: the entry stays, so the runtime a query creates meanwhile is
+    // the one the destroy finds when it ends, and the doc stays in the tree
+    useGcDelay(20)
+    const id = nextId('kept_entry')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, name: 'Ann' })
+    await readAndRelease({ kind })
+    const shareDestroy = holdShareDbDestroy(id)
+    const flushed = docSubscriptions.flushPendingDestroys()
+    await shareDestroy.started
+    docSubscriptions.deleteEntryIfEmpty(hashOf(id))
+    assert.ok(docSubscriptions.entries.has(hashOf(id)), 'the entry stays')
+    const $job = root()
+    const $query = await sub($job[collection], { kind })
+    shareDestroy.finish()
+    await flushed
+    assert.deepEqual($query.getIds(), [id])
+    assert.equal($job[collection][id].name.get(), 'Ann')
+    const version = await remoteOp(id, [{ p: ['name'], od: 'Ann', oi: 'Bob' }])
+    await waitFor(() => $job[collection][id].name.get() === 'Bob', 'the query\'s doc is live')
+    assert.ok(getConnection().get(collection, id).version >= version)
+  })
+
+  it('a destroy of the doc while ShareDB destroys it settles once ShareDB is done', async () => {
+    useGcDelay(20)
+    const id = nextId('settles_after')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, name: 'Ann' })
+    await readAndRelease({ kind })
+    const shareDestroy = holdShareDbDestroy(id)
+    const flushed = docSubscriptions.flushPendingDestroys()
+    await shareDestroy.started
+    let settled = false
+    const destroyed = docSubscriptions.destroy([collection, id]).then(() => { settled = true })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    assert.equal(settled, false, 'it waits for ShareDB\'s destroy')
+    shareDestroy.finish()
+    await destroyed
+    await flushed
+    assertNoRuntimeLeft(id)
+  })
+
+  it('a destroy that finds the runtime detached by another one leaves no ShareDB doc behind', async () => {
+    // A closing root's destroy and a GC destroy overlap: the closing root's
+    // finds the runtime the GC destroy detached (ShareDB removed the doc, its
+    // destroy has not called back yet). Asking that runtime about the doc
+    // must not get a ShareDB doc of this id back into the connection.
+    useGcDelay(20)
+    const id = nextId('detached')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, name: 'Ann' })
+    await readAndRelease({ kind })
+    const runtime = docSubscriptions.docs.get(hashOf(id))
+    const shareDestroy = holdShareDbDestroy(id)
+    const flushed = docSubscriptions.flushPendingDestroys()
+    await shareDestroy.started
+    const closed = docSubscriptions.destroyTransportEntry(hashOf(id), runtime)
+    shareDestroy.finish()
+    await closed
+    await flushed
+    assertNoRuntimeLeft(id)
+  })
+
+  it('a destroy of a runtime another destroy already ended changes nothing of the doc\'s new runtime', async () => {
+    useGcDelay(20)
+    const id = nextId('stale')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, name: 'Ann' })
+    await readAndRelease({ kind })
+    const stale = docSubscriptions.docs.get(hashOf(id))
+    await docSubscriptions.flushPendingDestroys()
+    assertNoRuntimeLeft(id)
+    // taken again: a new runtime, with a subscription failure of its own
+    const $job = root()
+    await sub($job[collection], { kind })
+    const fresh = docSubscriptions.docs.get(hashOf(id))
+    const failureKey = getSubscriptionFailureKey('doc', hashOf(id))
+    const failure = Error('refused')
+    setSubscriptionFailure(failureKey, failure)
+    restores.push(() => clearSubscriptionFailure(failureKey))
+    await docSubscriptions.destroyRuntime(hashOf(id), stale)
+    assert.equal(docSubscriptions.docs.get(hashOf(id)), fresh)
+    assert.equal(getSubscriptionFailure(failureKey), failure, 'the new runtime\'s failure stays')
+    assert.equal($job[collection][id].name.get(), 'Ann')
+  })
 
   it('a query of another root takes it while a closing root destroys its subscription', async () => {
     // root close: releaseRootOwnedSubscriptions() destroys the direct
@@ -404,6 +547,34 @@ describe('a doc taken again while it is destroyed', () => {
     assert.equal($job[collection][id].score.get(), 1)
     await $job[collection][id].marked.set(true)
     assert.equal((await remoteData(id)).marked, true)
+  })
+
+  it('a destroy waiting for the doc\'s pending ops hands over to the destroy a release scheduled meanwhile', async () => {
+    // The GC destroy closes the transport (it awaits the unsubscribe), finds
+    // the doc's op in flight and would wait for it as a pending destroy. A
+    // query took the doc and let it go meanwhile, which scheduled a pending
+    // destroy of its own: that one goes on for both, and the release settles
+    useGcDelay(100)
+    const id = nextId('handover')
+    await remoteCreate(id, { name: 'Ann', score: 0 })
+    const $doc = await sub(root()[collection][id])
+    const acks = holdOpAcks(id)
+    const written = $doc.score.set(1)
+    await unsub($doc)
+    const unsubscribed = holdReplies(message => message?.a === 'u' && message.c === collection && message.d === id)
+    const flushed = docSubscriptions.flushPendingDestroys()
+    await unsubscribed.reached
+    docSubscriptions.retainSegments([collection, id])
+    let released = false
+    const release = docSubscriptions.release($doc).then(() => { released = true })
+    unsubscribed.deliver()
+    await flushed
+    acks.deliver()
+    await written
+    await waitFor(() => released, 'the release settles')
+    await release
+    await waitFor(() => !docSubscriptions.entries.has(hashOf(id)), 'the doc is destroyed')
+    assertNoRuntimeLeft(id)
   })
 
   it('an explicit destroy() waiting for the doc\'s pending ops leaves it to an owner that subscribed meanwhile', async () => {
