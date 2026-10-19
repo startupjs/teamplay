@@ -24,17 +24,65 @@ export async function loadSqliteDbToMingo (sqliteDb, mingo) {
             mingo.ops[row.collection] = {}
           }
 
-          const docOps = (docsOpsByDocId[`${row.collection}.${row.id}`] || []).sort((a, b) => a.v - b.v)
-          const firstOp = docOps[0]
+          // The document decides (see patchMingoForSQLitePersistence()): an op
+          // at or past its version is left from a commit whose document write
+          // failed, and an op missing below it (pruned history) leaves a gap
+          const snapshot = JSON.parse(row.data)
+          const docOps = Array.from({ length: snapshot.v })
+          for (const op of docsOpsByDocId[`${row.collection}.${row.id}`] || []) {
+            if (op.v < snapshot.v) docOps[op.v] = op
+          }
 
-          mingo.ops[row.collection][row.id] = firstOp?.v > 0 ? [...new Array(firstOp.v), ...docOps] : docOps
-          mingo.docs[row.collection][row.id] = JSON.parse(row.data)
+          mingo.ops[row.collection][row.id] = docOps
+          mingo.docs[row.collection][row.id] = snapshot
         }
         resolve()
         console.log('DB data was loaded from SQLite to shareDbMingo')
       })
     })
   })
+}
+
+// Saves each commit to SQLite before the in-memory DB takes it, as sharedb-mongo
+// does with Mongo: a write that fails is the commit's error, which ShareDB
+// returns to the client that submitted the op (nothing is published), and
+// memory stays as it was. There is no transaction: apps keep files on this
+// connection (the files table), and each statement here commits on its own.
+// The op goes first, under an id of its version, and the document last, which
+// decides: an op whose document write failed stays at the document's version,
+// where the next commit of that version replaces it and loading skips it.
+export function patchMingoForSQLitePersistence (sqliteDb, shareDbMingo) {
+  const originalCommit = shareDbMingo.commit
+  // a doc's commits run one at a time: each checks the version that memory
+  // has after the one before it
+  const commitsByDoc = new Map()
+
+  shareDbMingo.commit = function (collection, docId, op, snapshot, options, callback) {
+    const key = JSON.stringify([collection, docId])
+    const committed = (commitsByDoc.get(key) || Promise.resolve()).then(async () => {
+      try {
+        // ShareDB retries a commit made on an older version (see MemoryDB#commit)
+        if (snapshot.v !== this._getVersionSync(collection, docId) + 1) return [null, false]
+        await runSql(sqliteDb, 'REPLACE INTO ops (id, collection, documentId, op) VALUES (?, ?, ?, ?)', [
+          JSON.stringify([collection, docId, op.v]), collection, docId, JSON.stringify(op)
+        ])
+        await runSql(sqliteDb, 'REPLACE INTO documents (collection, id, data) VALUES (?, ?, ?)', [
+          collection, docId, JSON.stringify(snapshot)
+        ])
+      } catch (err) {
+        console.error(`[mingo] Error saving ${collection}.${docId} v${snapshot.v} to SQLite:`, err)
+        return [Error('Error saving to SQLite: ' + err.message, { cause: err })]
+      }
+      return await new Promise(resolve => {
+        originalCommit.call(this, collection, docId, op, snapshot, options, (...args) => resolve(args))
+      })
+    })
+    commitsByDoc.set(key, committed)
+    committed.then(([err, succeeded]) => {
+      if (commitsByDoc.get(key) === committed) commitsByDoc.delete(key)
+      callback(err, succeeded)
+    })
+  }
 }
 
 export function getExistingSqliteDb (dbPath) {

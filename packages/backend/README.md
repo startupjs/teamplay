@@ -27,7 +27,7 @@ The package can be configured using the following environment variables:
 The backend toggles between MongoDB and Mingo for database operations, influenced by environment settings:
 
 - **MongoDB**: Used when `MONGO_URL` is set and `NO_MONGO` is `false`.
-- **Mingo and SQLite**: Activated by setting `NO_MONGO` to `true`. Mingo handles operations, while SQLite is used solely for data persistence, initialized from `DB_PATH` if provided.
+- **Mingo and SQLite**: Activated by setting `NO_MONGO` to `true`. Mingo handles operations, while SQLite is used solely for data persistence, initialized from `DB_PATH` if provided. Each op is saved to SQLite before Mingo takes it: if saving fails, the op fails with that error for the client that submitted it, as with MongoDB, and the server keeps running.
 - **SQLite Snapshot**: When `DB_LOAD_SNAPSHOT` is set, SQLite is initialized with this pre-populated data snapshot and pulls data to Mingo.
 
 This setup ensures flexibility in database management based on environment configurations.

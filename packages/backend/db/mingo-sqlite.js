@@ -1,8 +1,12 @@
 import ShareDbMingoMemory from '@startupjs/sharedb-mingo-memory'
 import { resolve } from 'path'
 import sqlite3 from 'sqlite3'
-import uuid from '@teamplay/utils/uuid'
-import { cloneSqliteDb, loadSqliteDbToMingo, getExistingSqliteDb } from './utils.js'
+import {
+  cloneSqliteDb,
+  loadSqliteDbToMingo,
+  getExistingSqliteDb,
+  patchMingoForSQLitePersistence
+} from './utils.js'
 
 const DEFAULT_DB_PATH = './local.db'
 
@@ -28,34 +32,6 @@ async function getMingoSqliteDb ({ dbPath, loadSnapshotPath }) {
   patchMingoForSQLitePersistence(sqliteDb, db)
 
   return { db, sqlite: sqliteDb }
-}
-
-// override the commit method to save changes to SQLite
-function patchMingoForSQLitePersistence (sqliteDb, shareDbMingo) {
-  const originalCommit = shareDbMingo.commit
-
-  shareDbMingo.commit = function (collection, docId, op, snapshot, options, callback) {
-    originalCommit.call(this, collection, docId, op, snapshot, options, async err => {
-      if (err) return callback(err)
-
-      try {
-        await new Promise((resolve, reject) => {
-          sqliteDb.run(`
-            REPLACE INTO documents (collection, id, data) VALUES (?, ?, ?)
-          `, [collection, docId, JSON.stringify(snapshot)], err => err ? reject(err) : resolve())
-        })
-        await new Promise((resolve, reject) => {
-          sqliteDb.run(`
-            INSERT INTO ops (id, collection, documentId, op) VALUES (?, ?, ?, ?)
-          `, [uuid(), collection, docId, JSON.stringify(op)], err => err ? reject(err) : resolve())
-        })
-      } catch (err) {
-        throw Error('Error saving to SQLite:\n', err.message)
-      }
-
-      callback(null, true)
-    })
-  }
 }
 
 async function deleteExpiredDocumentsOps (sqliteDb) {
