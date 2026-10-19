@@ -1160,10 +1160,14 @@ export class DocSubscriptions {
       } finally {
         // the doc leaves the data tree unless it was taken meanwhile (a new
         // runtime follows it and holds its data)
-        if (!entry.runtime && typeof runtime.dispose === 'function') runtime.dispose()
-        if (entry.destroying === destroying) {
-          entry.destroying = null
-          if (this.entries.get(hash) === entry) this.deleteEntryIfEmpty(hash)
+        // (the destroy record goes first: a reaction that throws as the doc
+        // leaves the tree must not leave the entry destroying forever)
+        const last = entry.destroying === destroying
+        if (last) entry.destroying = null
+        try {
+          if (!entry.runtime && typeof runtime.dispose === 'function') runtime.dispose()
+        } finally {
+          if (last && this.entries.get(hash) === entry) this.deleteEntryIfEmpty(hash)
         }
       }
     })()

@@ -1,6 +1,6 @@
 import { afterEach, before, describe, it } from 'mocha'
 import { strict as assert } from 'node:assert'
-import { $, getRootSignal, sub, unsub } from '../src/index.ts'
+import { $, getRootSignal, reaction, sub, unsub } from '../src/index.ts'
 import connect from '../src/connect/test.js'
 import { getConnection } from '../src/orm/connection.ts'
 import { getRaw } from '../src/orm/dataTree.js'
@@ -597,6 +597,27 @@ describe('a doc taken again while it is destroyed', () => {
     const version = await remoteOp(id, [{ p: ['name'], od: 'Ann', oi: 'Bob' }])
     await waitFor(() => $live.name.get() === 'Bob', 'the next owner sees the server\'s op')
     assert.ok(getConnection().collections[collection][id].version >= version)
+  })
+
+  it('a reaction that throws as a destroyed doc leaves the tree does not leave the doc stuck in its destroy', async () => {
+    // The destroy's error reaches its caller (here unsub()); the entry is
+    // done with the destroy all the same, and the next owner subscribes.
+    // (A doc stuck in its destroy would keep the next subscribe waiting for
+    // it in a loop that never yields: the state is checked first.)
+    useGcDelay(0)
+    const id = nextId('throwing_reaction')
+    await remoteCreate(id, { name: 'Ann' })
+    const $doc = await sub(root()[collection][id])
+    // throws once the doc is gone from the tree
+    const handle = reaction(() => $doc.name.get().length)
+    try {
+      await assert.rejects(unsub($doc))
+    } finally {
+      handle.dispose()
+    }
+    assert.equal(docSubscriptions.entries.get(hashOf(id))?.destroying ?? null, null, 'the destroy is over')
+    const $next = await sub(root()[collection][id])
+    assert.equal($next.name.get(), 'Ann')
   })
 
   it('an explicit destroy() of a doc a query lists: the query reads the doc as gone, as its signal does', async () => {
