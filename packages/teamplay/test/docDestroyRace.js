@@ -599,6 +599,20 @@ describe('a doc taken again while it is destroyed', () => {
     assert.ok(getConnection().collections[collection][id].version >= version)
   })
 
+  it('an explicit destroy() of a doc a query lists: the query reads the doc as gone, as its signal does', async () => {
+    // force ignores the query results holding the doc; once the doc leaves
+    // the data tree, the query's results leave it out too
+    const id = nextId('forced_listed')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, name: 'Ann' })
+    const $job = root()
+    const $query = await sub($job[collection], { kind })
+    assert.deepEqual($query.get().map(({ name }) => name), ['Ann'])
+    await docSubscriptions.destroy([collection, id])
+    assert.equal($job[collection][id].get(), undefined)
+    assert.deepEqual($query.get(), [])
+  })
+
   it('a forced destroy leaves the doc to an owner that subscribed while it closed the transport', async () => {
     // Force removes the owners there when the destroy was called, not one
     // that takes the doc while the destroy awaits (here: as soon as the

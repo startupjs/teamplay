@@ -215,7 +215,7 @@ class Doc {
 
   dispose () {
     this.detach()
-    this._removeData()
+    this._clearData()
   }
 
   _initData () {
@@ -353,17 +353,13 @@ class Doc {
     })
   }
 
-  // the doc leaves the data tree, and the queries listing it leave it out in
-  // the same batch
+  // the doc leaves the data tree, and the queries listing it (a forced
+  // destroy ignores them) leave it out in the same batch
   _clearData () {
     runInBatch(() => {
       _del([this.collection, this.docId])
       refreshQueryDocs(this.collection, this.docId)
     })
-  }
-
-  _removeData () {
-    _del([this.collection, this.docId])
   }
 }
 

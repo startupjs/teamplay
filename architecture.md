@@ -407,8 +407,9 @@ aggregations (same file):
   doc run one at a time; a ShareDB doc a newer runtime follows is never
   destroyed for an older one; and a destroy that finds an owner's subscribe in
   flight leaves the doc to it.
-- force removes the owners and query results there when a destroy is called:
-  a doc taken since stops a forced destroy as it stops any other. A destroy
+- force removes the owners there when a destroy is called, and ignores the
+  query results holding the doc (they read it as gone once it leaves the data
+  tree); a doc taken since stops a forced destroy as it stops any other. A destroy
   that waits for the doc's pending ops is a pending destroy, which taking the
   doc cancels; a pending destroy scheduled meanwhile takes it over.
 - on Node the grace and destroy timers are `unref()`'d (`utils/unrefTimer.ts`):
