@@ -396,18 +396,21 @@ aggregations (same file):
 - a doc's runtime is destroyed one way only: it stops following ShareDB's doc
   in the tick the destroy decides on it (`detach()`), then ShareDB destroys the
   doc (asynchronously: after a tick, and after the doc's pending ops), then the
-  doc leaves the data tree unless it was taken meanwhile. A doc taken while
-  ShareDB destroys it (a query lists it, an owner subscribes to it; on a server
-  connection a query's results can arrive in the tick of the destroy) gets a
-  new runtime, whose `connection.get()` makes ShareDB keep the doc, and which
-  takes over the data the tree still holds. The entry stays while ShareDB
-  destroys its doc; a subscribe waits for that destroy to end (it would undo
-  the subscription); ShareDB destroys of one doc run one at a time; and a
-  ShareDB doc a newer runtime follows is never destroyed for an older one.
-- a destroy that waits for the doc's pending ops is a pending destroy, which
-  taking the doc cancels, a forced one too (force removes the owners there
-  when it was called, not later ones); a pending destroy scheduled meanwhile
-  takes it over.
+  doc leaves the data tree unless it was taken meanwhile. A destroyed runtime
+  never follows a ShareDB doc again. A doc taken while ShareDB destroys it (a
+  query lists it, an owner subscribes to it; on a server connection a query's
+  results can arrive in the tick of the destroy) gets a new runtime, whose
+  `connection.get()` makes ShareDB keep the doc, and which takes over the data
+  the tree still holds (none if ShareDB's doc turns out deleted, or its data
+  null). The entry stays while ShareDB destroys its doc; a subscribe waits for
+  that destroy to end (it would undo the subscription); ShareDB destroys of one
+  doc run one at a time; a ShareDB doc a newer runtime follows is never
+  destroyed for an older one; and a destroy that finds an owner's subscribe in
+  flight leaves the doc to it.
+- force removes the owners and query results there when a destroy is called:
+  a doc taken since stops a forced destroy as it stops any other. A destroy
+  that waits for the doc's pending ops is a pending destroy, which taking the
+  doc cancels; a pending destroy scheduled meanwhile takes it over.
 - on Node the grace and destroy timers are `unref()`'d (`utils/unrefTimer.ts`):
   they never keep a process alive once its own work is done.
 

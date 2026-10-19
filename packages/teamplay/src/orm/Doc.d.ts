@@ -48,10 +48,12 @@ export interface DocRuntimeEntry {
   reconcilePromise: Promise<void> | null
   stopped: boolean
   destroying: { promise: Promise<void> } | null
+  lastTake: number
 }
 
 export class Doc {
   initialized?: boolean
+  detached: boolean
   collection: string
   docId: string | number
   requestedTransportMode: TransportMode
@@ -74,6 +76,7 @@ export class DocSubscriptions {
   DocClass: DocConstructor
   ownerRecords: Map<string, DocOwnerRecord>
   entries: Map<string, DocRuntimeEntry>
+  takes: number
   subCount: ReadonlyMapView<string, number>
   ownerFetchCount: ReadonlyMapView<string, number>
   ownerSubscribeCount: ReadonlyMapView<string, number>

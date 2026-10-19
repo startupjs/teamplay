@@ -163,9 +163,9 @@ describe('jobs on a server connection, one root per job', () => {
   // run starts after a throttle as long as the GC delay): its query lists a
   // doc while teamplay destroys it. `duringDrop(id, run)` starts `run({ listed })`
   // as the doc's runtime is destroyed, and lets the destroy go on once the
-  // run's query listed the doc. That await before ShareDB's destroy is not an
-  // ordering production has (ShareDB's destroy starts in the same tick): the
-  // run's query takes the doc earlier than it could, a robustness check.
+  // run's query listed the doc: the run's query takes the doc before
+  // ShareDB's destroy starts, as when that destroy waits behind the one
+  // before it.
   describe('a doc dropped while a job lists it', () => {
     function duringDrop (id, run) {
       const DocClass = docSubscriptions.DocClass

@@ -104,6 +104,8 @@ class Doc {
     this._shareDoc = undefined
     // the object linked into the data tree and ShareDB's doc.data (see _refData())
     this._linkedData = undefined
+    // destroyed (see detach()): it never follows a ShareDB doc again
+    this.detached = false
     this._onShareDocLoad = () => this._refData()
     this._onShareDocDel = () => this._refMissingData()
     this._onShareDocOp = this._onShareDocOp.bind(this)
@@ -116,7 +118,7 @@ class Doc {
   }
 
   init () {
-    if (this.initialized) return
+    if (this.initialized || this.detached) return
     this.initialized = true
     this._initData()
   }
@@ -206,6 +208,7 @@ class Doc {
   // The runtime is done: it stops following the ShareDB doc. The doc stays in
   // the data tree (see DocSubscriptions#destroyRuntime()).
   detach () {
+    this.detached = true
     this.initialized = undefined
     this._unlisten()
   }
@@ -315,10 +318,17 @@ class Doc {
     //   the same way they do under Racer.
     // - and never materialize a missing doc, whatever its placeholder holds.
     if (isMissingShareDoc(doc)) {
+      // known missing (deleted, or read as not existing): what the tree still
+      // holds for it is gone; not loaded yet (a fresh doc): keep it until the load
+      if (doc.version != null && _getRaw([this.collection, this.docId]) != null) this._clearData()
       if (doc.data == null) doc.data = observable(undefined)
       return
     }
-    if (doc.data == null) return
+    if (doc.data == null) {
+      // a created doc with null data (a whole-doc replace with null elsewhere)
+      if (_getRaw([this.collection, this.docId]) != null) this._clearData()
+      return
+    }
     const idFields = getIdFieldsForSegments([this.collection, this.docId])
     if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, this.docId)
     const path = [this.collection, this.docId]
@@ -366,6 +376,7 @@ export class DocSubscriptions {
       this.releaseFinalizedToken(ownerKey, hash, token).catch(ignoreDestroyError)
     })
     this.lingeringHashesByRoot = new Map() // rootId -> Set<hash> released by that root, pending GC
+    this.takes = 0 // subscribe() and retain() calls so far (see entry.lastTake)
     this.subCount = createReadonlyMapView({
       get: hash => this.getTrackedCount(hash),
       has: hash => this.getTrackedCount(hash) !== undefined,
@@ -455,7 +466,9 @@ export class DocSubscriptions {
         // the server stopped its subscription (see handleTransportError())
         stopped: false,
         // ShareDB's destroy of the doc in flight (see destroyRuntime())
-        destroying: null
+        destroying: null,
+        // the subscribe() or retain() that took the doc last (see destroyByHash())
+        lastTake: 0
       }
       this.entries.set(hash, entry)
     } else if (segments && !entry.segments?.length) {
@@ -547,6 +560,7 @@ export class DocSubscriptions {
     const ownerKey = getDocOwnerKey(rootId, hash)
     const token = getDocFinalizationToken($doc)
     const entry = this.getOrCreateEntry(hash, segments)
+    entry.lastTake = ++this.takes
     this.cancelDestroy(hash)
     const record = this.getOrCreateOwnerRecord(ownerKey, { hash, segments, rootId })
     this.incrementOwnerIntent(record, intent)
@@ -580,6 +594,7 @@ export class DocSubscriptions {
   retainSegments (segments) {
     const hash = hashDoc(segments)
     const entry = this.getOrCreateEntry(hash, segments)
+    entry.lastTake = ++this.takes
     const hadPendingDestroy = !!entry.pendingDestroy
     this.cancelDestroy(hash)
     entry.retainCount += 1
@@ -837,6 +852,9 @@ export class DocSubscriptions {
         this.stopTransport(hash, entry, err)
         throw err
       }
+      // destroyed while it subscribed: ShareDB's destroy ends the
+      // subscription, and the next step takes a new runtime
+      if (doc.detached) continue
       clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
       entry.runtime = doc
       entry.mode = doc.activeTransportMode || desiredMode
@@ -889,6 +907,8 @@ export class DocSubscriptions {
 
     try {
       const entry = this.entries.get(hash)
+      // what took the doc last when this destroy was called (see `forced`)
+      const lastTake = entry?.lastTake
       if (options.force && entry?.owners.size) {
         this.removeAllOwnersFromEntry(hash)
       }
@@ -913,7 +933,10 @@ export class DocSubscriptions {
       await this.reconcileTransport(hash)
       const nextEntry = this.entries.get(hash)
       const nextCount = nextEntry ? this.getEntryTotalCount(nextEntry) : (this.getTrackedCount(hash) || 0)
-      if (!options.force && nextCount > 0) {
+      // A forced destroy goes on despite the owners and query results that
+      // held the doc when it was called, not despite one that took it since
+      const forced = options.force && nextEntry?.lastTake === lastTake
+      if (!forced && nextCount > 0) {
         settlePending()
         return
       }
@@ -928,7 +951,7 @@ export class DocSubscriptions {
       const finalCountBeforeDestroy = finalEntryBeforeDestroy
         ? this.getEntryTotalCount(finalEntryBeforeDestroy)
         : (this.getTrackedCount(hash) || 0)
-      if (!options.force && finalCountBeforeDestroy > 0) {
+      if (!forced && finalCountBeforeDestroy > 0) {
         settlePending()
         return
       }
@@ -1101,6 +1124,11 @@ export class DocSubscriptions {
     // nothing held the doc when this destroy started: whoever holds it now
     // (a query listing it, a retain) took it meanwhile
     if (this.getEntryTotalCount(this.entries.get(hash)) > 0) return
+    // nor is it this destroy's if another destroy ended the runtime, or an
+    // owner opened its transport or is opening it (and maybe left already:
+    // its release destroys the doc after the subscribe)
+    const current = this.entries.get(hash)
+    if (current?.runtime !== activeDoc || activeDoc.activeTransportMode !== 'idle' || current.phase === 'transition') return
     await this.destroyRuntime(hash, activeDoc)
   }
 
