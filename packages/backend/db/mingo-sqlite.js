@@ -2,7 +2,7 @@ import ShareDbMingoMemory from '@startupjs/sharedb-mingo-memory'
 import { resolve } from 'path'
 import sqlite3 from 'sqlite3'
 import uuid from '@teamplay/utils/uuid'
-import { loadSqliteDbToMingo, getExistingSqliteDb } from './utils.js'
+import { cloneSqliteDb, loadSqliteDbToMingo, getExistingSqliteDb } from './utils.js'
 
 const DEFAULT_DB_PATH = './local.db'
 
@@ -112,56 +112,4 @@ async function getOrCreateSqliteDb (dbPath) {
   }
   console.log('Using SQLite DB from file:', dbPath)
   return sqliteDb
-}
-
-// clone each table from source to target
-// TODO: Do it in batches of 100 to avoid memory issues.
-async function cloneSqliteDb (source, target) {
-  try {
-    { // clone 'documents'
-      const rows = await new Promise((resolve, reject) => {
-        source.all('SELECT * FROM documents', [], (err, rows) => err ? reject(err) : resolve(rows))
-      })
-      const promises = []
-      for (const row of rows) {
-        promises.push(new Promise((resolve, reject) => {
-          target.run(`
-            INSERT INTO documents (collection, id, data) VALUES (?, ?, ?)
-          `, [row.collection, row.id, row.data], err => err ? reject(err) : resolve())
-        }))
-      }
-      await Promise.all(promises)
-    }
-    { // clone 'ops'
-      const rows = await new Promise((resolve, reject) => {
-        source.all('SELECT * FROM ops', [], (err, rows) => err ? reject(err) : resolve(rows))
-      })
-      const promises = []
-      for (const row of rows) {
-        promises.push(new Promise((resolve, reject) => {
-          target.run(`
-            INSERT INTO ops (id, collection, documentId, op) VALUES (?, ?, ?, ?)
-          `, [row.id, row.collection, row.documentId, row.op], err => err ? reject(err) : resolve())
-        }))
-      }
-      await Promise.all(promises)
-    }
-    { // clone 'files'
-      // TODO: Clone them one by one to avoid memory issues, since files are large.
-      const rows = await new Promise((resolve, reject) => {
-        source.all('SELECT * FROM files', [], (err, rows) => err ? reject(err) : resolve(rows))
-      })
-      const promises = []
-      for (const row of rows) {
-        promises.push(new Promise((resolve, reject) => {
-          target.run(`
-            INSERT INTO files (id, data) VALUES (?, ?)
-          `, [row.id, row.data], err => err ? reject(err) : resolve())
-        }))
-        await Promise.all(promises)
-      }
-    }
-  } catch (err) {
-    throw Error('Error cloning SQLite DB:\n' + err.message)
-  }
 }
