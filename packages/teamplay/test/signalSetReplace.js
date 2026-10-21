@@ -123,6 +123,18 @@ describe('Signal.setReplace()', () => {
     assert.equal(getConnection().get(PUBLIC_COLLECTION, docId).type, null, 'deleted, not created with null data')
   })
 
+  it('rejects replacing a whole public document with a non-object value', async () => {
+    const docId = nextDocId()
+    const $doc = createRoot('public-primitive-doc')[PUBLIC_COLLECTION][docId]
+    await $doc.setReplace({ title: 'One' })
+
+    await assert.rejects($doc.setReplace('One'), /non-object value to a public doc/)
+    await assert.rejects($doc.setReplace(1), /non-object value to a public doc/)
+
+    assert.deepEqual($doc.get(), { _id: docId, title: 'One' })
+    assert.deepEqual(getConnection().get(PUBLIC_COLLECTION, docId).data, { _id: docId, title: 'One' })
+  })
+
   it('skips protected public id fields', async () => {
     const docId = nextDocId()
     const $doc = createRoot('public-id')[PUBLIC_COLLECTION][docId]
