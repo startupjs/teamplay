@@ -6,6 +6,10 @@
 //     _tp.run($, K, () => { BODY })
 //   } else { ...the cached outputs... }
 //
+// A body that can't read signals (it only builds elements, callbacks and
+// literals from values already computed: PURE) runs as written, with no
+// reaction; only JSX and UPSTREAM_KEYS can make it recompute.
+//
 // The compiler recomputes a scope only when a dependency changes identity,
 // but a signal keeps its identity when its data changes. So inside an
 // observer() render each scope body runs in its own reaction. When a signal it
@@ -163,7 +167,8 @@ export function dirty (
   key: number,
   upstream?: readonly number[] | null,
   jsx?: boolean,
-  depSlots?: readonly number[]
+  depSlots?: readonly number[],
+  pure?: boolean
 ): boolean {
   const context = executionContextTracker.getScopeContext()
   if (!context) {
@@ -174,12 +179,15 @@ export function dirty (
     return !!depSlots?.some(slot => mayChangeInPlace(memoCache[slot]))
   }
   const state = getState(memoCache)
-  const run = state.runs.get(key)
-  let forced = !run || (state.owner.invalidated.get(key) ?? -1) > run.seq || (!!jsx && context.signalRender)
+  let forced = !!jsx && context.signalRender
+  if (!forced && !pure) {
+    const run = state.runs.get(key)
+    forced = !run || (state.owner.invalidated.get(key) ?? -1) > run.seq
+  }
   if (!forced && upstream) {
     forced = upstream.some(upstreamKey => state.runs.get(upstreamKey)?.forcedIn === context.renderId)
   }
-  if (forced) context.forced = key
+  if (forced && !pure) context.forced = key
   return forced
 }
 

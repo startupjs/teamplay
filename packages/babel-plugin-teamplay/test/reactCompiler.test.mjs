@@ -245,12 +245,33 @@ describe('babel-plugin-teamplay: React Compiler', () => {
         export const DocCount = observer(DocCountBase)
       `, { teamplay: { reactCompiler: 'full' } })
       expect(warnings).toEqual([])
-      expect(code).toMatch(/^import \{ __reactCompiler as _tp \} from "startupjs";\nimport \{ c as _c \} from "react\/compiler-runtime";\nimport \{ observer \} from 'startupjs';\n_tp\.enable\(\);\nconst _tpKeys = \[0\];\nconst _tpKeys2 = \[2\];/)
+      expect(code).toMatch(/^import \{ __reactCompiler as _tp \} from "startupjs";\nimport \{ c as _c \} from "react\/compiler-runtime";\nimport \{ observer \} from 'startupjs';\n_tp\.enable\(\);\nvar _tpKeys = \[0\];\nvar _tpKeys2 = \[2\];/)
       // one more slot: the scopes' state
       expect(code).toContain('const $ = _tp.cache(_c(5))')
       // _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS)
       expect(code).toContain('if ($[0] !== $doc.count || _tp.dirty($, 0, null, false, _tpKeys)) {\n    _tp.run($, 0, () => {')
-      expect(code).toContain('if ($[2] !== t1 || _tp.dirty($, 2, _tpKeys, true, _tpKeys2)) {\n    _tp.run($, 2, () => {')
+      // building an element from computed values reads no signal: no reaction (PURE)
+      expect(code).toContain('if ($[2] !== t1 || _tp.dirty($, 2, _tpKeys, true, _tpKeys2, true)) {\n    t2 = <span>{t1}</span>;')
+    })
+
+    it('runs as written, with no reaction, a scope that can\'t read signals', () => {
+      const { code } = transform(`
+        import { observer } from 'startupjs'
+        import * as UI from './ui'
+        export const Card = observer(function Card ({ $doc, title, onOpen }) {
+          const name = $doc.name.get()
+          const open = () => onOpen(name)
+          const header = <UI.Header title={title} onPress={open}>{name}</UI.Header>
+          const subtitle = <i>{title.toUpperCase()}</i>
+          return <div>{header}{subtitle}</div>
+        })
+      `, { teamplay: { reactCompiler: 'full' } })
+      // a callback, and elements of computed values and of an imported namespace's component
+      expect(code).not.toMatch(/_tp\.run\(\$, \d+, \(\) => \{\n\s+t\d+ = \(\) => onOpen/)
+      expect(code).not.toMatch(/_tp\.run\(\$, \d+, \(\) => \{\n\s+t\d+ = <UI\.Header/)
+      // a read, and a method call: a reaction
+      expect(code).toMatch(/_tp\.run\(\$, \d+, \(\) => \{\n\s+t\d+ = \$doc\.name\.get\(\)/)
+      expect(code).toMatch(/_tp\.run\(\$, \d+, \(\) => \{\n\s+t\d+ = title\.toUpperCase\(\)/)
     })
 
     it("imports teamplay's runtime from 'teamplay', or from the reactCompilerRuntime option", () => {

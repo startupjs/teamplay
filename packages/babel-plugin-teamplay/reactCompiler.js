@@ -480,8 +480,12 @@ function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
       }
     }
   })
+  // `var`, not `const`: a compiled function can run before its module's body
+  // has (an import cycle, a bundler that concatenates modules), and a `const`
+  // would throw then ("Cannot access ... before initialization"). An array
+  // still undefined only makes the scope recompute.
   if (constants.size) {
-    enableStatement.insertAfter([...constants.values()].map(({ name, values }) => t.variableDeclaration('const', [
+    enableStatement.insertAfter([...constants.values()].map(({ name, values }) => t.variableDeclaration('var', [
       t.variableDeclarator(name, t.arrayExpression(values.map(value => t.numericLiteral(value))))
     ])))
   }
@@ -575,17 +579,22 @@ function instrumentScopes (fn, cacheName, t, helper, constant, sized) {
       statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('inObserver'), []))
       continue
     }
-    // _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS), trailing defaults left out
+    // _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS, PURE), trailing defaults left out
     const jsx = createsElements(consequent.node, t)
+    // a body that can't read signals (it only builds elements, callbacks and
+    // literals from values already computed) needs no reaction
+    const pure = readsNothing(consequent, cacheName, t)
     const dirtyArgs = [
       t.identifier(cacheName),
       t.numericLiteral(key),
       upstream.size ? constant([...upstream]) : t.nullLiteral(),
       t.booleanLiteral(jsx),
-      depSlots.length ? constant(depSlots) : t.identifier('undefined')
+      depSlots.length ? constant(depSlots) : t.identifier('undefined'),
+      t.booleanLiteral(pure)
     ]
     while (dirtyArgs.length > 2 && isDefaultArg(dirtyArgs[dirtyArgs.length - 1], t)) dirtyArgs.pop()
     statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('dirty'), dirtyArgs))
+    if (pure) continue
     const body = t.isBlockStatement(consequent.node) ? consequent.node.body : [consequent.node]
     consequent.replaceWith(t.blockStatement([
       t.expressionStatement(t.callExpression(helper('run'), [
@@ -594,6 +603,35 @@ function instrumentScopes (fn, cacheName, t, helper, constant, sized) {
     ]))
   }
   return recognized
+}
+
+// nothing in the body (outside the functions it creates, which don't run
+// now) can read a signal: no member reads but cache slots and imported
+// namespaces (Modal.Content), no calls but element factories, no spreads
+function readsNothing (body, cacheName, t) {
+  let reads = false
+  const stop = path => { reads = true; path.stop() }
+  body.traverse({
+    Function (inner) { inner.skip() },
+    MemberExpression (member) {
+      const object = member.node.object
+      if (member.node.computed && t.isIdentifier(object, { name: cacheName }) && t.isNumericLiteral(member.node.property)) return
+      if (!member.node.computed && t.isIdentifier(object) && member.scope.getBinding(object.name)?.kind === 'module') return
+      stop(member)
+    },
+    CallExpression (call) {
+      const callee = call.node.callee
+      if (t.isIdentifier(callee) && ELEMENT_FACTORY.test(callee.name) && call.scope.getBinding(callee.name)?.kind === 'module') return
+      stop(call)
+    },
+    'OptionalMemberExpression|OptionalCallExpression|NewExpression|TaggedTemplateExpression|SpreadElement|JSXSpreadAttribute|JSXSpreadChild|AwaitExpression|YieldExpression|UpdateExpression' (path) { stop(path) },
+    UnaryExpression (unary) { if (unary.node.operator === 'delete') stop(unary) },
+    // `a in b` reads b
+    BinaryExpression (binary) { if (binary.node.operator === 'in' || binary.node.operator === 'instanceof') stop(binary) },
+    ForInStatement: stop,
+    ForOfStatement: stop
+  })
+  return !reads
 }
 
 function isDefaultArg (node, t) {
