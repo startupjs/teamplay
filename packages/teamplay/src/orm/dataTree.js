@@ -235,6 +235,10 @@ export async function setPublicDocReplace (segments, value) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const idFields = getIdFieldsForSegments([collection, docId])
   if (isIdFieldPath(segments, idFields)) return
+  // a public doc's data is an object, as setPublicDoc() checks too
+  if (segments.length === 2 && value != null && typeof value !== 'object') {
+    throw Error(ERRORS.notObject(segments, value))
+  }
   const doc = getConnection().get(collection, docId)
   let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal: true })
   if (!docState.exists && segments.length > 2) {

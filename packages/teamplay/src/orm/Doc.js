@@ -38,6 +38,9 @@ import {
 
 const ERROR_ON_EXCESSIVE_UNSUBSCRIBES = false
 const DOC_FINALIZATION_TOKENS = new WeakMap()
+// ShareDB doc -> the runtime that follows its events (see Doc#_listen()). A
+// ShareDB doc a runtime follows is that runtime's: no other runtime destroys it.
+const SHARE_DOC_FOLLOWERS = new WeakMap()
 
 function getDocFinalizationToken ($doc) {
   let token = DOC_FINALIZATION_TOKENS.get($doc)
@@ -97,7 +100,15 @@ class Doc {
     this.activeTransportMode = 'idle'
     // set by the manager: (err, { stopped }) => void (see _onShareDocError())
     this.onTransportError = undefined
-    this._errorListenerDoc = undefined
+    // the ShareDB doc whose events the runtime follows (see _listen())
+    this._shareDoc = undefined
+    // the object linked into the data tree and ShareDB's doc.data (see _refData())
+    this._linkedData = undefined
+    // destroyed (see detach()): it never follows a ShareDB doc again
+    this.detached = false
+    this._onShareDocLoad = () => this._refData()
+    this._onShareDocDel = () => this._refMissingData()
+    this._onShareDocOp = this._onShareDocOp.bind(this)
     this._onShareDocError = this._onShareDocError.bind(this)
     this.init()
   }
@@ -107,7 +118,7 @@ class Doc {
   }
 
   init () {
-    if (this.initialized) return
+    if (this.initialized || this.detached) return
     this.initialized = true
     this._initData()
   }
@@ -125,6 +136,9 @@ class Doc {
 
   async _subscribe () {
     const doc = getConnection().get(this.collection, this.docId)
+    // follow the connection's ShareDB doc of this id: ShareDB replaces the one
+    // the runtime followed when something destroyed it under the runtime
+    if (this.initialized && doc !== this._shareDoc) this._initData()
     const mode = this.requestedTransportMode
     await new Promise((resolve, reject) => {
       const method = mode === 'fetch' ? 'fetch' : 'subscribe'
@@ -137,7 +151,11 @@ class Doc {
   }
 
   async _unsubscribe () {
-    const doc = getConnection().get(this.collection, this.docId)
+    const doc = this._getShareDoc()
+    if (!doc) {
+      this.activeTransportMode = 'idle'
+      return
+    }
     await new Promise((resolve, reject) => {
       const method = this.activeTransportMode === 'fetch' && typeof doc.unfetch === 'function'
         ? 'unfetch'
@@ -151,19 +169,34 @@ class Doc {
   }
 
   hasPending () {
-    const doc = getConnection().get(this.collection, this.docId)
-    if (typeof doc.hasPending !== 'function') return false
+    const doc = this._getShareDoc()
+    if (typeof doc?.hasPending !== 'function') return false
     return doc.hasPending()
   }
 
   whenNothingPending (fn) {
-    const doc = getConnection().get(this.collection, this.docId)
-    if (typeof doc.whenNothingPending !== 'function') return fn()
+    const doc = this._getShareDoc()
+    if (typeof doc?.whenNothingPending !== 'function') return fn()
     doc.whenNothingPending(fn)
   }
 
+  // The ShareDB doc the runtime follows, or else the connection's doc of this
+  // id. Unlike connection.get(), it neither creates a doc nor cancels a
+  // destroy ShareDB has in progress: teamplay calls connection.get() only for
+  // a doc it takes (init, subscribe).
+  _getShareDoc () {
+    return this._shareDoc ?? getConnection().collections?.[this.collection]?.[this.docId]
+  }
+
+  // Destroys the connection's ShareDB doc of this id (after dispose()). A doc
+  // that a newer runtime follows is that runtime's and is left to it; one taken
+  // while ShareDB destroys it is kept by ShareDB (connection.get() cancels a
+  // destroy in progress).
   async destroy () {
-    const doc = getConnection().get(this.collection, this.docId)
+    const doc = getConnection().collections?.[this.collection]?.[this.docId]
+    if (!doc) return
+    const follower = SHARE_DOC_FOLLOWERS.get(doc)
+    if (follower && follower !== this) return
     await new Promise((resolve, reject) => {
       doc.destroy(err => {
         if (err) return reject(err)
@@ -172,26 +205,70 @@ class Doc {
     })
   }
 
-  dispose () {
+  // The runtime is done: it stops following the ShareDB doc. The doc stays in
+  // the data tree (see DocSubscriptions#destroyRuntime()).
+  detach () {
+    this.detached = true
     this.initialized = undefined
-    this._errorListenerDoc?.removeListener('error', this._onShareDocError)
-    this._errorListenerDoc = undefined
-    this._removeData()
+    this._unlisten()
+  }
+
+  dispose () {
+    this.detach()
+    this._clearData()
   }
 
   _initData () {
-    const doc = getConnection().get(this.collection, this.docId)
+    this._listen(getConnection().get(this.collection, this.docId))
     this._refData()
-    doc.on('load', () => this._refData())
-    doc.on('create', () => this._refData())
-    doc.on('del', () => this._refMissingData())
+  }
+
+  // The runtime follows the events of the connection's ShareDB doc, and of
+  // that doc only: the listeners go with the runtime (dispose()).
+  _listen (doc) {
+    if (this._shareDoc === doc) return
+    this._unlisten()
+    doc.on('load', this._onShareDocLoad)
+    doc.on('create', this._onShareDocLoad)
+    doc.on('del', this._onShareDocDel)
+    doc.on('op', this._onShareDocOp)
     // ShareDB emits 'error' when a request it makes on its own fails (the
     // re-subscribe after a reconnect); with no listener the emit throws
-    if (this._errorListenerDoc !== doc) {
-      this._errorListenerDoc?.removeListener('error', this._onShareDocError)
-      doc.on('error', this._onShareDocError)
-      this._errorListenerDoc = doc
+    doc.on('error', this._onShareDocError)
+    this._shareDoc = doc
+    SHARE_DOC_FOLLOWERS.set(doc, this)
+  }
+
+  _unlisten () {
+    const doc = this._shareDoc
+    if (!doc) return
+    doc.removeListener('load', this._onShareDocLoad)
+    doc.removeListener('create', this._onShareDocLoad)
+    doc.removeListener('del', this._onShareDocDel)
+    doc.removeListener('op', this._onShareDocOp)
+    doc.removeListener('error', this._onShareDocError)
+    if (SHARE_DOC_FOLLOWERS.get(doc) === this) SHARE_DOC_FOLLOWERS.delete(doc)
+    this._shareDoc = undefined
+    this._linkedData = undefined
+  }
+
+  // ShareDB applies an op to doc.data, the tree's object, in place. An op with
+  // a root component (`{ p: [] }`: the whole doc replaced, as setReplace() on a
+  // doc signal does, here or on another connection) makes ShareDB set doc.data
+  // to a new object instead, which the data tree does not hold: they are
+  // linked again, as after a load. A remote op of several components comes
+  // one component at a time.
+  _onShareDocOp () {
+    const doc = this._shareDoc
+    if (!doc || doc.data === this._linkedData) return
+    if (doc.data == null) {
+      // the whole doc replaced with null (on another connection: a doc-root
+      // setReplace(null) deletes the doc here): it has no data to show
+      this._clearData()
+      this._linkedData = doc.data
+      return
     }
+    this._refData()
   }
 
   // The server refused the re-subscribe ShareDB made after a reconnect (the
@@ -200,7 +277,7 @@ class Doc {
   // so the transport is idle on both sides and the next subscribe() asks the
   // server again. The doc keeps its last data. Anything else is only reported.
   _onShareDocError (err) {
-    const doc = this._errorListenerDoc
+    const doc = this._shareDoc
     const stopped = this.activeTransportMode === 'subscribe' && !!doc && !doc.subscribed
     if (stopped) {
       this.activeTransportMode = 'idle'
@@ -214,17 +291,21 @@ class Doc {
   }
 
   _refMissingData () {
-    // the queries listing the doc leave it out in the same batch
-    runInBatch(() => {
-      _del([this.collection, this.docId])
-      refreshQueryDocs(this.collection, this.docId)
-    })
-    const doc = getConnection().get(this.collection, this.docId)
+    this._clearData()
+    const doc = this._shareDoc
+    if (!doc) return
     doc.data = observable(undefined)
+    this._linkedData = doc.data
   }
 
   _refData () {
-    const doc = getConnection().get(this.collection, this.docId)
+    const doc = this._shareDoc
+    if (!doc) return
+    this._doRefData(doc)
+    this._linkedData = doc.data
+  }
+
+  _doRefData (doc) {
     // Racer/react-sharedb-hooks normalizes a missing ShareDB doc into a truthy
     // observable placeholder on the shareDoc itself (`observable(undefined) -> {}`),
     // while still keeping the model tree path unresolved. Some legacy consumers
@@ -237,10 +318,17 @@ class Doc {
     //   the same way they do under Racer.
     // - and never materialize a missing doc, whatever its placeholder holds.
     if (isMissingShareDoc(doc)) {
+      // known missing (deleted, or read as not existing): what the tree still
+      // holds for it is gone; not loaded yet (a fresh doc): keep it until the load
+      if (doc.version != null && _getRaw([this.collection, this.docId]) != null) this._clearData()
       if (doc.data == null) doc.data = observable(undefined)
       return
     }
-    if (doc.data == null) return
+    if (doc.data == null) {
+      // a created doc with null data (a whole-doc replace with null elsewhere)
+      if (_getRaw([this.collection, this.docId]) != null) this._clearData()
+      return
+    }
     const idFields = getIdFieldsForSegments([this.collection, this.docId])
     if (isPlainObject(doc.data)) injectIdFields(doc.data, idFields, this.docId)
     const path = [this.collection, this.docId]
@@ -253,19 +341,25 @@ class Doc {
     }
     // set() updates an existing object in place: only a new object (a doc
     // created again) changes what the queries listing the doc hold, and they
-    // list it in the same batch
-    const synced = runInBatch(() => {
+    // list it in the same batch. ShareDB is linked to the tree's object in the
+    // batch too: the reactions it runs at its end can write to the doc, and
+    // those writes go to doc.data.
+    runInBatch(() => {
       _set(path, data)
       const synced = _getRaw(path)
       if (synced !== current) refreshQueryDocs(this.collection, this.docId)
-      return synced
+      if (synced != null && synced !== raw(doc.data)) doc.data = synced
+      if (!isObservable(doc.data)) doc.data = observable(doc.data)
     })
-    if (synced != null && synced !== raw(doc.data)) doc.data = synced
-    if (!isObservable(doc.data)) doc.data = observable(doc.data)
   }
 
-  _removeData () {
-    _del([this.collection, this.docId])
+  // the doc leaves the data tree, and the queries listing it (a forced
+  // destroy ignores them) leave it out in the same batch
+  _clearData () {
+    runInBatch(() => {
+      _del([this.collection, this.docId])
+      refreshQueryDocs(this.collection, this.docId)
+    })
   }
 }
 
@@ -278,6 +372,7 @@ export class DocSubscriptions {
       this.releaseFinalizedToken(ownerKey, hash, token).catch(ignoreDestroyError)
     })
     this.lingeringHashesByRoot = new Map() // rootId -> Set<hash> released by that root, pending GC
+    this.takes = 0 // subscribe() and retain() calls so far (see entry.lastTake)
     this.subCount = createReadonlyMapView({
       get: hash => this.getTrackedCount(hash),
       has: hash => this.getTrackedCount(hash) !== undefined,
@@ -365,7 +460,11 @@ export class DocSubscriptions {
         downgradeGrace: null,
         reconcilePromise: null,
         // the server stopped its subscription (see handleTransportError())
-        stopped: false
+        stopped: false,
+        // ShareDB's destroy of the doc in flight (see destroyRuntime())
+        destroying: null,
+        // the subscribe() or retain() that took the doc last (see destroyByHash())
+        lastTake: 0
       }
       this.entries.set(hash, entry)
     } else if (segments && !entry.segments?.length) {
@@ -411,6 +510,7 @@ export class DocSubscriptions {
     if (this.getEntryTrackedTotal(entry) !== undefined) return false
     if (entry.runtime) return false
     if (entry.phase === 'transition') return false
+    if (entry.destroying) return false
     return true
   }
 
@@ -456,6 +556,7 @@ export class DocSubscriptions {
     const ownerKey = getDocOwnerKey(rootId, hash)
     const token = getDocFinalizationToken($doc)
     const entry = this.getOrCreateEntry(hash, segments)
+    entry.lastTake = ++this.takes
     this.cancelDestroy(hash)
     const record = this.getOrCreateOwnerRecord(ownerKey, { hash, segments, rootId })
     this.incrementOwnerIntent(record, intent)
@@ -489,6 +590,7 @@ export class DocSubscriptions {
   retainSegments (segments) {
     const hash = hashDoc(segments)
     const entry = this.getOrCreateEntry(hash, segments)
+    entry.lastTake = ++this.takes
     const hadPendingDestroy = !!entry.pendingDestroy
     this.cancelDestroy(hash)
     entry.retainCount += 1
@@ -733,6 +835,12 @@ export class DocSubscriptions {
         entry.mode = 'idle'
         continue
       }
+      if (entry.destroying) {
+        // ShareDB is destroying the doc of this id: its destroy would undo a
+        // subscribe made before it is done
+        await entry.destroying.promise.catch(noop)
+        continue
+      }
       doc = this.ensureRuntime(hash)
       try {
         await doc.subscribe({ mode: desiredMode })
@@ -740,6 +848,9 @@ export class DocSubscriptions {
         this.stopTransport(hash, entry, err)
         throw err
       }
+      // destroyed while it subscribed: ShareDB's destroy ends the
+      // subscription, and the next step takes a new runtime
+      if (doc.detached) continue
       clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
       entry.runtime = doc
       entry.mode = doc.activeTransportMode || desiredMode
@@ -774,8 +885,14 @@ export class DocSubscriptions {
 
   async destroyByHash (hash, options = {}) {
     let pendingDestroy = options._pendingDestroy
-    if (pendingDestroy) this.takePendingDestroy(hash, pendingDestroy)
-    else pendingDestroy = this.takePendingDestroy(hash)
+    if (pendingDestroy) {
+      // A destroy that waited for the doc's pending ops (below) goes on only
+      // if its pending destroy is still there: subscribe() and retain() of
+      // the doc meanwhile cancel it, and other destroys take it
+      if (!this.takePendingDestroy(hash, pendingDestroy)) return
+    } else {
+      pendingDestroy = this.takePendingDestroy(hash)
+    }
     if (pendingDestroy?.force) options.force = true
 
     const settlePending = err => {
@@ -786,6 +903,8 @@ export class DocSubscriptions {
 
     try {
       const entry = this.entries.get(hash)
+      // what took the doc last when this destroy was called (see `forced`)
+      const lastTake = entry?.lastTake
       if (options.force && entry?.owners.size) {
         this.removeAllOwnersFromEntry(hash)
       }
@@ -800,6 +919,8 @@ export class DocSubscriptions {
         if (entry) {
           entry.mode = 'idle'
           entry.runtime = null
+          // the ShareDB destroy of the runtime disposed last
+          if (entry.destroying) await entry.destroying.promise.catch(noop)
           this.deleteEntryIfEmpty(hash)
         }
         settlePending()
@@ -808,7 +929,10 @@ export class DocSubscriptions {
       await this.reconcileTransport(hash)
       const nextEntry = this.entries.get(hash)
       const nextCount = nextEntry ? this.getEntryTotalCount(nextEntry) : (this.getTrackedCount(hash) || 0)
-      if (!options.force && nextCount > 0) {
+      // A forced destroy goes on despite the owners and query results that
+      // held the doc when it was called, not despite one that took it since
+      const forced = options.force && nextEntry?.lastTake === lastTake
+      if (!forced && nextCount > 0) {
         settlePending()
         return
       }
@@ -823,35 +947,37 @@ export class DocSubscriptions {
       const finalCountBeforeDestroy = finalEntryBeforeDestroy
         ? this.getEntryTotalCount(finalEntryBeforeDestroy)
         : (this.getTrackedCount(hash) || 0)
-      if (!options.force && finalCountBeforeDestroy > 0) {
+      if (!forced && finalCountBeforeDestroy > 0) {
         settlePending()
         return
       }
       if (typeof activeDoc.hasPending === 'function' && activeDoc.hasPending()) {
         if (typeof activeDoc.whenNothingPending === 'function') {
-          if (pendingDestroy) {
-            const nextEntry = this.getOrCreateEntry(hash)
-            nextEntry.pendingDestroy = pendingDestroy
+          // The destroy waits as a pending destroy, which a new owner or a
+          // query taking the doc meanwhile cancels (a forced one too)
+          const waitingEntry = this.getOrCreateEntry(hash)
+          const scheduled = waitingEntry.pendingDestroy
+          if (scheduled && scheduled !== pendingDestroy) {
+            // the doc was taken and released again while this destroy
+            // awaited: the destroy that release scheduled goes on for both
+            if (options.force) scheduled.force = true
+            if (pendingDestroy) scheduled.promise.then(pendingDestroy.resolve, pendingDestroy.reject)
+            return
           }
+          if (!pendingDestroy) {
+            pendingDestroy = createPendingDestroyEntry()
+            pendingDestroy.force = !!options.force
+          }
+          waitingEntry.pendingDestroy = pendingDestroy
           activeDoc.whenNothingPending(() => {
-            const nextOptions = pendingDestroy ? { ...options, _pendingDestroy: pendingDestroy } : options
-            this.destroyByHash(hash, nextOptions).catch(ignoreDestroyError)
+            this.destroyByHash(hash, { ...options, _pendingDestroy: pendingDestroy }).catch(ignoreDestroyError)
           })
         } else {
           settlePending()
         }
         return
       }
-      if (typeof activeDoc.destroy === 'function') await activeDoc.destroy()
-      if (typeof activeDoc.dispose === 'function') activeDoc.dispose()
-      const finalEntry = this.entries.get(hash)
-      if (finalEntry) {
-        finalEntry.runtime = null
-        finalEntry.mode = 'idle'
-        finalEntry.stopped = false
-        this.deleteEntryIfEmpty(hash)
-      }
-      clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
+      await this.destroyRuntime(hash, activeDoc)
       settlePending()
     } catch (err) {
       settlePending(err)
@@ -991,17 +1117,61 @@ export class DocSubscriptions {
         await new Promise(resolve => activeDoc.whenNothingPending(resolve))
       }
     }
-    if (typeof activeDoc.destroy === 'function') await activeDoc.destroy()
-    if (typeof activeDoc.dispose === 'function') activeDoc.dispose()
-    clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
-    const finalEntry = this.entries.get(hash)
-    if (finalEntry && finalEntry.owners.size > 0) return
-    if (finalEntry) {
-      finalEntry.runtime = null
-      finalEntry.mode = 'idle'
-      finalEntry.stopped = false
+    // nothing held the doc when this destroy started: whoever holds it now
+    // (a query listing it, a retain) took it meanwhile
+    if (this.getEntryTotalCount(this.entries.get(hash)) > 0) return
+    // nor is it this destroy's if another destroy ended the runtime, or an
+    // owner opened its transport or is opening it (and maybe left already:
+    // its release destroys the doc after the subscribe)
+    const current = this.entries.get(hash)
+    if (current?.runtime !== activeDoc || activeDoc.activeTransportMode !== 'idle' || current.phase === 'transition') return
+    await this.destroyRuntime(hash, activeDoc)
+  }
+
+  // Disposes a runtime nothing holds (the caller checked it in this tick),
+  // then has ShareDB destroy its doc, then removes the doc from the data tree.
+  // The runtime is gone at once: a doc taken again while ShareDB destroys it
+  // (a query lists it, an owner subscribes to it) gets a new runtime, whose
+  // connection.get() makes ShareDB keep the doc, and which takes over the data
+  // the tree still holds. ShareDB's destroy is asynchronous and would undo a subscribe
+  // made meanwhile, so the reconcile loop waits for `entry.destroying`, and
+  // ShareDB destroys of one doc run one at a time (ShareDB removes a doc from
+  // the connection by its id).
+  destroyRuntime (hash, runtime) {
+    const entry = this.getOrCreateEntry(hash)
+    // a runtime that is not the entry's any more was disposed by another
+    // destroy (a doc taken and released meanwhile has a new runtime: this
+    // destroy is not the one that ends it)
+    if (entry.runtime !== runtime) return entry.destroying?.promise.catch(noop)
+    if (typeof runtime.detach === 'function') runtime.detach()
+    if (entry.runtime === runtime) {
+      entry.runtime = null
+      entry.mode = 'idle'
+      entry.stopped = false
     }
-    this.deleteEntryIfEmpty(hash)
+    clearSubscriptionFailure(getSubscriptionFailureKey('doc', hash))
+    const previous = entry.destroying
+    const destroying = { promise: undefined }
+    entry.destroying = destroying
+    destroying.promise = (async () => {
+      try {
+        if (previous) await previous.promise.catch(noop)
+        if (typeof runtime.destroy === 'function') await runtime.destroy()
+      } finally {
+        // the doc leaves the data tree unless it was taken meanwhile (a new
+        // runtime follows it and holds its data)
+        // (the destroy record goes first: a reaction that throws as the doc
+        // leaves the tree must not leave the entry destroying forever)
+        const last = entry.destroying === destroying
+        if (last) entry.destroying = null
+        try {
+          if (!entry.runtime && typeof runtime.dispose === 'function') runtime.dispose()
+        } finally {
+          if (last && this.entries.get(hash) === entry) this.deleteEntryIfEmpty(hash)
+        }
+      }
+    })()
+    return destroying.promise
   }
 
   async destroyByOwnerKey (ownerKey, options = {}) {
@@ -1091,6 +1261,8 @@ function getDocOwnerKey (rootId, hash) {
 }
 
 function ignoreDestroyError () {}
+
+function noop () {}
 
 function createPendingDestroyEntry () {
   let resolvePending

@@ -349,6 +349,21 @@ sub($.users[id])
 
 [packages/teamplay/src/orm/Doc.js](./packages/teamplay/src/orm/Doc.js) manages the ShareDB doc lifecycle. It tracks subscription/fetch mode, mirrors load/create/delete/op events into observable state, injects id fields into plain objects, and delays cleanup so short-lived UI ownership changes do not churn transport state.
 
+The data tree holds the same object as ShareDB's `doc.data`, so ShareDB applies
+ops to it in place. When `doc.data` is a different object after an op (an op
+with a root component, `{ p: [] }`: the whole doc replaced, as `setReplace()`
+on a doc signal does, on any connection), the runtime links the two again, as
+after a load (`_refData()`): the tree keeps its objects and takes the new
+values in place. So a whole-doc replace notifies the same readers as the
+equivalent field ops would, and the doc's objects and the query lists holding
+it keep their identity. A whole-doc replace with `null` leaves the doc without
+data; a doc-root `setReplace(null)` deletes the doc, as `set(null)` does.
+
+The runtime's ShareDB listeners (load, create, del, op, error) go with it when
+it is detached. It calls `connection.get()` only for a doc it takes (init,
+subscribe): `connection.get()` creates a doc, and cancels a destroy ShareDB has
+in progress.
+
 The managers' reconcile loop in
 [packages/teamplay/src/orm/subscriptionTransport.js](./packages/teamplay/src/orm/subscriptionTransport.js)
 is the only coalescing layer for transports: it runs one transition per entry
@@ -378,6 +393,25 @@ aggregations (same file):
   what that root released last;
 - a garbage-collected signal that still held subscriptions releases only the
   counts it acquired (per-signal token), then goes through the normal grace.
+- a doc's runtime is destroyed one way only: it stops following ShareDB's doc
+  in the tick the destroy decides on it (`detach()`), then ShareDB destroys the
+  doc (asynchronously: after a tick, and after the doc's pending ops), then the
+  doc leaves the data tree unless it was taken meanwhile. A destroyed runtime
+  never follows a ShareDB doc again. A doc taken while ShareDB destroys it (a
+  query lists it, an owner subscribes to it; on a server connection a query's
+  results can arrive in the tick of the destroy) gets a new runtime, whose
+  `connection.get()` makes ShareDB keep the doc, and which takes over the data
+  the tree still holds (none if ShareDB's doc turns out deleted, or its data
+  null). The entry stays while ShareDB destroys its doc; a subscribe waits for
+  that destroy to end (it would undo the subscription); ShareDB destroys of one
+  doc run one at a time; a ShareDB doc a newer runtime follows is never
+  destroyed for an older one; and a destroy that finds an owner's subscribe in
+  flight leaves the doc to it.
+- force removes the owners there when a destroy is called, and ignores the
+  query results holding the doc (they read it as gone once it leaves the data
+  tree); a doc taken since stops a forced destroy as it stops any other. A destroy
+  that waits for the doc's pending ops is a pending destroy, which taking the
+  doc cancels; a pending destroy scheduled meanwhile takes it over.
 - on Node the grace and destroy timers are `unref()`'d (`utils/unrefTimer.ts`):
   they never keep a process alive once its own work is done.
 

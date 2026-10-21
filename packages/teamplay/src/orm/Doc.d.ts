@@ -47,10 +47,13 @@ export interface DocRuntimeEntry {
   downgradeGrace: { timer?: ReturnType<typeof setTimeout> } | null
   reconcilePromise: Promise<void> | null
   stopped: boolean
+  destroying: { promise: Promise<void> } | null
+  lastTake: number
 }
 
 export class Doc {
   initialized?: boolean
+  detached: boolean
   collection: string
   docId: string | number
   requestedTransportMode: TransportMode
@@ -63,6 +66,7 @@ export class Doc {
   hasPending (): boolean
   whenNothingPending (fn: () => void): void
   destroy (): Promise<void>
+  detach (): void
   dispose (): void
 }
 
@@ -72,6 +76,7 @@ export class DocSubscriptions {
   DocClass: DocConstructor
   ownerRecords: Map<string, DocOwnerRecord>
   entries: Map<string, DocRuntimeEntry>
+  takes: number
   subCount: ReadonlyMapView<string, number>
   ownerFetchCount: ReadonlyMapView<string, number>
   ownerSubscribeCount: ReadonlyMapView<string, number>

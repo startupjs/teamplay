@@ -446,7 +446,9 @@ export class Signal<TValue = unknown> extends Function {
 
     if (isPublicCollection(segments[0])) {
       try {
-        if (value === undefined) {
+        // no value deletes the doc, as set() does: null and undefined are one
+        // value once through JSON (a doc's data is an object)
+        if (value === undefined || (value === null && segments.length === 2)) {
           await _setPublicDoc(segments, nextValue)
           if (segments.length === 2) {
             _del(segments)

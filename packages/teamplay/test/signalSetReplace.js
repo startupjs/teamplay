@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert'
 
 import connect from '../src/connect/test.js'
 import { getRootSignal } from '../src/index.ts'
+import { getConnection } from '../src/orm/connection.ts'
 import { del as delPublicData, getRaw } from '../src/orm/dataTree.js'
 import { getPrivateData } from '../src/orm/privateData.js'
 import { __resetRootContextsForTests } from '../src/orm/rootContext.ts'
@@ -108,6 +109,30 @@ describe('Signal.setReplace()', () => {
 
     assert.equal($doc.get(), undefined)
     assert.equal(getRaw([PUBLIC_COLLECTION, docId]), undefined)
+  })
+
+  it('deletes a public document in replacing the whole document with null', async () => {
+    const docId = nextDocId()
+    const $doc = createRoot('public-null-doc')[PUBLIC_COLLECTION][docId]
+    await $doc.setReplace({ title: 'One' })
+
+    await $doc.setReplace(null)
+
+    assert.equal($doc.get(), undefined)
+    assert.equal(getRaw([PUBLIC_COLLECTION, docId]), undefined)
+    assert.equal(getConnection().get(PUBLIC_COLLECTION, docId).type, null, 'deleted, not created with null data')
+  })
+
+  it('rejects replacing a whole public document with a non-object value', async () => {
+    const docId = nextDocId()
+    const $doc = createRoot('public-primitive-doc')[PUBLIC_COLLECTION][docId]
+    await $doc.setReplace({ title: 'One' })
+
+    await assert.rejects($doc.setReplace('One'), /non-object value to a public doc/)
+    await assert.rejects($doc.setReplace(1), /non-object value to a public doc/)
+
+    assert.deepEqual($doc.get(), { _id: docId, title: 'One' })
+    assert.deepEqual(getConnection().get(PUBLIC_COLLECTION, docId).data, { _id: docId, title: 'One' })
   })
 
   it('skips protected public id fields', async () => {
