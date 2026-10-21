@@ -173,3 +173,15 @@ function StableBase ({ $doc, record }) {
   return <b onClick={onPress}>{$doc.count.get()}</b>
 }
 export const Stable = observer(StableBase)
+
+// a component that is not an observer, reading a signal through a helper
+// (as i18n's t() does)
+const countLabel = $doc => 'n' + $doc.count.get()
+function CountLabel ({ $doc }) {
+  const text = countLabel($doc)
+  return <i>{text}</i>
+}
+function CountLabelParentBase ({ $doc }) {
+  return <div><b>{$doc.count.get()}</b>|<CountLabel $doc={$doc} /></div>
+}
+export const CountLabelParent = observer(CountLabelParentBase)

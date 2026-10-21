@@ -263,10 +263,11 @@ Things to know:
   read with `.get()`) is still compiled, and shows it stale after a change in
   place: use `'full'`, or make it an `observer()`.
 - Rendering must not read the clock in a way the compiler can't see. With
-  `'full'`, a block of code that calls `Date.now()`, `new Date()` or
-  `performance.now()` itself recomputes on every render; a helper function that
-  reads the clock inside is cached like any other call. Keep the time in a
-  signal or in state, and pass it in.
+  `'full'`, a block of code that calls `Date.now()`, `new Date()`,
+  `performance.now()`, or `moment()` / `dayjs()` without an argument itself
+  recomputes on every render; a helper function that reads the clock inside is
+  cached like any other call. Keep the time in a signal or in state, and pass
+  it in.
 - The compiler caches values that only change in place or with time. Code
   that worked only because a value went stale under the compiler alone (for
   example a hook reading signals, which the compiler cached) changes behaviour

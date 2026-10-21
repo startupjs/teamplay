@@ -97,9 +97,10 @@ function reactCompilerProgramExit (program, state, options, t) {
   const filename = state.file.opts.filename || ''
   if (isDependency(filename) || state.get(SKIP)) return
   const { reactCompiler } = options
-  if (reactCompiler === false || reactCompiler === 'optOut') return
   const cacheFactory = getCompilerCacheFactory(program)
   if (!cacheFactory) return
+  if (reactCompiler) clearGeneratedLocations(program)
+  if (reactCompiler === false || reactCompiler === 'optOut') return
   if (reactCompiler === undefined) {
     if (!warnedUnconfigured && sourceUsesSignals(state.file.code, program, options)) {
       warnedUnconfigured = true
@@ -112,6 +113,19 @@ function reactCompilerProgramExit (program, state, options, t) {
     return
   }
   instrumentCompiledCode(program, cacheFactory, filename, options, t)
+}
+
+// The compiler marks a node it generates with a Symbol location (its
+// GeneratedSource), which later transforms copy (a JSX spread of a compiled
+// temporary becomes `Object.assign({}, t7, ...)`). Code generation ignores it,
+// but a bundler that sends the AST to another process (Expo's tree shaking:
+// Metro's workers) can't serialize a Symbol.
+function clearGeneratedLocations (program) {
+  program.traverse({
+    enter (path) {
+      if (typeof path.node.loc === 'symbol') path.node.loc = null
+    }
+  })
 }
 
 // ----- the files to leave alone
@@ -686,10 +700,21 @@ function createsElements (node, t) {
   return found
 }
 
-// Date.now(), new Date() or performance.now() in the body (not in the
-// functions it creates, which don't run while rendering)
+const CLOCK_LIBRARIES = new Set(['moment', 'dayjs'])
+
+// Date.now(), new Date() or performance.now(), or moment() / dayjs() (and
+// their .utc()) with no argument, in the body (not in the functions it
+// creates, which don't run while rendering)
 function readsClock (body) {
   let reads = false
+  // the default import of moment or dayjs
+  const isClockLibrary = (path, name) => {
+    const binding = path.scope.getBinding(name)
+    if (!binding || binding.kind !== 'module') return false
+    const declaration = binding.path.parentPath
+    return (binding.path.isImportDefaultSpecifier() || binding.path.isImportNamespaceSpecifier()) &&
+      declaration.isImportDeclaration() && CLOCK_LIBRARIES.has(declaration.node.source.value)
+  }
   // the global one, not a variable of that name
   const isGlobal = (path, name) => !path.scope.getBinding(name)
   const isCall = (call, object, property) => {
@@ -700,7 +725,13 @@ function readsClock (body) {
   body.traverse({
     Function (inner) { inner.skip() },
     CallExpression (call) {
-      if (isCall(call, 'Date', 'now') || isCall(call, 'performance', 'now')) { reads = true; call.stop() }
+      const callee = call.node.callee
+      const library = !call.node.arguments.length && (
+        (callee.type === 'Identifier' && isClockLibrary(call, callee.name)) ||
+        (callee.type === 'MemberExpression' && !callee.computed && callee.object.type === 'Identifier' &&
+          callee.property.name === 'utc' && isClockLibrary(call, callee.object.name))
+      )
+      if (library || isCall(call, 'Date', 'now') || isCall(call, 'performance', 'now')) { reads = true; call.stop() }
     },
     NewExpression (expression) {
       if (expression.get('callee').isIdentifier({ name: 'Date' }) && !expression.node.arguments.length && isGlobal(expression, 'Date')) {

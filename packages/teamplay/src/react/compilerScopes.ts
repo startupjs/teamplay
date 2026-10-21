@@ -18,10 +18,14 @@
 // replaced) keeps its identity. Reads in a scope that stays cached stay
 // tracked by its reaction from when it last ran.
 //
-// Outside observer() nothing tracks reads, so a scope recomputes when one of
-// its cached dependencies (DEP_SLOTS) may be a doc's data, which changes in
-// place: a plain object or array (outside a reaction, a doc's data reads as
-// its raw objects), as every render recomputes it without the compiler.
+// Outside observer() nothing tracks reads, and nothing re-renders the
+// component when a signal changes. But when something does (its parent), a
+// scope that reads signals (directly, or through a helper such as i18n's t())
+// recomputes, as every render recomputes it without the compiler: such a scope
+// runs once in a throwaway reaction that only notes whether it read any. So
+// does a scope whose cached dependencies (DEP_SLOTS) may be a doc's data,
+// which changes in place: a plain object or array (outside a reaction, a doc's
+// data reads as its raw objects).
 //
 // Where the scopes' state lives: React keeps the cache of a render only if
 // the render commits (a render that suspends, is interrupted, or is
@@ -52,6 +56,8 @@ interface ScopeOwner {
   invalidated: Map<number, number>
   // scope key -> the key of the scope its body runs in
   parents: Map<number, number | undefined>
+  // outside observer(): the scopes whose last run read signals
+  reading: Set<number>
 }
 
 // slot N of the cache
@@ -131,13 +137,17 @@ export function destroyScopes (context: ScopeContext): void {
 
 export function cache (memoCache: MemoCache): MemoCache {
   const context = executionContextTracker.getScopeContext()
-  if (!context) return memoCache
   const slot = memoCache.length - 1
   const state = memoCache[slot] as ScopeState | undefined
   if (!(state as any)?.[STATE]) {
-    memoCache[slot] = { [STATE]: true, owner: { invalidated: new Map(), parents: new Map() }, runs: new Map(), renderId: context.renderId }
+    memoCache[slot] = {
+      [STATE]: true,
+      owner: { invalidated: new Map(), parents: new Map(), reading: new Set() },
+      runs: new Map(),
+      renderId: context ? context.renderId : -1
+    }
   }
-  context.renderCaches.add(memoCache)
+  context?.renderCaches.add(memoCache)
   return memoCache
 }
 
@@ -160,6 +170,7 @@ export function dirty (
     // an observer() that started before compiled code was loaded: recompute,
     // and the render tracks the reads
     if (executionContextTracker.isActive()) return true
+    if (getState(memoCache)?.owner?.reading.has(key)) return true
     return !!depSlots?.some(slot => mayChangeInPlace(memoCache[slot]))
   }
   const state = getState(memoCache)
@@ -174,7 +185,7 @@ export function dirty (
 
 export function run (memoCache: MemoCache, key: number, body: () => void): void {
   const context = executionContextTracker.getScopeContext()
-  if (!context) return body()
+  if (!context) return runOutsideObserver(memoCache, key, body)
   const slot = memoCache.length - 1
   let state = getState(memoCache)
   // this render's own copy: the cache it was copied from may be the one React keeps
@@ -221,6 +232,22 @@ export function run (memoCache: MemoCache, key: number, body: () => void): void 
   state.runs.set(key, scopeRun)
   context.runs.add(scopeRun)
   reaction()
+}
+
+// notes whether the body reads signals (see above)
+function runOutsideObserver (memoCache: MemoCache, key: number, body: () => void): void {
+  const owner = getState(memoCache)?.owner
+  if (!owner || executionContextTracker.isActive()) return body()
+  const reaction = observe(body, { lazy: true, scheduler: () => {} })
+  try {
+    reaction()
+  } finally {
+    // observer-util keeps what a reaction read in `cleaners` (unknown: count it as a read)
+    const reads = (reaction as unknown as { cleaners?: unknown[] }).cleaners
+    if (!reads || reads.length) owner.reading.add(key)
+    else owner.reading.delete(key)
+    unobserve(reaction)
+  }
 }
 
 function mayChangeInPlace (value: unknown): boolean {

@@ -271,6 +271,14 @@ describe.each([
     expect(container.textContent).toBe('A|x+y')
   })
 
+  it('a component that is not an observer, reading a signal through a helper, when its parent renders again', () => {
+    const $doc = nextDoc({ count: 1 })
+    const { container } = render(el(cases.CountLabelParent, { $doc }))
+    expect(container.textContent).toBe('1|n1')
+    act(() => { $doc.count.set(2) })
+    expect(container.textContent).toBe('2|n2')
+  })
+
   ;(mode === 'full' ? it : it.skip)('a component that is not an observer, given a doc\'s object changed in place', () => {
     const $user = nextDoc({ name: 'A', tags: ['x'] })
     const { container } = render(el(cases.UserCard, { $user }))

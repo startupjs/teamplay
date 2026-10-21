@@ -2,6 +2,7 @@ import babel from '@babel/core'
 import { beforeEach, describe, it } from 'mocha'
 import { jestExpect as expect } from 'mocha-expect-snapshot'
 import { createRequire } from 'node:module'
+import { serialize } from 'node:v8'
 import plugin from '../index.js'
 import reactCompiler from '../reactCompiler.js'
 
@@ -362,6 +363,55 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       // the scope of new Date() (the compiler computes Date.now() outside scopes here)
       expect(code).toContain('if ($[0] === Symbol.for("react.memo_cache_sentinel") || true || _tp.dirty($, 0)) {\n    _tp.run($, 0, () => {\n      t1 = new Date().getDay();')
       expect(code.match(/\|\| true \|\|/g)).toHaveLength(1)
+    })
+
+    it('recomputes on every render a scope that calls moment() or dayjs() for the current time', () => {
+      const { code } = transform(`
+        import moment from 'moment'
+        import { observer } from 'startupjs'
+        export const Late = observer(function Late ({ dueAt }) {
+          const today = { day: moment().format('L'), year: moment.utc().year() }
+          const due = { day: moment(dueAt).format('L') }
+          return <b>{today.day}{today.year}{due.day}</b>
+        })
+      `, { teamplay: { reactCompiler: 'full' } })
+      // the scope of today, not the one of due (moment(dueAt) is not the clock)
+      expect(code.match(/\|\| true \|\|/g)).toHaveLength(1)
+      expect(code).toContain('if ($[0] === Symbol.for("react.memo_cache_sentinel") || true || _tp.dirty($, 0)) {\n    _tp.run($, 0, () => {\n      t1 = {\n        day: moment().format("L")')
+    })
+
+    it('clears the Symbol locations of compiled nodes (an AST a bundler sends to another process)', () => {
+      // the compiler's GeneratedSource, copied by a later transform
+      const generatedLocation = () => ({
+        visitor: { Identifier (identifier) { if (identifier.node.name === 't1') identifier.node.loc = Symbol('GeneratedSource') } }
+      })
+      const { ast } = babel.transformSync('', {
+        filename: FILENAME,
+        babelrc: false,
+        configFile: false,
+        ast: true,
+        code: false,
+        plugins: [
+          [plugin, { types: false, reactCompiler: 'full', warn: () => {} }],
+          compiledAs(`
+            import { c as _c } from 'react/compiler-runtime'
+            export function Spread (t0) {
+              const $ = _c(2)
+              let t1
+              if ($[0] !== t0) {
+                t1 = Object.assign({}, t0, { children: 1 })
+                $[0] = t0
+                $[1] = t1
+              } else {
+                t1 = $[1]
+              }
+              return t1
+            }
+          `),
+          generatedLocation
+        ]
+      })
+      expect(() => serialize(ast)).not.toThrow()
     })
 
     it('leaves files in node_modules alone', () => {
