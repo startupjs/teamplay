@@ -1,4 +1,4 @@
-import { forwardRef as _forwardRef, useEffect, useRef } from 'react'
+import { forwardRef as _forwardRef, useEffect, useLayoutEffect, useRef } from 'react'
 import { observe, unobserve } from '@nx-js/observer-util'
 import _throttle from 'lodash/throttle.js'
 import { createCaches, getDummyCache } from '@teamplay/cache'
@@ -9,6 +9,7 @@ import trapRender from './trapRender.js'
 import { useSuspenseGroupScheduleUpdate } from './wrapIntoSuspense.js'
 import { scheduleReaction } from '../orm/batchScheduler.js'
 import FinalizationRegistry from '../utils/MockFinalizationRegistry.ts'
+import * as compilerScopes from './compilerScopes.ts'
 import { diag } from '../diagnostics/hooks.ts'
 
 const DEFAULT_THROTTLE_TIMEOUT = 100
@@ -53,6 +54,10 @@ export default function convertToObserver (BaseComponent, {
     const renderTokenRef = useRef(null)
     const holderRef = useRef()
     const mountedRef = useRef(false)
+    // React Compiler ('full' in babel-plugin-teamplay, see compilerScopes.ts):
+    // decided on the first render, so that every render calls the same hooks
+    const compilerRef = useRef()
+    compilerRef.current ??= { enabled: compilerScopes.isEnabled(), scopeContext: undefined }
     if (!reactionRef.current) {
       let hasDeferredUpdateAfterExecutionContext = false
       let update = () => {
@@ -73,6 +78,9 @@ export default function convertToObserver (BaseComponent, {
         }
       }
       if (throttle) update = _throttle(update, throttle)
+      const scopeContext = compilerRef.current.scopeContext = compilerRef.current.enabled
+        ? compilerScopes.createScopeContext(() => scheduleReaction(update))
+        : undefined
       const holder = {}
       const destroy = destroyRef.current = (where) => {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
@@ -81,6 +89,7 @@ export default function convertToObserver (BaseComponent, {
         if (diag.on) diag.noteObserverDestroyed(reactionRef.current, where)
         unobserve(reactionRef.current)
         reactionRef.current = undefined
+        if (scopeContext) compilerScopes.destroyScopes(scopeContext)
         destroyCache(where)
       }
       // Disposes only this reaction (a later one may reuse the refs).
@@ -93,10 +102,13 @@ export default function convertToObserver (BaseComponent, {
         cache,
         destroy: destroyRef.current,
         componentId,
-        scheduleGroupUpdate
+        scheduleGroupUpdate,
+        scopeContext
       })
       reactionRef.current = observe(trappedRender, {
-        scheduler: () => scheduleReaction(update),
+        scheduler: scopeContext
+          ? () => compilerScopes.notifyScopes(scopeContext)
+          : () => scheduleReaction(update),
         lazy: true
       })
       if (diag.on) diag.noteObserverCreated(reactionRef.current, Component.displayName || 'Anonymous', componentId)
@@ -104,6 +116,15 @@ export default function convertToObserver (BaseComponent, {
         renderTokenRef.current = {}
         uncommittedReactions.register(renderTokenRef.current, holder, holder)
       }
+    }
+
+    if (compilerRef.current.enabled) {
+      // the scopes this render recomputed are the cache React keeps now
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      useLayoutEffect(() => {
+        const { scopeContext } = compilerRef.current
+        if (reactionRef.current && scopeContext) compilerScopes.commitScopes(scopeContext)
+      })
     }
 
     useEffect(() => {

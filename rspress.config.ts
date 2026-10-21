@@ -56,6 +56,7 @@ export default defineConfig({
           items: [
             { text: '$ (Root Signal)', link: '/api/root-signal' },
             { text: '$() Function', link: '/api/dollar-function' },
+            { text: 'signal() and useSignal()', link: '/api/signal-function' },
             { text: 'sub() Function', link: '/api/sub-function' },
             { text: 'observer() HOC', link: '/api/observer-hoc' },
             { text: 'useSub() Hook', link: '/api/use-sub-hook' },

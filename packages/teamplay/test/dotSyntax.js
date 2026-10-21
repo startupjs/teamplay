@@ -1,7 +1,7 @@
 import { it, describe, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { runGc } from './_helpers.js'
-import { $, signal, __DEBUG_SIGNALS_CACHE__ as signalsCache, GLOBAL_ROOT_ID } from '../src/index.ts'
+import { $, getSignal, __DEBUG_SIGNALS_CACHE__ as signalsCache, GLOBAL_ROOT_ID } from '../src/index.ts'
 import connect from '../src/connect/test.js'
 
 before(connect)
@@ -15,7 +15,7 @@ describe('dot syntax', () => {
   })
 
   it('returns the same instance for the same path', () => {
-    assert.equal($, signal(undefined, [], { rootId: GLOBAL_ROOT_ID }))
+    assert.equal($, getSignal(undefined, [], { rootId: GLOBAL_ROOT_ID }))
     assert.equal($._session, $._session)
     assert.notEqual($._session, $._page)
     assert.equal($._session.a.b.c, $._session.a.b.c)

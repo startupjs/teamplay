@@ -2,7 +2,7 @@ import React from 'react'
 import { it, describe, afterEach, before } from 'mocha'
 import { strict as assert } from 'node:assert'
 import { afterEachTestGc, runGc } from './_helpers.js'
-import { $, batch, batchModel, clone, initLocalCollection, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../src/index.ts'
+import { $, batch, batchModel, clone, getSignal, initLocalCollection, signal, __DEBUG_SIGNALS_CACHE__ as signalsCache } from '../src/index.ts'
 import { GLOBAL_ROOT_ID } from '../src/orm/Root.ts'
 import { LOCAL } from '../src/orm/$.js'
 import { delPrivateData, getPrivateData } from '../src/orm/privateData.js'
@@ -144,6 +144,49 @@ describe('$() function. Reactions', () => {
     $lastName.set('Smith')
     await runGc()
     assert.equal($fullName.get(), 'John Smith')
+  })
+
+  // the reaction's function shares its closure context with `read`, which
+  // holds the reaction's signal
+  it('a reaction is collected when a closure next to its function uses its signal', async () => {
+    let read
+    ;(() => {
+      const $count = $(1)
+      const $double = $(() => $count.get() * 2)
+      read = () => $double.get()
+    })()
+    assert.equal(read(), 2)
+    read = undefined
+    await runGc()
+  })
+})
+
+describe('signal()', () => {
+  afterEachTestGc()
+  afterEachTestGcLocal()
+
+  it('creates a local signal, and a computed one', async () => {
+    const $count = signal(1)
+    const $double = signal(() => $count.get() * 2)
+    assert.equal($double.get(), 2)
+    $count.set(2)
+    assert.equal($double.get(), 4)
+    assert.equal(signal().get(), undefined)
+  })
+
+  it('signal($root, segments) is getSignal(), with a deprecation warning', () => {
+    const warn = console.warn
+    const warnings = []
+    console.warn = message => warnings.push(message)
+    try {
+      assert.equal(signal($, ['_session', 'signalLegacy']), getSignal($, ['_session', 'signalLegacy']))
+      assert.equal(signal($, ['_session', 'signalLegacy']), $._session.signalLegacy)
+      assert.equal(signal(undefined, [], { rootId: GLOBAL_ROOT_ID }), $)
+    } finally {
+      console.warn = warn
+    }
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /getSignal/)
   })
 })
 

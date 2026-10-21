@@ -176,14 +176,17 @@ local Suspense fallback there.
 
 ## React Compiler
 
-The [React Compiler](https://react.dev/learn/react-compiler) is not supported.
-Expo turns it on with `"experiments": { "reactCompiler": true }` in `app.json`,
-and the default Expo template sets it.
+The [React Compiler](https://react.dev/learn/react-compiler) needs
+`babel-plugin-teamplay`'s `reactCompiler` option. Expo turns the compiler on
+with `"experiments": { "reactCompiler": true }` in `app.json`, and the default
+Expo template sets it.
+
+### Why
 
 The compiler caches a value until one of its inputs changes identity. A signal
 keeps its identity when its data changes (`$user.score` is the same object
-before and after `$user.score.set(12)`), so the compiled code keeps returning
-the old value:
+before and after `$user.score.set(12)`), so without the option the compiled
+code keeps returning the old value:
 
 ```javascript
 // your hook
@@ -212,36 +215,54 @@ The cached branch also skips `.get()`, so `observer()` stops tracking that
 field: after one cached render, later changes don't re-render the component.
 The same happens to values derived from signals, to reads from the imported `$`
 (cached for the life of the component), and to local and computed signals
-(`$(0)`, `$(() => ...)`).
+(`$(0)`, `$(() => ...)`), whose hooks the compiler then calls only on the
+first render.
 
-With its default settings the compiler compiles:
+### The `reactCompiler` option
 
-- custom hooks: functions named `use...` that call a hook;
-- components declared on their own and wrapped afterwards:
-  `function Profile () {}` or `const Profile = () => ...`, then
-  `observer(Profile)`;
-- functions passed to `memo()` and `forwardRef()`.
+- `'full'`: the compiler compiles everything, and TeamPlay keeps the compiled
+  code reactive. Components keep the compiler's optimizations: a re-render
+  from the parent reuses what didn't change, and memoized callbacks keep their
+  identity.
+- `'optOut'`: the compiler skips the components and hooks that use signals
+  (`babel-plugin-teamplay` adds `'use no memo'` to them) and compiles the rest.
+  The skipped ones work exactly as without the compiler.
+- `false`: nothing. Without the option, `babel-plugin-teamplay` warns when the
+  compiler compiles a file that uses signals.
 
-It leaves a function passed inline to `observer()`
-(`observer(function Profile () {})`) uncompiled, but it still compiles the
-hooks that function calls. Don't rely on this.
-
-To use TeamPlay, do one of these:
-
-- turn the compiler off: `"experiments": { "reactCompiler": false }` in Expo's
-  `app.json`, or remove `babel-plugin-react-compiler` from your Babel config;
-- add the `'use no memo'` directive to every hook and component that reads
-  signals, as the first statement of the function, or at the top of a file to
-  opt out the whole file:
+`babel-plugin-teamplay` has to run before the compiler (it fails the build
+otherwise). Plugins run before presets, so with Expo:
 
 ```javascript
-function useScore ($user) {
-  'use no memo'
-  const score = $user.score.get() ?? 0
-  useEffect(() => { /* ... */ }, [])
-  return score
+// babel.config.js
+module.exports = {
+  presets: ['babel-preset-expo'],
+  plugins: [['teamplay/babel', { reactCompiler: 'full' }]]
 }
 ```
+
+How `'full'` works: before the compiler, `$()` called in a component or a hook
+becomes `useSignal()`, which the compiler never caches. After the compiler,
+each block of code the compiler caches runs in a reaction that tracks the
+signals it reads, inside `observer()` components. When one of them changes,
+that block and the blocks that use its result run again, and so do the blocks
+that create elements. The other blocks keep their cache.
+
+Things to know:
+
+- `'optOut'` finds signals by TeamPlay's naming: a component or a hook uses
+  signals if it mentions a `$`-named value or anything imported from
+  `teamplay` or `startupjs`. Name signals `$something`.
+- `$()` is a hook when it runs while a component renders, also in a helper
+  function a component calls. The compiler doesn't know that and may skip the
+  call. Rename such a helper to `use...()` and call `useSignal()` in it (the
+  `dollarCalls` option points out these calls).
+- With `'full'`, if `babel-plugin-teamplay` doesn't recognize the compiler's
+  output for a function, it warns, and inside `observer()` that function then
+  runs as if it wasn't compiled.
+
+Or turn the compiler off: `"experiments": { "reactCompiler": false }` in Expo's
+`app.json`, or remove `babel-plugin-react-compiler` from your Babel config.
 
 ## Creating and Waiting for Documents
 
@@ -279,11 +300,11 @@ This ensures our component only renders when it has all the data it needs.
 Here's an example of a complete React component using TeamPlay:
 
 ```jsx
-import { observer, useSub, $ } from 'teamplay'
+import { observer, useSub, useSignal, $ } from 'teamplay'
 
 const UserProfile = observer(({ userId }) => {
   const $user = useSub($.users[userId])
-  const $editMode = $(false)
+  const $editMode = useSignal(false)
 
   if (!$user.get()) {
     throw $user.set({ name: 'New User', bio: 'Tell us about yourself', createdAt: Date.now() })
@@ -334,7 +355,7 @@ In this example:
 1. We wrap our `UserProfile` component with `observer()`.
 2. We use `useSub()` to subscribe to user data.
 3. We check if the user document exists and create it if it doesn't.
-4. We create a local `$editMode` signal to manage the component's state.
+4. We create a local `$editMode` signal with `useSignal()` to manage the component's state.
 5. We use `.get()` to read values and `.set()` to update them.
 
 By following these patterns, you can create React components that automatically stay in sync with your data, handle loading states, and manage document creation seamlessly.

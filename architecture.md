@@ -527,9 +527,14 @@ React integration lives in [packages/teamplay/src/react](./packages/teamplay/src
 - `useSuspendMemo()`
 - local/session/page/document/query hooks.
 
-The React Compiler is not supported. It caches a value until its inputs change identity, and a signal keeps its identity when its data changes, so compiled hooks and components keep returning old values, and `observer()` stops tracking a read the cache skipped. Apps turn the compiler off or mark signal-reading code `'use no memo'` ([docs/guide/react-integration.md](./docs/guide/react-integration.md#react-compiler)); [packages/teamplay/test_client/62_react-compiler.js](./packages/teamplay/test_client/62_react-compiler.js) pins the behaviour.
+The React Compiler caches a value until its inputs change identity, and a signal keeps its identity when its data changes, so compiled hooks and components keep returning old values, and `observer()` stops tracking a read the cache skipped ([packages/teamplay/test_client/62_react-compiler.js](./packages/teamplay/test_client/62_react-compiler.js) pins this for the compiler alone). Apps set `babel-plugin-teamplay`'s `reactCompiler` option ([docs/guide/react-integration.md](./docs/guide/react-integration.md#react-compiler)):
 
-`$` and `sub()` are intentionally universal: the root export in [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts) uses `universal$` so the same public API works in plain JS and React environments.
+- `'optOut'` adds `'use no memo'` to the components and hooks that use signals (`$`-named values, or imports from teamplay/startupjs).
+- `'full'` keeps the compiled code reactive. Before the compiler (Program enter, so `babel-plugin-teamplay` has to come first; the plugin fails the build if the compiler already ran), `$()` in components and hooks becomes `useSignal()`. After it (Program exit), each memo scope is instrumented to call the runtime in [packages/teamplay/src/react/compilerScopes.ts](./packages/teamplay/src/react/compilerScopes.ts) (exported as `__reactCompiler`): inside an `observer()` render each scope body runs in its own reaction; a signal change invalidates the scope, the scopes around it, and on the next render the scopes that use its outputs (found statically) and the scopes that create elements. A scope stays invalid until a render that recomputed it commits (a layout effect in `convertToObserver`), because React keeps the cache only of committed renders. A function whose compiled code has a shape the plugin doesn't recognize recomputes every scope inside `observer()`, with a build warning. Observers set this up only when instrumented code has loaded (`__reactCompiler.enable()` at the top of each instrumented file), decided on each observer's first render so its hooks stay the same.
+
+Both modes are tested on the same fixtures in [packages/teamplay/test_client/63_react-compiler-modes.js](./packages/teamplay/test_client/63_react-compiler-modes.js), including suspended renders and StrictMode.
+
+`$` and `sub()` are intentionally universal: the root export in [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts) uses `universal$` so the same public API works in plain JS and React environments. `signal()` and `useSignal()` split `$()` into its plain-function and hook forms (`useSignal()` is what `$()` does while an `observer()` renders, and keeps its signal in a ref in other components); `babel-plugin-teamplay`'s `dollarCalls` option reports `$()` calls.
 
 React subscriptions must preserve the same runtime signal shapes as `sub()`:
 
@@ -725,7 +730,8 @@ The model tooling package is [packages/babel-plugin-teamplay](./packages/babel-p
 - generating `teamplay-env.d.ts`,
 - importing plugin declaration sidecars,
 - emitting static framework feature and plugin-option types,
-- supporting loader/plugin variants.
+- supporting loader/plugin variants,
+- React Compiler support (`reactCompiler`) and `$()` call reports (`dollarCalls`), in [packages/babel-plugin-teamplay/reactCompiler.js](./packages/babel-plugin-teamplay/reactCompiler.js).
 
 Changes here often affect both runtime and typing:
 
@@ -766,7 +772,7 @@ cd packages/teamplay && npm run test-client
 yarn workspace babel-plugin-teamplay test
 ```
 
-Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client) and run on React 19 (jsdom, `@testing-library/react`). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list. Shared client test helpers live in `test_client/helpers/` (ignored as test files); `releaseLastEventTarget()` drops react-dom's reference to the last DOM event target, whose development-only `_debugStack` otherwise keeps a test body's closures alive into the next test's leak check. Fixtures named `*.react-compiler.jsx` are compiled by the React Compiler as an Expo development build compiles app code ([packages/teamplay/test_client/helpers/reactCompilerTransform.cjs](./packages/teamplay/test_client/helpers/reactCompilerTransform.cjs)).
+Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client) and run on React 19 (jsdom, `@testing-library/react`). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list. Shared client test helpers live in `test_client/helpers/` (ignored as test files); `releaseLastEventTarget()` drops react-dom's reference to the last DOM event target, whose development-only `_debugStack` otherwise keeps a test body's closures alive into the next test's leak check. Fixtures named `*.react-compiler.jsx`, `*.rc-optout.jsx` and `*.rc-full.jsx` are compiled by the React Compiler as an Expo development build compiles app code, the last two with `babel-plugin-teamplay` before it in the same pass and its `reactCompiler` option set to `'optOut'` or `'full'` ([packages/teamplay/test_client/helpers/reactCompilerTransform.cjs](./packages/teamplay/test_client/helpers/reactCompilerTransform.cjs)).
 
 Server/runtime tests live in [packages/teamplay/test](./packages/teamplay/test). Type tests live in [packages/teamplay/test_types](./packages/teamplay/test_types) and the strict external consumer setup.
 

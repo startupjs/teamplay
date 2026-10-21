@@ -1,0 +1,547 @@
+// React Compiler support and the $() call deprecation (options `reactCompiler`
+// and `dollarCalls`). See docs/guide/react-integration.md.
+//
+// The compiler caches a value until one of its inputs changes identity, but a
+// signal keeps its identity when its data changes, so compiled components that
+// read signals show stale values. `reactCompiler`:
+//
+// - 'optOut': a component or a hook that uses signals gets 'use no memo', so
+//   the compiler leaves it as written. Must run before the compiler (the
+//   compiler compiles the whole file on Program enter; this works on Program
+//   enter too, so babel-plugin-teamplay has to come first).
+// - 'full': the compiler compiles everything, and teamplay keeps the compiled
+//   code reactive:
+//   - before the compiler (Program enter), a $() call made directly in a
+//     component or a hook becomes useSignal(), which the compiler then never
+//     caches and always calls, in order;
+//   - after it (Program exit), each memo scope the compiler emitted
+//       if (DEPS_CHANGED) { BODY } else { ...cached outputs... }
+//     becomes
+//       if (DEPS_CHANGED || _tp.dirty($, K, [UPSTREAM], JSX)) { _tp.run($, K, () => { BODY }) } else { ... }
+//     K is the scope's first cache slot; UPSTREAM the scopes whose outputs
+//     its dependencies are; JSX whether it creates elements (see
+//     teamplay/src/react/compilerScopes.ts). A scope that leaves its body
+//     (return, break, continue) can't run in a function, and a function whose
+//     compiled code isn't recognized can't be instrumented: inside observer()
+//     those scopes recompute on every render (`|| _tp.inObserver()`).
+// - unset: if the compiler compiled a file that uses signals in the same
+//   babel pass, warn that `reactCompiler` should be set. `false` turns it off.
+//
+// `dollarCalls: 'warn' | 'error'` reports $() calls: useSignal() replaces them
+// in components and hooks, signal() everywhere else.
+
+const HOOK_NAME = /^use[A-Z0-9]/
+const COMPONENT_NAME = /^[A-Z]/
+const WRAPPERS = new Set(['memo', 'forwardRef', 'observer'])
+const DEFAULT_SOURCES = ['teamplay', 'startupjs']
+const COMPILER_RUNTIMES = new Set(['react/compiler-runtime', 'react-compiler-runtime'])
+const CACHE_SENTINEL = 'react.memo_cache_sentinel'
+const MODES = new Set(['optOut', 'full'])
+const REPORT_LEVELS = new Set(['warn', 'error'])
+const DOCS = 'https://github.com/startupjs/teamplay/blob/master/docs/guide/react-integration.md#react-compiler'
+
+let warnedUnconfigured = false
+
+function normalizeReactCompilerOptions (options = {}) {
+  const { reactCompiler, dollarCalls } = options
+  if (reactCompiler != null && reactCompiler !== false && !MODES.has(reactCompiler)) {
+    throw Error(`[babel-plugin-teamplay] reactCompiler: expected 'optOut', 'full' or false, got ${JSON.stringify(reactCompiler)}`)
+  }
+  if (dollarCalls != null && dollarCalls !== false && !REPORT_LEVELS.has(dollarCalls)) {
+    throw Error(`[babel-plugin-teamplay] dollarCalls: expected 'warn', 'error' or false, got ${JSON.stringify(dollarCalls)}`)
+  }
+  return {
+    reactCompiler: reactCompiler ?? undefined,
+    dollarCalls: dollarCalls || undefined,
+    // the modules signals are imported from
+    teamplaySources: options.teamplaySources || DEFAULT_SOURCES,
+    // where the code 'full' generates imports teamplay's runtime from
+    // (default: the module the file imports teamplay from, or 'teamplay')
+    reactCompilerRuntime: options.reactCompilerRuntime
+  }
+}
+
+function reactCompilerProgramEnter (program, state, options, t) {
+  const filename = state.file.opts.filename || ''
+  if (isDependency(filename)) return
+  const { reactCompiler, dollarCalls } = options
+  if (!reactCompiler && !dollarCalls) return
+  const teamplay = getTeamplayImports(program, options.teamplaySources)
+  if (MODES.has(reactCompiler) && getCompilerCacheFactory(program)) {
+    throw program.buildCodeFrameError(
+      `[babel-plugin-teamplay] reactCompiler: '${reactCompiler}' needs babel-plugin-teamplay to run before ` +
+      'the React Compiler, and the React Compiler has already compiled this file. List babel-plugin-teamplay ' +
+      `before babel-plugin-react-compiler (or before the preset that adds it). See ${DOCS}`
+    )
+  }
+  if (dollarCalls) reportDollarCalls(program, teamplay, filename, dollarCalls, options.warn)
+  if (reactCompiler === 'optOut') optOut(program, teamplay, t)
+  else if (reactCompiler === 'full') renameLocalSignals(program, teamplay, t)
+}
+
+function reactCompilerProgramExit (program, state, options, t) {
+  const filename = state.file.opts.filename || ''
+  if (isDependency(filename)) return
+  const { reactCompiler } = options
+  if (reactCompiler === false || reactCompiler === 'optOut') return
+  const cacheFactory = getCompilerCacheFactory(program)
+  if (!cacheFactory) return
+  if (reactCompiler === undefined) {
+    if (!warnedUnconfigured && sourceUsesSignals(state.file.code, program, options)) {
+      warnedUnconfigured = true
+      options.warn(
+        `[teamplay] The React Compiler compiled ${filename}, which uses signals: compiled components ` +
+        'and hooks show stale values unless babel-plugin-teamplay\'s `reactCompiler` option is set ' +
+        `('optOut' or 'full', or false to silence this warning). See ${DOCS}`
+      )
+    }
+    return
+  }
+  instrumentCompiledCode(program, cacheFactory, filename, options, t)
+}
+
+// ----- the files to leave alone
+
+function isDependency (filename) {
+  return /[\\/]node_modules[\\/]/.test(filename)
+}
+
+// ----- imports
+
+function isTeamplaySource (source, sources) {
+  return sources.some(s => typeof s === 'string' ? s === source : s.test(source))
+}
+
+// the local names of $, signal and useSignal imported from teamplay, and the
+// import declarations of those modules
+function getTeamplayImports (program, sources) {
+  const result = { $: new Set(), signal: new Set(), useSignal: new Set(), declarations: [], all: new Set() }
+  for (const statement of program.get('body')) {
+    if (!statement.isImportDeclaration()) continue
+    if (!isTeamplaySource(statement.node.source.value, sources)) continue
+    if (statement.node.importKind === 'type') continue
+    result.declarations.push(statement)
+    for (const specifier of statement.node.specifiers) {
+      if (specifier.importKind === 'type') continue
+      result.all.add(specifier.local.name)
+      if (specifier.type === 'ImportDefaultSpecifier') {
+        result.$.add(specifier.local.name)
+        continue
+      }
+      if (specifier.type !== 'ImportSpecifier') continue
+      const imported = specifier.imported.name ?? specifier.imported.value
+      if (imported === '$') result.$.add(specifier.local.name)
+      else if (imported === 'signal') result.signal.add(specifier.local.name)
+      else if (imported === 'useSignal') result.useSignal.add(specifier.local.name)
+    }
+  }
+  return result
+}
+
+// a call of one of the imported names (not of a local variable shadowing it)
+function isImportedCall (call, names) {
+  const callee = call.node.callee
+  if (callee.type !== 'Identifier' || !names.has(callee.name)) return false
+  return call.scope.getBinding(callee.name)?.kind === 'module'
+}
+
+function getCompilerCacheFactory (program) {
+  for (const statement of program.get('body')) {
+    if (!statement.isImportDeclaration() || !COMPILER_RUNTIMES.has(statement.node.source.value)) continue
+    for (const specifier of statement.node.specifiers) {
+      if (specifier.type === 'ImportSpecifier' && (specifier.imported.name ?? specifier.imported.value) === 'c') {
+        return specifier.local.name
+      }
+    }
+  }
+}
+
+// ----- dollarCalls
+
+function reportDollarCalls (program, teamplay, filename, level, warn) {
+  if (!teamplay.$.size && !teamplay.signal.size) return
+  program.traverse({
+    CallExpression (call) {
+      let message
+      if (isImportedCall(call, teamplay.$)) {
+        message = inComponentOrHook(call)
+          ? 'Use useSignal() instead of $() in components and hooks.'
+          : 'Use signal() instead of $() outside components and hooks. If this function runs while a ' +
+            'component renders, $() is a hook here: name the function use...() and call useSignal().'
+      } else if (isImportedCall(call, teamplay.signal) && call.node.arguments.length <= 1 && inComponentOrHook(call)) {
+        message = 'signal() creates a new signal on every render: use useSignal() in components and hooks.'
+      }
+      if (!message) return
+      if (level === 'error') throw call.buildCodeFrameError(`[teamplay] ${message}`)
+      const { line, column } = call.node.loc?.start || {}
+      warn(`[teamplay] ${filename}${line ? `:${line}:${column + 1}` : ''}: ${message}`)
+    }
+  })
+}
+
+function inComponentOrHook (path) {
+  const fn = path.getFunctionParent()
+  return !!fn && isComponentOrHook(fn)
+}
+
+// ----- 'full', before the compiler
+
+function renameLocalSignals (program, teamplay, t) {
+  if (!teamplay.$.size) return
+  let hookName = [...teamplay.useSignal][0]
+  program.traverse({
+    CallExpression (call) {
+      if (!isImportedCall(call, teamplay.$) || !inComponentOrHook(call)) return
+      if (!hookName) {
+        hookName = 'useSignal'
+        for (let i = 2; program.scope.hasBinding(hookName); i++) hookName = 'useSignal' + i
+        const declaration = teamplay.declarations.find(d => d.node.specifiers.some(s => teamplay.$.has(s.local.name)))
+        declaration.pushContainer('specifiers', t.importSpecifier(t.identifier(hookName), t.identifier('useSignal')))
+      }
+      call.get('callee').replaceWith(t.identifier(hookName))
+    }
+  })
+}
+
+// ----- 'optOut'
+
+function optOut (program, teamplay, t) {
+  program.traverse({
+    'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression' (fn) {
+      if (!isComponentOrHook(fn)) return
+      if (hasDirective(fn, 'use no memo') || hasDirective(fn, 'use memo') || !usesSignals(fn, teamplay)) return
+      if (!t.isBlockStatement(fn.node.body)) {
+        fn.get('body').replaceWith(t.blockStatement([t.returnStatement(fn.node.body)]))
+      }
+      fn.get('body').unshiftContainer('directives', t.directive(t.directiveLiteral('use no memo')))
+    }
+  })
+}
+
+// the source as written (in the compiled code, the compiler's cache is `$`)
+// imports teamplay or names a value $something
+function sourceUsesSignals (code, program, options) {
+  return getTeamplayImports(program, options.teamplaySources).declarations.length > 0 ||
+    /(^|[^\w$])\$[A-Za-z_]/.test(code || '')
+}
+
+// a $-named value (teamplay's naming of signals) or anything imported from teamplay
+function usesSignals (path, teamplay) {
+  let found = false
+  path.traverse({
+    Identifier (identifier) {
+      const name = identifier.node.name
+      if (!identifier.isReferencedIdentifier()) return
+      if (!name.startsWith('$') && !teamplay.all.has(name)) return
+      found = true
+      identifier.stop()
+    }
+  })
+  return found
+}
+
+function hasDirective (fn, value) {
+  return (fn.node.body.directives || []).some(directive => directive.value.value === value)
+}
+
+// a component or a hook, as the compiler sees it: a component or hook name
+// (a declaration, or `const X = ...`), or the argument of a wrapper
+function isComponentOrHook (fn) {
+  const name = getFunctionName(fn)
+  if (name && (COMPONENT_NAME.test(name) || HOOK_NAME.test(name))) return true
+  const parent = fn.parentPath
+  if (!parent.isCallExpression() || parent.node.arguments[0] !== fn.node) return false
+  const callee = parent.node.callee
+  const calleeName = callee.type === 'Identifier'
+    ? callee.name
+    : (callee.type === 'MemberExpression' && !callee.computed ? callee.property.name : undefined)
+  return WRAPPERS.has(calleeName)
+}
+
+function getFunctionName (fn) {
+  if (fn.isFunctionDeclaration()) return fn.node.id?.name
+  const parent = fn.parentPath
+  if (parent.isVariableDeclarator() && parent.get('id').isIdentifier()) return parent.node.id.name
+}
+
+// ----- 'full', after the compiler
+
+function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
+  let runtime
+  const getRuntime = () => {
+    if (runtime) return t.identifier(runtime.name)
+    runtime = program.scope.generateUidIdentifier('tp')
+    const teamplay = getTeamplayImports(program, options.teamplaySources)
+    const source = options.reactCompilerRuntime || teamplay.declarations[0]?.node.source.value || 'teamplay'
+    program.unshiftContainer('body', t.importDeclaration(
+      [t.importSpecifier(runtime, t.identifier('__reactCompiler'))],
+      t.stringLiteral(source)
+    ))
+    // the observers rendered from now on track compiled scopes
+    const imports = program.get('body').filter(statement => statement.isImportDeclaration())
+    imports[imports.length - 1].insertAfter(t.expressionStatement(
+      t.callExpression(t.memberExpression(t.identifier(runtime.name), t.identifier('enable')), [])
+    ))
+    return t.identifier(runtime.name)
+  }
+  const helper = name => t.memberExpression(getRuntime(), t.identifier(name))
+  program.traverse({
+    VariableDeclarator (declarator) {
+      const init = declarator.node.init
+      if (!t.isCallExpression(init) || !t.isIdentifier(init.callee, { name: cacheFactory })) return
+      if (!t.isIdentifier(declarator.node.id)) return
+      const fn = declarator.getFunctionParent()
+      if (!fn) return
+      // React gives each render a copy of the cache: the runtime knows it by
+      // its position among the render's caches
+      declarator.get('init').replaceWith(t.callExpression(helper('cache'), [init]))
+      declarator.skip()
+      const recognized = instrumentScopes(fn, declarator.node.id.name, t, helper)
+      if (!recognized) {
+        options.warn(
+          `[teamplay] ${filename}: the React Compiler's output for ${describeFunction(fn)} is not recognized; ` +
+          'inside observer() it recomputes on every render. Please report it: ' +
+          'https://github.com/startupjs/teamplay/issues'
+        )
+      }
+    }
+  })
+}
+
+function describeFunction (fn) {
+  const name = getFunctionName(fn)
+  const line = fn.node.loc?.start.line
+  return (name ? `${name}()` : 'a function') + (line ? ` (line ${line})` : '')
+}
+
+// returns false if the function's compiled code has a shape it doesn't know:
+// then every scope recomputes inside observer()
+function instrumentScopes (fn, cacheName, t, helper) {
+  const cacheBinding = fn.scope.getBinding(cacheName)
+  const scopes = []
+  const resets = []
+  // the compiler's temporaries can shadow each other (a block's `t1` and the
+  // function's `t1`): values are known by their bindings, not their names.
+  // `const x = y` and `x = y`: x's values are y's
+  const aliases = new Map()
+  const addAlias = (scope, name, sourceName) => {
+    const binding = scope.getBinding(name)
+    const source = scope.getBinding(sourceName)
+    if (!binding || !source) return
+    if (!aliases.has(binding)) aliases.set(binding, new Set())
+    aliases.get(binding).add(source)
+  }
+  fn.traverse({
+    Function (inner) { inner.skip() },
+    VariableDeclarator (declarator) {
+      if (!t.isIdentifier(declarator.node.id) || !t.isIdentifier(declarator.node.init)) return
+      addAlias(declarator.scope, declarator.node.id.name, declarator.node.init.name)
+    },
+    AssignmentExpression (assignment) {
+      if (assignment.node.operator !== '=') return
+      if (!t.isIdentifier(assignment.node.left) || !t.isIdentifier(assignment.node.right)) return
+      addAlias(assignment.scope, assignment.node.left.name, assignment.node.right.name)
+    },
+    IfStatement (statement) {
+      const test = statement.node.test
+      if (!referencesCache(test, cacheName, t)) return
+      // the reset of the whole cache when the source file changed (development)
+      if (isCacheReset(test, cacheName, t)) {
+        resets.push(statement)
+        statement.skip()
+        return
+      }
+      const keys = getScopeTestKeys(test, cacheName, t)
+      scopes.push({
+        statement,
+        key: keys ? Math.min(...keys) : undefined,
+        recognized: !!keys,
+        inputs: collectReferenced(statement.get('test')),
+        outputs: collectAssigned(statement.get('consequent'))
+      })
+    }
+  })
+  const recognized = scopes.every(scope => scope.recognized) &&
+    cacheUsesRecognized(cacheBinding, scopes, resets, t)
+  // a binding and every binding its values can come from
+  const sourcesOf = binding => {
+    const found = new Set([binding])
+    for (const current of found) {
+      for (const source of aliases.get(current) || []) found.add(source)
+    }
+    return found
+  }
+  for (const scope of scopes) {
+    scope.upstream = new Set()
+    for (const input of scope.inputs) {
+      for (const source of sourcesOf(input)) {
+        for (const other of scopes) {
+          if (other !== scope && other.outputs.has(source)) scope.upstream.add(other.key)
+        }
+      }
+    }
+  }
+  // inner scopes first: an outer scope's body moves into a function
+  for (const { statement, key, upstream } of [...scopes].reverse()) {
+    const consequent = statement.get('consequent')
+    if (!recognized || leavesBody(consequent)) {
+      statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('inObserver'), []))
+      continue
+    }
+    const dirtyArgs = [t.identifier(cacheName), t.numericLiteral(key)]
+    const jsx = createsElements(consequent.node, t)
+    if (upstream.size || jsx) {
+      dirtyArgs.push(upstream.size ? t.arrayExpression([...upstream].map(k => t.numericLiteral(k))) : t.nullLiteral())
+    }
+    if (jsx) dirtyArgs.push(t.booleanLiteral(true))
+    statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('dirty'), dirtyArgs))
+    const body = t.isBlockStatement(consequent.node) ? consequent.node.body : [consequent.node]
+    consequent.replaceWith(t.blockStatement([
+      t.expressionStatement(t.callExpression(helper('run'), [
+        t.identifier(cacheName), t.numericLiteral(key), t.arrowFunctionExpression([], t.blockStatement(body))
+      ]))
+    ]))
+  }
+  return recognized
+}
+
+function referencesCache (node, cacheName, t) {
+  let found = false
+  walk(node, n => { if (t.isIdentifier(n, { name: cacheName })) found = true })
+  return found
+}
+
+// $[0] !== "<hash>"
+function isCacheReset (test, cacheName, t) {
+  return t.isBinaryExpression(test, { operator: '!==' }) && isCacheSlot(test.left, cacheName, t) &&
+    t.isStringLiteral(test.right)
+}
+
+// $[i] !== x || $[j] !== y ..., or $[i] === Symbol.for("react.memo_cache_sentinel"):
+// the slots compared, or undefined for another shape
+function getScopeTestKeys (test, cacheName, t) {
+  if (t.isLogicalExpression(test, { operator: '||' })) {
+    const left = getScopeTestKeys(test.left, cacheName, t)
+    const right = getScopeTestKeys(test.right, cacheName, t)
+    return left && right && [...left, ...right]
+  }
+  if (!t.isBinaryExpression(test) || !isCacheSlot(test.left, cacheName, t)) return
+  if (referencesCache(test.right, cacheName, t)) return
+  if (test.operator === '!==') return [test.left.property.value]
+  if (test.operator === '===' && isSentinel(test.right, t)) return [test.left.property.value]
+}
+
+function isCacheSlot (node, cacheName, t) {
+  return t.isMemberExpression(node, { computed: true }) && t.isIdentifier(node.object, { name: cacheName }) &&
+    t.isNumericLiteral(node.property)
+}
+
+function isSentinel (node, t) {
+  return t.isCallExpression(node) && t.isMemberExpression(node.callee) &&
+    t.isIdentifier(node.callee.object, { name: 'Symbol' }) && t.isIdentifier(node.callee.property, { name: 'for' }) &&
+    t.isStringLiteral(node.arguments[0], { value: CACHE_SENTINEL })
+}
+
+// every use of the cache is one the instrumentation knows: a slot in a
+// scope's test, a slot a scope's body writes ($[i] = x), a slot its else
+// branch reads (x = $[i]), or the cache reset
+function cacheUsesRecognized (cacheBinding, scopes, resets, t) {
+  if (!cacheBinding) return false
+  const tests = new Set(scopes.map(scope => scope.statement.node.test))
+  const consequents = new Set(scopes.map(scope => scope.statement.node.consequent))
+  const alternates = new Set(scopes.map(scope => scope.statement.node.alternate).filter(Boolean))
+  const within = (path, nodes) => nodes.has(path.node) || !!path.findParent(parent => nodes.has(parent.node))
+  return cacheBinding.referencePaths.every(reference => {
+    if (resets.some(reset => reference.isDescendant(reset))) return true
+    const slot = reference.parentPath
+    if (!slot.isMemberExpression({ computed: true }) || slot.node.object !== reference.node) return false
+    if (!t.isNumericLiteral(slot.node.property)) return false
+    if (within(slot, tests)) return true
+    const parent = slot.parentPath
+    if (!parent.isAssignmentExpression({ operator: '=' })) return false
+    if (parent.node.left === slot.node) return within(parent, consequents)
+    return parent.node.right === slot.node && within(parent, alternates)
+  })
+}
+
+function collectReferenced (path) {
+  const bindings = new Set()
+  const add = identifier => {
+    const binding = identifier.scope.getBinding(identifier.node.name)
+    if (binding) bindings.add(binding)
+  }
+  if (path.isIdentifier()) add(path)
+  path.traverse({ ReferencedIdentifier: add })
+  return bindings
+}
+
+function collectAssigned (path) {
+  const bindings = new Set()
+  path.traverse({
+    Function (inner) { inner.skip() },
+    AssignmentExpression (assignment) {
+      if (assignment.node.left.type !== 'Identifier') return
+      const binding = assignment.scope.getBinding(assignment.node.left.name)
+      if (binding) bindings.add(binding)
+    }
+  })
+  return bindings
+}
+
+// JSX, or the calls JSX compiles to (when it is compiled first)
+const ELEMENT_FACTORY = /^_?(jsxs?|jsxDEV|createElement)$/
+function createsElements (node, t) {
+  let found = false
+  walk(node, n => {
+    if (found) return
+    if (t.isJSXElement(n) || t.isJSXFragment(n)) found = true
+    else if (t.isCallExpression(n)) {
+      const callee = n.callee
+      const name = t.isIdentifier(callee) ? callee.name : (t.isMemberExpression(callee) && t.isIdentifier(callee.property) ? callee.property.name : '')
+      if (ELEMENT_FACTORY.test(name)) found = true
+    }
+  })
+  return found
+}
+
+// a return, or a break/continue whose target is outside the body
+function leavesBody (body) {
+  let leaves = false
+  const escapes = (jump, isBreak) => {
+    const label = jump.node.label?.name
+    for (let parent = jump.parentPath; parent && parent !== body; parent = parent.parentPath) {
+      if (label) {
+        if (parent.isLabeledStatement() && parent.node.label.name === label) return false
+      } else if (parent.isLoop() || (isBreak && parent.isSwitchStatement())) {
+        return false
+      }
+    }
+    return true
+  }
+  body.traverse({
+    Function (inner) { inner.skip() },
+    ReturnStatement (statement) { leaves = true; statement.stop() },
+    BreakStatement (statement) { if (escapes(statement, true)) { leaves = true; statement.stop() } },
+    ContinueStatement (statement) { if (escapes(statement, false)) { leaves = true; statement.stop() } }
+  })
+  return leaves
+}
+
+function walk (node, visit) {
+  if (!node || typeof node.type !== 'string') return
+  visit(node)
+  for (const key of Object.keys(node)) {
+    if (key === 'loc' || key === 'start' || key === 'end' || key === 'leadingComments' || key === 'trailingComments') continue
+    const value = node[key]
+    if (Array.isArray(value)) for (const item of value) walk(item, visit)
+    else if (value && typeof value.type === 'string') walk(value, visit)
+  }
+}
+
+module.exports = {
+  normalizeReactCompilerOptions,
+  reactCompilerProgramEnter,
+  reactCompilerProgramExit,
+  // for tests
+  __resetWarnings () { warnedUnconfigured = false }
+}

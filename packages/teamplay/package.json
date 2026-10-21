@@ -134,7 +134,7 @@
   "jest": {
     "transform": {
       "^.+\\.ts$": "./test/ts-transform.cjs",
-      "\\.react-compiler\\.jsx$": "./test_client/helpers/reactCompilerTransform.cjs"
+      "\\.(react-compiler|rc-optout|rc-full)\\.jsx$": "./test_client/helpers/reactCompilerTransform.cjs"
     },
     "testEnvironmentOptions": {
       "customExportConditions": [

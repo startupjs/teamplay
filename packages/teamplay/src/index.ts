@@ -7,6 +7,9 @@ import type * as React from 'react'
 import RuntimeSignal, { SEGMENTS } from './orm/Signal.ts'
 import { getRootSignal as _getRootSignal, GLOBAL_ROOT_ID } from './orm/Root.ts'
 import universal$ from './react/universal$.ts'
+import _useSignal from './react/useSignal.ts'
+import orm$ from './orm/$.js'
+import getSignal from './orm/getSignal.ts'
 import useApi from './react/useApi.ts'
 import runtimeObserver from './react/observer.ts'
 import type {
@@ -204,11 +207,46 @@ export {
   getModels,
   resetModelsForTests
 } from './orm/initModels.ts'
-export { default as signal } from './orm/getSignal.ts'
+export { default as getSignal } from './orm/getSignal.ts'
 export { GLOBAL_ROOT_ID } from './orm/Root.ts'
 const getRuntimeRootSignal = _getRootSignal as (options: Record<string, any>) => unknown
 export const $: RootSignal = getRuntimeRootSignal({ rootId: GLOBAL_ROOT_ID, rootFunction: universal$ }) as RootSignal
 export default $
+
+export interface SignalFunction extends LocalSignalFactory {
+  /** @deprecated `signal($root, segments)` is `getSignal($root, segments)`. */
+  ($root: AnySignal | undefined, segments: ReadonlyArray<string | number>, options?: Record<string, unknown>): any
+}
+
+let warnedLegacySignal = false
+/**
+ * A new local signal, or a computed one: `signal(() => $user.name.get())`.
+ * In a component, use `useSignal()`, which keeps its signal across renders.
+ */
+export const signal = function signal (value?: unknown, ...rest: unknown[]): unknown {
+  // signal($root, segments) used to be getSignal()
+  if (value instanceof RuntimeSignal || Array.isArray(rest[0])) {
+    if (!warnedLegacySignal) {
+      warnedLegacySignal = true
+      console.warn('[teamplay] signal($root, segments) is deprecated: use getSignal($root, segments). ' +
+        'signal(value) now creates a local signal.')
+    }
+    return (getSignal as (...args: unknown[]) => unknown)(value, ...rest)
+  }
+  return orm$($, value)
+} as SignalFunction
+
+/**
+ * A local signal (or a computed one: `useSignal(() => $user.name.get())`)
+ * that the component keeps across its renders. A hook: `$()` called in a
+ * component, under a name React tooling and the React Compiler recognize.
+ */
+export const useSignal = function useSignal (value?: unknown): unknown {
+  return _useSignal($, value)
+} as LocalSignalFactory
+
+// used by the code babel-plugin-teamplay generates with `reactCompiler: 'full'`
+export { compiledCodeRuntime as __reactCompiler } from './react/compilerScopes.ts'
 export {
   default as sub,
   unsub

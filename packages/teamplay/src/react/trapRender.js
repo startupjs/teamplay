@@ -3,16 +3,19 @@
 import executionContextTracker from './executionContextTracker.ts'
 import * as promiseBatcher from './promiseBatcher.ts'
 import renderAttemptDestroyer from './renderAttemptDestroyer.ts'
+import { startRender } from './compilerScopes.ts'
 
 export default function trapRender ({
   render,
   cache,
   destroy,
   componentId,
-  scheduleGroupUpdate
+  scheduleGroupUpdate,
+  scopeContext
 }) {
   return (...args) => {
-    executionContextTracker._start(componentId)
+    if (scopeContext) startRender(scopeContext)
+    executionContextTracker._start(componentId, scopeContext)
     cache.activate()
     let destroyed
     try {
