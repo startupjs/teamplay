@@ -75,6 +75,19 @@ describe('babel-plugin-teamplay: React Compiler', () => {
   })
 
   describe("reactCompiler: 'optOut'", () => {
+    it("adds 'use no memo' to what observer() wraps, also without $-named values", () => {
+      const { code } = transform(`
+        import { observer } from 'startupjs'
+        function TagsBase ({ user }) { return <i>{user.tags.join('+')}</i> }
+        export const Tags = observer(TagsBase)
+        const NameBase = function ({ user }) { return <b>{user.name}</b> }
+        export const Name = observer(NameBase)
+      `, { teamplay: { reactCompiler: 'optOut' } })
+      const functions = describeFunctions(code)
+      expect(functions.TagsBase).toEqual({ directives: ['use no memo'], compiled: false })
+      expect(functions.NameBase).toEqual({ directives: ['use no memo'], compiled: false })
+    })
+
     it("adds 'use no memo' to the components and hooks that use signals", () => {
       const { code } = transform(`
         import { $, observer, useSub } from 'startupjs'
@@ -100,6 +113,36 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       expect(functions.Kept).toEqual({ directives: ['use memo'], compiled: true })
       expect(functions.helper).toEqual({ directives: [], compiled: false })
     })
+  })
+
+  it('leaves a value that only has a hook name', () => {
+    const { code } = transform(`
+      import { useNativeDriver } from './config'
+      const nativeDriver = useNativeDriver
+      export function Fade ({ n }) { return <b data-native={nativeDriver}>{n * 2}</b> }
+    `, { teamplay: { reactCompiler: 'full' } })
+    expect(code).toContain('const nativeDriver = useNativeDriver')
+  })
+
+  it('gives a hook called under another name a hook name, so the compiler calls it on every render', () => {
+    const source = `
+      import { useCssxLayer as _useCssxLayer } from 'cssxjs/runtime'
+      import { useCssxLayer2 } from './taken'
+      const _cssxLayer = _useCssxLayer
+      export function Box ({ n }) {
+        const _local = _cssxLayer('box')
+        return <div style={_local}>{n * 2}</div>
+      }
+    `
+    for (const mode of ['optOut', 'full']) {
+      const { code } = transform(source, { teamplay: { reactCompiler: mode } })
+      // the name it's called by (a free one)
+      expect(code).toContain('const useCssxLayer = _useCssxLayer')
+      // called on every render: before the compiler's first scope
+      const call = code.indexOf('const _local = useCssxLayer("box")')
+      expect(call).toBeGreaterThan(-1)
+      expect(call).toBeLessThan(code.indexOf('if ($['))
+    }
   })
 
   describe("reactCompiler: 'full'", () => {
@@ -145,6 +188,35 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       expect(functions.Other).toEqual({ directives: [], compiled: false })
     })
 
+    it('leaves $() in a function that only has a component name', () => {
+      const { code } = transform(`
+        import { $ } from 'teamplay'
+        function Cart () {
+          const $items = $([])
+          return { $items }
+        }
+        export const cart = Cart()
+        export function Counter () { return <b>{$(0).get()}</b> }
+      `, { teamplay: { reactCompiler: 'full' }, compiler: false })
+      expect(code).toContain('const $items = $([])')
+      expect(code).toContain('{useSignal(0).get()}')
+    })
+
+    it('uses useSignal imported under another name', () => {
+      const { code } = transform(`
+        import { $, observer, useSignal as localSignal } from 'teamplay'
+        function CounterBase () {
+          const $count = $(0)
+          const $other = localSignal(1)
+          return <b>{$count.get()}{$other.get()}</b>
+        }
+        export const Counter = observer(CounterBase)
+      `, { teamplay: { reactCompiler: 'full' }, compiler: false })
+      expect(code).toContain("import { $, observer, useSignal } from 'teamplay'")
+      expect(code).toContain('const $count = useSignal(0)')
+      expect(code).toContain('const $other = useSignal(1)')
+    })
+
     it('uses the useSignal the file imports, or a free name', () => {
       const imported = transform(`
         import { $, useSignal as useLocal } from 'teamplay'
@@ -155,9 +227,14 @@ describe('babel-plugin-teamplay: React Compiler', () => {
         import { $ } from 'teamplay'
         import { useSignal } from './elsewhere'
         export function A () { return <b>{$(1).get()}{useSignal()}</b> }
+        function B () {
+          const useSignal2 = 1
+          return useSignal2
+        }
       `, { teamplay: { reactCompiler: 'full' }, compiler: false })
-      expect(taken.code).toContain("import { $, useSignal as useSignal2 } from 'teamplay'")
-      expect(taken.code).toContain('{useSignal2(1).get()}{useSignal()}')
+      // a name used nowhere in the file
+      expect(taken.code).toContain("import { $, useSignal as useSignal3 } from 'teamplay'")
+      expect(taken.code).toContain('{useSignal3(1).get()}{useSignal()}')
     })
 
     it('instruments the compiled scopes', () => {
@@ -167,10 +244,12 @@ describe('babel-plugin-teamplay: React Compiler', () => {
         export const DocCount = observer(DocCountBase)
       `, { teamplay: { reactCompiler: 'full' } })
       expect(warnings).toEqual([])
-      expect(code).toMatch(/^import \{ __reactCompiler as _tp \} from "startupjs";\nimport \{ c as _c \} from "react\/compiler-runtime";\nimport \{ observer \} from 'startupjs';\n_tp\.enable\(\);/)
-      expect(code).toContain('const $ = _tp.cache(_c(4))')
-      expect(code).toContain('if ($[0] !== $doc.count || _tp.dirty($, 0)) {\n    _tp.run($, 0, () => {')
-      expect(code).toContain('if ($[2] !== t1 || _tp.dirty($, 2, [0], true)) {\n    _tp.run($, 2, () => {')
+      expect(code).toMatch(/^import \{ __reactCompiler as _tp \} from "startupjs";\nimport \{ c as _c \} from "react\/compiler-runtime";\nimport \{ observer \} from 'startupjs';\n_tp\.enable\(\);\nconst _tpKeys = \[0\];\nconst _tpKeys2 = \[2\];/)
+      // one more slot: the scopes' state
+      expect(code).toContain('const $ = _tp.cache(_c(5))')
+      // _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS)
+      expect(code).toContain('if ($[0] !== $doc.count || _tp.dirty($, 0, null, false, _tpKeys)) {\n    _tp.run($, 0, () => {')
+      expect(code).toContain('if ($[2] !== t1 || _tp.dirty($, 2, _tpKeys, true, _tpKeys2)) {\n    _tp.run($, 2, () => {')
     })
 
     it("imports teamplay's runtime from 'teamplay', or from the reactCompilerRuntime option", () => {
@@ -210,8 +289,9 @@ describe('babel-plugin-teamplay: React Compiler', () => {
           }
         `)]
       })
-      expect(code).toContain('if ($[0] !== $doc || _tp.dirty($, 0)) {\n    _tp.run($, 0, () => {')
-      expect(code).toContain('if ($[2] !== $doc.a || _tp.dirty($, 2)) {\n        _tp.run($, 2, () => {')
+      expect(code).toContain('const $ = _tp.cache(_c(6))')
+      expect(code).toMatch(/if \(\$\[0\] !== \$doc \|\| _tp\.dirty\(\$, 0, null, false, _tpKeys\d*\)\) \{\n {4}_tp\.run\(\$, 0, \(\) => \{/)
+      expect(code).toMatch(/if \(\$\[2\] !== \$doc\.a \|\| _tp\.dirty\(\$, 2, null, false, _tpKeys\d*\)\) \{\n {8}_tp\.run\(\$, 2, \(\) => \{/)
     })
 
     it('recomputes inside observer() a scope that returns from its body', () => {
@@ -268,6 +348,22 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       ])
     })
 
+    it('recomputes on every render a scope that reads the clock', () => {
+      const { code } = transform(`
+        import { observer } from 'startupjs'
+        export const Clock = observer(function Clock ({ $tick, dueAt }) {
+          $tick.get()
+          const now = Date.now()
+          const today = new Date().getDay()
+          const onPress = () => console.log(Date.now())
+          return <b onClick={onPress}>{dueAt < now ? 'late' : 'ok'}{today}</b>
+        })
+      `, { teamplay: { reactCompiler: 'full' } })
+      // the scope of new Date() (the compiler computes Date.now() outside scopes here)
+      expect(code).toContain('if ($[0] === Symbol.for("react.memo_cache_sentinel") || true || _tp.dirty($, 0)) {\n    _tp.run($, 0, () => {\n      t1 = new Date().getDay();')
+      expect(code.match(/\|\| true \|\|/g)).toHaveLength(1)
+    })
+
     it('leaves files in node_modules alone', () => {
       const { code } = transform(`
         import { $ } from 'teamplay'
@@ -277,13 +373,27 @@ describe('babel-plugin-teamplay: React Compiler', () => {
     })
   })
 
-  it('needs to run before the React Compiler', () => {
+  it('leaves alone a file that is compiled code as written (a package\'s built files)', () => {
     const { code: compiled } = babel.transformSync('export function Count ({ $doc }) { return <span>{$doc.count.get()}</span> }', {
       filename: FILENAME, babelrc: false, configFile: false, parserOpts: { plugins: ['jsx'] }, plugins: [COMPILER]
     })
+    for (const reactCompilerMode of ['optOut', 'full', undefined]) {
+      const { code, warnings } = transform(compiled, { teamplay: { reactCompiler: reactCompilerMode }, compiler: false, filename: '/repo/packages/ui/dist/Count.js' })
+      expect(code).not.toContain('_tp')
+      expect(warnings).toEqual([])
+    }
+  })
+
+  it('needs to run before the React Compiler', () => {
+    // the compiler listed first, in the same pass
     for (const reactCompilerMode of ['optOut', 'full']) {
-      expect(() => transform(compiled, { teamplay: { reactCompiler: reactCompilerMode }, compiler: false }))
-        .toThrow(/needs babel-plugin-teamplay to run before the React Compiler/)
+      expect(() => babel.transformSync('export function Count ({ $doc }) { return <span>{$doc.count.get()}</span> }', {
+        filename: FILENAME,
+        babelrc: false,
+        configFile: false,
+        parserOpts: { plugins: ['jsx'] },
+        plugins: [COMPILER, [plugin, { types: false, reactCompiler: reactCompilerMode }]]
+      })).toThrow(/needs babel-plugin-teamplay to run before the React Compiler/)
     }
   })
 

@@ -20,19 +20,27 @@ class ReactionSubscriptions {
 
   init ($value, fn) {
     const id = $value[SEGMENTS][1]
-    if (this.initialized.has(id)) return
+    const existing = this.initialized.get(id)
+    if (existing) {
+      // its signal was collected and this is a new one for the same id: the
+      // old reaction can't reach its function any more (see callWhileAlive())
+      if (!existing.signal || existing.signal.deref()) return
+      unobserve(existing.reaction)
+    }
 
-    this.initialized.set(id, true)
     const rootId = getRoot($value)?.[ROOT_ID] || $value?.[ROOT_ID]
     const reactionScheduler = reaction => scheduleReaction(() => runReaction(rootId, id, reaction))
     const reaction = observe(callWhileAlive($value, fn), { lazy: true, scheduler: reactionScheduler })
+    this.initialized.set(id, { reaction, signal: typeof WeakRef === 'undefined' ? undefined : new WeakRef($value) })
     this.fr.register($value, [rootId, id, reaction])
     runReaction(rootId, id, reaction)
   }
 
   destroy (rootId, id, reaction) {
-    this.initialized.delete(id)
     unobserve(reaction)
+    // a new signal took over the id
+    if (this.initialized.get(id)?.reaction !== reaction) return
+    this.initialized.delete(id)
     // don't delete data right away to prevent dependent reactions which are also going to be GC'ed
     // from triggering unnecessarily
     unrefTimer(setTimeout(() => delPrivateData(rootId, [LOCAL, id]), DELETION_DELAY))

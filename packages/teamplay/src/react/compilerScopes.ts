@@ -1,46 +1,70 @@
 // React Compiler support (babel-plugin-teamplay's `reactCompiler: 'full'`):
 // the runtime of the compiler's memo scopes, as the plugin instruments them:
 //
-//   const $ = _tp.cache(_c(N))
-//   if (DEPS_CHANGED || _tp.dirty($, K, [UPSTREAM_KEYS], JSX)) {
+//   const $ = _tp.cache(_c(N + 1))           // slot N: the scopes' state (below)
+//   if (DEPS_CHANGED || _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS)) {
 //     _tp.run($, K, () => { BODY })
 //   } else { ...the cached outputs... }
 //
 // The compiler recomputes a scope only when a dependency changes identity,
 // but a signal keeps its identity when its data changes. So inside an
 // observer() render each scope body runs in its own reaction. When a signal it
-// read changes, the scope (and the scopes around it) is marked dirty and the
+// read changes, the scope (and the scopes around it) is invalidated and the
 // component re-renders: that scope recomputes, and so do the scopes that use
-// its outputs (UPSTREAM_KEYS, found statically: a recomputed value can keep
-// its identity, e.g. a doc's object changed in place) and, on a render a
-// signal change caused, the scopes that create elements (JSX). The other
-// scopes keep their cache, so a callback the compiler memoized (a useCallback()
-// it replaced) keeps its identity. Reads in a scope that stays cached stay
+// its outputs (UPSTREAM_KEYS, found statically: a recomputed value can keep its
+// identity, e.g. a doc's object changed in place) and, on a render a signal
+// change caused, the scopes that create elements (JSX). The other scopes keep
+// their cache, so a callback the compiler memoized (a useCallback() it
+// replaced) keeps its identity. Reads in a scope that stays cached stay
 // tracked by its reaction from when it last ran.
-// Outside observer(), the scopes behave as the compiler wrote them.
 //
-// React gives each render a copy of the cache array, so a scope is known by
-// its cache's position among the render's caches (the compiled component and
-// hooks call _c() in hook order) and its first slot.
+// Outside observer() nothing tracks reads, so a scope recomputes when one of
+// its cached dependencies (DEP_SLOTS) may be a doc's data, which changes in
+// place: a plain object or array (outside a reaction, a doc's data reads as
+// its raw objects), as every render recomputes it without the compiler.
 //
-// React keeps a render's cache only if the render commits: a render that
-// suspends, is interrupted, or is StrictMode's first one is thrown away, and
-// the next render starts from the committed cache. So a scope stays dirty
-// until a render that recomputed it commits (commitScopes()), and a scope the
-// context has no committed run of (a new context: after a suspended render
-// destroyed the observer's reaction) recomputes.
+// Where the scopes' state lives: React keeps the cache of a render only if
+// the render commits (a render that suspends, is interrupted, or is
+// StrictMode's first one is thrown away), and gives the next render a copy of
+// the committed cache. So each run of a scope (its reaction) is kept in the
+// cache itself, in slot N, copied on write: whatever cache React keeps carries
+// the runs that computed it. The runs a kept cache no longer holds are disposed
+// when a render commits; all of them when the component is collected.
+// The runs outlive the observer's own reaction (destroyed and created again
+// for StrictMode's effect replay, a hidden <Activity>, a suspended render):
+// while it is gone a run only marks its scope invalid, and the next render
+// recomputes just what changed.
 import { observe, unobserve } from '@nx-js/observer-util'
 import executionContextTracker, { type ScopeContext } from './executionContextTracker.ts'
 
 export interface ScopeRun {
   // context.seq when it ran
   seq: number
-  // it recomputed although its deps did not change
-  forced: boolean
-  cleanup?: () => void
+  // the render (context.renderId) that recomputed it although its deps did not change
+  forcedIn: number
+  dispose: () => void
 }
 
-const CACHE_POSITIONS = new WeakMap<object, number>()
+// one per compiled function call (a component's or a hook's cache), the same
+// in every copy of its cache
+interface ScopeOwner {
+  // scope key -> context.seq when a signal it (or a scope inside it) read changed
+  invalidated: Map<number, number>
+  // scope key -> the key of the scope its body runs in
+  parents: Map<number, number | undefined>
+}
+
+// slot N of the cache
+interface ScopeState {
+  owner: ScopeOwner
+  // scope key -> its run that computed this cache's values
+  runs: Map<number, ScopeRun>
+  // the render that copied it into this cache
+  renderId: number
+}
+
+const STATE = Symbol('teamplay compiler scopes')
+type MemoCache = unknown[]
 
 // Set when compiled code is loaded (each file the plugin instrumented calls
 // enable()). An observer() decides on its first render whether to track
@@ -56,16 +80,13 @@ export function isEnabled (): boolean {
   return enabled
 }
 
-export function createScopeContext (notify: () => void): ScopeContext {
+export function createScopeContext (): ScopeContext {
   return {
-    notify,
-    cleanups: new Set(),
-    cacheCount: 0,
+    notify: undefined,
     seq: 0,
-    committed: new Map(),
-    pending: new Map(),
-    invalidated: new Map(),
-    parents: new Map(),
+    renderId: 0,
+    renderCaches: new Set(),
+    runs: new Set(),
     notified: 0,
     renderNotified: 0,
     committedNotified: 0,
@@ -73,97 +94,141 @@ export function createScopeContext (notify: () => void): ScopeContext {
   }
 }
 
+// the observer's reaction (re)created: renders go through its scheduler;
+// detached (destroyed): runs only invalidate their scopes
+export function attachScopes (context: ScopeContext, notify: (() => void) | undefined): void {
+  context.notify = notify
+}
+
 // a signal one of the component's reactions read changed
 export function notifyScopes (context: ScopeContext): void {
   context.notified = ++context.seq
-  context.notify()
+  context.notify?.()
 }
 
 export function startRender (context: ScopeContext): void {
-  context.cacheCount = 0
-  // the runs of a render that did not commit
-  for (const run of context.pending.values()) dispose(context, run)
-  context.pending.clear()
+  context.renderId++
+  context.renderCaches = new Set()
   context.renderNotified = context.notified
   context.signalRender = context.notified > context.committedNotified
 }
 
+// the render committed: its caches are the ones React keeps
 export function commitScopes (context: ScopeContext): void {
-  for (const [id, run] of context.pending) {
-    const previous = context.committed.get(id)
-    if (previous) dispose(context, previous)
-    context.committed.set(id, run)
+  const kept = new Set<ScopeRun>()
+  for (const memoCache of context.renderCaches) {
+    for (const run of getState(memoCache).runs.values()) kept.add(run)
   }
-  context.pending.clear()
+  for (const run of context.runs) {
+    if (!kept.has(run)) run.dispose()
+  }
   context.committedNotified = context.renderNotified
 }
 
 export function destroyScopes (context: ScopeContext): void {
-  for (const cleanup of context.cleanups) cleanup()
-  context.cleanups.clear()
-  context.committed.clear()
-  context.pending.clear()
+  for (const run of context.runs) run.dispose()
 }
 
-export function cache<T extends object> (memoCache: T): T {
+export function cache (memoCache: MemoCache): MemoCache {
   const context = executionContextTracker.getScopeContext()
-  if (context) CACHE_POSITIONS.set(memoCache, context.cacheCount++)
+  if (!context) return memoCache
+  const slot = memoCache.length - 1
+  const state = memoCache[slot] as ScopeState | undefined
+  if (!(state as any)?.[STATE]) {
+    memoCache[slot] = { [STATE]: true, owner: { invalidated: new Map(), parents: new Map() }, runs: new Map(), renderId: context.renderId }
+  }
+  context.renderCaches.add(memoCache)
   return memoCache
 }
 
-function scopeId (memoCache: object, key: number): string {
-  return CACHE_POSITIONS.get(memoCache) + ':' + key
+function getState (memoCache: MemoCache): ScopeState {
+  return memoCache[memoCache.length - 1] as ScopeState
 }
 
 // `jsx`: the scope creates elements. On a render a signal change caused, it
 // recomputes, as every element does without the compiler: a child that is not
 // an observer() and reads an object changed in place (same identity) renders again.
-export function dirty (memoCache: object, key: number, upstream?: number[] | null, jsx?: boolean): boolean {
+export function dirty (
+  memoCache: MemoCache,
+  key: number,
+  upstream?: readonly number[] | null,
+  jsx?: boolean,
+  depSlots?: readonly number[]
+): boolean {
   const context = executionContextTracker.getScopeContext()
-  // an observer() that started before compiled code was loaded: recompute,
-  // and the render tracks the reads
-  if (!context) return executionContextTracker.isActive()
-  const id = scopeId(memoCache, key)
-  const committed = context.committed.get(id)
-  let forced = !committed || (context.invalidated.get(id) ?? -1) > committed.seq || (!!jsx && context.signalRender)
-  if (!forced && upstream) {
-    forced = upstream.some(upstreamKey => context.pending.get(scopeId(memoCache, upstreamKey))?.forced)
+  if (!context) {
+    // an observer() that started before compiled code was loaded: recompute,
+    // and the render tracks the reads
+    if (executionContextTracker.isActive()) return true
+    return !!depSlots?.some(slot => mayChangeInPlace(memoCache[slot]))
   }
-  if (forced) context.forced = id
+  const state = getState(memoCache)
+  const run = state.runs.get(key)
+  let forced = !run || (state.owner.invalidated.get(key) ?? -1) > run.seq || (!!jsx && context.signalRender)
+  if (!forced && upstream) {
+    forced = upstream.some(upstreamKey => state.runs.get(upstreamKey)?.forcedIn === context.renderId)
+  }
+  if (forced) context.forced = key
   return forced
 }
 
-export function run (memoCache: object, key: number, body: () => void): void {
+export function run (memoCache: MemoCache, key: number, body: () => void): void {
   const context = executionContextTracker.getScopeContext()
   if (!context) return body()
-  const id = scopeId(memoCache, key)
-  const previous = context.pending.get(id)
-  if (previous) dispose(context, previous)
-  const scopeRun: ScopeRun = { seq: ++context.seq, forced: context.forced === id }
+  const slot = memoCache.length - 1
+  let state = getState(memoCache)
+  // this render's own copy: the cache it was copied from may be the one React keeps
+  if (state.renderId !== context.renderId) {
+    state = memoCache[slot] = { [STATE]: true, owner: state.owner, runs: new Map(state.runs), renderId: context.renderId } as ScopeState
+  }
+  const { owner } = state
+  const previous = state.runs.get(key)
+  const invalidated = !!previous && (owner.invalidated.get(key) ?? -1) > previous.seq
+  const forced = context.forced === key || invalidated
   context.forced = undefined
-  context.parents.set(id, context.currentScope)
-  context.pending.set(id, scopeRun)
+  const parent = context.current?.owner === owner ? context.current.key : undefined
+  owner.parents.set(key, parent)
+  let disposed = false
   const reaction = observe(() => {
-    const parent = context.currentScope
-    context.currentScope = id
+    const current = context.current
+    context.current = { owner, key }
     try {
       body()
     } finally {
-      context.currentScope = parent
+      context.current = current
     }
   }, {
     lazy: true,
     scheduler: () => {
+      if (disposed) return
       const seq = ++context.seq
-      for (let marked: string | undefined = id; marked; marked = context.parents.get(marked)) {
-        context.invalidated.set(marked, seq)
+      for (let marked: number | undefined = key; marked !== undefined; marked = owner.parents.get(marked)) {
+        owner.invalidated.set(marked, seq)
       }
       notifyScopes(context)
     }
   })
-  scopeRun.cleanup = () => unobserve(reaction)
-  context.cleanups.add(scopeRun.cleanup)
+  const scopeRun: ScopeRun = {
+    seq: ++context.seq,
+    forcedIn: forced ? context.renderId : -1,
+    dispose: () => {
+      if (disposed) return
+      disposed = true
+      unobserve(reaction)
+      context.runs.delete(scopeRun)
+    }
+  }
+  state.runs.set(key, scopeRun)
+  context.runs.add(scopeRun)
   reaction()
+}
+
+function mayChangeInPlace (value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== Array.prototype && prototype !== null) return false
+  // an element (not frozen in production)
+  return !('$$typeof' in value)
 }
 
 // for a scope that can't run in a function (it returns, or breaks out of its
@@ -171,12 +236,6 @@ export function run (memoCache: object, key: number, body: () => void): void {
 // on every render (its reads are then tracked by the render itself)
 export function inObserver (): boolean {
   return executionContextTracker.isActive()
-}
-
-function dispose (context: ScopeContext, scopeRun: ScopeRun): void {
-  if (!scopeRun.cleanup) return
-  scopeRun.cleanup()
-  context.cleanups.delete(scopeRun.cleanup)
 }
 
 // what the code babel-plugin-teamplay generates calls (exported by 'teamplay'

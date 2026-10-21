@@ -182,6 +182,8 @@ describe('signal()', () => {
       assert.equal(signal($, ['_session', 'signalLegacy']), getSignal($, ['_session', 'signalLegacy']))
       assert.equal(signal($, ['_session', 'signalLegacy']), $._session.signalLegacy)
       assert.equal(signal(undefined, [], { rootId: GLOBAL_ROOT_ID }), $)
+      // more than one argument: the old form
+      assert.equal(signal(undefined, undefined, { rootId: GLOBAL_ROOT_ID }), $)
     } finally {
       console.warn = warn
     }

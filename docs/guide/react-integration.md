@@ -4,7 +4,7 @@ TeamPlay integrates seamlessly with React, allowing you to build reactive user i
 
 TeamPlay requires React 19 or newer. Observer components work under `<StrictMode>`, with concurrent rendering, and inside `<Activity>`: a hidden subtree releases its subscriptions and subscribes again when it is shown.
 
-The React Compiler is not supported: turn it off, or opt out the code that reads signals. See [React Compiler](#react-compiler).
+With the React Compiler, set `babel-plugin-teamplay`'s `reactCompiler` option. See [React Compiler](#react-compiler).
 
 ## The `observer()` Higher-Order Component
 
@@ -249,17 +249,39 @@ inline to `observer()` gets `'use memo'`, so the compiler compiles it (add
 each block of code the compiler caches runs in a reaction that tracks the
 signals it reads, inside `observer()` components. When one of them changes,
 that block and the blocks that use its result run again, and so do the blocks
-that create elements. The other blocks keep their cache.
+that create elements. The other blocks keep their cache, so values from
+`useMemo()` and `useCallback()` keep their identity. In a component that isn't
+an `observer()`, a block recomputes when one of its inputs is a plain object or
+array, which may be a doc's data changed in place.
 
 Things to know:
 
-- `'optOut'` finds signals by TeamPlay's naming: a component or a hook uses
-  signals if it mentions a `$`-named value or anything imported from
-  `teamplay` or `startupjs`. Name signals `$something`.
+- `'optOut'` skips what `observer()` wraps, and finds other components and
+  hooks that use signals by TeamPlay's naming: a `$`-named value or anything
+  imported from `teamplay` or `startupjs`. Name signals `$something`. A
+  component that isn't an `observer()` and is given a doc's data (an object
+  read with `.get()`) is still compiled, and shows it stale after a change in
+  place: use `'full'`, or make it an `observer()`.
+- Rendering must not read the clock in a way the compiler can't see. With
+  `'full'`, a block of code that calls `Date.now()`, `new Date()` or
+  `performance.now()` itself recomputes on every render; a helper function that
+  reads the clock inside is cached like any other call. Keep the time in a
+  signal or in state, and pass it in.
+- The compiler caches values that only change in place or with time. Code
+  that worked only because a value went stale under the compiler alone (for
+  example a hook reading signals, which the compiler cached) changes behaviour
+  with either mode, back to what it does without the compiler.
 - `$()` is a hook when it runs while a component renders, also in a helper
   function a component calls. The compiler doesn't know that and may skip the
   call. Rename such a helper to `use...()` and call `useSignal()` in it (the
   `dollarCalls` option points out these calls).
+- The compiler knows a hook by the name it's called by (`use` and an uppercase
+  letter or a digit) and caches calls of anything else, so a hook called under
+  another name runs only on some renders, and React fails with "Rendered fewer
+  hooks than expected". In both modes, `babel-plugin-teamplay` renames a
+  function imported under a hook name, and a constant that is just another
+  name for it (CSSX's style hook is called this way), so it keeps a hook name.
+  Hooks you write yourself need a hook name.
 - With `'full'`, if `babel-plugin-teamplay` doesn't recognize the compiler's
   output for a function, it warns, and inside `observer()` that function then
   runs as if it wasn't compiled.

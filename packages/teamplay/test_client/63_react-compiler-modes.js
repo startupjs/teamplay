@@ -6,7 +6,7 @@
 //   optOut: the components and hooks that use signals get 'use no memo'
 // Each must behave as teamplay does without the compiler.
 import { readFileSync } from 'node:fs'
-import { createElement as el, Profiler, StrictMode } from 'react'
+import { Activity, createElement as el, Profiler, StrictMode } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { $ } from '../src/index.ts'
@@ -206,6 +206,80 @@ describe.each([
       cases.suspense.resolve()
     })
     expect(container.textContent).toBe('n=2')
+  })
+
+  // a hidden <Activity> commits its renders without running their effects
+  it('a hidden <Activity>, its props and signals changed meanwhile', () => {
+    const $first = nextDoc({ count: 1 })
+    const $second = nextDoc({ count: 10 })
+    const tree = ($doc, mode) => el(Activity, { mode }, el(cases.DocCount, { $doc }))
+    const { container, rerender } = render(tree($first, 'visible'))
+    expect(container.textContent).toBe('1')
+    act(() => { rerender(tree($first, 'hidden')) })
+    act(() => { rerender(tree($second, 'hidden')) })
+    act(() => { $second.count.set(11) })
+    act(() => { $second.count.set(12) })
+    act(() => { rerender(tree($second, 'visible')) })
+    expect(container.textContent).toBe('12')
+    act(() => { $second.count.set(13) })
+    expect(container.textContent).toBe('13')
+  })
+
+  it('a prop change, then a render-phase update', () => {
+    const $first = nextDoc({ count: 1 })
+    const $second = nextDoc({ count: 10 })
+    const { container, rerender } = render(el(cases.Derived, { $doc: $first, id: 'first' }))
+    act(() => { rerender(el(cases.Derived, { $doc: $second, id: 'second' })) })
+    expect(container.textContent).toBe('10')
+    act(() => { $second.count.set(11) })
+    expect(container.textContent).toBe('11')
+  })
+
+  it('StrictMode: a prop change', () => {
+    const $first = nextDoc({ count: 1 })
+    const $second = nextDoc({ count: 10 })
+    const tree = $doc => el(StrictMode, null, el(cases.DocCount, { $doc }))
+    const { container, rerender } = render(tree($first))
+    act(() => { rerender(tree($second)) })
+    expect(container.textContent).toBe('10')
+    act(() => { $second.count.set(11) })
+    expect(container.textContent).toBe('11')
+  })
+
+  it('useMemo() and useCallback() values keep their identity through StrictMode\'s effect replay and a hidden <Activity>', () => {
+    const $doc = nextDoc({ count: 1 })
+    const handlers = new Set()
+    const record = { press () {}, effect (onPress) { handlers.add(onPress) } }
+    const tree = mode => el(StrictMode, null, el(Activity, { mode }, el(cases.Stable, { $doc, record })))
+    const { container, rerender } = render(tree('visible'))
+    act(() => { $doc.count.set(2) })
+    expect(container.textContent).toBe('2')
+    act(() => { rerender(tree('hidden')) })
+    act(() => { $doc.count.set(3) })
+    act(() => { rerender(tree('visible')) })
+    expect(container.textContent).toBe('3')
+    act(() => { $doc.count.set(4) })
+    expect(container.textContent).toBe('4')
+    expect(handlers.size).toBe(1)
+  })
+
+  it('an observer() given a doc\'s object, with no $-named values', () => {
+    const $user = nextDoc({ name: 'A', tags: ['x'] })
+    const { container } = render(el(cases.UserLine, { $user }))
+    expect(container.textContent).toBe('A|x')
+    act(() => { $user.tags.push('y') })
+    expect(container.textContent).toBe('A|x+y')
+  })
+
+  ;(mode === 'full' ? it : it.skip)('a component that is not an observer, given a doc\'s object changed in place', () => {
+    const $user = nextDoc({ name: 'A', tags: ['x'] })
+    const { container } = render(el(cases.UserCard, { $user }))
+    expect(container.textContent).toBe('A|x')
+    act(() => {
+      $user.tags.push('y')
+      $user.name.set('B')
+    })
+    expect(container.textContent).toBe('B|x+y')
   })
 
   it('StrictMode', () => {

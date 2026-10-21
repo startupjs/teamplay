@@ -26,6 +26,17 @@ const uncommittedReactions = new FinalizationRegistry(holder => {
   } catch {}
 })
 
+// React Compiler ('full' in babel-plugin-teamplay): the compiled scopes of a
+// component live as long as the component (see compilerScopes.ts). This
+// disposes them when React drops it: the target is a token only the
+// component's hook state references (React clears the hook state of an
+// unmounted component, and drops the one of a render it discards).
+const collectedScopes = new FinalizationRegistry(scopeContext => {
+  try {
+    compilerScopes.destroyScopes(scopeContext)
+  } catch {}
+})
+
 export default function convertToObserver (BaseComponent, {
   forwardRef,
   cache: enableCache = true,
@@ -56,8 +67,15 @@ export default function convertToObserver (BaseComponent, {
     const mountedRef = useRef(false)
     // React Compiler ('full' in babel-plugin-teamplay, see compilerScopes.ts):
     // decided on the first render, so that every render calls the same hooks
-    const compilerRef = useRef()
-    compilerRef.current ??= { enabled: compilerScopes.isEnabled(), scopeContext: undefined }
+    const scopesRef = useRef()
+    const scopesTokenRef = useRef(null) // referenced by no closure (see collectedScopes)
+    if (scopesRef.current === undefined) {
+      scopesRef.current = compilerScopes.isEnabled() ? compilerScopes.createScopeContext() : null
+      if (scopesRef.current) {
+        scopesTokenRef.current = {}
+        collectedScopes.register(scopesTokenRef.current, scopesRef.current)
+      }
+    }
     if (!reactionRef.current) {
       let hasDeferredUpdateAfterExecutionContext = false
       let update = () => {
@@ -78,9 +96,8 @@ export default function convertToObserver (BaseComponent, {
         }
       }
       if (throttle) update = _throttle(update, throttle)
-      const scopeContext = compilerRef.current.scopeContext = compilerRef.current.enabled
-        ? compilerScopes.createScopeContext(() => scheduleReaction(update))
-        : undefined
+      const scopeContext = scopesRef.current
+      if (scopeContext) compilerScopes.attachScopes(scopeContext, () => scheduleReaction(update))
       const holder = {}
       const destroy = destroyRef.current = (where) => {
         if (!reactionRef.current) throw Error(`NO REACTION REF - ${where}`)
@@ -89,7 +106,9 @@ export default function convertToObserver (BaseComponent, {
         if (diag.on) diag.noteObserverDestroyed(reactionRef.current, where)
         unobserve(reactionRef.current)
         reactionRef.current = undefined
-        if (scopeContext) compilerScopes.destroyScopes(scopeContext)
+        // the scopes outlive the reaction (a hidden <Activity>, StrictMode's
+        // effect replay): until a new one, they only mark what changed
+        if (scopeContext) compilerScopes.attachScopes(scopeContext, undefined)
         destroyCache(where)
       }
       // Disposes only this reaction (a later one may reuse the refs).
@@ -118,12 +137,11 @@ export default function convertToObserver (BaseComponent, {
       }
     }
 
-    if (compilerRef.current.enabled) {
-      // the scopes this render recomputed are the cache React keeps now
+    if (scopesRef.current) {
+      // this render's caches are the ones React keeps now
       // eslint-disable-next-line react-hooks/rules-of-hooks
       useLayoutEffect(() => {
-        const { scopeContext } = compilerRef.current
-        if (reactionRef.current && scopeContext) compilerScopes.commitScopes(scopeContext)
+        compilerScopes.commitScopes(scopesRef.current)
       })
     }
 

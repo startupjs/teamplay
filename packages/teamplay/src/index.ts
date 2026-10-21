@@ -224,8 +224,8 @@ let warnedLegacySignal = false
  * In a component, use `useSignal()`, which keeps its signal across renders.
  */
 export const signal = function signal (value?: unknown, ...rest: unknown[]): unknown {
-  // signal($root, segments) used to be getSignal()
-  if (value instanceof RuntimeSignal || Array.isArray(rest[0])) {
+  // signal($root, segments, options) used to be getSignal(); signal() takes one argument
+  if (value instanceof RuntimeSignal || rest.length > 0) {
     if (!warnedLegacySignal) {
       warnedLegacySignal = true
       console.warn('[teamplay] signal($root, segments) is deprecated: use getSignal($root, segments). ' +

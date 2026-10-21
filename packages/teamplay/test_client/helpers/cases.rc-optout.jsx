@@ -2,7 +2,7 @@
 // `reactCompiler` option of babel-plugin-teamplay that the file name picks:
 // cases.rc-full.jsx ('full') and cases.rc-optout.jsx ('optOut') have the same
 // code from the first import on (63_react-compiler-modes.js checks it).
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { $, observer, useSignal } from '../../src/index.ts'
 
 // (a) a custom hook reading a signal, called from an inline observer() function
@@ -134,3 +134,42 @@ function ExplicitHookBase ({ $doc }) {
   return <button onClick={() => $clicks.set($clicks.get() + 1)}>{$clicks.get()}:{$tens.get()}</button>
 }
 export const ExplicitHook = observer(ExplicitHookBase)
+
+// a render-phase update: React calls the component again at once
+function DerivedBase ({ $doc, id }) {
+  const [prev, setPrev] = useState(id)
+  if (prev !== id) setPrev(id)
+  return <span>{$doc.count.get()}</span>
+}
+export const Derived = observer(DerivedBase)
+
+// an observer() given a doc's object, with no $-named values in it
+function TagsLineBase ({ user }) {
+  return <i>{user.tags.join('+')}</i>
+}
+const TagsLine = observer(TagsLineBase)
+function UserLineBase ({ $user }) {
+  const user = $user.get()
+  return <div><b>{user.name}</b>|<TagsLine user={user} /></div>
+}
+export const UserLine = observer(UserLineBase)
+
+// a component that is not an observer, given a doc's object
+function TagsCard ({ user }) {
+  const text = user.tags.join('+')
+  return <i>{text}</i>
+}
+function UserCardBase ({ $user }) {
+  const user = $user.get()
+  return <div><b>{user.name}</b>|<TagsCard user={user} /></div>
+}
+export const UserCard = observer(UserCardBase)
+
+// values memoized with useMemo() and useCallback()
+function StableBase ({ $doc, record }) {
+  const store = useMemo(() => ({ path: $doc.path() }), [$doc])
+  const onPress = useCallback(() => record.press(store), [record, store])
+  useEffect(() => { record.effect(onPress) }, [record, onPress])
+  return <b onClick={onPress}>{$doc.count.get()}</b>
+}
+export const Stable = observer(StableBase)

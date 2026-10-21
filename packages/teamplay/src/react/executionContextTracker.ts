@@ -3,26 +3,21 @@ import type { ScopeRun } from './compilerScopes.ts'
 // React Compiler support: what the compiled memo scopes of an observer()
 // render need (see compilerScopes.ts)
 export interface ScopeContext {
-  // re-renders the observer component (through its batched scheduler)
-  notify: () => void
-  // run when the observer's reaction is destroyed (unmount, discarded render)
-  cleanups: Set<() => void>
-  // the compiler caches created so far in this render
-  cacheCount: number
+  // re-renders the observer component (through its batched scheduler);
+  // undefined while the observer's reaction is destroyed
+  notify: (() => void) | undefined
   // increments on every scope run and every signal change
   seq: number
-  // the scope runs of the last committed render, and of the render in progress
-  // (or the last one, if it did not commit), by scope id
-  committed: Map<string, ScopeRun>
-  pending: Map<string, ScopeRun>
-  // scope id -> seq when a signal it (or a scope inside it) read changed
-  invalidated: Map<string, number>
-  // scope id -> the scope its body runs in
-  parents: Map<string, string | undefined>
+  // increments on every render (every call of the component's function)
+  renderId: number
+  // the compiler caches of the render in progress (or the last one)
+  renderCaches: Set<unknown[]>
+  // the live runs of the component's scopes
+  runs: Set<ScopeRun>
   // the scope whose body runs now
-  currentScope?: string
-  // the scope dirty() just decided to recompute although its deps did not change
-  forced?: string
+  current?: { owner: unknown, key: number }
+  // the scope key dirty() just decided to recompute
+  forced?: number
   // seq of the last signal change; as of the render in progress; as of the last committed render
   notified: number
   renderNotified: number

@@ -41,6 +41,9 @@ const MODES = new Set(['optOut', 'full'])
 const REPORT_LEVELS = new Set(['warn', 'error'])
 const DOCS = 'https://github.com/startupjs/teamplay/blob/master/docs/guide/react-integration.md#react-compiler'
 
+const SKIP = 'teamplayReactCompilerSkip'
+const COMPILED_SOURCE = /(?:from|require\()\s*['"]react(?:\/|-)compiler-runtime['"]/
+
 let warnedUnconfigured = false
 
 function normalizeReactCompilerOptions (options = {}) {
@@ -65,9 +68,13 @@ function normalizeReactCompilerOptions (options = {}) {
 function reactCompilerProgramEnter (program, state, options, t) {
   const filename = state.file.opts.filename || ''
   if (isDependency(filename)) return
+  // compiled code as written (a package's built files): left as it is
+  if (COMPILED_SOURCE.test(state.file.code || '')) {
+    state.set(SKIP, true)
+    return
+  }
   const { reactCompiler, dollarCalls } = options
   if (!reactCompiler && !dollarCalls) return
-  const teamplay = getTeamplayImports(program, options.teamplaySources)
   if (MODES.has(reactCompiler) && getCompilerCacheFactory(program)) {
     throw program.buildCodeFrameError(
       `[babel-plugin-teamplay] reactCompiler: '${reactCompiler}' needs babel-plugin-teamplay to run before ` +
@@ -75,6 +82,8 @@ function reactCompilerProgramEnter (program, state, options, t) {
       `before babel-plugin-react-compiler (or before the preset that adds it). See ${DOCS}`
     )
   }
+  if (MODES.has(reactCompiler)) nameHooksAsHooks(program, t)
+  const teamplay = getTeamplayImports(program, options.teamplaySources)
   if (dollarCalls) reportDollarCalls(program, teamplay, filename, dollarCalls, options.warn)
   if (reactCompiler === 'optOut') {
     optOut(program, teamplay, t)
@@ -86,7 +95,7 @@ function reactCompilerProgramEnter (program, state, options, t) {
 
 function reactCompilerProgramExit (program, state, options, t) {
   const filename = state.file.opts.filename || ''
-  if (isDependency(filename)) return
+  if (isDependency(filename) || state.get(SKIP)) return
   const { reactCompiler } = options
   if (reactCompiler === false || reactCompiler === 'optOut') return
   const cacheFactory = getCompilerCacheFactory(program)
@@ -190,6 +199,72 @@ function inComponentOrHook (path) {
   return !!fn && isComponentOrHook(fn)
 }
 
+// ----- both modes, before the compiler
+
+// The compiler knows a hook by the name it is called by (use..., then an
+// uppercase letter or a digit) and caches the calls of anything else like
+// any other value, so a hook called under another name runs only on the
+// renders that recompute it: React then sees fewer hooks ("Rendered fewer
+// hooks than expected"). Plugins that run before the compiler call hooks this
+// way: CSSX imports `useCssxLayer` and calls it through
+// `const _cssxLayer = _useCssxLayer` (babel's generated names start with
+// "_"). A function imported under a hook name, and a module-level constant
+// that is just another name for it, get a hook name.
+function nameHooksAsHooks (program, t) {
+  const hookBindings = []
+  for (const statement of program.get('body')) {
+    if (!statement.isImportDeclaration() || statement.node.importKind === 'type') continue
+    for (const specifier of statement.node.specifiers) {
+      if (specifier.type !== 'ImportSpecifier' || specifier.importKind === 'type') continue
+      const imported = specifier.imported.name ?? specifier.imported.value
+      if (HOOK_NAME.test(imported)) hookBindings.push({ local: specifier.local.name, hook: imported })
+    }
+  }
+  if (!hookBindings.length) return
+  const hookNames = new Map(hookBindings.map(({ local, hook }) => [local, hook]))
+  // const alias = hook
+  for (const statement of program.get('body')) {
+    if (!statement.isVariableDeclaration({ kind: 'const' })) continue
+    for (const declarator of statement.node.declarations) {
+      if (!t.isIdentifier(declarator.id) || !t.isIdentifier(declarator.init)) continue
+      const hook = hookNames.get(declarator.init.name)
+      if (!hook) continue
+      hookNames.set(declarator.id.name, hook)
+      hookBindings.push({ local: declarator.id.name, hook })
+    }
+  }
+  // the names called (a constant that only shares a hook's name isn't one)
+  const called = new Set()
+  program.traverse({
+    CallExpression (call) {
+      if (call.node.callee.type === 'Identifier') called.add(call.node.callee.name)
+    }
+  })
+  const renames = hookBindings.filter(({ local }) => !HOOK_NAME.test(local) && called.has(local))
+  if (!renames.length) return
+  const used = usedNames(program)
+  for (const { local, hook } of renames) {
+    let name = hook
+    for (let i = 2; used.has(name); i++) name = hook + i
+    used.add(name)
+    program.scope.rename(local, name)
+  }
+}
+
+// every name in the file: a new name from outside it is captured by no
+// inner binding
+function usedNames (program) {
+  const used = new Set()
+  program.traverse({
+    Identifier (identifier) {
+      // not a name in this file: `imported` in `import { imported as local }`
+      if (identifier.parentPath.isImportSpecifier() && identifier.key === 'imported') return
+      used.add(identifier.node.name)
+    }
+  })
+  return used
+}
+
 // ----- 'full', before the compiler
 
 function renameLocalSignals (program, teamplay, t) {
@@ -199,8 +274,9 @@ function renameLocalSignals (program, teamplay, t) {
     CallExpression (call) {
       if (!isImportedCall(call, teamplay.$) || !inComponentOrHook(call)) return
       if (!hookName) {
+        const used = usedNames(program)
         hookName = 'useSignal'
-        for (let i = 2; program.scope.hasBinding(hookName); i++) hookName = 'useSignal' + i
+        for (let i = 2; used.has(hookName); i++) hookName = 'useSignal' + i
         const declaration = teamplay.declarations.find(d => d.node.specifiers.some(s => teamplay.$.has(s.local.name)))
         declaration.pushContainer('specifiers', t.importSpecifier(t.identifier(hookName), t.identifier('useSignal')))
       }
@@ -228,6 +304,14 @@ function compileInlineObservers (program, teamplay, t) {
 // ----- 'optOut'
 
 function optOut (program, teamplay, t) {
+  // what observer() wraps reads signals, whatever it names them
+  program.traverse({
+    CallExpression (call) {
+      if (!isImportedCall(call, teamplay.observer)) return
+      const fn = getFunction(call.get('arguments.0'))
+      if (fn && !hasDirective(fn, 'use no memo') && !hasDirective(fn, 'use memo')) addDirective(fn, 'use no memo', t)
+    }
+  })
   program.traverse({
     'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression' (fn) {
       if (!isComponentOrHook(fn)) return
@@ -235,6 +319,20 @@ function optOut (program, teamplay, t) {
       addDirective(fn, 'use no memo', t)
     }
   })
+}
+
+// the function a path is, or names (a declaration or `const X = function`)
+function getFunction (path) {
+  if (!path?.node) return
+  if (path.isFunctionExpression() || path.isArrowFunctionExpression() || path.isFunctionDeclaration()) return path
+  if (!path.isIdentifier()) return
+  const binding = path.scope.getBinding(path.node.name)
+  if (!binding || binding.constantViolations.length) return
+  if (binding.path.isFunctionDeclaration()) return binding.path
+  if (binding.path.isVariableDeclarator()) {
+    const init = binding.path.get('init')
+    if (init.isFunctionExpression() || init.isArrowFunctionExpression()) return init
+  }
 }
 
 function addDirective (fn, value, t) {
@@ -270,11 +368,34 @@ function hasDirective (fn, value) {
   return (fn.node.body.directives || []).some(directive => directive.value.value === value)
 }
 
-// a component or a hook, as the compiler sees it: a component or hook name
-// (a declaration, or `const X = ...`), or the argument of a wrapper
+// a component or a hook, as the compiler sees it: a hook name, the argument of
+// a wrapper, or a component name (a declaration, or `const X = ...`) on a
+// function that creates elements or calls a hook
 function isComponentOrHook (fn) {
   const name = getFunctionName(fn)
-  if (name && (COMPONENT_NAME.test(name) || HOOK_NAME.test(name))) return true
+  if (name && HOOK_NAME.test(name)) return true
+  if (isWrapperArgument(fn)) return true
+  return !!name && COMPONENT_NAME.test(name) && callsHooksOrCreatesJsx(fn)
+}
+
+function callsHooksOrCreatesJsx (fn) {
+  let found = false
+  fn.traverse({
+    Function (inner) { inner.skip() },
+    'JSXElement|JSXFragment' (path) { found = true; path.stop() },
+    CallExpression (call) {
+      const callee = call.node.callee
+      const hook = callee.type === 'Identifier'
+        ? HOOK_NAME.test(callee.name)
+        : callee.type === 'MemberExpression' && !callee.computed && callee.object.type === 'Identifier' &&
+          COMPONENT_NAME.test(callee.object.name) && HOOK_NAME.test(callee.property.name)
+      if (hook) { found = true; call.stop() }
+    }
+  })
+  return found
+}
+
+function isWrapperArgument (fn) {
   const parent = fn.parentPath
   if (!parent.isCallExpression() || parent.node.arguments[0] !== fn.node) return false
   const callee = parent.node.callee
@@ -294,6 +415,7 @@ function getFunctionName (fn) {
 
 function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
   let runtime
+  let enableStatement
   const getRuntime = () => {
     if (runtime) return t.identifier(runtime.name)
     runtime = program.scope.generateUidIdentifier('tp')
@@ -305,12 +427,19 @@ function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
     ))
     // the observers rendered from now on track compiled scopes
     const imports = program.get('body').filter(statement => statement.isImportDeclaration())
-    imports[imports.length - 1].insertAfter(t.expressionStatement(
+    ;[enableStatement] = imports[imports.length - 1].insertAfter(t.expressionStatement(
       t.callExpression(t.memberExpression(t.identifier(runtime.name), t.identifier('enable')), [])
     ))
     return t.identifier(runtime.name)
   }
   const helper = name => t.memberExpression(getRuntime(), t.identifier(name))
+  // the arrays the generated calls pass, as module constants (no allocation per render)
+  const constants = new Map()
+  const constant = values => {
+    const id = values.join()
+    if (!constants.has(id)) constants.set(id, { name: program.scope.generateUidIdentifier('tpKeys'), values })
+    return t.identifier(constants.get(id).name.name)
+  }
   program.traverse({
     VariableDeclarator (declarator) {
       const init = declarator.node.init
@@ -318,11 +447,16 @@ function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
       if (!t.isIdentifier(declarator.node.id)) return
       const fn = declarator.getFunctionParent()
       if (!fn) return
-      // React gives each render a copy of the cache: the runtime knows it by
-      // its position among the render's caches
-      declarator.get('init').replaceWith(t.callExpression(helper('cache'), [init]))
       declarator.skip()
-      const recognized = instrumentScopes(fn, declarator.node.id.name, t, helper)
+      const [size] = init.arguments
+      // one more slot, the last: the runtime keeps the scopes' state in the
+      // cache (React gives each render a copy of the cache it keeps)
+      const sized = t.isNumericLiteral(size)
+      if (sized) {
+        init.arguments[0] = t.numericLiteral(size.value + 1)
+        declarator.get('init').replaceWith(t.callExpression(helper('cache'), [init]))
+      }
+      const recognized = instrumentScopes(fn, declarator.node.id.name, t, helper, constant, sized)
       if (!recognized) {
         options.warn(
           `[teamplay] ${filename}: the React Compiler's output for ${describeFunction(fn)} is not recognized; ` +
@@ -332,6 +466,11 @@ function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
       }
     }
   })
+  if (constants.size) {
+    enableStatement.insertAfter([...constants.values()].map(({ name, values }) => t.variableDeclaration('const', [
+      t.variableDeclarator(name, t.arrayExpression(values.map(value => t.numericLiteral(value))))
+    ])))
+  }
 }
 
 function describeFunction (fn) {
@@ -340,9 +479,10 @@ function describeFunction (fn) {
   return (name ? `${name}()` : 'a function') + (line ? ` (line ${line})` : '')
 }
 
-// returns false if the function's compiled code has a shape it doesn't know:
-// then every scope recomputes inside observer()
-function instrumentScopes (fn, cacheName, t, helper) {
+// returns false if the function's compiled code has a shape it doesn't know
+// (or its cache has no room for the scopes' state): then every scope
+// recomputes inside observer()
+function instrumentScopes (fn, cacheName, t, helper, constant, sized) {
   const cacheBinding = fn.scope.getBinding(cacheName)
   const scopes = []
   const resets = []
@@ -380,14 +520,16 @@ function instrumentScopes (fn, cacheName, t, helper) {
       const keys = getScopeTestKeys(test, cacheName, t)
       scopes.push({
         statement,
-        key: keys ? Math.min(...keys) : undefined,
+        key: keys ? Math.min(...keys.map(({ slot }) => slot)) : undefined,
+        // the slots that hold its dependencies (not the sentinel's)
+        depSlots: keys ? keys.filter(({ dep }) => dep).map(({ slot }) => slot) : [],
         recognized: !!keys,
         inputs: collectReferenced(statement.get('test')),
         outputs: collectAssigned(statement.get('consequent'))
       })
     }
   })
-  const recognized = scopes.every(scope => scope.recognized) &&
+  const recognized = sized && scopes.every(scope => scope.recognized) &&
     cacheUsesRecognized(cacheBinding, scopes, resets, t)
   // a binding and every binding its values can come from
   const sourcesOf = binding => {
@@ -408,18 +550,27 @@ function instrumentScopes (fn, cacheName, t, helper) {
     }
   }
   // inner scopes first: an outer scope's body moves into a function
-  for (const { statement, key, upstream } of [...scopes].reverse()) {
+  for (const { statement, key, upstream, depSlots } of [...scopes].reverse()) {
     const consequent = statement.get('consequent')
+    // the clock, read while rendering: recomputed on every render, as without
+    // the compiler (the compiler takes it for a pure value and computes it once)
+    if (readsClock(consequent)) {
+      statement.node.test = t.logicalExpression('||', statement.node.test, t.booleanLiteral(true))
+    }
     if (!recognized || leavesBody(consequent)) {
       statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('inObserver'), []))
       continue
     }
-    const dirtyArgs = [t.identifier(cacheName), t.numericLiteral(key)]
+    // _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS), trailing defaults left out
     const jsx = createsElements(consequent.node, t)
-    if (upstream.size || jsx) {
-      dirtyArgs.push(upstream.size ? t.arrayExpression([...upstream].map(k => t.numericLiteral(k))) : t.nullLiteral())
-    }
-    if (jsx) dirtyArgs.push(t.booleanLiteral(true))
+    const dirtyArgs = [
+      t.identifier(cacheName),
+      t.numericLiteral(key),
+      upstream.size ? constant([...upstream]) : t.nullLiteral(),
+      t.booleanLiteral(jsx),
+      depSlots.length ? constant(depSlots) : t.identifier('undefined')
+    ]
+    while (dirtyArgs.length > 2 && isDefaultArg(dirtyArgs[dirtyArgs.length - 1], t)) dirtyArgs.pop()
     statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('dirty'), dirtyArgs))
     const body = t.isBlockStatement(consequent.node) ? consequent.node.body : [consequent.node]
     consequent.replaceWith(t.blockStatement([
@@ -429,6 +580,10 @@ function instrumentScopes (fn, cacheName, t, helper) {
     ]))
   }
   return recognized
+}
+
+function isDefaultArg (node, t) {
+  return t.isNullLiteral(node) || t.isBooleanLiteral(node, { value: false }) || t.isIdentifier(node, { name: 'undefined' })
 }
 
 function referencesCache (node, cacheName, t) {
@@ -444,7 +599,8 @@ function isCacheReset (test, cacheName, t) {
 }
 
 // $[i] !== x || $[j] !== y ..., or $[i] === Symbol.for("react.memo_cache_sentinel"):
-// the slots compared, or undefined for another shape
+// the slots compared ({ slot, dep: whether it holds a dependency }), or
+// undefined for another shape
 function getScopeTestKeys (test, cacheName, t) {
   if (t.isLogicalExpression(test, { operator: '||' })) {
     const left = getScopeTestKeys(test.left, cacheName, t)
@@ -453,8 +609,8 @@ function getScopeTestKeys (test, cacheName, t) {
   }
   if (!t.isBinaryExpression(test) || !isCacheSlot(test.left, cacheName, t)) return
   if (referencesCache(test.right, cacheName, t)) return
-  if (test.operator === '!==') return [test.left.property.value]
-  if (test.operator === '===' && isSentinel(test.right, t)) return [test.left.property.value]
+  if (test.operator === '!==') return [{ slot: test.left.property.value, dep: true }]
+  if (test.operator === '===' && isSentinel(test.right, t)) return [{ slot: test.left.property.value, dep: false }]
 }
 
 function isCacheSlot (node, cacheName, t) {
@@ -528,6 +684,32 @@ function createsElements (node, t) {
     }
   })
   return found
+}
+
+// Date.now(), new Date() or performance.now() in the body (not in the
+// functions it creates, which don't run while rendering)
+function readsClock (body) {
+  let reads = false
+  // the global one, not a variable of that name
+  const isGlobal = (path, name) => !path.scope.getBinding(name)
+  const isCall = (call, object, property) => {
+    const callee = call.node.callee
+    return callee.type === 'MemberExpression' && !callee.computed && callee.object.type === 'Identifier' &&
+      callee.object.name === object && callee.property.name === property && isGlobal(call, object)
+  }
+  body.traverse({
+    Function (inner) { inner.skip() },
+    CallExpression (call) {
+      if (isCall(call, 'Date', 'now') || isCall(call, 'performance', 'now')) { reads = true; call.stop() }
+    },
+    NewExpression (expression) {
+      if (expression.get('callee').isIdentifier({ name: 'Date' }) && !expression.node.arguments.length && isGlobal(expression, 'Date')) {
+        reads = true
+        expression.stop()
+      }
+    }
+  })
+  return reads
 }
 
 // a return, or a break/continue whose target is outside the body
