@@ -223,7 +223,8 @@ first render.
 - `'full'`: the compiler compiles everything, and TeamPlay keeps the compiled
   code reactive. Components keep the compiler's optimizations: a re-render
   from the parent reuses what didn't change, and memoized callbacks keep their
-  identity.
+  identity. This also compiles components written inline in `observer()`
+  (`observer(function Profile () {})`), which the compiler alone skips.
 - `'optOut'`: the compiler skips the components and hooks that use signals
   (`babel-plugin-teamplay` adds `'use no memo'` to them) and compiles the rest.
   The skipped ones work exactly as without the compiler.
@@ -242,7 +243,9 @@ module.exports = {
 ```
 
 How `'full'` works: before the compiler, `$()` called in a component or a hook
-becomes `useSignal()`, which the compiler never caches. After the compiler,
+becomes `useSignal()`, which the compiler never caches, and a function passed
+inline to `observer()` gets `'use memo'`, so the compiler compiles it (add
+`'use no memo'` to one to keep it uncompiled). After the compiler,
 each block of code the compiler caches runs in a reaction that tracks the
 signals it reads, inside `observer()` components. When one of them changes,
 that block and the blocks that use its result run again, and so do the blocks

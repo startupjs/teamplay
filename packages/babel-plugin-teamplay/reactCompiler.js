@@ -13,7 +13,8 @@
 //   code reactive:
 //   - before the compiler (Program enter), a $() call made directly in a
 //     component or a hook becomes useSignal(), which the compiler then never
-//     caches and always calls, in order;
+//     caches and always calls, in order; and a function passed inline to
+//     observer() gets 'use memo' (the compiler doesn't compile it otherwise);
 //   - after it (Program exit), each memo scope the compiler emitted
 //       if (DEPS_CHANGED) { BODY } else { ...cached outputs... }
 //     becomes
@@ -75,8 +76,12 @@ function reactCompilerProgramEnter (program, state, options, t) {
     )
   }
   if (dollarCalls) reportDollarCalls(program, teamplay, filename, dollarCalls, options.warn)
-  if (reactCompiler === 'optOut') optOut(program, teamplay, t)
-  else if (reactCompiler === 'full') renameLocalSignals(program, teamplay, t)
+  if (reactCompiler === 'optOut') {
+    optOut(program, teamplay, t)
+  } else if (reactCompiler === 'full') {
+    renameLocalSignals(program, teamplay, t)
+    compileInlineObservers(program, teamplay, t)
+  }
 }
 
 function reactCompilerProgramExit (program, state, options, t) {
@@ -112,10 +117,10 @@ function isTeamplaySource (source, sources) {
   return sources.some(s => typeof s === 'string' ? s === source : s.test(source))
 }
 
-// the local names of $, signal and useSignal imported from teamplay, and the
-// import declarations of those modules
+// the local names of $, signal, useSignal and observer imported from
+// teamplay, and the import declarations of those modules
 function getTeamplayImports (program, sources) {
-  const result = { $: new Set(), signal: new Set(), useSignal: new Set(), declarations: [], all: new Set() }
+  const result = { $: new Set(), signal: new Set(), useSignal: new Set(), observer: new Set(), declarations: [], all: new Set() }
   for (const statement of program.get('body')) {
     if (!statement.isImportDeclaration()) continue
     if (!isTeamplaySource(statement.node.source.value, sources)) continue
@@ -133,6 +138,7 @@ function getTeamplayImports (program, sources) {
       if (imported === '$') result.$.add(specifier.local.name)
       else if (imported === 'signal') result.signal.add(specifier.local.name)
       else if (imported === 'useSignal') result.useSignal.add(specifier.local.name)
+      else if (imported === 'observer') result.observer.add(specifier.local.name)
     }
   }
   return result
@@ -203,6 +209,22 @@ function renameLocalSignals (program, teamplay, t) {
   })
 }
 
+// The compiler compiles a function passed to memo() or forwardRef(), but not
+// one passed to observer(), the usual way to write a teamplay component:
+// 'use memo' makes it compile that one too.
+function compileInlineObservers (program, teamplay, t) {
+  if (!teamplay.observer.size) return
+  program.traverse({
+    CallExpression (call) {
+      if (!isImportedCall(call, teamplay.observer)) return
+      const fn = call.get('arguments.0')
+      if (!fn?.isFunctionExpression() && !fn?.isArrowFunctionExpression()) return
+      if (hasDirective(fn, 'use no memo') || hasDirective(fn, 'use memo')) return
+      addDirective(fn, 'use memo', t)
+    }
+  })
+}
+
 // ----- 'optOut'
 
 function optOut (program, teamplay, t) {
@@ -210,12 +232,16 @@ function optOut (program, teamplay, t) {
     'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression' (fn) {
       if (!isComponentOrHook(fn)) return
       if (hasDirective(fn, 'use no memo') || hasDirective(fn, 'use memo') || !usesSignals(fn, teamplay)) return
-      if (!t.isBlockStatement(fn.node.body)) {
-        fn.get('body').replaceWith(t.blockStatement([t.returnStatement(fn.node.body)]))
-      }
-      fn.get('body').unshiftContainer('directives', t.directive(t.directiveLiteral('use no memo')))
+      addDirective(fn, 'use no memo', t)
     }
   })
+}
+
+function addDirective (fn, value, t) {
+  if (!t.isBlockStatement(fn.node.body)) {
+    fn.get('body').replaceWith(t.blockStatement([t.returnStatement(fn.node.body)]))
+  }
+  fn.get('body').unshiftContainer('directives', t.directive(t.directiveLiteral(value)))
 }
 
 // the source as written (in the compiled code, the compiler's cache is `$`)

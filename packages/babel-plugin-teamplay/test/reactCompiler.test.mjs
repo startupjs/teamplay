@@ -126,6 +126,25 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       expect(code).toContain('{$(1)}')
     })
 
+    it('compiles the functions passed inline to observer()', () => {
+      const { code } = transform(`
+        import { observer } from 'startupjs'
+        import { observer as mobxObserver } from 'mobx-react'
+        export const Inline = observer(function Inline ({ $doc }) { return <b>{$doc.a.get()}</b> })
+        export const Arrow = observer(({ $doc }) => <b>{$doc.a.get()}</b>)
+        export const Skipped = observer(function Skipped ({ $doc }) {
+          'use no memo'
+          return <b>{$doc.a.get()}</b>
+        })
+        export const Other = mobxObserver(function Other ({ store }) { return <b>{store.a}</b> })
+      `, { teamplay: { reactCompiler: 'full' } })
+      const functions = describeFunctions(code)
+      expect(functions.Inline).toEqual({ directives: ['use memo'], compiled: true })
+      expect(functions.Arrow).toEqual({ directives: ['use memo'], compiled: true })
+      expect(functions.Skipped).toEqual({ directives: ['use no memo'], compiled: false })
+      expect(functions.Other).toEqual({ directives: [], compiled: false })
+    })
+
     it('uses the useSignal the file imports, or a free name', () => {
       const imported = transform(`
         import { $, useSignal as useLocal } from 'teamplay'
