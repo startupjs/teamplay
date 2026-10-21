@@ -13,8 +13,10 @@
 //   code reactive:
 //   - before the compiler (Program enter), a $() call made directly in a
 //     component or a hook becomes useSignal(), which the compiler then never
-//     caches and always calls, in order; and a function passed inline to
+//     caches and always calls, in order; a function passed inline to
 //     observer() gets 'use memo' (the compiler doesn't compile it otherwise);
+//     and a function body that relies on its function declarations being
+//     hoisted gets them moved to its top (the compiler doesn't hoist them all);
 //   - after it (Program exit), each memo scope the compiler emitted
 //       if (DEPS_CHANGED) { BODY } else { ...cached outputs... }
 //     becomes
@@ -90,6 +92,7 @@ function reactCompilerProgramEnter (program, state, options, t) {
   } else if (reactCompiler === 'full') {
     renameLocalSignals(program, teamplay, t)
     compileInlineObservers(program, teamplay, t)
+    hoistFunctionDeclarations(program)
   }
 }
 
@@ -312,6 +315,42 @@ function compileInlineObservers (program, teamplay, t) {
       if (hasDirective(fn, 'use no memo') || hasDirective(fn, 'use memo')) return
       addDirective(fn, 'use memo', t)
     }
+  })
+}
+
+// The compiler turns a function declaration in place into an assignment
+// (`g = function g () {}`) when the code before it reaches it only through
+// another hoisted function:
+//   const x = prepare()            // calls g() before it is assigned
+//   function g () { ... }
+//   function prepare () { return g() }
+// A function body that uses a function declared further down gets its
+// function declarations moved to its top, where JavaScript hoists them anyway,
+// so the code means the same and the compiler sees them declared before use.
+// Any function: the compiler compiles nested ones too, and its settings decide
+// which functions it compiles.
+function hoistFunctionDeclarations (program) {
+  program.traverse({
+    Function (fn) {
+      const body = fn.get('body')
+      if (!body.isBlockStatement()) return
+      const statements = body.get('body')
+      const declarations = statements.filter(statement => statement.isFunctionDeclaration() && statement.node.id)
+      if (!declarations.length || !declarations.some(usedBeforeDeclared)) return
+      const nodes = declarations.map(declaration => declaration.node)
+      for (const declaration of declarations) declaration.remove()
+      body.unshiftContainer('body', nodes)
+      fn.scope.crawl()
+    }
+  })
+}
+
+function usedBeforeDeclared (declaration) {
+  const binding = declaration.parentPath.scope.getBinding(declaration.node.id.name)
+  if (binding?.path !== declaration) return false
+  return binding.referencePaths.some(reference => {
+    const statement = reference.find(path => path.parent === declaration.parent && path.listKey === 'body')
+    return !!statement && statement.key < declaration.key
   })
 }
 

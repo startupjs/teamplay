@@ -3,6 +3,7 @@ import { beforeEach, describe, it } from 'mocha'
 import { jestExpect as expect } from 'mocha-expect-snapshot'
 import { createRequire } from 'node:module'
 import { serialize } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 import plugin from '../index.js'
 import reactCompiler from '../reactCompiler.js'
 
@@ -399,6 +400,35 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       // the scope of today, not the one of due (moment(dueAt) is not the clock)
       expect(code.match(/\|\| true \|\|/g)).toHaveLength(1)
       expect(code).toContain('if ($[0] === Symbol.for("react.memo_cache_sentinel") || true || _tp.dirty($, 0)) {\n    _tp.run($, 0, () => {\n      t1 = {\n        day: moment().format("L")')
+    })
+
+    it('moves to the top of a function body the function declarations it uses before declaring them', () => {
+      // the compiler assigns `label` and `add` in place, after prepare() and
+      // sum() (hoisted) call them
+      const { code } = transform(`
+        import { observer } from 'startupjs'
+        export const Stages = observer(function Stages ({ stages, base }) {
+          const meta = prepare()
+          const total = () => {
+            const result = sum()
+            function add (result, stage) { return result + stage + base }
+            function sum () { return stages.reduce(add, 0) }
+            return result
+          }
+          function label (stage) { return stage + base }
+          function prepare () { return stages.map(label) }
+          return { meta: meta.join(), total }
+        })
+      `, { teamplay: { reactCompiler: 'full' } })
+      expect(describeFunctions(code).Stages.compiled).toBe(true)
+      const Stages = runInNewContext(code.replace(/^import .*$/gm, '').replace('export const', 'const') + '\nStages', {
+        _tp: { enable () {}, cache: memoCache => memoCache, dirty: () => false, run: (memoCache, key, body) => body(), inObserver: () => false },
+        _c: size => new Array(size).fill(Symbol.for('react.memo_cache_sentinel')),
+        observer: component => component
+      })
+      const { meta, total } = Stages({ stages: [1, 2], base: 10 })
+      expect(meta).toBe('11,12')
+      expect(total()).toBe(23)
     })
 
     it('clears the Symbol locations of compiled nodes (an AST a bundler sends to another process)', () => {
