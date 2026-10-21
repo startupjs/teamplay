@@ -527,6 +527,8 @@ React integration lives in [packages/teamplay/src/react](./packages/teamplay/src
 - `useSuspendMemo()`
 - local/session/page/document/query hooks.
 
+The React Compiler is not supported. It caches a value until its inputs change identity, and a signal keeps its identity when its data changes, so compiled hooks and components keep returning old values, and `observer()` stops tracking a read the cache skipped. Apps turn the compiler off or mark signal-reading code `'use no memo'` ([docs/guide/react-integration.md](./docs/guide/react-integration.md#react-compiler)); [packages/teamplay/test_client/62_react-compiler.js](./packages/teamplay/test_client/62_react-compiler.js) pins the behaviour.
+
 `$` and `sub()` are intentionally universal: the root export in [packages/teamplay/src/index.ts](./packages/teamplay/src/index.ts) uses `universal$` so the same public API works in plain JS and React environments.
 
 React subscriptions must preserve the same runtime signal shapes as `sub()`:
@@ -764,7 +766,7 @@ cd packages/teamplay && npm run test-client
 yarn workspace babel-plugin-teamplay test
 ```
 
-Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client) and run on React 19 (jsdom, `@testing-library/react`). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list. Shared client test helpers live in `test_client/helpers/` (ignored as test files); `releaseLastEventTarget()` drops react-dom's reference to the last DOM event target, whose development-only `_debugStack` otherwise keeps a test body's closures alive into the next test's leak check.
+Client tests live in [packages/teamplay/test_client](./packages/teamplay/test_client) and run on React 19 (jsdom, `@testing-library/react`). Numeric filenames define coarse execution order and [packages/teamplay/test_client/testSequencer.cjs](./packages/teamplay/test_client/testSequencer.cjs) preserves path order without maintaining an explicit file list. Shared client test helpers live in `test_client/helpers/` (ignored as test files); `releaseLastEventTarget()` drops react-dom's reference to the last DOM event target, whose development-only `_debugStack` otherwise keeps a test body's closures alive into the next test's leak check. Fixtures named `*.react-compiler.jsx` are compiled by the React Compiler as an Expo development build compiles app code ([packages/teamplay/test_client/helpers/reactCompilerTransform.cjs](./packages/teamplay/test_client/helpers/reactCompilerTransform.cjs)).
 
 Server/runtime tests live in [packages/teamplay/test](./packages/teamplay/test). Type tests live in [packages/teamplay/test_types](./packages/teamplay/test_types) and the strict external consumer setup.
 

@@ -4,6 +4,8 @@ TeamPlay integrates seamlessly with React, allowing you to build reactive user i
 
 TeamPlay requires React 19 or newer. Observer components work under `<StrictMode>`, with concurrent rendering, and inside `<Activity>`: a hidden subtree releases its subscriptions and subscribes again when it is shown.
 
+The React Compiler is not supported: turn it off, or opt out the code that reads signals. See [React Compiler](#react-compiler).
+
 ## The `observer()` Higher-Order Component
 
 To use TeamPlay signals in a React component, you need to wrap your component with the `observer()` function:
@@ -171,6 +173,75 @@ function LazyView (props) {
 The loader must return the same in-flight promise on repeated renders. The hook
 returns `undefined` outside a group, so the component can retain its normal
 local Suspense fallback there.
+
+## React Compiler
+
+The [React Compiler](https://react.dev/learn/react-compiler) is not supported.
+Expo turns it on with `"experiments": { "reactCompiler": true }` in `app.json`,
+and the default Expo template sets it.
+
+The compiler caches a value until one of its inputs changes identity. A signal
+keeps its identity when its data changes (`$user.score` is the same object
+before and after `$user.score.set(12)`), so the compiled code keeps returning
+the old value:
+
+```javascript
+// your hook
+function useScore ($user) {
+  const score = $user.score.get() ?? 0
+  useEffect(() => { /* ... */ }, [])
+  return score
+}
+
+// what the compiler turns it into
+function useScore ($user) {
+  const $ = _c(3)
+  let t0
+  if ($[0] !== $user.score) {
+    t0 = $user.score.get() ?? 0
+    $[0] = $user.score
+    $[1] = t0
+  } else {
+    t0 = $[1] // the same signal: the cached, old value
+  }
+  // ...
+}
+```
+
+The cached branch also skips `.get()`, so `observer()` stops tracking that
+field: after one cached render, later changes don't re-render the component.
+The same happens to values derived from signals, to reads from the imported `$`
+(cached for the life of the component), and to local and computed signals
+(`$(0)`, `$(() => ...)`).
+
+With its default settings the compiler compiles:
+
+- custom hooks: functions named `use...` that call a hook;
+- components declared on their own and wrapped afterwards:
+  `function Profile () {}` or `const Profile = () => ...`, then
+  `observer(Profile)`;
+- functions passed to `memo()` and `forwardRef()`.
+
+It leaves a function passed inline to `observer()`
+(`observer(function Profile () {})`) uncompiled, but it still compiles the
+hooks that function calls. Don't rely on this.
+
+To use TeamPlay, do one of these:
+
+- turn the compiler off: `"experiments": { "reactCompiler": false }` in Expo's
+  `app.json`, or remove `babel-plugin-react-compiler` from your Babel config;
+- add the `'use no memo'` directive to every hook and component that reads
+  signals, as the first statement of the function, or at the top of a file to
+  opt out the whole file:
+
+```javascript
+function useScore ($user) {
+  'use no memo'
+  const score = $user.score.get() ?? 0
+  useEffect(() => { /* ... */ }, [])
+  return score
+}
+```
 
 ## Creating and Waiting for Documents
 
