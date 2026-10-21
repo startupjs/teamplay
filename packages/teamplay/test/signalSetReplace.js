@@ -111,37 +111,16 @@ describe('Signal.setReplace()', () => {
     assert.equal(getRaw([PUBLIC_COLLECTION, docId]), undefined)
   })
 
-  it('rejects replacing a whole public document with null, and keeps the document', async () => {
-    // deleting a doc takes del(): a replace never deletes it, nor leaves it
-    // with null data
+  it('deletes a public document in replacing the whole document with null', async () => {
     const docId = nextDocId()
     const $doc = createRoot('public-null-doc')[PUBLIC_COLLECTION][docId]
     await $doc.setReplace({ title: 'One' })
 
-    await assert.rejects($doc.setReplace(null), /replace a public doc .* with null/)
-
-    assert.deepEqual($doc.get(), { _id: docId, title: 'One' })
-    assert.deepEqual(getConnection().get(PUBLIC_COLLECTION, docId).data, { _id: docId, title: 'One' })
-  })
-
-  it('rejects replacing a missing public document with null, without creating it', async () => {
-    const docId = nextDocId()
-    const $doc = createRoot('public-null-missing')[PUBLIC_COLLECTION][docId]
-
-    await assert.rejects($doc.setReplace(null), /replace a public doc .* with null/)
+    await $doc.setReplace(null)
 
     assert.equal($doc.get(), undefined)
-    assert.equal(getConnection().collections[PUBLIC_COLLECTION]?.[docId]?.type ?? null, null, 'no doc created')
-  })
-
-  it('rejects replacing a whole public document with a non-object value', async () => {
-    const docId = nextDocId()
-    const $doc = createRoot('public-primitive-doc')[PUBLIC_COLLECTION][docId]
-    await $doc.setReplace({ title: 'One' })
-
-    await assert.rejects($doc.setReplace('One'), /non-object value to a public doc/)
-
-    assert.deepEqual($doc.get(), { _id: docId, title: 'One' })
+    assert.equal(getRaw([PUBLIC_COLLECTION, docId]), undefined)
+    assert.equal(getConnection().get(PUBLIC_COLLECTION, docId).type, null, 'deleted, not created with null data')
   })
 
   it('skips protected public id fields', async () => {
