@@ -235,6 +235,10 @@ export async function setPublicDocReplace (segments, value) {
   if (!(collection && docId)) throw Error(ERRORS.publicDoc(segments))
   const idFields = getIdFieldsForSegments([collection, docId])
   if (isIdFieldPath(segments, idFields)) return
+  // a doc's data is an object; a doc is deleted with del(), never by a replace
+  if (segments.length === 2 && (value === null || typeof value !== 'object')) {
+    throw Error(value === null ? ERRORS.replaceDocWithNull(segments) : ERRORS.notObject(segments, value))
+  }
   const doc = getConnection().get(collection, docId)
   let docState = resolvePublicDocState({ collection, docId, doc, idFields, hydrateDocDataFromLocal: true })
   if (!docState.exists && segments.length > 2) {
@@ -798,6 +802,10 @@ const ERRORS = {
   notObject: (segments, value) => `
     Trying to set a non-object value to a public doc ${segments}.
     Value: ${value}
+  `,
+  replaceDocWithNull: segments => `
+    Trying to replace a public doc ${segments} with null.
+    A doc's data is an object. To delete the doc, use del().
   `,
   notObjectCollection: (segments, value) => `
     Trying to set multiple documents for the collection but the value passed is not an object.

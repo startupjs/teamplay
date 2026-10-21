@@ -356,8 +356,9 @@ on a doc signal does, on any connection), the runtime links the two again, as
 after a load (`_refData()`): the tree keeps its objects and takes the new
 values in place. So a whole-doc replace notifies the same readers as the
 equivalent field ops would, and the doc's objects and the query lists holding
-it keep their identity. A whole-doc replace with `null` leaves the doc without
-data; a doc-root `setReplace(null)` deletes the doc, as `set(null)` does.
+it keep their identity. A whole-doc replace with `null` from another client
+leaves the doc without data; a doc-root `setReplace()` with `null` (or any
+non-object) throws here: a doc is deleted with `del()`, never by a replace.
 
 The runtime's ShareDB listeners (load, create, del, op, error) go with it when
 it is detached. It calls `connection.get()` only for a doc it takes (init,

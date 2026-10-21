@@ -262,8 +262,8 @@ class Doc {
     const doc = this._shareDoc
     if (!doc || doc.data === this._linkedData) return
     if (doc.data == null) {
-      // the whole doc replaced with null (on another connection: a doc-root
-      // setReplace(null) deletes the doc here): it has no data to show
+      // the whole doc replaced with null (by another client: a doc-root
+      // setReplace(null) throws here): it has no data to show
       this._clearData()
       this._linkedData = doc.data
       return
