@@ -402,6 +402,34 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       expect(code).toContain('if ($[0] === Symbol.for("react.memo_cache_sentinel") || true || _tp.dirty($, 0)) {\n    _tp.run($, 0, () => {\n      t1 = {\n        day: moment().format("L")')
     })
 
+    it('recomputes a scope when a value its body uses, that the compiler takes for a constant, changes', () => {
+      // values computed from the imported $: the compiler gives the scopes
+      // that use them no dependencies
+      const { code } = transform(`
+        import { $ } from 'teamplay'
+        import { useQueryText } from './useQueryText'
+        const escape = text => text
+        const describeTenant = name => ({ title: name })
+        export function useAuthorsQuery (withTenant) {
+          const search = $.session.search.get() === undefined ? '' : $.session.search.get()
+          const tenantId = $.session.tenantId.get()
+          const tenantName = $.session.tenantName.get()
+          const text = useQueryText({ $aggregate: [{ $match: { tenantId } }, { $match: { name: { $regex: escape(search) } } }] })
+          const meta = {}
+          if (withTenant) meta.tenant = describeTenant(tenantName)
+          meta.text = text
+          return meta
+        }
+      `, { teamplay: { reactCompiler: 'full' } })
+      // the compiler's 3 slots, one for `search`, and the scopes' state
+      expect(code).toContain('const $0 = _tp.cache(_c(5));')
+      // scope 1 uses tenantId, scope 0's output: upstream [0]
+      const [, keysOfScope0] = code.match(/_tp\.dirty\(\$0, 1, (_tpKeys\d*), false, undefined, true\)/)
+      expect(code).toContain(`var ${keysOfScope0} = [0];`)
+      // scope 2 uses search, computed outside scopes on every render
+      expect(code).toMatch(/_tp\.dirty\(\$0, 2, _tpKeys\d*, false, _tpKeys\d*, false, \$0\[3\] !== search\)\) \{\n {4}_tp\.run\(\$0, 2, \(\) => \{\n {6}\$0\[3\] = search;/)
+    })
+
     it('moves to the top of a function body the function declarations it uses before declaring them', () => {
       // the compiler assigns `label` and `add` in place, after prepare() and
       // sum() (hoisted) call them

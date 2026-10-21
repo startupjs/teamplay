@@ -290,6 +290,23 @@ describe.each([
     expect(container.textContent).toBe('B|x+y')
   })
 
+  it('a query a hook builds from values read outside the compiler\'s scopes', () => {
+    const $authors = $.session._rcxAuthors
+    $authors.set({ tenantId: 't1', tenantName: 'T1' })
+    const { container } = render(el(cases.AuthorsQuery, { withTenant: true }))
+    expect(container.textContent).toBe('q:t1||T1')
+    act(() => { $authors.search.set('a(') })
+    expect(container.textContent).toBe('q:t1|a\\(|T1')
+    act(() => { $authors.tenantId.set('t2') })
+    expect(container.textContent).toBe('q:t2|a\\(|T1')
+    act(() => { $authors.tenantName.set('T2') })
+    expect(container.textContent).toBe('q:t2|a\\(|T2')
+    act(() => { $authors.search.set('b') })
+    expect(container.textContent).toBe('q:t2|b|T2')
+    cleanup()
+    $authors.del()
+  })
+
   it('StrictMode', () => {
     const $doc = nextDoc({ count: 1 })
     const { container } = render(el(StrictMode, null, el(cases.DocTotal, { $doc: nextDoc({ items: [1, 2] }) }), el(cases.DocCount, { $doc })))

@@ -1,14 +1,21 @@
 // React Compiler support (babel-plugin-teamplay's `reactCompiler: 'full'`):
 // the runtime of the compiler's memo scopes, as the plugin instruments them:
 //
-//   const $ = _tp.cache(_c(N + 1))           // slot N: the scopes' state (below)
-//   if (DEPS_CHANGED || _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS)) {
+//   const $ = _tp.cache(_c(N + E + 1))       // the last slot: the scopes' state (below)
+//   if (DEPS_CHANGED || _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS, PURE, $[N] !== x)) {
+//     $[N] = x
 //     _tp.run($, K, () => { BODY })
 //   } else { ...the cached outputs... }
 //
 // A body that can't read signals (it only builds elements, callbacks and
 // literals from values already computed: PURE) runs as written, with no
-// reaction; only JSX and UPSTREAM_KEYS can make it recompute.
+// reaction; only JSX, UPSTREAM_KEYS and its extra dependencies can make it
+// recompute.
+//
+// The extra dependencies ($[N] !== x, in slots after the compiler's) are the
+// values the body uses that are computed on every render outside the scopes
+// and that the compiler took for constants: values read from the imported $
+// (`const search = $._page.search.get()`).
 //
 // The compiler recomputes a scope only when a dependency changes identity,
 // but a signal keeps its identity when its data changes. So inside an
@@ -29,7 +36,7 @@
 // runs once in a throwaway reaction that only notes whether it read any. So
 // does a scope whose cached dependencies (DEP_SLOTS) may be a doc's data,
 // which changes in place: a plain object or array (outside a reaction, a doc's
-// data reads as its raw objects).
+// data reads as its raw objects), and one whose extra dependencies changed.
 //
 // Where the scopes' state lives: React keeps the cache of a render only if
 // the render commits (a render that suspends, is interrupted, or is
@@ -62,6 +69,9 @@ interface ScopeOwner {
   parents: Map<number, number | undefined>
   // outside observer(): the scopes whose last run read signals
   reading: Set<number>
+  // scope key -> the render that recomputed it although its deps did not
+  // change, for a PURE scope (it has no run to keep it in)
+  pureForcedIn: Map<number, number>
 }
 
 // slot N of the cache
@@ -146,7 +156,7 @@ export function cache (memoCache: MemoCache): MemoCache {
   if (!(state as any)?.[STATE]) {
     memoCache[slot] = {
       [STATE]: true,
-      owner: { invalidated: new Map(), parents: new Map(), reading: new Set() },
+      owner: { invalidated: new Map(), parents: new Map(), reading: new Set(), pureForcedIn: new Map() },
       runs: new Map(),
       renderId: context ? context.renderId : -1
     }
@@ -162,16 +172,19 @@ function getState (memoCache: MemoCache): ScopeState {
 // `jsx`: the scope creates elements. On a render a signal change caused, it
 // recomputes, as every element does without the compiler: a child that is not
 // an observer() and reads an object changed in place (same identity) renders again.
+// `changed`: one of its extra dependencies changed.
 export function dirty (
   memoCache: MemoCache,
   key: number,
   upstream?: readonly number[] | null,
   jsx?: boolean,
   depSlots?: readonly number[],
-  pure?: boolean
+  pure?: boolean,
+  changed?: boolean
 ): boolean {
   const context = executionContextTracker.getScopeContext()
   if (!context) {
+    if (changed) return true
     // an observer() that started before compiled code was loaded: recompute,
     // and the render tracks the reads
     if (executionContextTracker.isActive()) return true
@@ -179,15 +192,21 @@ export function dirty (
     return !!depSlots?.some(slot => mayChangeInPlace(memoCache[slot]))
   }
   const state = getState(memoCache)
-  let forced = !!jsx && context.signalRender
+  const { owner } = state
+  let forced = !!changed || (!!jsx && context.signalRender)
   if (!forced && !pure) {
     const run = state.runs.get(key)
-    forced = !run || (state.owner.invalidated.get(key) ?? -1) > run.seq
+    forced = !run || (owner.invalidated.get(key) ?? -1) > run.seq
   }
   if (!forced && upstream) {
-    forced = upstream.some(upstreamKey => state.runs.get(upstreamKey)?.forcedIn === context.renderId)
+    forced = upstream.some(upstreamKey =>
+      (state.runs.get(upstreamKey)?.forcedIn ?? owner.pureForcedIn.get(upstreamKey)) === context.renderId
+    )
   }
-  if (forced && !pure) context.forced = key
+  if (forced) {
+    if (pure) owner.pureForcedIn.set(key, context.renderId)
+    else context.forced = key
+  }
   return forced
 }
 

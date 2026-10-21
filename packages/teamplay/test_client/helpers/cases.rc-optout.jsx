@@ -4,6 +4,7 @@
 // code from the first import on (63_react-compiler-modes.js checks it).
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { $, observer, useSignal } from '../../src/index.ts'
+import { useQueryText } from './useQueryText.js'
 
 // (a) a custom hook reading a signal, called from an inline observer() function
 export function useCount ($doc) {
@@ -185,3 +186,31 @@ function CountLabelParentBase ({ $doc }) {
   return <div><b>{$doc.count.get()}</b>|<CountLabel $doc={$doc} /></div>
 }
 export const CountLabelParent = observer(CountLabelParentBase)
+
+// a hook that reads the root signal and builds a query from what it read.
+// The compiler takes values from the imported $ for constants: the scopes
+// that use them have no dependencies, and `search` is read outside scopes.
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const describeTenant = name => ({ title: name })
+function useAuthorsQuery (withTenant) {
+  const search = $.session._rcxAuthors.search.get() === undefined ? '' : $.session._rcxAuthors.search.get()
+  const tenantId = $.session._rcxAuthors.tenantId.get()
+  const tenantName = $.session._rcxAuthors.tenantName.get()
+  const text = useQueryText({
+    $aggregate: [
+      { $match: { tenantId, status: 'approved' } },
+      { $unwind: { path: '$authorIds' } },
+      { $match: { name: { $regex: escapeRegExp(search), $options: 'i' } } },
+      { $limit: 5 }
+    ]
+  })
+  const meta = {}
+  if (withTenant) meta.tenant = describeTenant(tenantName)
+  meta.text = text
+  return meta
+}
+function AuthorsQueryBase ({ withTenant }) {
+  const meta = useAuthorsQuery(withTenant)
+  return <i>{meta.text}{meta.tenant ? '|' + meta.tenant.title : ''}</i>
+}
+export const AuthorsQuery = observer(AuthorsQueryBase)

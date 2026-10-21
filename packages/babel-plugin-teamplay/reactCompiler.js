@@ -502,14 +502,13 @@ function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
       if (!fn) return
       declarator.skip()
       const [size] = init.arguments
-      // one more slot, the last: the runtime keeps the scopes' state in the
-      // cache (React gives each render a copy of the cache it keeps)
       const sized = t.isNumericLiteral(size)
-      if (sized) {
-        init.arguments[0] = t.numericLiteral(size.value + 1)
-        declarator.get('init').replaceWith(t.callExpression(helper('cache'), [init]))
-      }
-      const recognized = instrumentScopes(fn, declarator.node.id.name, t, helper, constant, sized)
+      if (sized) declarator.get('init').replaceWith(t.callExpression(helper('cache'), [init]))
+      const { recognized, extraSlots } = instrumentScopes(fn, declarator.node.id.name, t, helper, constant, sized ? size.value : undefined)
+      // the slots of the extra dependencies, then one more, the last: the
+      // runtime keeps the scopes' state in the cache (React gives each render
+      // a copy of the cache it keeps)
+      if (sized) init.arguments[0] = t.numericLiteral(size.value + extraSlots + 1)
       if (!recognized) {
         options.warn(
           `[teamplay] ${filename}: the React Compiler's output for ${describeFunction(fn)} is not recognized; ` +
@@ -536,10 +535,12 @@ function describeFunction (fn) {
   return (name ? `${name}()` : 'a function') + (line ? ` (line ${line})` : '')
 }
 
-// returns false if the function's compiled code has a shape it doesn't know
-// (or its cache has no room for the scopes' state): then every scope
-// recomputes inside observer()
-function instrumentScopes (fn, cacheName, t, helper, constant, sized) {
+// `recognized` is false if the function's compiled code has a shape it
+// doesn't know (or its cache size isn't known): then every scope recomputes
+// inside observer(). `extraSlots`: the cache slots it added after the
+// compiler's `size`.
+function instrumentScopes (fn, cacheName, t, helper, constant, size) {
+  const sized = size !== undefined
   const cacheBinding = fn.scope.getBinding(cacheName)
   const scopes = []
   const resets = []
@@ -596,26 +597,58 @@ function instrumentScopes (fn, cacheName, t, helper, constant, sized) {
     }
     return found
   }
+  const outputs = new Set(scopes.flatMap(scope => [...scope.outputs]))
+  const fromScopes = binding => [...sourcesOf(binding)].some(source => outputs.has(source))
+  let extraSlots = 0
   for (const scope of scopes) {
+    const consequent = scope.statement.get('consequent')
+    // what its body uses, not only its dependencies: the compiler leaves out
+    // the values it takes for constants (computed from the imported $)
+    const used = [...collectUsed(consequent, fn, fromScopes)].filter(binding => !scope.outputs.has(binding))
     scope.upstream = new Set()
-    for (const input of scope.inputs) {
+    for (const input of [...scope.inputs, ...used]) {
       for (const source of sourcesOf(input)) {
         for (const other of scopes) {
           if (other !== scope && other.outputs.has(source)) scope.upstream.add(other.key)
         }
       }
     }
+    // extra dependencies: the values computed on every render outside the
+    // scopes, that the body uses and the compiler didn't make dependencies
+    scope.extraDeps = []
+    if (!recognized) continue
+    for (const binding of used) {
+      if (binding === cacheBinding || binding.kind === 'param' || scope.inputs.has(binding) || fromScopes(binding)) continue
+      // declared before the scope, and the same binding in its test
+      if (!precedes(binding.path, scope.statement)) continue
+      if (scope.statement.scope.getBinding(binding.identifier.name) !== binding) continue
+      scope.extraDeps.push({ name: binding.identifier.name, slot: size + extraSlots++ })
+    }
   }
   // inner scopes first: an outer scope's body moves into a function
-  for (const { statement, key, upstream, depSlots } of [...scopes].reverse()) {
+  for (const { statement, key, upstream, depSlots, extraDeps } of [...scopes].reverse()) {
     const consequent = statement.get('consequent')
     // the clock, read while rendering: recomputed on every render, as without
     // the compiler (the compiler takes it for a pure value and computes it once)
     if (readsClock(consequent)) {
       statement.node.test = t.logicalExpression('||', statement.node.test, t.booleanLiteral(true))
     }
+    const slot = index => t.memberExpression(t.identifier(cacheName), t.numericLiteral(index), true)
+    // $[N] !== x || ..., and $[N] = x first thing in the body
+    let changed
+    for (const { name, slot: index } of extraDeps) {
+      const test = t.binaryExpression('!==', slot(index), t.identifier(name))
+      changed = changed ? t.logicalExpression('||', changed, test) : test
+    }
+    if (extraDeps.length) {
+      if (!consequent.isBlockStatement()) consequent.replaceWith(t.blockStatement([consequent.node]))
+      statement.get('consequent').unshiftContainer('body', extraDeps.map(({ name, slot: index }) =>
+        t.expressionStatement(t.assignmentExpression('=', slot(index), t.identifier(name)))
+      ))
+    }
     if (!recognized || leavesBody(consequent)) {
-      statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('inObserver'), []))
+      const test = changed ? t.logicalExpression('||', statement.node.test, changed) : statement.node.test
+      statement.node.test = t.logicalExpression('||', test, t.callExpression(helper('inObserver'), []))
       continue
     }
     // _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS, PURE), trailing defaults left out
@@ -623,13 +656,15 @@ function instrumentScopes (fn, cacheName, t, helper, constant, sized) {
     // a body that can't read signals (it only builds elements, callbacks and
     // literals from values already computed) needs no reaction
     const pure = readsNothing(consequent, cacheName, t)
+    const allDepSlots = [...depSlots, ...extraDeps.map(({ slot: index }) => index)]
     const dirtyArgs = [
       t.identifier(cacheName),
       t.numericLiteral(key),
       upstream.size ? constant([...upstream]) : t.nullLiteral(),
       t.booleanLiteral(jsx),
-      depSlots.length ? constant(depSlots) : t.identifier('undefined'),
-      t.booleanLiteral(pure)
+      allDepSlots.length ? constant(allDepSlots) : t.identifier('undefined'),
+      t.booleanLiteral(pure),
+      changed || t.booleanLiteral(false)
     ]
     while (dirtyArgs.length > 2 && isDefaultArg(dirtyArgs[dirtyArgs.length - 1], t)) dirtyArgs.pop()
     statement.node.test = t.logicalExpression('||', statement.node.test, t.callExpression(helper('dirty'), dirtyArgs))
@@ -641,7 +676,7 @@ function instrumentScopes (fn, cacheName, t, helper, constant, sized) {
       ]))
     ]))
   }
-  return recognized
+  return { recognized, extraSlots }
 }
 
 // nothing in the body (outside the functions it creates, which don't run
@@ -746,6 +781,51 @@ function collectReferenced (path) {
   if (path.isIdentifier()) add(path)
   path.traverse({ ReferencedIdentifier: add })
   return bindings
+}
+
+// the bindings of the compiled function `fn`, declared outside `path`, that
+// `path` uses (also in the functions it creates), and that the functions it
+// uses use, if they are declared outside the scopes (a function is recreated
+// on every render, and what it does depends on the values it captures)
+function collectUsed (path, fn, fromScopes) {
+  const used = new Set()
+  const visited = new Set()
+  const visit = target => {
+    visited.add(target.node)
+    target.traverse({
+      ReferencedIdentifier (identifier) {
+        const binding = identifier.scope.getBinding(identifier.node.name)
+        if (!binding || binding.scope.getFunctionParent() !== fn.scope) return
+        if (isWithin(binding.path, target)) return
+        const closure = fromScopes(binding) ? undefined : getFunction(identifier)
+        if (!closure) {
+          used.add(binding)
+        } else if (!visited.has(closure.node)) {
+          visit(closure)
+        }
+      }
+    })
+  }
+  visit(path)
+  return used
+}
+
+function isWithin (path, ancestor) {
+  return path.node === ancestor.node || !!path.findParent(parent => parent.node === ancestor.node)
+}
+
+// whether `path` comes before `target` in the code of a block they share
+function precedes (path, target) {
+  const targetAncestry = target.getAncestry()
+  const depth = new Map(targetAncestry.map((ancestor, index) => [ancestor.node, index]))
+  for (let child = path; child.parentPath; child = child.parentPath) {
+    const index = depth.get(child.parentPath.node)
+    if (index === undefined) continue
+    const targetChild = targetAncestry[index - 1]
+    return !!targetChild && child.listKey !== undefined && child.listKey === targetChild.listKey &&
+      child.key < targetChild.key
+  }
+  return false
 }
 
 function collectAssigned (path) {
