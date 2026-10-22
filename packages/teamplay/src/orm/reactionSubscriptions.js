@@ -10,6 +10,8 @@ import unrefTimer from '../utils/unrefTimer.ts'
 // this is `let` to be able to directly change it if needed in tests or in the app
 export let DELETION_DELAY = 0
 
+const FUNCTIONS = new WeakMap()
+
 class ReactionSubscriptions {
   constructor () {
     this.initialized = new Map()
@@ -18,19 +20,27 @@ class ReactionSubscriptions {
 
   init ($value, fn) {
     const id = $value[SEGMENTS][1]
-    if (this.initialized.has(id)) return
+    const existing = this.initialized.get(id)
+    if (existing) {
+      // its signal was collected and this is a new one for the same id: the
+      // old reaction can't reach its function any more (see callWhileAlive())
+      if (!existing.signal || existing.signal.deref()) return
+      unobserve(existing.reaction)
+    }
 
-    this.initialized.set(id, true)
     const rootId = getRoot($value)?.[ROOT_ID] || $value?.[ROOT_ID]
     const reactionScheduler = reaction => scheduleReaction(() => runReaction(rootId, id, reaction))
-    const reaction = observe(fn, { lazy: true, scheduler: reactionScheduler })
+    const reaction = observe(callWhileAlive($value, fn), { lazy: true, scheduler: reactionScheduler })
+    this.initialized.set(id, { reaction, signal: typeof WeakRef === 'undefined' ? undefined : new WeakRef($value) })
     this.fr.register($value, [rootId, id, reaction])
     runReaction(rootId, id, reaction)
   }
 
   destroy (rootId, id, reaction) {
-    this.initialized.delete(id)
     unobserve(reaction)
+    // a new signal took over the id
+    if (this.initialized.get(id)?.reaction !== reaction) return
+    this.initialized.delete(id)
     // don't delete data right away to prevent dependent reactions which are also going to be GC'ed
     // from triggering unnecessarily
     unrefTimer(setTimeout(() => delPrivateData(rootId, [LOCAL, id]), DELETION_DELAY))
@@ -38,6 +48,22 @@ class ReactionSubscriptions {
 }
 
 export const reactionSubscriptions = new ReactionSubscriptions()
+
+// The reaction is held by the data it reads, so it must not hold the signal,
+// or the signal is never collected and the reaction never destroyed. `fn` can:
+// it shares its closure context with the closures written next to it, and one
+// of them may use the signal (a handler next to `$(() => ...)` in a component).
+// So the signal holds `fn` (a WeakMap entry, which doesn't keep its key alive)
+// and the reaction reaches the signal through a WeakRef.
+function callWhileAlive ($value, fn) {
+  if (typeof WeakRef === 'undefined') return fn
+  FUNCTIONS.set($value, fn)
+  const ref = new WeakRef($value)
+  return () => {
+    const $alive = ref.deref()
+    if ($alive) return FUNCTIONS.get($alive)()
+  }
+}
 
 function runReaction (rootId, id, reaction) {
   const newValue = reaction()

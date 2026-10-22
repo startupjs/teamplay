@@ -264,6 +264,8 @@ Root private aliases are currently modeled in `RootDollarAliases`:
 
 Each alias is exposed in both plain and dollar-prefixed forms when the target private collection exists in the effective private registry.
 
+Local signals share one call type, `LocalSignalFactory` (`$()` with no argument is `any`, `$(value)` and `$(() => value)` are `TypedSignal<typeof value>`): the root `$` is callable through it, and `useSignal` is typed as it. `signal` is `SignalFunction`, which adds the deprecated `signal($root, segments, options)` overload of `getSignal()`.
+
 ### Collections, Queries, And Aggregations
 
 `CollectionSignal` models:

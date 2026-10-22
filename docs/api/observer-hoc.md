@@ -37,3 +37,4 @@ const UserProfile = observer(({ userId }) => {
 
 - Always wrap components that use TeamPlay signals with `observer()` to ensure they update when data changes.
 - `observer()` optimizes re-renders by only updating when the specific data used in the component changes.
+- With the React Compiler, set `babel-plugin-teamplay`'s `reactCompiler` option: the compiler caches values read from signals. See [React Compiler](../guide/react-integration.md#react-compiler).

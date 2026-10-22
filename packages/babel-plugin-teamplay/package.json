@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.9.0",
+    "babel-plugin-react-compiler": "^1.0.0",
     "expect": "^30.3.0",
     "mocha": "^11.7.5",
     "mocha-expect-snapshot": "8.0.0",

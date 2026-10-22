@@ -11,6 +11,11 @@ const {
 const {
   getRequireContextModelPatternHelperSource
 } = require('./modelPatternRules')
+const {
+  normalizeReactCompilerOptions,
+  reactCompilerProgramEnter,
+  reactCompilerProgramExit
+} = require('./reactCompiler')
 
 const VIRTUAL_MODELS_IMPORT_REGEX = /(?:^|\/)teamplay\.models\.virtual\.js$|(?:^|\/)startupjs\.models\.virtual\.js$/
 const VIRTUAL_AUTO_INIT_IMPORT_REGEX = /(?:^|\/)teamplay\.models\.auto-init\.virtual\.js$/
@@ -19,6 +24,7 @@ const FILE_BASED_MODELS_IMPORT_REGEX = /^(?:teamplay|babel-plugin-teamplay)\/fil
 module.exports = function teamplayBabelPlugin (api, rawOptions = {}) {
   const { types: t, template } = api
   const options = normalizeOptions(rawOptions)
+  const reactOptions = { ...normalizeReactCompilerOptions(rawOptions), warn: options.warn }
   const modelEliminator = options.clientOnly
     ? eliminatorPlugin(api, {
       shouldTransformFileChecker: options.shouldTransformFileChecker,
@@ -58,6 +64,13 @@ module.exports = function teamplayBabelPlugin (api, rawOptions = {}) {
           }
 
           if (triggered) $program.scope.crawl()
+
+          // before the React Compiler, which compiles the file on Program enter
+          reactCompilerProgramEnter($program, state, reactOptions, t)
+        },
+        exit ($program, state) {
+          // after the React Compiler
+          reactCompilerProgramExit($program, state, reactOptions, t)
         }
       }
     }

@@ -1,7 +1,7 @@
 import { createElement as el, Fragment, useEffect, useLayoutEffect } from 'react'
 import { describe, it, afterEach, beforeEach, expect, beforeAll as before } from '@jest/globals'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { $, useSub, useAsyncSub, useScheduleUpdate, observer, sub } from '../src/index.ts'
+import { $, useSub, useAsyncSub, useScheduleUpdate, observer, sub, useSignal } from '../src/index.ts'
 import { setTestThrottling, resetTestThrottling } from '../src/react/useSub.ts'
 import { runGc, cache } from '../test/_helpers.js'
 import { releaseLastEventTarget } from './helpers/releaseLastEventTarget.js'
@@ -587,3 +587,35 @@ async function wait (ms = 30) {
     await new Promise(resolve => setTimeout(resolve, ms))
   })
 }
+
+describe('useSignal()', () => {
+  it('keeps the signals of an observer() component across renders', () => {
+    let renders = 0
+    const Component = observer(() => {
+      renders++
+      const $count = useSignal(0)
+      const $double = useSignal(() => $count.get() * 2)
+      return el('button', { onClick: () => $count.set($count.get() + 1) }, $count.get() + ':' + $double.get())
+    })
+    const { container } = render(el(Component))
+    expect(container.textContent).toBe('0:0')
+    fireEvent.click(container.querySelector('button'))
+    expect(container.textContent).toBe('1:2')
+    fireEvent.click(container.querySelector('button'))
+    expect(container.textContent).toBe('2:4')
+    expect(renders).toBe(3)
+  })
+
+  it('keeps its signal in a component that is not an observer()', () => {
+    const signals = new Set()
+    function Plain ({ n }) {
+      const $value = useSignal(n)
+      signals.add($value)
+      return el('span', {}, String($value.get()))
+    }
+    const { container, rerender } = render(el(Plain, { n: 1 }))
+    rerender(el(Plain, { n: 2 }))
+    expect(signals.size).toBe(1)
+    expect(container.textContent).toBe('1')
+  })
+})

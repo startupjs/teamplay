@@ -2,6 +2,8 @@
 
 The `$()` function is used to create local, reactive values in TeamPlay. These values are not synchronized with the server but can be used for local state management within your application.
 
+`$()` is a hook while a component renders and a plain function elsewhere. The newer [`signal()` and `useSignal()`](./signal-function.md) are the same two things under separate names; prefer them in new code.
+
 ## Syntax
 
 ```javascript
