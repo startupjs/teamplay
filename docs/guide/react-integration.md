@@ -245,11 +245,17 @@ module.exports = {
 How `'full'` works: before the compiler, `$()` called in a component or a hook
 becomes `useSignal()`, which the compiler never caches, and a function passed
 inline to `observer()` gets `'use memo'`, so the compiler compiles it (add
-`'use no memo'` to one to keep it uncompiled). After the compiler,
+`'use no memo'` to one to keep it uncompiled). A function whose code calls a
+function declared further down in it gets its function declarations moved to
+its top, where JavaScript hoists them anyway: the compiler leaves some of them
+in place, and a call that runs before them would fail ("Cannot access ...
+before initialization"). After the compiler,
 each block of code the compiler caches runs in a reaction that tracks the
 signals it reads, inside `observer()` components. When one of them changes,
 that block and the blocks that use its result run again, and so do the blocks
-that create elements. The other blocks keep their cache, so values from
+that create elements. A block also runs again when a value it uses changes
+that the compiler took for a constant: a value computed from the imported `$`
+outside the blocks. The other blocks keep their cache, so values from
 `useMemo()` and `useCallback()` keep their identity. In a component that isn't
 an `observer()`, a block recomputes when one of its inputs is a plain object or
 array, which may be a doc's data changed in place.
@@ -286,6 +292,15 @@ Things to know:
 - With `'full'`, if `babel-plugin-teamplay` doesn't recognize the compiler's
   output for a function, it warns, and inside `observer()` that function then
   runs as if it wasn't compiled.
+- The compiler takes a function given to an element (an `onPress`), to a hook,
+  or returned, for one that runs while the component renders, and reads ahead
+  what it reads: for `onPress={() => remove(course.id)}` it reads `course.id`
+  on every render, which throws while `course` is `undefined` (a doc not
+  loaded yet, or deleted). `'full'` compiles `observer()` components that the
+  compiler skipped before, and their code may read such values only on press,
+  so it sets the compiler's `environment.enableTreatFunctionDepsAsConditional`
+  (the callback then depends on `course` itself), unless your compiler options
+  set it.
 
 Or turn the compiler off: `"experiments": { "reactCompiler": false }` in Expo's
 `app.json`, or remove `babel-plugin-react-compiler` from your Babel config.

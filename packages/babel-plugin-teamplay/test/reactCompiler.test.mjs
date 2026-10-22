@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url)
 const COMPILER = require.resolve('babel-plugin-react-compiler')
 const FILENAME = '/app/src/Component.jsx'
 
-function transform (code, { teamplay = {}, compiler = true, between = [], filename = FILENAME } = {}) {
+function transform (code, { teamplay = {}, compiler = true, compilerOptions, between = [], filename = FILENAME } = {}) {
   const warnings = []
   const { code: output } = babel.transformSync(code, {
     filename,
@@ -21,7 +21,7 @@ function transform (code, { teamplay = {}, compiler = true, between = [], filena
     plugins: [
       [plugin, { types: false, warn: message => warnings.push(message), ...teamplay }],
       ...between,
-      compiler && [COMPILER, { target: '19', panicThreshold: 'all_errors' }]
+      compiler && [COMPILER, { target: '19', panicThreshold: 'all_errors', ...compilerOptions }]
     ].filter(Boolean)
   })
   return { code: output, warnings }
@@ -428,6 +428,25 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       expect(code).toContain(`var ${keysOfScope0} = [0];`)
       // scope 2 uses search, computed outside scopes on every render
       expect(code).toMatch(/_tp\.dirty\(\$0, 2, _tpKeys\d*, false, _tpKeys\d*, false, \$0\[3\] !== search\)\) \{\n {4}_tp\.run\(\$0, 2, \(\) => \{\n {6}\$0\[3\] = search;/)
+    })
+
+    it('makes the compiler read what a callback reads when it runs, not ahead on every render', () => {
+      // course.protected and course.id, read ahead, throw while course is undefined
+      const code = environment => transform(`
+        import { observer } from 'startupjs'
+        export const Course = observer(function Course ({ $course, onRemove }) {
+          const course = $course.get()
+          const remove = () => { if (course.protected) return; onRemove(course.id) }
+          return <b onClick={remove}>{course ? course.name : '...'}</b>
+        })
+      `, {
+        teamplay: { reactCompiler: 'full' },
+        compilerOptions: environment && { environment }
+      }).code
+      expect(code()).toContain('$[2] !== course ||')
+      expect(code()).not.toMatch(/!== course\.(id|protected)/)
+      // unless the app sets it
+      expect(code({ enableTreatFunctionDepsAsConditional: false })).toMatch(/!== course\.protected/)
     })
 
     it('moves to the top of a function body the function declarations it uses before declaring them', () => {

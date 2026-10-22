@@ -17,6 +17,8 @@
 //     observer() gets 'use memo' (the compiler doesn't compile it otherwise);
 //     and a function body that relies on its function declarations being
 //     hoisted gets them moved to its top (the compiler doesn't hoist them all);
+//     the compiler's enableTreatFunctionDepsAsConditional is set, unless the
+//     app set it (it reads a callback's values ahead, on every render);
 //   - after it (Program exit), each memo scope the compiler emitted
 //       if (DEPS_CHANGED) { BODY } else { ...cached outputs... }
 //     becomes
@@ -38,6 +40,8 @@ const COMPONENT_NAME = /^[A-Z]/
 const WRAPPERS = new Set(['memo', 'forwardRef', 'observer'])
 const DEFAULT_SOURCES = ['teamplay', 'startupjs']
 const COMPILER_RUNTIMES = new Set(['react/compiler-runtime', 'react-compiler-runtime'])
+// babel-plugin-react-compiler's name (its key in a Babel pipeline)
+const COMPILER_PLUGIN = 'react-forget'
 const CACHE_SENTINEL = 'react.memo_cache_sentinel'
 const MODES = new Set(['optOut', 'full'])
 const REPORT_LEVELS = new Set(['warn', 'error'])
@@ -68,6 +72,7 @@ function normalizeReactCompilerOptions (options = {}) {
 }
 
 function reactCompilerProgramEnter (program, state, options, t) {
+  if (options.reactCompiler === 'full') readFunctionDepsConditionally(state.file)
   const filename = state.file.opts.filename || ''
   if (isDependency(filename)) return
   // compiled code as written (a package's built files): left as it is
@@ -116,6 +121,23 @@ function reactCompilerProgramExit (program, state, options, t) {
     return
   }
   instrumentCompiledCode(program, cacheFactory, filename, options, t)
+}
+
+// The compiler takes a function given to an element, to a hook, or returned
+// for one called while rendering, and reads ahead what it reads unconditionally
+// (`course.id` in an onPress) as its dependency, on every render: that throws
+// while `course` is undefined (a doc not loaded yet). 'full' compiles observer()
+// components the compiler skipped before, whose code may read such values only
+// on press. The compiler's enableTreatFunctionDepsAsConditional makes the
+// dependency the object itself. It's set on the compiler's options, which the
+// compiler reads on its Program enter (after this one; as the compiler finds
+// Reanimated's plugin), unless the app set it.
+function readFunctionDepsConditionally (file) {
+  const compiler = file.opts.plugins?.find(plugin => plugin?.key === COMPILER_PLUGIN)
+  const options = compiler?.options
+  if (!options || typeof options !== 'object') return
+  if (options.environment?.enableTreatFunctionDepsAsConditional !== undefined) return
+  options.environment = { ...options.environment, enableTreatFunctionDepsAsConditional: true }
 }
 
 // The compiler marks a node it generates with a Symbol location (its
