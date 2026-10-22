@@ -274,6 +274,10 @@ Things to know:
   recomputes on every render; a helper function that reads the clock inside is
   cached like any other call. Keep the time in a signal or in state, and pass
   it in.
+- The same goes for other values from outside React and signals that change:
+  the compiler caches a read of `window.location` (or of a helper that reads
+  it) like any other value. Keep such a value in a signal, or add
+  `'use no memo'` to a component that has to read it again on every render.
 - The compiler caches values that only change in place or with time. Code
   that worked only because a value went stale under the compiler alone (for
   example a hook reading signals, which the compiler cached) changes behaviour
