@@ -863,20 +863,29 @@ function collectAssigned (path) {
   return bindings
 }
 
-// JSX, or the calls JSX compiles to (when it is compiled first)
+// JSX, or the calls JSX compiles to (when it is compiled first), that the
+// body runs: also in a function it passes to a call (items.map(item => <Row />)),
+// not in one it only creates (a callback, a render prop: a memoized callback
+// keeps its identity)
 const ELEMENT_FACTORY = /^_?(jsxs?|jsxDEV|createElement)$/
 function createsElements (node, t) {
-  let found = false
-  walk(node, n => {
-    if (found) return
-    if (t.isJSXElement(n) || t.isJSXFragment(n)) found = true
-    else if (t.isCallExpression(n)) {
-      const callee = n.callee
-      const name = t.isIdentifier(callee) ? callee.name : (t.isMemberExpression(callee) && t.isIdentifier(callee.property) ? callee.property.name : '')
-      if (ELEMENT_FACTORY.test(name)) found = true
+  if (!node || typeof node.type !== 'string') return false
+  if (t.isJSXElement(node) || t.isJSXFragment(node)) return true
+  if (t.isCallExpression(node)) {
+    const callee = node.callee
+    const name = t.isIdentifier(callee) ? callee.name : (t.isMemberExpression(callee) && t.isIdentifier(callee.property) ? callee.property.name : '')
+    if (ELEMENT_FACTORY.test(name)) return true
+  }
+  const calls = t.isCallExpression(node) || t.isOptionalCallExpression(node) || t.isNewExpression(node)
+  for (const key of Object.keys(node)) {
+    if (key === 'loc' || key === 'start' || key === 'end' || key === 'leadingComments' || key === 'trailingComments') continue
+    for (const child of [].concat(node[key])) {
+      if (!child || typeof child.type !== 'string') continue
+      if (t.isFunction(child) && !(calls && key === 'arguments')) continue
+      if (createsElements(child, t)) return true
     }
-  })
-  return found
+  }
+  return false
 }
 
 const CLOCK_LIBRARIES = new Set(['moment', 'dayjs'])

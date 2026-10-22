@@ -307,6 +307,23 @@ describe.each([
     $authors.del()
   })
 
+  it('a memoized callback that returns elements keeps its identity when a signal changes', () => {
+    const $doc = nextDoc({ count: 1 })
+    try {
+      const { container, rerender } = render(el(cases.RenderProp, { $doc, label: 'a' }))
+      expect(container.textContent).toBe('1|12|ax')
+      act(() => { $doc.count.set(2) })
+      expect(container.textContent).toBe('2|12|ax')
+      expect(cases.renderItems.size).toBe(1)
+      rerender(el(cases.RenderProp, { $doc, label: 'b' }))
+      expect(container.textContent).toBe('2|12|bx')
+      expect(cases.renderItems.size).toBe(2)
+    } finally {
+      // the callbacks share their closure with the component's: they hold $doc
+      cases.renderItems.clear()
+    }
+  })
+
   it('StrictMode', () => {
     const $doc = nextDoc({ count: 1 })
     const { container } = render(el(StrictMode, null, el(cases.DocTotal, { $doc: nextDoc({ items: [1, 2] }) }), el(cases.DocCount, { $doc })))

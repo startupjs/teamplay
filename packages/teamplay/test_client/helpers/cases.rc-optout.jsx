@@ -214,3 +214,14 @@ function AuthorsQueryBase ({ withTenant }) {
   return <i>{meta.text}{meta.tenant ? '|' + meta.tenant.title : ''}</i>
 }
 export const AuthorsQuery = observer(AuthorsQueryBase)
+
+// a memoized callback that returns elements (a render prop): it keeps its
+// identity on a render a signal change caused, as useCallback() promises
+export const renderItems = new Set()
+function RenderPropBase ({ $doc, label }) {
+  const count = $doc.count.get()
+  const renderItem = useCallback(item => <i>{label}{item}</i>, [label])
+  renderItems.add(renderItem)
+  return <div>{count}|{[1, 2].map(n => <b key={n}>{n}</b>)}|{renderItem('x')}</div>
+}
+export const RenderProp = observer(RenderPropBase)
