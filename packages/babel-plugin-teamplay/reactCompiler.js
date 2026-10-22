@@ -107,7 +107,10 @@ function reactCompilerProgramExit (program, state, options, t) {
   const { reactCompiler } = options
   const cacheFactory = getCompilerCacheFactory(program)
   if (!cacheFactory) return
-  if (reactCompiler) clearGeneratedLocations(program)
+  if (reactCompiler) {
+    clearGeneratedLocations(program)
+    moveCompilerImportAfterImports(program)
+  }
   if (reactCompiler === false || reactCompiler === 'optOut') return
   if (reactCompiler === undefined) {
     if (!warnedUnconfigured && sourceUsesSignals(state.file.code, program, options)) {
@@ -138,6 +141,34 @@ function readFunctionDepsConditionally (file) {
   if (!options || typeof options !== 'object') return
   if (options.environment?.enableTreatFunctionDepsAsConditional !== undefined) return
   options.environment = { ...options.environment, enableTreatFunctionDepsAsConditional: true }
+}
+
+// The compiler adds its import at the top of the file. Two things depend on
+// the order of imports:
+// - a module is evaluated in the order it's imported: one that has to run
+//   first (configuring teamplay before teamplay is imported) has to stay first;
+// - Expo's tree shaking (Metro) takes an import without specifiers
+//   (`import './fonts.web.js'`) for one with side effects only if the file's
+//   first import has no specifiers either (it counts them once per file), and
+//   drops it otherwise when the module it imports has no imports of its own.
+// The compiler's import, and teamplay's, go after the file's own imports.
+function moveCompilerImportAfterImports (program) {
+  const imports = program.get('body').filter(statement => statement.isImportDeclaration())
+  const compilerImport = imports.find(statement => COMPILER_RUNTIMES.has(statement.node.source.value))
+  if (!compilerImport || compilerImport === imports[imports.length - 1]) return
+  const node = compilerImport.node
+  compilerImport.remove()
+  insertAfterImports(program, node)
+}
+
+function insertAfterImports (program, node) {
+  const imports = program.get('body').filter(statement => statement.isImportDeclaration())
+  const inserted = imports.length
+    ? imports[imports.length - 1].insertAfter(node)
+    : program.unshiftContainer('body', node)
+  // the bindings of its specifiers, for the plugins after this one
+  for (const path of inserted) program.scope.registerDeclaration(path)
+  return inserted
 }
 
 // The compiler marks a node it generates with a Symbol location (its
@@ -496,13 +527,13 @@ function instrumentCompiledCode (program, cacheFactory, filename, options, t) {
     runtime = program.scope.generateUidIdentifier('tp')
     const teamplay = getTeamplayImports(program, options.teamplaySources)
     const source = options.reactCompilerRuntime || teamplay.declarations[0]?.node.source.value || 'teamplay'
-    program.unshiftContainer('body', t.importDeclaration(
+    // after the file's own imports (see moveCompilerImportAfterImports)
+    const [importStatement] = insertAfterImports(program, t.importDeclaration(
       [t.importSpecifier(runtime, t.identifier('__reactCompiler'))],
       t.stringLiteral(source)
     ))
     // the observers rendered from now on track compiled scopes
-    const imports = program.get('body').filter(statement => statement.isImportDeclaration())
-    ;[enableStatement] = imports[imports.length - 1].insertAfter(t.expressionStatement(
+    ;[enableStatement] = importStatement.insertAfter(t.expressionStatement(
       t.callExpression(t.memberExpression(t.identifier(runtime.name), t.identifier('enable')), [])
     ))
     return t.identifier(runtime.name)

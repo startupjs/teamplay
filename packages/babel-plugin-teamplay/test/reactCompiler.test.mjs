@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url)
 const COMPILER = require.resolve('babel-plugin-react-compiler')
 const FILENAME = '/app/src/Component.jsx'
 
-function transform (code, { teamplay = {}, compiler = true, compilerOptions, between = [], filename = FILENAME } = {}) {
+function transform (code, { teamplay = {}, compiler = true, compilerOptions, between = [], after = [], filename = FILENAME } = {}) {
   const warnings = []
   const { code: output } = babel.transformSync(code, {
     filename,
@@ -21,7 +21,8 @@ function transform (code, { teamplay = {}, compiler = true, compilerOptions, bet
     plugins: [
       [plugin, { types: false, warn: message => warnings.push(message), ...teamplay }],
       ...between,
-      compiler && [COMPILER, { target: '19', panicThreshold: 'all_errors', ...compilerOptions }]
+      compiler && [COMPILER, { target: '19', panicThreshold: 'all_errors', ...compilerOptions }],
+      ...after
     ].filter(Boolean)
   })
   return { code: output, warnings }
@@ -246,7 +247,7 @@ describe('babel-plugin-teamplay: React Compiler', () => {
         export const DocCount = observer(DocCountBase)
       `, { teamplay: { reactCompiler: 'full' } })
       expect(warnings).toEqual([])
-      expect(code).toMatch(/^import \{ __reactCompiler as _tp \} from "startupjs";\nimport \{ c as _c \} from "react\/compiler-runtime";\nimport \{ observer \} from 'startupjs';\n_tp\.enable\(\);\nvar _tpKeys = \[0\];\nvar _tpKeys2 = \[2\];/)
+      expect(code).toMatch(/^import \{ observer \} from 'startupjs';\nimport \{ c as _c \} from "react\/compiler-runtime";\nimport \{ __reactCompiler as _tp \} from "startupjs";\n_tp\.enable\(\);\nvar _tpKeys = \[0\];\nvar _tpKeys2 = \[2\];/)
       // one more slot: the scopes' state
       expect(code).toContain('const $ = _tp.cache(_c(5))')
       // _tp.dirty($, K, UPSTREAM_KEYS, JSX, DEP_SLOTS)
@@ -447,6 +448,25 @@ describe('babel-plugin-teamplay: React Compiler', () => {
       expect(code()).not.toMatch(/!== course\.(id|protected)/)
       // unless the app sets it
       expect(code({ enableTreatFunctionDepsAsConditional: false })).toMatch(/!== course\.protected/)
+    })
+
+    it("puts the compiler's import and teamplay's after the file's own imports", () => {
+      // a module imported first is evaluated first (one that configures
+      // teamplay), and Expo's tree shaking keeps an import without specifiers
+      // only if the file's first import has none either
+      let bindings
+      const readBindings = () => ({
+        visitor: { Program: { exit (program) { bindings = ['_c', '_tp'].map(name => program.scope.getBinding(name)?.kind) } } }
+      })
+      const { code } = transform(`
+        import './configure.js'
+        import { observer } from 'startupjs'
+        import './fonts.js'
+        export const Count = observer(function Count ({ $doc }) { return <b>{$doc.count.get()}</b> })
+      `, { teamplay: { reactCompiler: 'full' }, after: [readBindings] })
+      expect(code).toMatch(/^import '\.\/configure\.js';\nimport \{ observer \} from 'startupjs';\nimport '\.\/fonts\.js';\nimport \{ c as _c \} from "react\/compiler-runtime";\nimport \{ __reactCompiler as _tp \} from "startupjs";\n_tp\.enable\(\);/)
+      // the plugins after it know the imported names
+      expect(bindings).toEqual(['module', 'module'])
     })
 
     it('moves to the top of a function body the function declarations it uses before declaring them', () => {
