@@ -411,6 +411,58 @@ describe('a doc taken again while it is destroyed', () => {
     assert.ok(getConnection().get(collection, id).version >= version)
   })
 
+  // Public API only, the GC timer destroys the doc: a screen's query is
+  // released, and a returning screen lists the same doc with another query
+  // while ShareDB destroys it. The doc keeps its data and follows the server,
+  // in its signal and in the query's list.
+  it('a doc a returning screen\'s query lists while its GC destroy is in ShareDB keeps its data and stays live', async () => {
+    useGcDelay(20)
+    const id = nextId('returning')
+    const kind = `kind_${id}`
+    await remoteCreate(id, { kind, n: 1 })
+    const $screen = root()
+    const $first = await sub($screen[collection], { kind })
+    assert.equal($screen[collection][id].n.get(), 1)
+    const shareDestroy = holdShareDbDestroy(id)
+    await unsub($first)
+    await shareDestroy.started
+    const $job = root()
+    const $returning = await sub($job[collection], { _id: { $in: [id] } })
+    shareDestroy.finish()
+    await waitFor(() => !docSubscriptions.entries.get(hashOf(id))?.destroying, 'the destroy ends')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    assert.deepEqual($returning.getIds(), [id])
+    assert.equal($job[collection][id].n.get(), 1, 'the listed doc keeps its data')
+    assert.equal(getQueryResultDocs($returning)[0], getConnection().collections[collection]?.[id], 'ShareDB keeps the doc the query lists')
+    await remoteOp(id, [{ p: ['n'], od: 1, oi: 2 }])
+    await waitFor(() => $job[collection][id].n.get() === 2, 'the doc follows the server')
+    assert.deepEqual($returning.get().map(({ n }) => n), [2], 'the query\'s list follows the server')
+  })
+
+  it('an owner that subscribes while a closing root\'s destroy is in ShareDB gets a live subscription', async () => {
+    useGcDelay(20)
+    const id = nextId('root_close_owner')
+    await remoteCreate(id, { name: 'Ann' })
+    const $closing = getRootSignal({ rootId: nextId('closing') })
+    await sub($closing[collection][id])
+    const shareDestroy = holdShareDbDestroy(id)
+    const closed = $closing.close()
+    await shareDestroy.started
+    const $owner = root()
+    const subscribing = sub($owner[collection][id])
+    shareDestroy.finish()
+    await closed
+    const $doc = await subscribing
+    assert.equal($doc.name.get(), 'Ann')
+    const shareDoc = getConnection().collections[collection]?.[id]
+    assert.ok(shareDoc?.subscribed, 'ShareDB keeps the owner\'s subscription')
+    const version = await remoteOp(id, [{ p: ['name'], od: 'Ann', oi: 'Bob' }])
+    await waitFor(() => $doc.name.get() === 'Bob', 'the owner sees the server\'s op')
+    assert.ok(shareDoc.version >= version)
+    await $doc.score.set(1)
+    assert.equal((await remoteData(id)).score, 1)
+  })
+
   it('a destroy of the doc while ShareDB destroys it settles once ShareDB is done', async () => {
     useGcDelay(20)
     const id = nextId('settles_after')
